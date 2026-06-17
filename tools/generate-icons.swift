@@ -38,6 +38,12 @@ let icons: [(String, String, String)] = [
     ("prev_tab", "arrow.left.circle.fill", Y),
     ("new_claude", "plus.bubble.fill", Y),
     ("project", "folder.fill", B),
+    // Answer keys — respond when Claude prompts a question (basenames match AnswerCommand params).
+    ("yes", "checkmark.circle.fill", G),
+    ("no", "xmark.circle.fill", R),
+    ("up", "arrowtriangle.up.fill", Y),
+    ("down", "arrowtriangle.down.fill", Y),
+    ("enter", "return", G),
 ]
 
 func color(_ hex: String) -> NSColor {

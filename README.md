@@ -4,7 +4,7 @@
 
 > Press a button. Ship code.
 
-Claude Console turns the MX Creative Keypad's nine LCD keys into a control surface for Claude Code: live session status, one‑press prompts and git actions, terminal navigation, and **fully offline voice** — dictate a prompt or jump into a project by speaking its name. No cloud, no API keys.
+Claude Console turns the MX Creative Keypad's nine LCD keys into a control surface for Claude Code: live session status, one‑press prompts and git actions, answering its questions, terminal navigation, and **fully offline voice** — dictate a prompt or jump into a project by speaking its name. No cloud, no API keys.
 
 ---
 
@@ -12,6 +12,7 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 
 - **Live status** — Model, live cost, and context usage read straight from Claude Code's status line.
 - **One‑press prompts** — Fix Bug, Write Tests, Explain, Refactor, Review, Optimize, Security, Document, Deploy.
+- **Answer prompts** — respond to Claude's questions from the keypad: Up/Down/Return to navigate menus, Yes/No to type a quick reply.
 - **Git, through Claude** — Commit, Diff, Push, Create PR, Status, Log.
 - **Terminal & session nav** — activate Terminal, new tab, new Claude session, next/prev tab.
 - **Offline voice dictation** — press, speak, press again; [whisper.cpp](https://github.com/ggerganov/whisper.cpp) transcribes locally and types it into your terminal.
@@ -71,11 +72,21 @@ The `scripts/hook-handler.sh` is a `PreToolUse` hook for the **experimental** Ac
 
 First use prompts once for **Microphone** permission (granted to the helper, not the daemon). The plugin also needs **Accessibility** permission for the Logi Plugin Service (to type into the terminal).
 
+## Answering Claude's questions
+
+When Claude asks something, answer from the keypad instead of the keyboard:
+
+- **Up / Down / Return** — navigate and confirm a selection menu: tool‑permission prompts, multiple‑choice questions (`AskUserQuestion`), plan‑mode confirmation.
+- **Yes / No** — type `yes` / `no` + Enter, for plain‑text questions ("Should I proceed?"). They type the word, so they won't select a *numbered* menu item — use Up/Down + Return for those.
+
+These inject keystrokes into the focused terminal, so keep it frontmost (same Accessibility permission as the prompt keys). The experimental hook‑based **Accept / Reject** keys are an alternative for tool‑permission prompts only.
+
 ## Key map
 
 | Group | Keys |
 |-------|------|
 | **Core** | Accept · Reject · Model* · Cost* · Status* · Esc · Plan · Compact · Context · Clear · Exit · Opus · Sonnet · Haiku |
+| **Answer** | Yes · No · Up · Down · Return |
 | **Prompts** | Fix Bug · Write Tests · Explore · Explain · Refactor · Review · Optimize · Security · Document · Deploy |
 | **Git** | Commit · Diff · Push · Create PR · Status · Log |
 | **Terminal** | Terminal · New Tab · New Claude · Next Tab · Prev Tab · **Go to Project** (voice) |
