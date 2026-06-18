@@ -46,8 +46,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
+            // Face shows the $ icon; the live cost/tokens go in the LABEL (GetCommandDisplayName)
+            // so the value isn't drawn twice. Falls back to the value text if the icon is missing.
             var tokenDisplay = _tokens >= 1000 ? $"{_tokens / 1000}K tok" : $"{_tokens} tok";
-            return KeyImage.Render(imageSize, $"${_cost:F2}\n{tokenDisplay}", KeyImage.Dark);
+            return KeyImage.Render(imageSize, $"${_cost:F2}\n{tokenDisplay}", KeyImage.Dark, "cost");
         }
     }
 }

@@ -63,8 +63,6 @@ The live Cost / Model / Context keys read `/tmp/claude-console-state.json`, writ
 
 (The handler captures session state for the plugin and prints no visible status line — customize `scripts/statusline-handler.sh` if you want one.)
 
-The `scripts/hook-handler.sh` is a `PreToolUse` hook for the **experimental** Accept/Reject permission flow — optional and off by default.
-
 ## Using voice
 
 - **Voice key** — press (you'll hear a *Tink*), say your prompt, press again. It transcribes locally and types the text into the focused terminal.
@@ -79,13 +77,13 @@ When Claude asks something, answer from the keypad instead of the keyboard:
 - **Up / Down / Return** — navigate and confirm a selection menu: tool‑permission prompts, multiple‑choice questions (`AskUserQuestion`), plan‑mode confirmation.
 - **Yes / No** — type `yes` / `no` + Enter, for plain‑text questions ("Should I proceed?"). They type the word, so they won't select a *numbered* menu item — use Up/Down + Return for those.
 
-These inject keystrokes into the focused terminal, so keep it frontmost (same Accessibility permission as the prompt keys). The experimental hook‑based **Accept / Reject** keys are an alternative for tool‑permission prompts only.
+These inject keystrokes into the focused terminal, so keep it frontmost (same Accessibility permission as the prompt keys).
 
 ## Key map
 
 | Group | Keys |
 |-------|------|
-| **Core** | Accept · Reject · Model* · Cost* · Status* · Esc · Plan · Compact · Context · Clear · Exit · Opus · Sonnet · Haiku |
+| **Core** | Model* · Cost* · Status* · Esc · Plan · Compact · Context · Clear · Exit · Opus · Sonnet · Haiku |
 | **Answer** | Yes · No · Up · Down · Return |
 | **Prompts** | Fix Bug · Write Tests · Explore · Explain · Refactor · Review · Optimize · Security · Document · Deploy |
 | **Git** | Commit · Diff · Push · Create PR · Status · Log |

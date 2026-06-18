@@ -63,7 +63,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         [JsonPropertyName("total_output_tokens")]
         public Int32 TotalOutputTokens { get; set; }
 
-        [JsonPropertyName("max_tokens")]
+        [JsonPropertyName("context_window_size")]
         public Int32 MaxTokens { get; set; }
     }
 

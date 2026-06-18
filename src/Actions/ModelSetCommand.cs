@@ -43,8 +43,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var entry = Models.FirstOrDefault(m => m.Id == actionParameter);
-            // Opus/Sonnet/Haiku share one icon, so show the name as text instead (distinguishable).
-            return KeyImage.Render(imageSize, entry.Name ?? actionParameter, KeyImage.Purple);
+            // Each model gets its own colour-coded brain (brain_opus/sonnet/haiku); the NAME is the
+            // label. Falls back to the value text if the icon is missing.
+            return KeyImage.Render(imageSize, entry.Name ?? actionParameter, KeyImage.Purple, $"brain_{actionParameter}");
         }
     }
 }

@@ -46,7 +46,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
-            return KeyImage.Render(imageSize, $"Model\n{_displayName}", KeyImage.Purple);
+            // Brain tinted to the CURRENT model's colour (matches the Opus/Sonnet/Haiku keys);
+            // falls back to the neutral white brain until the live model is known.
+            var key = (_displayName ?? "").ToLowerInvariant();
+            var icon = key == "opus" || key == "sonnet" || key == "haiku" ? $"brain_{key}" : "brain";
+            return KeyImage.Render(imageSize, $"Model\n{_displayName}", KeyImage.Purple, icon);
         }
     }
 }

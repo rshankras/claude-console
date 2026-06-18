@@ -14,8 +14,8 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// Bridge Manager — Connects the Logitech Actions SDK plugin to Claude Code
     /// via file-based IPC in the system temp directory.
     ///
-    /// Reads: state.json (statusline data), pending.json (permission requests)
-    /// Writes: response.json (accept/deny), cmd-queue.jsonl (commands)
+    /// Reads: state.json (statusline data)
+    /// Writes: cmd-queue.jsonl (commands)
     /// </summary>
     public class BridgeManager
     {
@@ -26,8 +26,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             Environment.OSVersion.Platform == PlatformID.Win32NT ? Path.GetTempPath() : "/tmp";
         private static readonly String StateFile = Path.Combine(TempDir, "claude-console-state.json");
         private static readonly String CommandQueueFile = Path.Combine(TempDir, "claude-console-cmd-queue.jsonl");
-        private static readonly String PendingFile = Path.Combine(TempDir, "claude-console-pending.json");
-        private static readonly String ResponseFile = Path.Combine(TempDir, "claude-console-response.json");
         private static readonly String SessionsFile = Path.Combine(TempDir, "claude-console-sessions.json");
         private static readonly String HistoryFile = Path.Combine(TempDir, "claude-console-history.jsonl");
         private static readonly String DialFile = Path.Combine(TempDir, "claude-console-dial.json");
@@ -42,14 +40,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         private Timer _pollTimer;
         private ClaudeState _currentState;
         private String _activeSessionId;
-        private Boolean _isWaitingApproval;
 
         public event Action<ClaudeState> OnStateChanged;
-        public event Action<String> OnPermissionNeeded; // passes tool name
 
         public ClaudeState CurrentState => _currentState;
         public String ActiveSessionId => _activeSessionId;
-        public Boolean IsWaitingApproval => _isWaitingApproval;
 
         // ------------------------------------------------------------------------------------------
         // Singleton — the SDK auto-discovers PluginDynamicCommand/Adjustment subclasses and
@@ -98,16 +93,8 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 if (newState != null)
                 {
-                    var wasWaiting = _isWaitingApproval;
-                    _isWaitingApproval = newState.Status == "waiting_approval";
-
                     _currentState = newState;
                     OnStateChanged?.Invoke(_currentState);
-
-                    if (_isWaitingApproval && !wasWaiting)
-                    {
-                        OnPermissionNeeded?.Invoke(newState.Tool ?? "unknown");
-                    }
                 }
             }
             catch (Exception ex)
@@ -164,24 +151,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             var name = Path.GetFileNameWithoutExtension(baseFile);
             var ext = Path.GetExtension(baseFile);
             return Path.Combine(dir, $"{name}-{sessionId}{ext}");
-        }
-
-        /// <summary>
-        /// Write a permission decision (accept/reject) to the response file.
-        /// The hook handler polls for this file and returns the decision to Claude Code.
-        /// </summary>
-        public void SendDecision(String decision, String reason = null)
-        {
-            var responseFile = GetSessionFile(ResponseFile, _activeSessionId);
-            var response = new Dictionary<String, String> { { "decision", decision } };
-            if (reason != null)
-            {
-                response["reason"] = reason;
-            }
-
-            AtomicWriteJson(responseFile, response);
-            _isWaitingApproval = false;
-            PluginLog.Info($"BridgeManager: Sent decision '{decision}' to {responseFile}");
         }
 
         /// <summary>
