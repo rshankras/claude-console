@@ -75,22 +75,4 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         [JsonPropertyName("turns")]
         public Int32 Turns { get; set; }
     }
-
-    public class SessionRegistryEntry
-    {
-        [JsonPropertyName("id")]
-        public String Id { get; set; }
-
-        [JsonPropertyName("started")]
-        public String Started { get; set; }
-
-        [JsonPropertyName("status")]
-        public String Status { get; set; }
-
-        [JsonPropertyName("project_dir")]
-        public String ProjectDir { get; set; }
-
-        [JsonPropertyName("project")]
-        public String Project { get; set; }
-    }
 }

@@ -26,9 +26,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             Environment.OSVersion.Platform == PlatformID.Win32NT ? Path.GetTempPath() : "/tmp";
         private static readonly String StateFile = Path.Combine(TempDir, "claude-console-state.json");
         private static readonly String CommandQueueFile = Path.Combine(TempDir, "claude-console-cmd-queue.jsonl");
-        private static readonly String SessionsFile = Path.Combine(TempDir, "claude-console-sessions.json");
-        private static readonly String HistoryFile = Path.Combine(TempDir, "claude-console-history.jsonl");
-        private static readonly String DialFile = Path.Combine(TempDir, "claude-console-dial.json");
 
         // Voice capture IPC (must match ClaudeVoiceHelper's defaults in tools/voice/).
         private static readonly String VoiceStopFile = Path.Combine(TempDir, "claude-console-voice.stop");
@@ -39,12 +36,10 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         private Timer _pollTimer;
         private ClaudeState _currentState;
-        private String _activeSessionId;
 
         public event Action<ClaudeState> OnStateChanged;
 
         public ClaudeState CurrentState => _currentState;
-        public String ActiveSessionId => _activeSessionId;
 
         // ------------------------------------------------------------------------------------------
         // Singleton — the SDK auto-discovers PluginDynamicCommand/Adjustment subclasses and
@@ -88,8 +83,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             try
             {
-                var stateFile = GetSessionFile(StateFile, _activeSessionId);
-                var newState = ReadJsonWithRetry<ClaudeState>(stateFile);
+                var newState = ReadJsonWithRetry<ClaudeState>(StateFile);
 
                 if (newState != null)
                 {
@@ -138,22 +132,6 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
-        /// Get a session-scoped file path. If no session or "default", returns base path.
-        /// </summary>
-        private String GetSessionFile(String baseFile, String sessionId)
-        {
-            if (String.IsNullOrEmpty(sessionId) || sessionId == "default")
-            {
-                return baseFile;
-            }
-
-            var dir = Path.GetDirectoryName(baseFile);
-            var name = Path.GetFileNameWithoutExtension(baseFile);
-            var ext = Path.GetExtension(baseFile);
-            return Path.Combine(dir, $"{name}-{sessionId}{ext}");
-        }
-
-        /// <summary>
         /// Write a command to the queue file (append-based to avoid overwrite races).
         /// </summary>
         public void SendCommand(String action, Dictionary<String, String> args = null)
@@ -163,7 +141,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 { "action", action },
                 { "args", args ?? new Dictionary<String, String>() },
                 { "timestamp", DateTime.UtcNow.ToString("o") },
-                { "session_id", _activeSessionId ?? "default" }
+                { "session_id", "default" }
             };
 
             var line = JsonSerializer.Serialize(cmd);
@@ -224,6 +202,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             };
             if (pressEnter)
             {
+                // A leading "/" opens Claude Code's slash-command autocomplete. Pressing Return
+                // before it finishes filtering to the typed command selects whatever is highlighted
+                // (often a recent command like /copy), so pause to let the menu settle first. Harmless
+                // for plain text (Git/Prompts/voice) where no menu is shown.
+                args.Add("-e");
+                args.Add("delay 0.35");
                 args.Add("-e");
                 args.Add("tell application \"System Events\" to key code 36"); // Return
             }
@@ -576,233 +560,5 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
         }
 
-        /// <summary>
-        /// Switch the active session being monitored.
-        /// </summary>
-        public void SetActiveSession(String sessionId)
-        {
-            _activeSessionId = sessionId;
-            PluginLog.Info($"BridgeManager: Switched to session {sessionId}");
-        }
-
-        private static readonly String SessionsDir = Path.Combine(
-            Environment.OSVersion.Platform == PlatformID.Win32NT ? Path.GetTempPath() : "/tmp",
-            "claude-console-sessions");
-
-        /// <summary>
-        /// Get list of active sessions by scanning session files.
-        /// Only returns sessions updated within the last 2 minutes (active Claude Code processes).
-        /// Deduplicates by project directory (keeps most recent per project).
-        /// </summary>
-        public List<SessionRegistryEntry> GetSessions()
-        {
-            var sessions = new List<SessionRegistryEntry>();
-            try
-            {
-                if (!Directory.Exists(SessionsDir))
-                {
-                    return sessions;
-                }
-
-                var cutoff = DateTime.UtcNow.AddMinutes(-2);
-                var byProject = new Dictionary<String, (SessionRegistryEntry Entry, DateTime Updated)>();
-
-                foreach (var file in Directory.GetFiles(SessionsDir, "*.json"))
-                {
-                    try
-                    {
-                        var info = new FileInfo(file);
-                        if (info.LastWriteTimeUtc < cutoff)
-                        {
-                            continue; // Skip stale sessions
-                        }
-
-                        var json = File.ReadAllText(file);
-                        var data = JsonSerializer.Deserialize<Dictionary<String, JsonElement>>(json);
-                        if (data == null)
-                        {
-                            continue;
-                        }
-
-                        var sessionId = data.ContainsKey("session_id") ? data["session_id"].GetString() : Path.GetFileNameWithoutExtension(file);
-                        var projectDir = "";
-                        if (data.ContainsKey("workspace") && data["workspace"].TryGetProperty("project_dir", out var pd))
-                        {
-                            projectDir = pd.GetString() ?? "";
-                        }
-                        else if (data.ContainsKey("cwd"))
-                        {
-                            projectDir = data["cwd"].GetString() ?? "";
-                        }
-
-                        var entry = new SessionRegistryEntry
-                        {
-                            Id = sessionId,
-                            ProjectDir = projectDir,
-                            Project = projectDir.Contains("/") ? projectDir.Substring(projectDir.LastIndexOf('/') + 1) : projectDir
-                        };
-
-                        // Deduplicate: keep newest per project directory
-                        if (!byProject.ContainsKey(projectDir) || info.LastWriteTimeUtc > byProject[projectDir].Updated)
-                        {
-                            byProject[projectDir] = (entry, info.LastWriteTimeUtc);
-                        }
-                    }
-                    catch
-                    {
-                        // Skip corrupt files
-                    }
-                }
-
-                sessions.AddRange(byProject.Values
-                    .OrderByDescending(v => v.Updated)
-                    .Select(v => v.Entry));
-            }
-            catch (Exception ex)
-            {
-                PluginLog.Verbose(ex, "BridgeManager: GetSessions error");
-            }
-
-            return sessions;
-        }
-
-        /// <summary>
-        /// Read user prompts from cmd-queue.jsonl (filtered to type=prompt only).
-        /// Returns a list of prompt entries matching what the simulator dial shows.
-        /// </summary>
-        public List<Dictionary<String, Object>> ReadPromptHistory()
-        {
-            var entries = new List<Dictionary<String, Object>>();
-            try
-            {
-                if (!File.Exists(CommandQueueFile))
-                {
-                    return entries;
-                }
-
-                var lines = File.ReadAllLines(CommandQueueFile);
-                var promptIndex = 0;
-                for (var i = 0; i < lines.Length; i++)
-                {
-                    if (String.IsNullOrWhiteSpace(lines[i]))
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        var entry = JsonSerializer.Deserialize<Dictionary<String, Object>>(lines[i]);
-                        if (entry != null && entry.ContainsKey("type"))
-                        {
-                            var entryType = entry["type"].ToString();
-                            if (entryType == "prompt")
-                            {
-                                entry["index"] = promptIndex++;
-                                entries.Add(entry);
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // Skip corrupt lines
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                PluginLog.Verbose(ex, "BridgeManager: ReadPromptHistory error");
-            }
-
-            return entries;
-        }
-
-        /// <summary>
-        /// Resend the currently selected prompt from the dial.
-        /// Reads current dial position and sends that prompt to the terminal.
-        /// </summary>
-        public Boolean ResendDialPrompt()
-        {
-            var prompts = ReadPromptHistory();
-            var (position, _, _) = GetDialState();
-
-            if (prompts.Count == 0 || position < 0 || position >= prompts.Count)
-            {
-                return false;
-            }
-
-            var entry = prompts[position];
-            if (entry.ContainsKey("value"))
-            {
-                var value = entry["value"].ToString();
-                SendPrompt(value);
-                PluginLog.Info($"BridgeManager: Resent dial prompt: {value}");
-                return true;
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Get the current dial state (position, total, mode).
-        /// </summary>
-        public (Int32 Position, Int32 Total, String Mode) GetDialState()
-        {
-            try
-            {
-                if (File.Exists(DialFile))
-                {
-                    var json = File.ReadAllText(DialFile);
-                    var state = JsonSerializer.Deserialize<Dictionary<String, JsonElement>>(json);
-                    var pos = state.ContainsKey("position") ? state["position"].GetInt32() : 0;
-                    var total = state.ContainsKey("total") ? state["total"].GetInt32() : 0;
-                    var mode = state.ContainsKey("mode") ? state["mode"].GetString() : "history";
-                    return (pos, total, mode);
-                }
-            }
-            catch
-            {
-                // Ignore
-            }
-
-            return (0, 0, "history");
-        }
-
-        /// <summary>
-        /// Update the dial position and write state to dial.json.
-        /// Returns the clamped position.
-        /// </summary>
-        public Int32 SetDialPosition(Int32 position, Int32 total, String mode = "history")
-        {
-            var clamped = Math.Max(0, Math.Min(total > 0 ? total - 1 : 0, position));
-            var state = new Dictionary<String, Object>
-            {
-                { "position", clamped },
-                { "total", total },
-                { "mode", mode }
-            };
-            AtomicWriteJson(DialFile, state);
-            return clamped;
-        }
-
-        /// <summary>
-        /// Atomic write: write to temp file then move (prevents partial reads).
-        /// </summary>
-        private void AtomicWriteJson(String filePath, Object data)
-        {
-            var json = JsonSerializer.Serialize(data);
-            var tmpFile = filePath + $".tmp.{Environment.ProcessId}";
-
-            try
-            {
-                File.WriteAllText(tmpFile, json);
-                File.Move(tmpFile, filePath, overwrite: true);
-            }
-            catch
-            {
-                // Fallback: direct write
-                File.WriteAllText(filePath, json);
-                try { File.Delete(tmpFile); } catch { }
-            }
-        }
     }
 }

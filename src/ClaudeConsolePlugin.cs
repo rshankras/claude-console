@@ -16,9 +16,6 @@ namespace Loupedeck.ClaudeConsolePlugin
     ///   Controls:      Plan, Compact, Context, Voice
     ///   Prompts:       Fix Bug, Write Tests
     ///   Git:           Commit, Diff
-    ///
-    /// The dial adjustments (history scroll / session switch) compile and are ready for the MX
-    /// Creative Dialpad, but are unbindable on the Keypad-only device.
     /// </summary>
     public class ClaudeConsolePlugin : Plugin
     {
