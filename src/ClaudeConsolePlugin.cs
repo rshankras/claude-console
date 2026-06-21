@@ -12,7 +12,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// only has to start the bridge polling Claude Code's state.
     ///
     /// v1 "Core essentials" actions:
-    ///   Live displays: Model, Cost, Status   (read state.json — no terminal needed)
+    ///   Live displays: Model, Cost, Activity (read state.json — no terminal needed)
     ///   Controls:      Plan, Compact, Context, Voice
     ///   Prompts:       Fix Bug, Write Tests
     ///   Git:           Commit, Diff

@@ -26,6 +26,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             Environment.OSVersion.Platform == PlatformID.Win32NT ? Path.GetTempPath() : "/tmp";
         private static readonly String StateFile = Path.Combine(TempDir, "claude-console-state.json");
         private static readonly String CommandQueueFile = Path.Combine(TempDir, "claude-console-cmd-queue.jsonl");
+        private static readonly String ActivityFile = Path.Combine(TempDir, "claude-console-activity.json");
 
         // Voice capture IPC (must match ClaudeVoiceHelper's defaults in tools/voice/).
         private static readonly String VoiceStopFile = Path.Combine(TempDir, "claude-console-voice.stop");
@@ -36,10 +37,13 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         private Timer _pollTimer;
         private ClaudeState _currentState;
+        private ActivityState _activity;
 
         public event Action<ClaudeState> OnStateChanged;
+        public event Action<ActivityState> OnActivityChanged;
 
         public ClaudeState CurrentState => _currentState;
+        public ActivityState CurrentActivity => _activity;
 
         // ------------------------------------------------------------------------------------------
         // Singleton — the SDK auto-discovers PluginDynamicCommand/Adjustment subclasses and
@@ -90,11 +94,38 @@ namespace Loupedeck.ClaudeConsolePlugin
                     _currentState = newState;
                     OnStateChanged?.Invoke(_currentState);
                 }
+
+                // Activity is pushed by the Claude Code hooks into a separate file; surface changes
+                // so the Status key can flip between working / waiting / idle.
+                var act = ReadActivity();
+                if (act?.State != _activity?.State)
+                {
+                    _activity = act;
+                    OnActivityChanged?.Invoke(_activity);
+                }
             }
             catch (Exception ex)
             {
                 PluginLog.Verbose(ex, "BridgeManager: PollState error");
             }
+        }
+
+        // Read the hook-written activity flag (busy/waiting/done). A "busy" with no Stop for a long
+        // while is treated as done, so a missed Stop hook can't leave the key stuck on "Working".
+        private ActivityState ReadActivity()
+        {
+            if (!File.Exists(ActivityFile))
+            {
+                return null;
+            }
+
+            var a = ReadJsonWithRetry<ActivityState>(ActivityFile);
+            if (a != null && a.State == "busy" &&
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds() - a.Ts > 300)
+            {
+                a.State = "done";
+            }
+            return a;
         }
 
         /// <summary>

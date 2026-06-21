@@ -75,4 +75,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         [JsonPropertyName("turns")]
         public Int32 Turns { get; set; }
     }
+
+    /// <summary>
+    /// Activity pushed by the Claude Code hooks (scripts/activity-hook.sh) into
+    /// /tmp/claude-console-activity.json. Drives the Status key's working / waiting / idle face.
+    /// </summary>
+    public class ActivityState
+    {
+        [JsonPropertyName("state")]
+        public String State { get; set; }   // "busy" | "waiting" | "done"
+
+        [JsonPropertyName("ts")]
+        public Int64 Ts { get; set; }       // unix seconds — used for the staleness guard
+    }
 }

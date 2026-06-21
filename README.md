@@ -63,6 +63,23 @@ The live Cost / Model / Context keys read `/tmp/claude-console-state.json`, writ
 
 (The handler captures session state for the plugin and prints no visible status line — customize `scripts/statusline-handler.sh` if you want one.)
 
+## Live activity indicator (working / waiting / done)
+
+The **Activity** key can show — at a glance — whether Claude is **working**, **waiting on you**, or **ready**, which is handy for watching a long agentic run from across the room. It's driven by Claude Code *hooks* that push activity to the keypad. Add them to `~/.claude/settings.json` (merge into any existing `hooks` block):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "bash /ABSOLUTE/PATH/TO/claude-console/scripts/activity-hook.sh busy" }] }],
+    "PostToolUse":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "bash /ABSOLUTE/PATH/TO/claude-console/scripts/activity-hook.sh busy" }] }],
+    "Notification":     [{ "hooks": [{ "type": "command", "command": "bash /ABSOLUTE/PATH/TO/claude-console/scripts/activity-hook.sh waiting" }] }],
+    "Stop":             [{ "hooks": [{ "type": "command", "command": "bash /ABSOLUTE/PATH/TO/claude-console/scripts/activity-hook.sh done" }] }]
+  }
+}
+```
+
+Restart Claude Code so the hooks take effect. Without them, the Activity key still shows **Waiting** on a permission prompt and **Ready** otherwise. The Context key also turns **amber at 75%** and **red at 90%** so you compact before an auto-compaction.
+
 ## Using voice
 
 - **Voice key** — press (you'll hear a *Tink*), say your prompt, press again. It transcribes locally and types the text into the focused terminal.
@@ -79,14 +96,42 @@ When Claude asks something, answer from the keypad instead of the keyboard:
 
 These inject keystrokes into the focused terminal, so keep it frontmost (same Accessibility permission as the prompt keys).
 
+## Scrolling the conversation
+
+**Scroll Up / Scroll Down** page back and forth through the Claude Code transcript so you can read earlier messages without touching the keyboard. They send Page Up / Page Down to the focused terminal and work in both rendering modes:
+
+- **Classic mode** (default) — Claude Code leaves the conversation in the terminal's scrollback, so these scroll Terminal natively. Keep a generous scrollback limit (Terminal ▸ Settings ▸ Profiles ▸ Window ▸ Scrollback) so there's history to scroll through.
+- **Fullscreen mode** (`/tui fullscreen`) — Claude Code scrolls its own buffer by half a screen.
+
+Like the prompt and answer keys, these inject into the frontmost terminal, so keep it focused.
+
+## Customizing prompt keys
+
+The **Prompts** keys are defined in `~/.claude/claude-console/prompts.json` (seeded with the defaults on first run). Edit it to bind your own prompts and macros — each entry becomes its own bindable key:
+
+```json
+[
+  { "id": "ship", "label": "Ship", "icon": "create_pr",
+    "prompt": "Run the tests; if green, commit with a conventional message and open a PR." },
+  { "id": "standup", "label": "Standup", "icon": "log",
+    "prompt": "Summarize what we changed today as 3 standup bullets." }
+]
+```
+
+- **`id`** — unique key id · **`label`** — text under the icon · **`prompt`** — typed into the terminal on press.
+- **`icon`** — an embedded icon basename; its baked colour is the key's colour. Pick from: `fix_bug`, `write_tests`, `explore`, `explain`, `refactor`, `review`, `optimize`, `security`, `document`, `deploy`, `commit`, `diff`, `push`, `create_pr`, `status`, `log`, `project`, `terminal` (an unknown name falls back to text).
+
+Reload the plugin (rebuild, or restart Logi Options+) to pick up edits. Delete the file to restore the built-in defaults.
+
 ## Key map
 
 | Group | Keys |
 |-------|------|
-| **Core** | Model* · Cost* · Status* · Esc · Plan · Compact · Context · Clear · Exit · Opus · Sonnet · Haiku |
+| **Core** | Model* · Cost* · Activity* · Esc · Plan · Compact · Context · Clear · Exit · Opus · Sonnet · Haiku |
 | **Answer** | Yes · No · Up · Down · Return |
 | **Prompts** | Fix Bug · Write Tests · Explore · Explain · Refactor · Review · Optimize · Security · Document · Deploy |
 | **Git** | Commit · Diff · Push · Create PR · Status · Log |
+| **Scroll** | Scroll Up · Scroll Down |
 | **Terminal** | Terminal · New Tab · New Claude · Next Tab · Prev Tab · **Go to Project** (voice) |
 | **Universal** | **Voice** |
 

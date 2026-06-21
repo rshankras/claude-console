@@ -65,6 +65,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             => this.Label().Replace("\n", Environment.NewLine);
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
-            => KeyImage.Render(imageSize, this.Label(), KeyImage.Slate, "gauge");
+        {
+            // Proactive warning: the gauge turns amber as the window fills, red when nearly full.
+            var icon = _percent >= 90 ? "gauge_crit" : _percent >= 75 ? "gauge_warn" : "gauge";
+            return KeyImage.Render(imageSize, this.Label(), KeyImage.Slate, icon);
+        }
     }
 }

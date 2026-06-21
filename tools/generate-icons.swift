@@ -42,10 +42,22 @@ let icons: [(String, String, String)] = [
     ("up", "arrowtriangle.up.fill", Y),
     ("down", "arrowtriangle.down.fill", Y),
     ("enter", "return", G),
-    // Live-display face icon (Context usage key).
+    // Scroll keys — page back/forward through the conversation (basenames match ScrollCommand params).
+    // Double chevrons read as "page/scroll", distinct from the single Answer arrowtriangles above.
+    ("scroll_up", "chevron.up.2", B),
+    ("scroll_down", "chevron.down.2", B),
+    // Live-display face icon (Context usage key) + amber/red variants for the fill warning (#2).
     ("gauge", "gauge.medium", B),
-    // Model cycle fallback brain (white) — shown before the live model is known.
+    ("gauge_warn", "gauge.medium", A),   // 75%+  — getting full
+    ("gauge_crit", "gauge.medium", R),   // 90%+  — compact soon
+    // Model cycle fallback brain — shown before the live model is known.
     ("brain", "brain", P),
+    // Activity status key (#3): working / needs-you / idle.
+    ("busy", "hourglass", B),
+    ("busy0", "hourglass.tophalf.filled", B),     // animated "Working" — sand flips top↔bottom
+    ("busy1", "hourglass.bottomhalf.filled", B),
+    ("waiting", "bell.badge.fill", R),
+    ("done", "circle.fill", G),          // ready/idle status dot — distinct from the Yes checkmark
 ]
 
 // Coloured model brains — rendered IN COLOUR (not white) so each tier is distinguishable at a
