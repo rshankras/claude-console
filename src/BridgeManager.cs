@@ -266,6 +266,26 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
+        /// Accept the highlighted autocomplete AND submit it in one press: Tab, then Return after a
+        /// short delay so the completion registers before Enter fires. macOS only.
+        /// </summary>
+        public void InjectTabThenEnter()
+        {
+            if (!OperatingSystem.IsMacOS())
+            {
+                PluginLog.Info("BridgeManager.InjectTabThenEnter: non-macOS — not implemented");
+                return;
+            }
+
+            RunOsascript(new List<String>
+            {
+                "-e", "tell application \"System Events\" to key code 48", // Tab — accept the suggestion
+                "-e", "delay 0.3",                                         // let the completion register
+                "-e", "tell application \"System Events\" to key code 36", // Return — submit
+            });
+        }
+
+        /// <summary>
         /// Run an arbitrary multi-line AppleScript via osascript (macOS only) — for automation
         /// richer than a single keystroke, e.g. clicking a menu item. Needs Accessibility.
         /// </summary>

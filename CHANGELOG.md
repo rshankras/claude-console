@@ -3,6 +3,28 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Tab** control key — accepts the highlighted autocomplete and submits it in one press
+  (Tab, then Return). Distinct from the **Mode** key's Shift+Tab.
+
+### Changed
+- Renamed the **Plan** key to **Mode** — it sends Shift+Tab, which cycles Claude Code's input
+  modes (normal → auto-accept edits → plan), and now uses a switch icon. Binding is preserved
+  (action id unchanged).
+- The **Model** key now opens Claude Code's `/model` picker instead of cycling, and still shows
+  the current model live as a colour-coded brain.
+
+### Removed
+- The direct **Opus / Sonnet / Haiku** model keys — superseded by the single **Model** key's
+  `/model` picker.
+
+### Fixed
+- Key icons could resolve to the wrong image when a basename was a suffix of another
+  (e.g. Arrow Up rendered the Scroll Up icon); `KeyImage` now qualifies the lookup with the
+  `icons.` folder segment.
+
 ## [1.0.0] — 2026-06-17
 
 Initial release.

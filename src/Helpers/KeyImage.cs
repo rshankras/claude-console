@@ -40,7 +40,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     try
                     {
-                        var img = PluginResources.ReadImage(icon + ".png");
+                        // Qualify with the "icons." folder segment: the SDK's resource finder matches
+                        // by name SUFFIX, so a bare "up.png" also matches "scroll_up.png" (and "tab.png"
+                        // matches "new_tab.png"), and it returns the first alphabetically — the wrong one.
+                        // "icons.up.png" pins the lookup to exactly one embedded resource.
+                        var img = PluginResources.ReadImage("icons." + icon + ".png");
                         var w = bitmap.Width;
                         var h = bitmap.Height;
                         var s = (Int32)(Math.Min(w, h) * 0.82);

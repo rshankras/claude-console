@@ -9,7 +9,8 @@ let icons: [(String, String, String)] = [
     ("esc", "xmark.octagon.fill", R),
     ("clear", "trash.fill", A),
     ("exit", "power", R),
-    ("plan", "checklist", P),
+    ("plan", "switch.2", P),                         // "Mode" key (action id still "plan") — Shift+Tab mode cycler
+    ("tab", "arrow.right.to.line", Y),               // Tab+Enter — accept autocomplete & submit (distinct from Mode's Shift+Tab)
     ("compact", "arrow.down.right.and.arrow.up.left", Y),
     ("context", "doc.text.fill", Y),
     ("model", "sparkles", P),
@@ -43,9 +44,9 @@ let icons: [(String, String, String)] = [
     ("down", "arrowtriangle.down.fill", Y),
     ("enter", "return", G),
     // Scroll keys — page back/forward through the conversation (basenames match ScrollCommand params).
-    // Double chevrons read as "page/scroll", distinct from the single Answer arrowtriangles above.
-    ("scroll_up", "chevron.up.2", B),
-    ("scroll_down", "chevron.down.2", B),
+    // Arrow-to-line reads as "page/jump", clearly distinct from the solid Answer arrowtriangles above.
+    ("scroll_up", "arrow.up.to.line", B),
+    ("scroll_down", "arrow.down.to.line", B),
     // Live-display face icon (Context usage key) + amber/red variants for the fill warning (#2).
     ("gauge", "gauge.medium", B),
     ("gauge_warn", "gauge.medium", A),   // 75%+  — getting full
@@ -61,7 +62,8 @@ let icons: [(String, String, String)] = [
 ]
 
 // Coloured model brains — rendered IN COLOUR (not white) so each tier is distinguishable at a
-// glance. Basenames brain_<id> match ModelSetCommand's action params (opus / sonnet / haiku).
+// glance. Basenames brain_<id> are used by the Model key's live display (ModelCycleCommand) to
+// tint the current-model brain (opus / sonnet / haiku).
 let coloredIcons: [(String, String, String)] = [
     ("brain_haiku",  "brain", G),  // fast      → green
     ("brain_sonnet", "brain", B),  // balanced  → blue

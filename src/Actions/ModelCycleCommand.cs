@@ -1,22 +1,22 @@
 namespace Loupedeck.ClaudeConsolePlugin.Actions
 {
     using System;
-    using System.Collections.Generic;
 
     /// <summary>
-    /// LCD Key 4: Model Cycle — cycles through opus/sonnet/haiku.
-    /// Writes a switch_model command to cmd-queue.jsonl.
-    /// LCD display updates to show current model name from statusline.
+    /// "Model" key (group "Core"). Live-displays the CURRENT model as a colour-coded brain (read
+    /// from the status line) and, on press, sends "/model" to open Claude Code's built-in model
+    /// picker — navigate it with the Answer Up/Down/Return keys. Replaces the old direct
+    /// Opus/Sonnet/Haiku keys: the picker is always current (no hardcoded model list) and there's
+    /// no cycle-index drift. (Class name is historical — it used to cycle opus/sonnet/haiku; kept
+    /// as-is so existing key bindings survive the behaviour change.)
     /// </summary>
     public class ModelCycleCommand : PluginDynamicCommand
     {
         private readonly BridgeManager _bridge;
-        private readonly String[] _models = { "opus", "sonnet", "haiku" };
-        private Int32 _currentIndex;
         private String _displayName = "Model";
 
         public ModelCycleCommand()
-            : base(displayName: "Model", description: "Cycle through Claude models (Opus / Sonnet / Haiku)", groupName: "Core")
+            : base(displayName: "Model", description: "Current model; press to open the /model picker", groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
 
@@ -33,24 +33,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         protected override void RunCommand(String actionParameter)
         {
-            _currentIndex = (_currentIndex + 1) % _models.Length;
-            // Types "/model <name>" into the terminal — the built-in Claude Code slash command.
-            _bridge.SendPrompt($"/model {_models[_currentIndex]}");
-            PluginLog.Info($"ModelCycleCommand: Switching to {_models[_currentIndex]}");
+            // Open the built-in picker rather than guessing the next model — always current, no drift.
+            _bridge.SendPrompt("/model");
+            PluginLog.Info("ModelCycleCommand: opened /model picker");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
         {
-            return $"Model{Environment.NewLine}{_displayName}";
+            // Static "Model" label — the brain icon's colour (set in GetCommandImage from the live
+            // model) is what tells you which model you're on.
+            return "Model";
         }
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
-            // Brain tinted to the CURRENT model's colour (matches the Opus/Sonnet/Haiku keys);
-            // falls back to the neutral white brain until the live model is known.
+            // Brain tinted to the CURRENT model's colour; falls back to the neutral brain until the
+            // live model is known.
             var key = (_displayName ?? "").ToLowerInvariant();
             var icon = key == "opus" || key == "sonnet" || key == "haiku" ? $"brain_{key}" : "brain";
-            return KeyImage.Render(imageSize, $"Model\n{_displayName}", KeyImage.Purple, icon);
+            return KeyImage.Render(imageSize, "Model", KeyImage.Purple, icon);
         }
     }
 }

@@ -17,7 +17,8 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 - **Terminal & session nav** — activate Terminal, new tab, new Claude session, next/prev tab.
 - **Offline voice dictation** — press, speak, press again; [whisper.cpp](https://github.com/ggerganov/whisper.cpp) transcribes locally and types it into your terminal.
 - **Voice "Go to Project"** — say a project name; it scans your folders, fuzzy‑matches, and opens a new tab `cd`'d into the project with `claude` running.
-- **Model switching** — Opus / Sonnet / Haiku, plus Plan, Compact, Context, Clear.
+- **Model & modes** — a **Model** key opens the `/model` picker and shows the current model live; **Mode** cycles Claude Code's input modes (normal → auto‑accept edits → plan); plus Compact, Context, Clear.
+- **Accept autocomplete** — **Tab** completes a slash‑command / `@file` suggestion and runs it in one press.
 
 See [PRIVACY.md](PRIVACY.md) — everything runs on your Mac.
 
@@ -96,6 +97,13 @@ When Claude asks something, answer from the keypad instead of the keyboard:
 
 These inject keystrokes into the focused terminal, so keep it frontmost (same Accessibility permission as the prompt keys).
 
+## Accepting autocomplete & switching modes
+
+- **Tab** — completes Claude Code's highlighted suggestion (a `/slash` command or an `@file` mention) **and submits it** in one press, so you can fire a slash command without the keyboard. Because it always presses Return, it also sends `@file` completions and half‑typed commands — use **Up / Down / Return** if you want to complete *without* sending.
+- **Mode** — sends **Shift+Tab**, which cycles Claude Code's input modes shown at the bottom of the TUI: **normal → auto‑accept edits → plan**. From normal, one press lands on auto‑accept edits and a second reaches plan mode.
+
+Both inject keystrokes into the frontmost terminal (same Accessibility permission as the other keys).
+
 ## Scrolling the conversation
 
 **Scroll Up / Scroll Down** page back and forth through the Claude Code transcript so you can read earlier messages without touching the keyboard. They send Page Up / Page Down to the focused terminal and work in both rendering modes:
@@ -127,7 +135,7 @@ Reload the plugin (rebuild, or restart Logi Options+) to pick up edits. Delete t
 
 | Group | Keys |
 |-------|------|
-| **Core** | Model* · Cost* · Activity* · Esc · Plan · Compact · Context · Clear · Exit · Opus · Sonnet · Haiku |
+| **Core** | Model* · Cost* · Activity* · Esc · Mode · Tab · Compact · Context · Clear · Exit |
 | **Answer** | Yes · No · Up · Down · Return |
 | **Prompts** | Fix Bug · Write Tests · Explore · Explain · Refactor · Review · Optimize · Security · Document · Deploy |
 | **Git** | Commit · Diff · Push · Create PR · Status · Log |
