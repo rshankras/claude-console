@@ -6,7 +6,7 @@ import AppKit
 let G = "22c55e", R = "ef4444", A = "f59e0b", B = "60a5fa", P = "a78bfa", Y = "94a3b8"
 let icons: [(String, String, String)] = [
     ("voice", "mic.fill", P),
-    ("esc", "xmark.octagon.fill", R),
+    ("esc", "hand.raised.fill", R),                 // red stop-hand — "interrupt/stop"; distinct from No's red ✕ (xmark.circle.fill)
     ("clear", "trash.fill", A),
     ("exit", "power", R),
     ("plan", "switch.2", P),                         // "Mode" key (action id still "plan") — Shift+Tab mode cycler
