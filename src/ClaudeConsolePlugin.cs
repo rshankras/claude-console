@@ -30,6 +30,10 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         public override void Load()
         {
+            // Hand the SDK's real on-disk plugin path to the bridge (Assembly.Location is empty in
+            // the SDK's load context) so it can locate the in-package voice payload on first use.
+            BridgeManager.Instance.PluginAssemblyFilePath = this.AssemblyFilePath;
+
             // All actions are auto-discovered; we just start the IPC bridge.
             BridgeManager.Instance.StartPolling();
             PluginLog.Info("ClaudeConsolePlugin: Loaded — actions auto-discovered; bridge polling started");

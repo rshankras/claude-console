@@ -49,6 +49,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         private const String VoiceModelSha256 = "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
         private const Int64 VoiceModelSize = 147964211;
 
+        // On-disk path of the plugin DLL — set by ClaudeConsolePlugin.Load from the SDK's
+        // Plugin.AssemblyFilePath. Assembly.Location is EMPTY in the SDK's load context, so this is
+        // how EnsureVoiceRuntimeInstalled locates the in-package voice payload (bin/voice/).
+        public String PluginAssemblyFilePath { get; set; }
+
         private Timer _pollTimer;
         private ClaudeState _currentState;
         private ActivityState _activity;
@@ -537,12 +542,21 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             try
             {
-                var pkgDir = Path.GetDirectoryName(typeof(BridgeManager).Assembly.Location);
+                // The SDK loads the plugin in a context where Assembly.Location is empty, so use the
+                // path the plugin captured from Plugin.AssemblyFilePath; fall back to Location.
+                var asmPath = PluginAssemblyFilePath;
+                if (String.IsNullOrEmpty(asmPath))
+                {
+                    asmPath = typeof(BridgeManager).Assembly.Location;
+                }
+                var pkgDir = String.IsNullOrEmpty(asmPath) ? null : Path.GetDirectoryName(asmPath);
                 if (String.IsNullOrEmpty(pkgDir))
                 {
+                    PluginLog.Info("BridgeManager.EnsureVoiceRuntimeInstalled: plugin dir unknown — skipping");
                     return;
                 }
                 var pkgVoice = Path.Combine(pkgDir, "voice");
+                PluginLog.Verbose($"BridgeManager.EnsureVoiceRuntimeInstalled: pkgVoice={pkgVoice} exists={Directory.Exists(pkgVoice)}");
 
                 var pkgHelper = Path.Combine(pkgVoice, "ClaudeVoiceHelper.app");
                 if (Directory.Exists(pkgHelper) && !Directory.Exists(VoiceHelperApp))
