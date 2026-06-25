@@ -5,6 +5,9 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.Diagnostics;
     using System.IO;
     using System.Linq;
+    using System.Net.Http;
+    using System.Security.Cryptography;
+    using System.Text;
     using System.Text.Json;
     using System.Threading;
 
@@ -31,9 +34,19 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Voice capture IPC (must match ClaudeVoiceHelper's defaults in tools/voice/).
         private static readonly String VoiceStopFile = Path.Combine(TempDir, "claude-console-voice.stop");
         private static readonly String VoiceTranscriptFile = Path.Combine(TempDir, "claude-console-voice-transcript.txt");
-        private static readonly String VoiceHelperApp = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "claude-console", "ClaudeVoiceHelper.app");
+
+        // Runtime home shared with the voice helper: ~/.claude/claude-console/
+        private static readonly String ClaudeConsoleHome = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "claude-console");
+        private static readonly String VoiceHelperApp = Path.Combine(ClaudeConsoleHome, "ClaudeVoiceHelper.app");
+        // Self-contained whisper-cli produced by tools/voice/bundle-whisper.sh (no Homebrew needed).
+        private static readonly String BundledWhisperCli = Path.Combine(ClaudeConsoleHome, "whisper-bin", "whisper-cli");
+
+        // Speech model — fetched on first use if absent (see EnsureVoiceModel). base.en ≈ 142 MB.
+        private static readonly String VoiceModelFile = Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
+        private const String VoiceModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
+        private const String VoiceModelSha256 = "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
+        private const Int64 VoiceModelSize = 147964211;
 
         private Timer _pollTimer;
         private ClaudeState _currentState;
@@ -480,15 +493,121 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
+            // Make sure the speech model is present. If it's still downloading, skip this capture
+            // (an audible beep tells the user to try again once it's ready) rather than record audio
+            // the helper can't transcribe yet.
+            if (!EnsureVoiceModel())
+            {
+                PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
+                RunAppleScript("beep");
+                return;
+            }
+
             // Launch via LaunchServices (open) so the helper is its own TCC subject. Detached.
-            RunDetached("open", new List<String>
+            var args = new List<String>
             {
                 VoiceHelperApp, "--args",
                 "--maxsec", "60",
                 "--stopflag", VoiceStopFile,
                 "--transcript", VoiceTranscriptFile,
-            });
+                "--model", VoiceModelFile,
+            };
+            // Point the helper at the self-contained whisper-cli when we've bundled it.
+            if (File.Exists(BundledWhisperCli))
+            {
+                args.Add("--whisper");
+                args.Add(BundledWhisperCli);
+            }
+            RunDetached("open", args);
             PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Speech-model bootstrap — fetch ggml-base.en.bin on first use so the user never has to
+        // download it by hand. The download is verified by sha256 before it's promoted into place.
+        // ------------------------------------------------------------------------------------------
+        private static readonly HttpClient _modelHttp = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        private Int32 _modelDownloading; // 0 = idle, 1 = a background download is in flight
+
+        // True when the model is present and complete. If it is missing, kicks off a one-time
+        // background download and returns false so the caller can skip the current capture.
+        private Boolean EnsureVoiceModel()
+        {
+            try
+            {
+                var fi = new FileInfo(VoiceModelFile);
+                if (fi.Exists && fi.Length == VoiceModelSize)
+                {
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager.EnsureVoiceModel: stat failed");
+            }
+
+            if (Interlocked.CompareExchange(ref _modelDownloading, 1, 0) == 0)
+            {
+                new Thread(DownloadVoiceModel) { IsBackground = true, Name = "claude-voice-model-download" }.Start();
+            }
+            return false;
+        }
+
+        private void DownloadVoiceModel()
+        {
+            var partFile = VoiceModelFile + ".part";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(VoiceModelFile));
+                TryDelete(partFile);
+                PluginLog.Info($"BridgeManager: downloading whisper model (~142 MB) from {VoiceModelUrl}");
+
+                using (var resp = _modelHttp.GetAsync(VoiceModelUrl, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult())
+                {
+                    resp.EnsureSuccessStatusCode();
+                    using (var src = resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
+                    using (var dst = new FileStream(partFile, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        src.CopyTo(dst, 1 << 20);
+                    }
+                }
+
+                var sha = HashFileSha256(partFile);
+                if (!String.Equals(sha, VoiceModelSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    PluginLog.Warning($"BridgeManager: model checksum mismatch (got {sha}) — discarding download");
+                    TryDelete(partFile);
+                    return;
+                }
+
+                TryDelete(VoiceModelFile);
+                File.Move(partFile, VoiceModelFile);
+                PluginLog.Info("BridgeManager: whisper model ready");
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager: whisper model download failed");
+                TryDelete(partFile);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _modelDownloading, 0);
+            }
+        }
+
+        private static String HashFileSha256(String path)
+        {
+            using (var sha = SHA256.Create())
+            using (var fs = File.OpenRead(path))
+            {
+                var hash = sha.ComputeHash(fs);
+                var sb = new StringBuilder(hash.Length * 2);
+                foreach (var b in hash)
+                {
+                    sb.Append(b.ToString("x2"));
+                }
+                return sb.ToString();
+            }
         }
 
         // Stop voice capture and TYPE the transcript into the focused terminal (dictation).

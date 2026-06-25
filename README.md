@@ -28,7 +28,7 @@ See [PRIVACY.md](PRIVACY.md) — everything runs on your Mac.
 - **Logitech MX Creative Keypad** + **Logi Options+** (installs the *Logi Plugin Service*).
 - **[Claude Code](https://claude.com/claude-code)** CLI.
 - To build from source: **.NET 8 SDK** and the **Logi Plugin Tool** (`dotnet tool install --global LogiPluginTool`).
-- For voice: **whisper.cpp** (`brew install whisper-cpp`) and a ggml model (see below).
+- For voice: **whisper.cpp** (`brew install whisper-cpp`) — needed only to *build* the bundled, self-contained `whisper-cli`. The speech model downloads automatically on first use.
 
 ## Install (build from source)
 
@@ -37,15 +37,15 @@ See [PRIVACY.md](PRIVACY.md) — everything runs on your Mac.
 cd src
 dotnet build -c Debug
 
-# 2. Build the offline voice helper (signed app bundle, installed to ~/.claude/claude-console)
+# 2. Build the voice helper AND bundle a self-contained whisper-cli
+#    (both installed to ~/.claude/claude-console; no Homebrew needed at runtime)
 cd ..
 bash tools/voice/build.sh
-
-# 3. Get a whisper model (~142 MB, base.en is a good speed/accuracy balance)
-mkdir -p ~/.claude/claude-console/whisper
-curl -L -o ~/.claude/claude-console/whisper/ggml-base.en.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
 ```
+
+The ~142 MB `base.en` whisper model is fetched automatically (and checksum-verified) the first time
+you press the Voice key — no manual download. To pre-seed it, just drop `ggml-base.en.bin` at
+`~/.claude/claude-console/whisper/`.
 
 A pre‑packaged install via the Logitech Marketplace is planned — see [SUBMISSION.md](SUBMISSION.md).
 
@@ -89,6 +89,14 @@ Restart Claude Code so the hooks take effect. Without them, the Activity key sti
 - **Go to Project** — press, say a project name (e.g. *"indie app autopilot"*), press again. Opens a new tab in that project running `claude`; reuses an idle shell tab, or opens a new one if `claude` is already running.
 
 First use prompts once for **Microphone** permission (granted to the helper, not the daemon). The plugin also needs **Accessibility** permission for the Logi Plugin Service (to type into the terminal).
+
+**Voice records but types nothing (empty transcript):** macOS ties the Microphone grant to the helper's code signature, so **re-signing or rebuilding the helper resets it** — and it fails *silently* (no re-prompt). Reset the permission and re-grant on the next press:
+
+```bash
+tccutil reset Microphone com.rshankar.claudeconsole.voicehelper
+```
+
+A stable Developer‑ID signature (via `tools/voice/sign-and-notarize.sh`) avoids this going forward.
 
 ## Answering Claude's questions
 
@@ -155,11 +163,11 @@ MX Creative Keypad → Logi Plugin Service → C# plugin (BridgeManager)
 Claude Code ← status line (bash) + voice helper (Swift + whisper.cpp)
 ```
 
-File‑based IPC in `/tmp` (`claude-console-*.json`); action keys type into the terminal via `osascript`; voice records through a signed helper app that owns its own Microphone permission. Full architecture and packaging notes in [SUBMISSION.md](SUBMISSION.md).
+File‑based IPC in `/tmp` (`claude-console-*.json`); action keys type into the terminal via `osascript`; voice records through a notarized helper app that owns its own Microphone permission, then transcribes with a bundled, self‑contained `whisper-cli` (no Homebrew at runtime). Full architecture and packaging notes in [SUBMISSION.md](SUBMISSION.md).
 
 ## Building & packaging
 
-`dotnet build` hot‑reloads the plugin during development. To produce a Marketplace package (`.lplug4`) and the bundling/signing steps, see **[SUBMISSION.md](SUBMISSION.md)**.
+`dotnet build` hot‑reloads the plugin during development. `tools/voice/build.sh` builds the voice helper + bundles a self‑contained `whisper-cli` (ad‑hoc signed for dev); `tools/voice/sign-and-notarize.sh` produces the Developer‑ID‑signed, notarized release build. To produce a Marketplace package (`.lplug4`) and the full bundling/signing steps, see **[SUBMISSION.md](SUBMISSION.md)**.
 
 ## License
 

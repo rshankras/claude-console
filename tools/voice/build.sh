@@ -15,11 +15,22 @@ echo ">>> compiling (Swift, arm64)"
 swiftc -O "$HERE/ClaudeVoiceHelper.swift" -o "$BIN" \
   -framework Foundation -framework AVFoundation -framework AppKit
 
-echo ">>> ad-hoc signing"
-codesign --force --sign - --identifier com.rshankar.claudeconsole.voicehelper "$APP"
+# Signing identity: "-" (ad-hoc, the default for dev builds) or a "Developer ID Application: …" name
+# (exported by sign-and-notarize.sh for a release). Developer-ID signing also turns on the hardened
+# runtime + secure timestamp and applies the microphone entitlement.
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+if [ "$SIGN_IDENTITY" = "-" ]; then
+  echo ">>> ad-hoc signing"
+  codesign --force --sign - --identifier com.rshankar.claudeconsole.voicehelper "$APP"
+else
+  echo ">>> Developer-ID signing (hardened runtime + mic entitlement): $SIGN_IDENTITY"
+  ENT="${HELPER_ENTITLEMENTS:-$HERE/helper.entitlements}"
+  codesign --force --timestamp --options runtime --entitlements "$ENT" \
+    --identifier com.rshankar.claudeconsole.voicehelper --sign "$SIGN_IDENTITY" "$APP"
+fi
 
 echo ">>> signature:"
-codesign -dvv "$APP" 2>&1 | grep -E "Identifier=|Signature=" || true
+codesign -dvv "$APP" 2>&1 | grep -E "Identifier=|Authority=|Signature=" || true
 echo "built: $APP"
 
 # Install to the plugin's runtime home (next to the whisper model + hooks). The plugin launches
@@ -32,3 +43,13 @@ mkdir -p "$(dirname "$RUNTIME")"
 rm -rf "$RUNTIME"
 cp -R "$APP" "$RUNTIME"
 echo "installed: $RUNTIME"
+
+# Bundle a self-contained whisper-cli next to the helper so voice needs no Homebrew at runtime.
+# (Skips gracefully if whisper-cli isn't installed to build from — voice falls back to a system
+# whisper-cli, and the plugin downloads the speech model itself on first use.)
+if command -v whisper-cli >/dev/null 2>&1; then
+  echo ">>> bundling self-contained whisper-cli"
+  bash "$HERE/bundle-whisper.sh"
+else
+  echo ">>> skipping whisper bundle (no whisper-cli to vendor; 'brew install whisper-cpp' to enable)"
+fi

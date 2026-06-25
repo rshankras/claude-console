@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- whisper.cpp (ggml) runs inference on the GPU via Metal. Under the hardened runtime (required
+         for notarization) Metal's runtime shader compilation aborts unless these exceptions are
+         granted. Empirically disable-library-validation + allow-unsigned-executable-memory are
+         required; allow-jit is included as belt-and-suspenders across macOS/GPU versions. All three
+         are notarization-compatible. Applied to the whisper-cli executable only. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>

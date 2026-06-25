@@ -19,7 +19,7 @@ import AppKit
 //   --model <bin>       whisper ggml model        (~/.claude/claude-console/whisper/ggml-base.en.bin)
 //   --transcript <txt>  where to write transcript (/tmp/claude-console-voice-transcript.txt)
 //   --stopflag <path>   touch this to stop early  (/tmp/claude-console-voice.stop)
-//   --whisper <bin>     whisper-cli binary        (auto-detected: /opt/homebrew or /usr/local)
+//   --whisper <bin>     whisper-cli binary        (auto-detected: bundled whisper-bin, else Homebrew)
 //   --maxsec <N>        hard cap on recording     (30)
 
 func argValue(_ name: String) -> String? {
@@ -41,7 +41,9 @@ let maxSec = Double(argValue("--maxsec") ?? "30") ?? 30
 
 func findWhisper() -> String? {
     if let w = argValue("--whisper") { return w }
-    for c in ["/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli",
+    // Prefer the self-contained bundle (no Homebrew needed); fall back to a system install.
+    for c in ["\(home)/.claude/claude-console/whisper-bin/whisper-cli",
+              "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli",
               "/opt/homebrew/bin/whisper-cpp", "/usr/local/bin/whisper-cpp"] {
         if FileManager.default.isExecutableFile(atPath: c) { return c }
     }
