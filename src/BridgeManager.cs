@@ -38,6 +38,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         private Timer _pollTimer;
         private ClaudeState _currentState;
         private ActivityState _activity;
+        private String _activeTty;   // normalized TTY (e.g. "ttys003") of the frontmost Terminal tab; null until known
+        private Int32 _pollTick;     // drives the ~1s cadence of the frontmost-tab check
 
         public event Action<ClaudeState> OnStateChanged;
         public event Action<ActivityState> OnActivityChanged;
@@ -87,7 +89,19 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             try
             {
-                var newState = ReadJsonWithRetry<ClaudeState>(StateFile);
+                // ~Every second, refresh which Terminal tab is frontmost so the live keys follow the
+                // session you're actually looking at. Keep the last known tab when Terminal isn't
+                // frontmost, so glancing away (e.g. to a browser) doesn't reset the display.
+                if (_pollTick++ % 2 == 0)
+                {
+                    var tty = QueryFrontmostTerminalTty();
+                    if (!String.IsNullOrEmpty(tty))
+                    {
+                        _activeTty = tty;
+                    }
+                }
+
+                var newState = ReadJsonWithRetry<ClaudeState>(ActiveStateFile());
 
                 if (newState != null)
                 {
@@ -96,7 +110,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
 
                 // Activity is pushed by the Claude Code hooks into a separate file; surface changes
-                // so the Status key can flip between working / waiting / idle.
+                // so the Status key can flip between working / waiting / idle — for the active tab.
                 var act = ReadActivity();
                 if (act?.State != _activity?.State)
                 {
@@ -114,18 +128,80 @@ namespace Loupedeck.ClaudeConsolePlugin
         // while is treated as done, so a missed Stop hook can't leave the key stuck on "Working".
         private ActivityState ReadActivity()
         {
-            if (!File.Exists(ActivityFile))
+            var file = ActiveActivityFile();
+            if (!File.Exists(file))
             {
                 return null;
             }
 
-            var a = ReadJsonWithRetry<ActivityState>(ActivityFile);
+            var a = ReadJsonWithRetry<ActivityState>(file);
             if (a != null && a.State == "busy" &&
                 DateTimeOffset.UtcNow.ToUnixTimeSeconds() - a.Ts > 300)
             {
                 a.State = "done";
             }
             return a;
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Per-tab session routing — each Claude Code session (one per Terminal tab) writes a file
+        // keyed by its tab's TTY (the bash scripts derive it via `ps -o tty`); the plugin shows
+        // whichever tab is frontmost. Falls back to the shared file (last writer) when the active
+        // tab has no per-TTY file yet, or when Terminal isn't the frontmost app.
+        // ------------------------------------------------------------------------------------------
+        private String ActiveStateFile() => PerTty("state", StateFile);
+        private String ActiveActivityFile() => PerTty("activity", ActivityFile);
+
+        private String PerTty(String kind, String shared)
+        {
+            var tty = _activeTty;
+            if (!String.IsNullOrEmpty(tty))
+            {
+                var p = Path.Combine(TempDir, $"claude-console-{kind}-{tty}.json");
+                if (File.Exists(p))
+                {
+                    return p;
+                }
+            }
+            return shared;
+        }
+
+        // The TTY (e.g. "ttys003") of the frontmost Terminal tab, or null if Terminal isn't the
+        // frontmost app / isn't running. Matches the key the bash scripts derive from `ps -o tty`.
+        private String QueryFrontmostTerminalTty()
+        {
+            if (!OperatingSystem.IsMacOS())
+            {
+                return null;
+            }
+
+            // "... is running" avoids auto-LAUNCHING Terminal just to query it.
+            var script =
+                "if application \"Terminal\" is running then\n" +
+                "  tell application \"Terminal\"\n" +
+                "    try\n" +
+                "      if frontmost then return tty of selected tab of front window\n" +
+                "    end try\n" +
+                "  end tell\n" +
+                "end if\n" +
+                "return \"\"";
+            return NormalizeTty(RunOsascriptCapture(new List<String> { "-e", script }));
+        }
+
+        // "/dev/ttys003" (osascript) -> "ttys003"; "ttys003" (ps) stays "ttys003".
+        private static String NormalizeTty(String raw)
+        {
+            if (String.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+            var s = raw.Trim();
+            var slash = s.LastIndexOf('/');
+            if (slash >= 0)
+            {
+                s = s.Substring(slash + 1);
+            }
+            return s.Length > 0 && s != "??" ? s : null;
         }
 
         /// <summary>
@@ -339,6 +415,42 @@ namespace Loupedeck.ClaudeConsolePlugin
             catch (Exception ex)
             {
                 PluginLog.Warning(ex, "BridgeManager.RunOsascript: failed (is Accessibility permission granted?)");
+            }
+        }
+
+        // Like RunOsascript but returns stdout (trimmed) — for querying state (e.g. the frontmost
+        // Terminal tab's TTY), not just firing keystrokes.
+        private String RunOsascriptCapture(List<String> args)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "osascript",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true
+                };
+                foreach (var a in args)
+                {
+                    psi.ArgumentList.Add(a);
+                }
+
+                using var proc = Process.Start(psi);
+                if (proc == null)
+                {
+                    return null;
+                }
+                var outp = proc.StandardOutput.ReadToEnd();
+                proc.StandardError.ReadToEnd();
+                proc.WaitForExit(2000);
+                return outp?.Trim();
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, "BridgeManager.RunOsascriptCapture: failed");
+                return null;
             }
         }
 

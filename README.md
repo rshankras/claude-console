@@ -64,6 +64,8 @@ The live Cost / Model / Context keys read `/tmp/claude-console-state.json`, writ
 
 (The handler captures session state for the plugin and prints no visible status line — customize `scripts/statusline-handler.sh` if you want one.)
 
+**Multiple tabs:** run several Claude Code sessions in different Terminal tabs and the live keys (Model / Cost / Context / Activity) follow whichever tab is **frontmost** — each session writes a per‑tab state file keyed by its TTY, and the plugin reads the one matching the active tab (falling back to the shared file otherwise). Terminal.app only.
+
 ## Live activity indicator (working / waiting / done)
 
 The **Activity** key can show — at a glance — whether Claude is **working**, **waiting on you**, or **ready**, which is handy for watching a long agentic run from across the room. It's driven by Claude Code *hooks* that push activity to the keypad. Add them to `~/.claude/settings.json` (merge into any existing `hooks` block):

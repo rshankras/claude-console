@@ -401,3 +401,6 @@ FodyWeavers.xsd
 
 # Claude Console — built voice helper bundle (regenerate with tools/voice/build.sh)
 tools/voice/ClaudeVoiceHelper.app/
+
+# Claude Console — packaged plugin (attach to GitHub Releases, don't commit)
+*.lplug4
