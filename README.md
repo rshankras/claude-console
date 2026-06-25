@@ -30,6 +30,16 @@ See [PRIVACY.md](PRIVACY.md) — everything runs on your Mac.
 - To build from source: **.NET 8 SDK** and the **Logi Plugin Tool** (`dotnet tool install --global LogiPluginTool`).
 - For voice: **whisper.cpp** (`brew install whisper-cpp`) — needed only to *build* the bundled, self-contained `whisper-cli`. The speech model downloads automatically on first use.
 
+## Install (released plugin)
+
+Download the latest `ClaudeConsole_<ver>.lplug4` from [**Releases**](https://github.com/rshankras/claude-console/releases), then:
+
+1. **Double-click it** — Logi Options+ registers the plugin. (Or, with the Logi Plugin Tool: `logiplugintool install ./ClaudeConsole_<ver>.lplug4`.) If macOS blocks it, right-click → **Open**, or run `xattr -dr com.apple.quarantine ClaudeConsole_<ver>.lplug4`.
+2. In **Logi Options+**, select your MX Creative Keypad and add the **Claude Console** actions to the keys.
+3. On first use, grant **Accessibility** to the Logi Plugin Service (so it can type into your terminal). For **voice**, press the Voice key and grant **Microphone** when prompted — the helper and speech model install themselves on first use.
+
+> The action keys (prompts, git, navigation) and **offline voice** work straight from the download. The live **Model / Cost / Context / Activity** keys additionally need the status-line + hook scripts wired into Claude Code — see [Connect the live status bridge](#connect-the-live-status-bridge) below (clone this repo to get the `scripts/`).
+
 ## Install (build from source)
 
 ```bash
