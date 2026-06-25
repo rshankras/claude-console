@@ -3,6 +3,14 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.1.1] — 2026-06-25
+
+### Fixed
+- Voice didn't set up from a **package-only install**: the in-package helper + whisper weren't
+  installed because `Assembly.Location` is empty in the Loupedeck SDK's plugin load context, so the
+  package directory couldn't be found. The plugin now resolves it via the SDK's
+  `Plugin.AssemblyFilePath`. Validated end-to-end on the MX Creative Keypad.
+
 ## [1.1.0] — 2026-06-25
 
 Offline voice is now self-contained and ships in the package.
