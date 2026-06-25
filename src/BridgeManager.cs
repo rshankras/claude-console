@@ -40,7 +40,8 @@ namespace Loupedeck.ClaudeConsolePlugin
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "claude-console");
         private static readonly String VoiceHelperApp = Path.Combine(ClaudeConsoleHome, "ClaudeVoiceHelper.app");
         // Self-contained whisper-cli produced by tools/voice/bundle-whisper.sh (no Homebrew needed).
-        private static readonly String BundledWhisperCli = Path.Combine(ClaudeConsoleHome, "whisper-bin", "whisper-cli");
+        private static readonly String WhisperBinDir = Path.Combine(ClaudeConsoleHome, "whisper-bin");
+        private static readonly String BundledWhisperCli = Path.Combine(WhisperBinDir, "whisper-cli");
 
         // Speech model — fetched on first use if absent (see EnsureVoiceModel). base.en ≈ 142 MB.
         private static readonly String VoiceModelFile = Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
@@ -483,13 +484,17 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
+            // Install the helper + whisper from the plugin package if this is a package-only install
+            // (no-op for dev builds, where tools/voice/build.sh already placed them in the runtime home).
+            EnsureVoiceRuntimeInstalled();
+
             // Clear any stale transcript/flag so we never type a previous result.
             TryDelete(VoiceTranscriptFile);
             TryDelete(VoiceStopFile);
 
             if (!Directory.Exists(VoiceHelperApp))
             {
-                PluginLog.Warning($"BridgeManager.StartVoiceCapture: helper missing at {VoiceHelperApp} (run tools/voice/build.sh)");
+                PluginLog.Warning($"BridgeManager.StartVoiceCapture: helper missing at {VoiceHelperApp} (run tools/voice/build.sh, or reinstall the plugin)");
                 return;
             }
 
@@ -520,6 +525,58 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             RunDetached("open", args);
             PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Package bootstrap — when the helper + whisper ship INSIDE the .lplug4 (release builds), copy
+        // them into the runtime home on first use so a package-only install has working voice. Files
+        // unpacked from a downloaded .lplug4 carry com.apple.quarantine, so strip it after copying.
+        // For dev builds the package has no voice/ payload and the runtime files already exist — no-op.
+        // ------------------------------------------------------------------------------------------
+        private void EnsureVoiceRuntimeInstalled()
+        {
+            try
+            {
+                var pkgDir = Path.GetDirectoryName(typeof(BridgeManager).Assembly.Location);
+                if (String.IsNullOrEmpty(pkgDir))
+                {
+                    return;
+                }
+                var pkgVoice = Path.Combine(pkgDir, "voice");
+
+                var pkgHelper = Path.Combine(pkgVoice, "ClaudeVoiceHelper.app");
+                if (Directory.Exists(pkgHelper) && !Directory.Exists(VoiceHelperApp))
+                {
+                    PluginLog.Info($"BridgeManager: installing voice helper from package -> {VoiceHelperApp}");
+                    Directory.CreateDirectory(ClaudeConsoleHome);
+                    RunSync("/usr/bin/ditto", pkgHelper, VoiceHelperApp);
+                    RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", VoiceHelperApp);
+                }
+
+                var pkgWhisper = Path.Combine(pkgVoice, "whisper-bin");
+                if (Directory.Exists(pkgWhisper) && !Directory.Exists(WhisperBinDir))
+                {
+                    PluginLog.Info($"BridgeManager: installing whisper bundle from package -> {WhisperBinDir}");
+                    RunSync("/usr/bin/ditto", pkgWhisper, WhisperBinDir);
+                    RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", WhisperBinDir);
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager.EnsureVoiceRuntimeInstalled failed");
+            }
+        }
+
+        // Run a process and wait for it (ditto/xattr install steps must finish before launching).
+        private static void RunSync(String file, params String[] args)
+        {
+            var psi = new ProcessStartInfo { FileName = file, UseShellExecute = false, CreateNoWindow = true };
+            foreach (var a in args)
+            {
+                psi.ArgumentList.Add(a);
+            }
+            using var p = Process.Start(psi);
+            p.WaitForExit();
         }
 
         // ------------------------------------------------------------------------------------------

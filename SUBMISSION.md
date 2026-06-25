@@ -8,7 +8,7 @@ Path to a submittable `.lplug4` for the [Logitech Marketplace](https://marketpla
 - [x] License is MIT (GPL is **not** allowed). whisper.cpp and the Whisper model are both MIT.
 - [x] [PRIVACY.md](PRIVACY.md) (on‑device, no data leaves the machine) and a draft [EULA.md](EULA.md).
 - [ ] **Fill `LoupedeckPackage.yaml`**: uncomment and set `supportPageUrl` and `homePageUrl` (e.g. the GitHub repo / issues page); consider a fuller `author`.
-- [~] **Bundle whisper.cpp** (see below) — `tools/voice/bundle-whisper.sh` vendors Homebrew's `whisper-cli` + its dylib closure into a self‑contained `~/.claude/claude-console/whisper-bin/`, now **Developer‑ID signed + hardened‑runtime + notarized** via `tools/voice/sign-and-notarize.sh`. **Remaining:** ship it *inside* the `.lplug4` instead of the runtime home.
+- [x] **Bundle whisper.cpp** (see below) — `tools/voice/bundle-whisper.sh` vendors Homebrew's `whisper-cli` + its dylib closure into a self‑contained `~/.claude/claude-console/whisper-bin/`, **Developer‑ID signed + hardened‑runtime + notarized** via `tools/voice/sign-and-notarize.sh`, and **shipped inside the `.lplug4`** by `tools/voice/pack-release.sh` (installed to the runtime home on first use, quarantine stripped, by `BridgeManager.EnsureVoiceRuntimeInstalled`).
 - [x] **Fetch the model** (~142 MB) — the plugin downloads `ggml-base.en.bin` on first use and verifies its sha256 (`BridgeManager.EnsureVoiceModel` / `DownloadVoiceModel`). No manual step, no package bloat.
 - [x] **Sign + notarize `ClaudeVoiceHelper.app`** — done via `tools/voice/sign-and-notarize.sh` (Developer ID + hardened runtime + mic entitlement; notarized & **stapled**; `spctl` → *accepted, source = Notarized Developer ID*).
 - [ ] Do **not** bundle ffmpeg/sox (GPL/LGPL). The runtime uses AVFoundation; they're dev‑only. ✅
@@ -28,12 +28,12 @@ via `--whisper`, and the helper's `findWhisper()` prefers it. For dev builds it 
 release, `sign-and-notarize.sh` exports `SIGN_IDENTITY` so the same code path signs with Developer ID
 + hardened runtime, then notarizes the bundle.
 
-**Remaining for the shipping build — move into the package:** copy the relocated, signed
-`whisper-bin/` into the `.lplug4` (e.g. under `bin/whisper/`) so a package‑only install has it, and
-point `BundledWhisperCli` at the in‑package path. Today it installs to the runtime home alongside the
-helper, which isn't shipped in the package yet either. Note: loose Mach‑O can't be *stapled* — once
-inside the `.lplug4`/`.app`, strip quarantine on install or rely on the enclosing stapled container
-for the offline Gatekeeper case.
+**Shipped in the package:** `tools/voice/pack-release.sh` copies the relocated, signed `whisper-bin/`
+and the notarized helper into the packed tree under `bin/voice/`. On first voice use,
+`BridgeManager.EnsureVoiceRuntimeInstalled` `ditto`s them into the runtime home and strips
+`com.apple.quarantine` — so a package‑only install has working voice. (Loose Mach‑O can't be
+*stapled*; stripping quarantine after install covers the offline Gatekeeper case, and the binaries
+are notarized so the online check passes regardless.)
 
 The ~142 MB model is **not** bundled — it downloads on first use (see the checklist above), which
 keeps the package small and within any Marketplace size limit.
@@ -67,9 +67,11 @@ A stable Developer‑ID identity also keeps the Microphone TCC grant from resett
 ## Package
 
 ```bash
-cd src && dotnet build -c Release
-logiplugintool pack ./bin/Release ./ClaudeConsole_1_0.lplug4
-logiplugintool install ./ClaudeConsole_1_0.lplug4   # local test before submitting
+bash tools/voice/sign-and-notarize.sh          # Developer-ID sign + notarize helper + whisper
+bash tools/voice/pack-release.sh 1_1           # build, embed voice, pack ClaudeConsole_1_1.lplug4
+logiplugintool install ./ClaudeConsole_1_1.lplug4   # local test before submitting
 ```
 
-Verify the `.lplug4` installs and runs on a clean machine, then submit.
+`pack-release.sh` embeds the notarized voice payload (`bin/voice/`) so voice works from a
+package-only install. Verify the `.lplug4` installs and runs on a **clean machine** (no dev tools,
+no Homebrew), then submit.

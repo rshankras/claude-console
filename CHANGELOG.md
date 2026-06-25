@@ -3,6 +3,25 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.1.0] — 2026-06-25
+
+Offline voice is now self-contained and ships in the package.
+
+### Added
+- **Bundled, self-contained `whisper-cli`** — vendored with its dylib closure and relocated to run
+  with no Homebrew at runtime (`tools/voice/bundle-whisper.sh`).
+- **Speech model auto-downloads** (`ggml-base.en.bin`, ~142 MB) and is checksum-verified on first
+  use — no manual download (`BridgeManager.EnsureVoiceModel`).
+- **Developer-ID signed + notarized** voice helper (stapled) and whisper bundle, so they pass
+  Gatekeeper on other Macs (`tools/voice/sign-and-notarize.sh`).
+- The helper + whisper **ship inside the `.lplug4`** and install to `~/.claude/claude-console/` on
+  first use (quarantine stripped), so **voice works from a package-only install**
+  (`tools/voice/pack-release.sh`, `BridgeManager.EnsureVoiceRuntimeInstalled`).
+
+### Fixed
+- whisper.cpp aborted under the hardened runtime (Metal GPU init); the `whisper-cli` build now
+  carries the required Metal entitlements (`tools/voice/whisper.entitlements`).
+
 ## [1.0.0] — 2026-06-25
 
 Initial release.
