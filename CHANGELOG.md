@@ -3,7 +3,7 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.2.0] — 2026-06-26
 
 ### Added
 - **Ready-made keypad layout** (`profiles/ClaudeConsole-Keypad.lp5`) — a one-click importable Logi
@@ -14,6 +14,11 @@ All notable changes to Claude Console are documented here. Format based on
   the app footprint (voice runtime + ~142 MB model, `/tmp` IPC files, the Microphone grant, any
   crash-disable marker, and a dev `.link`) with a confirmation prompt and a `--dry-run`; the Logi
   Options+ plugin/profile removal and `~/.claude/settings.json` bridge lines stay documented as manual.
+
+### Fixed
+- **Assembly version now tracks the release** (`<Version>` in the csproj). The Logi Plugin Service keys
+  its crash-disable marker by assembly version; with it pinned at 1.0.0.0, any single load-crash could
+  keep the plugin disabled across every rebuild. Versioned builds let a new build dodge a stale marker.
 
 ## [1.1.1] — 2026-06-25
 
