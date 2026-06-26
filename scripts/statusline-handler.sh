@@ -31,3 +31,13 @@ for _ in 1 2 3 4 5 6; do
 done
 
 [ -n "$tty_key" ] && write "/tmp/claude-console-state-$tty_key.json"
+
+# Chain: when the plugin auto-wires the bridge and you ALREADY had a statusLine, it takes over the
+# statusLine slot and records your previous command here, so your status bar still renders. We feed
+# the same session JSON to it and pass its output straight through. No file (manual/standalone
+# install) → nothing to chain. (The plugin only writes a foreign command here, never this handler,
+# so there's no self-loop.)
+CHAIN_FILE="$HOME/.claude/claude-console/statusline-chain"
+if [ -s "$CHAIN_FILE" ]; then
+  printf '%s' "$JSON" | sh -c "$(cat "$CHAIN_FILE")"
+fi

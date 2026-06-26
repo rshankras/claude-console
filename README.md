@@ -38,7 +38,7 @@ Download the latest `ClaudeConsole_<ver>.lplug4` from [**Releases**](https://git
 2. In **Logi Options+**, select your MX Creative Keypad and **import the ready-made layout** so every key is mapped for you — see [Import the ready-made layout](#import-the-ready-made-layout) below. (Prefer to start fresh? You can instead drag individual **Claude Console** actions onto the keys.)
 3. On first use, grant **Accessibility** to the Logi Plugin Service (so it can type into your terminal). For **voice**, press the Voice key and grant **Microphone** when prompted — the helper and speech model install themselves on first use.
 
-> The action keys (prompts, git, navigation) and **offline voice** work straight from the download. The live **Model / Cost / Context / Activity** keys additionally need the status-line + hook scripts wired into Claude Code — see [Connect the live status bridge](#connect-the-live-status-bridge) below (clone this repo to get the `scripts/`).
+> Everything works straight from the download — including the live **Model / Cost / Context / Activity** keys. On first load the plugin installs its status-line + hook scripts and wires them into `~/.claude/settings.json` for you, so the live keys light up on your **next Claude Code session** with no setup. (Details, and how to opt out, in [The live status bridge](#the-live-status-bridge) below.)
 
 ## Import the ready-made layout
 
@@ -73,39 +73,38 @@ you press the Voice key — no manual download. To pre-seed it, just drop `ggml-
 
 A pre‑packaged install via the Logitech Marketplace is planned — see [SUBMISSION.md](SUBMISSION.md).
 
-## Connect the live status bridge
+## The live status bridge
 
-The live Cost / Model / Context keys read `/tmp/claude-console-state.json`, written by the bundled status‑line handler. Wire it into Claude Code once, in `~/.claude/settings.json`:
+The live keys read two `/tmp` files that Claude Code writes via a status‑line handler (Cost / Model / Context ← `claude-console-state.json`) and four hooks (Activity ← `claude-console-activity.json`).
+
+**This is set up automatically — no action needed.** On first load the plugin writes both scripts to `~/.claude/claude-console/scripts/` and merges the `statusLine` + hooks into `~/.claude/settings.json` for you. It's careful about it: backs `settings.json` up first (`settings.json.claude-console.bak`), only **appends** a hook when it isn't already present, and **chains** an existing `statusLine` (records yours and runs it through, so your custom status bar still renders) rather than overwriting it. The live keys come alive on your **next Claude Code session** — Claude Code reads hooks/statusLine at session start, so a session already running won't pick them up. To opt out, create an empty file at `~/.claude/claude-console/no-autowire` before first load.
+
+<details>
+<summary>Wire it by hand instead (e.g. if you opted out)</summary>
+
+Add this to `~/.claude/settings.json` — the scripts live at `~/.claude/claude-console/scripts/` (or use `scripts/` from a clone). Merge the `hooks` into any existing block:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "bash /ABSOLUTE/PATH/TO/claude-console/scripts/statusline-handler.sh"
+    "command": "bash ~/.claude/claude-console/scripts/statusline-handler.sh"
+  },
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh busy" }] }],
+    "PostToolUse":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh busy" }] }],
+    "Notification":     [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh waiting" }] }],
+    "Stop":             [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh done" }] }]
   }
 }
 ```
 
-(The handler captures session state for the plugin and prints no visible status line — customize `scripts/statusline-handler.sh` if you want one.)
+The status‑line handler captures session state for the plugin and prints no visible status line. Restart Claude Code so the changes take effect.
+</details>
+
+Even with no bridge at all, the **Activity** key still shows **Waiting** on a permission prompt and **Ready** otherwise, and the **Context** key turns **amber at 75%** / **red at 90%** so you compact before an auto‑compaction. The Activity key's full **working / waiting / done** detail — handy for watching a long agentic run from across the room — comes from the hooks above.
 
 **Multiple tabs:** run several Claude Code sessions in different Terminal tabs and the live keys (Model / Cost / Context / Activity) follow whichever tab is **frontmost** — each session writes a per‑tab state file keyed by its TTY, and the plugin reads the one matching the active tab (falling back to the shared file otherwise). Terminal.app only.
-
-## Live activity indicator (working / waiting / done)
-
-The **Activity** key can show — at a glance — whether Claude is **working**, **waiting on you**, or **ready**, which is handy for watching a long agentic run from across the room. It's driven by Claude Code *hooks* that push activity to the keypad. Add them to `~/.claude/settings.json` (merge into any existing `hooks` block):
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "bash /ABSOLUTE/PATH/TO/claude-console/scripts/activity-hook.sh busy" }] }],
-    "PostToolUse":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "bash /ABSOLUTE/PATH/TO/claude-console/scripts/activity-hook.sh busy" }] }],
-    "Notification":     [{ "hooks": [{ "type": "command", "command": "bash /ABSOLUTE/PATH/TO/claude-console/scripts/activity-hook.sh waiting" }] }],
-    "Stop":             [{ "hooks": [{ "type": "command", "command": "bash /ABSOLUTE/PATH/TO/claude-console/scripts/activity-hook.sh done" }] }]
-  }
-}
-```
-
-Restart Claude Code so the hooks take effect. Without them, the Activity key still shows **Waiting** on a permission prompt and **Ready** otherwise. The Context key also turns **amber at 75%** and **red at 90%** so you compact before an auto-compaction.
 
 ## Using voice
 
@@ -206,9 +205,9 @@ bash scripts/uninstall.sh            # confirm, then remove
 bash scripts/uninstall.sh --dry-run  # preview only
 ```
 
-It removes `~/.claude/claude-console/` (voice helper, whisper, the speech model, your `prompts.json`), the `/tmp/claude-console-*` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present.
+It removes `~/.claude/claude-console/` (voice helper, whisper, the speech model, your `prompts.json`, and the auto-installed bridge scripts), the `/tmp/claude-console-*` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present.
 
-**3. Live‑status bridge (manual, only if you added it).** Delete the `statusLine` block and the four `claude-console` hook entries from `~/.claude/settings.json`.
+**3. Live‑status bridge (manual).** The plugin auto-wired a `statusLine` + four `claude-console` hooks into `~/.claude/settings.json` on first run. Restore your pre-install config from the backup it made — `~/.claude/settings.json.claude-console.bak` — or just delete the `statusLine` block and the four `claude-console` hook entries by hand. (Do this after step 2, since removing the scripts leaves those entries pointing at nothing.)
 
 For a **clean reinstall**, do 1–3, then reinstall from [Releases](https://github.com/rshankras/claude-console/releases) and re‑import the profile.
 

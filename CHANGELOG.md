@@ -3,6 +3,21 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.3.0] — 2026-06-26
+
+### Added
+- **Live-status bridge auto-wires itself — zero setup.** The live keys (Cost / Context / Model and
+  Activity) read `/tmp` state that only gets written when Claude Code is wired to push it via a
+  `statusLine` handler and four `hooks`. Previously that meant cloning the repo and hand-editing
+  `~/.claude/settings.json`, so a package-only install showed defaults. The plugin now ships both
+  scripts embedded in the DLL, writes them to `~/.claude/claude-console/scripts/` on first load, and
+  merges the `statusLine` + hooks into `settings.json` itself (`BridgeManager.EnsureBridgeAutoWired`).
+  Takes effect on the next Claude Code session.
+- Safe by design: backs `settings.json` up once (`settings.json.claude-console.bak`), **merges rather
+  than clobbers** — appends a hook only if absent, and **chains** an existing `statusLine` (records it
+  to `~/.claude/claude-console/statusline-chain` and runs it through, so a custom status bar still
+  renders) — writes atomically, and is idempotent. Opt out with a `~/.claude/claude-console/no-autowire` file.
+
 ## [1.2.0] — 2026-06-26
 
 ### Added

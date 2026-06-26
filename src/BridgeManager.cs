@@ -9,6 +9,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.Security.Cryptography;
     using System.Text;
     using System.Text.Json;
+    using System.Text.Json.Nodes;
     using System.Threading;
 
     using Loupedeck.ClaudeConsolePlugin.Models;
@@ -42,6 +43,17 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Self-contained whisper-cli produced by tools/voice/bundle-whisper.sh (no Homebrew needed).
         private static readonly String WhisperBinDir = Path.Combine(ClaudeConsoleHome, "whisper-bin");
         private static readonly String BundledWhisperCli = Path.Combine(WhisperBinDir, "whisper-cli");
+
+        // Live-status bridge — scripts + settings.json the plugin auto-wires (see EnsureBridgeAutoWired).
+        private static readonly String ClaudeDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
+        private static readonly String SettingsFile = Path.Combine(ClaudeDir, "settings.json");
+        private static readonly String SettingsBackup = Path.Combine(ClaudeDir, "settings.json.claude-console.bak");
+        private static readonly String ScriptsDir = Path.Combine(ClaudeConsoleHome, "scripts");
+        private static readonly String StatuslineScript = Path.Combine(ScriptsDir, "statusline-handler.sh");
+        private static readonly String ActivityScript = Path.Combine(ScriptsDir, "activity-hook.sh");
+        private static readonly String StatuslineChainFile = Path.Combine(ClaudeConsoleHome, "statusline-chain");
+        private static readonly String BridgeOptOutFile = Path.Combine(ClaudeConsoleHome, "no-autowire");
 
         // Speech model — fetched on first use if absent (see EnsureVoiceModel). base.en ≈ 142 MB.
         private static readonly String VoiceModelFile = Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
@@ -591,6 +603,224 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             using var p = Process.Start(psi);
             p.WaitForExit();
+        }
+
+        // ==========================================================================================
+        // Live-status bridge — auto-install + auto-wire (zero user action)
+        //
+        // The live keys (Cost / Context / Model, Activity) read /tmp state files that only get
+        // written when Claude Code is wired to push them: a `statusLine` handler feeds Cost/Context/
+        // Model and four `hooks` feed Activity, all via ~/.claude/settings.json. A package-only user
+        // never does this by hand, so those keys show defaults. To make them "just work", the plugin
+        // ships the two scripts embedded in the DLL, writes them to ~/.claude/claude-console/scripts/
+        // on first run, and merges the statusLine + hooks into settings.json itself.
+        //
+        // Safe by design: backs settings.json up once, MERGES rather than clobbers (appends a hook
+        // only if absent; CHAINS an existing statusLine instead of replacing it — see the chain block
+        // in statusline-handler.sh), writes atomically, and is idempotent. Drop a file at
+        // ~/.claude/claude-console/no-autowire to opt out.
+        //
+        // Effect lands on the user's NEXT Claude Code session — Claude Code reads hooks/statusLine at
+        // session start, so a session already running won't pick it up.
+        // ==========================================================================================
+        public void EnsureBridgeAutoWired()
+        {
+            if (!OperatingSystem.IsMacOS())
+            {
+                return; // bridge is bash + /tmp; macOS only for now
+            }
+
+            // Never block or break plugin load — run on a background thread and swallow failures.
+            new Thread(() =>
+            {
+                try
+                {
+                    if (File.Exists(BridgeOptOutFile))
+                    {
+                        PluginLog.Info("Bridge auto-wire: opt-out file present — skipping");
+                        return;
+                    }
+                    EnsureBridgeInstalled();
+                    EnsureBridgeWired();
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "Bridge auto-wire failed");
+                }
+            })
+            { IsBackground = true, Name = "claude-bridge-autowire" }.Start();
+        }
+
+        // Write the embedded bridge scripts to ~/.claude/claude-console/scripts/ (refreshed every load
+        // so a plugin upgrade updates them) and mark them executable.
+        private void EnsureBridgeInstalled()
+        {
+            Directory.CreateDirectory(ScriptsDir);
+            ExtractEmbeddedScript("ClaudeConsole.statusline-handler.sh", StatuslineScript);
+            ExtractEmbeddedScript("ClaudeConsole.activity-hook.sh", ActivityScript);
+        }
+
+        private static void ExtractEmbeddedScript(String resourceName, String destPath)
+        {
+            var asm = typeof(BridgeManager).Assembly;
+            using var s = asm.GetManifestResourceStream(resourceName);
+            if (s == null)
+            {
+                PluginLog.Warning($"Bridge auto-wire: embedded resource {resourceName} not found");
+                return;
+            }
+            using (var fs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                s.CopyTo(fs);
+            }
+            RunSync("/bin/chmod", "+x", destPath);
+        }
+
+        // Merge the statusLine + activity hooks into ~/.claude/settings.json. Idempotent: appends a
+        // hook only if ours isn't already there, and chains (never clobbers) an existing statusLine.
+        private void EnsureBridgeWired()
+        {
+            JsonObject root;
+            if (File.Exists(SettingsFile))
+            {
+                var text = File.ReadAllText(SettingsFile);
+                if (String.IsNullOrWhiteSpace(text))
+                {
+                    root = new JsonObject();
+                }
+                else
+                {
+                    JsonNode parsed;
+                    try
+                    {
+                        parsed = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions
+                        {
+                            CommentHandling = JsonCommentHandling.Skip,
+                            AllowTrailingCommas = true,
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        PluginLog.Warning(ex, "Bridge auto-wire: settings.json isn't valid JSON — leaving it untouched");
+                        return;
+                    }
+                    root = parsed as JsonObject;
+                    if (root == null)
+                    {
+                        PluginLog.Warning("Bridge auto-wire: settings.json isn't a JSON object — leaving it untouched");
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                root = new JsonObject();
+            }
+
+            var changed = false;
+
+            // --- hooks (additive — append our entry only when it isn't already present) ---
+            var activityCmd = "bash " + ActivityScript;
+            if (root["hooks"] is not JsonObject hooks)
+            {
+                hooks = new JsonObject();
+                root["hooks"] = hooks;
+            }
+            changed |= EnsureHook(hooks, "UserPromptSubmit", null, activityCmd + " busy");
+            changed |= EnsureHook(hooks, "PostToolUse", "*", activityCmd + " busy");
+            changed |= EnsureHook(hooks, "Notification", null, activityCmd + " waiting");
+            changed |= EnsureHook(hooks, "Stop", null, activityCmd + " done");
+
+            // --- statusLine (chain an existing one rather than clobbering it) ---
+            var ourStatusCmd = "bash " + StatuslineScript;
+            var sl = root["statusLine"] as JsonObject;
+            var existingCmd = sl?["command"]?.GetValue<String>();
+            if (String.IsNullOrWhiteSpace(existingCmd))
+            {
+                root["statusLine"] = new JsonObject { ["type"] = "command", ["command"] = ourStatusCmd };
+                TryDelete(StatuslineChainFile);
+                changed = true;
+            }
+            else if (existingCmd.Contains("statusline-handler.sh"))
+            {
+                // already ours — nothing to do
+            }
+            else
+            {
+                // Preserve the user's status bar: record their command so our handler runs it and
+                // passes its output through (see the chain block in statusline-handler.sh).
+                File.WriteAllText(StatuslineChainFile, existingCmd);
+                sl["command"] = ourStatusCmd;
+                sl["type"] = "command";
+                PluginLog.Info("Bridge auto-wire: chained existing statusLine so it still renders");
+                changed = true;
+            }
+
+            if (!changed)
+            {
+                PluginLog.Info("Bridge auto-wire: settings.json already wired — no changes");
+                return;
+            }
+
+            // Back up once before the first write.
+            try
+            {
+                if (File.Exists(SettingsFile) && !File.Exists(SettingsBackup))
+                {
+                    File.Copy(SettingsFile, SettingsBackup);
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "Bridge auto-wire: couldn't back up settings.json (continuing)");
+            }
+
+            // Atomic write (temp + rename) so a concurrent reader never sees a half-written file.
+            Directory.CreateDirectory(ClaudeDir);
+            var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            var tmp = SettingsFile + ".cc.tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, SettingsFile, overwrite: true);
+            PluginLog.Info("Bridge auto-wire: wired live-status bridge into settings.json — start a NEW Claude Code session to activate Cost/Context/Activity");
+        }
+
+        // Ensure a hook event's array contains an entry pointing at activity-hook.sh; append if missing.
+        // Returns true when it added one. Matches by command substring so a re-run is a no-op.
+        private static Boolean EnsureHook(JsonObject hooks, String eventName, String matcher, String command)
+        {
+            if (hooks[eventName] is not JsonArray arr)
+            {
+                arr = new JsonArray();
+                hooks[eventName] = arr;
+            }
+
+            foreach (var entry in arr)
+            {
+                if (entry?["hooks"] is not JsonArray inner)
+                {
+                    continue;
+                }
+                foreach (var h in inner)
+                {
+                    var c = h?["command"]?.GetValue<String>();
+                    if (!String.IsNullOrEmpty(c) && c.Contains("activity-hook.sh"))
+                    {
+                        return false; // ours (or an equivalent) already present
+                    }
+                }
+            }
+
+            var newEntry = new JsonObject();
+            if (matcher != null)
+            {
+                newEntry["matcher"] = matcher;
+            }
+            newEntry["hooks"] = new JsonArray
+            {
+                new JsonObject { ["type"] = "command", ["command"] = command },
+            };
+            arr.Add(newEntry);
+            return true;
         }
 
         // ------------------------------------------------------------------------------------------
