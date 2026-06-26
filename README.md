@@ -192,6 +192,25 @@ File‑based IPC in `/tmp` (`claude-console-*.json`); action keys type into the 
 
 `dotnet build` hot‑reloads the plugin during development. `tools/voice/build.sh` builds the voice helper + bundles a self‑contained `whisper-cli` (ad‑hoc signed for dev); `tools/voice/sign-and-notarize.sh` produces the Developer‑ID‑signed, notarized release build. To produce a Marketplace package (`.lplug4`) and the full bundling/signing steps, see **[SUBMISSION.md](SUBMISSION.md)**.
 
+## Uninstall / clean reinstall
+
+Claude Console's footprint spans Logi's store, `~/.claude/claude-console/` (incl. the ~142 MB speech model), `/tmp`, a Microphone permission, and — if you wired the live bridge — `~/.claude/settings.json`.
+
+**1. Plugin + profile (in Logi Options+ — manual).** Remove the **Claude Console** plugin (or `logiplugintool uninstall ClaudeConsole`) and delete the imported **Claude Console — Keypad** profile.
+
+**2. App footprint (scripted).** The helper prints its targets and asks before deleting:
+
+```bash
+bash scripts/uninstall.sh            # confirm, then remove
+bash scripts/uninstall.sh --dry-run  # preview only
+```
+
+It removes `~/.claude/claude-console/` (voice helper, whisper, the speech model, your `prompts.json`), the `/tmp/claude-console-*` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present.
+
+**3. Live‑status bridge (manual, only if you added it).** Delete the `statusLine` block and the four `claude-console` hook entries from `~/.claude/settings.json`.
+
+For a **clean reinstall**, do 1–3, then reinstall from [Releases](https://github.com/rshankras/claude-console/releases) and re‑import the profile.
+
 ## License
 
 [MIT](LICENSE). Bundled third‑party components (whisper.cpp, the Whisper model) are MIT‑licensed. See [EULA.md](EULA.md).
