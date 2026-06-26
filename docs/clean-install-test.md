@@ -51,9 +51,11 @@ macOS user account** (or on another Mac) before each release.
 - Run `claude`, press a prompt key (e.g. *Fix Bug*) → it types the prompt and submits.
 - **Voice** key → *Tink* → speak → press again → transcribed into the terminal.
 - **Answer** keys (Up/Down/Return, Yes/No) drive a Claude prompt.
-- **Expected non-working:** the live Model / Cost / Context / Activity keys show defaults
-  until the [status-line bridge](../README.md#connect-the-live-status-bridge) is wired into
-  that account's `~/.claude/settings.json`. Out of scope for this test.
+- **Live status (auto-wired):** on first load the plugin wires the status-line + activity
+  [bridge](../README.md#the-live-status-bridge) into that account's `~/.claude/settings.json`
+  itself (backup at `~/.claude/settings.json.claude-console.bak`). It takes effect on the **next**
+  Claude Code session — start a fresh `claude` and confirm the Model / Cost / Context / Activity
+  keys show live data.
 
 ### 6. Cleanup
 - Log back into your main account; optionally delete the test account.
@@ -64,3 +66,4 @@ macOS user account** (or on another Mac) before each release.
 - ✅ Package installs and **loads clean**
 - ✅ **Import** produces the full layout on the keypad
 - ✅ prompt / voice / answer keys fire with Terminal focused
+- ✅ live keys auto-wire and show data on a second `claude` session
