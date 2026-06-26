@@ -35,10 +35,23 @@ See [PRIVACY.md](PRIVACY.md) — everything runs on your Mac.
 Download the latest `ClaudeConsole_<ver>.lplug4` from [**Releases**](https://github.com/rshankras/claude-console/releases), then:
 
 1. **Double-click it** — Logi Options+ registers the plugin. (Or, with the Logi Plugin Tool: `logiplugintool install ./ClaudeConsole_<ver>.lplug4`.) If macOS blocks it, right-click → **Open**, or run `xattr -dr com.apple.quarantine ClaudeConsole_<ver>.lplug4`.
-2. In **Logi Options+**, select your MX Creative Keypad and add the **Claude Console** actions to the keys.
+2. In **Logi Options+**, select your MX Creative Keypad and **import the ready-made layout** so every key is mapped for you — see [Import the ready-made layout](#import-the-ready-made-layout) below. (Prefer to start fresh? You can instead drag individual **Claude Console** actions onto the keys.)
 3. On first use, grant **Accessibility** to the Logi Plugin Service (so it can type into your terminal). For **voice**, press the Voice key and grant **Microphone** when prompted — the helper and speech model install themselves on first use.
 
 > The action keys (prompts, git, navigation) and **offline voice** work straight from the download. The live **Model / Cost / Context / Activity** keys additionally need the status-line + hook scripts wired into Claude Code — see [Connect the live status bridge](#connect-the-live-status-bridge) below (clone this repo to get the `scripts/`).
+
+## Import the ready-made layout
+
+Rather than mapping nine keys by hand, import the bundled profile to get the full layout instantly:
+
+1. Download **`ClaudeConsole-Keypad.lp5`** from [**Releases**](https://github.com/rshankras/claude-console/releases) (alongside the `.lplug4`), or take it from [`profiles/`](profiles/) in this repo.
+2. In **Logi Options+** → your **MX Creative Keypad**, open the profile menu (the `⋯` / profile dropdown) → **Import Profile** → pick the `.lp5`.
+3. It installs as **Claude Console — Keypad**, bound to **Terminal**, so it activates automatically whenever Terminal.app is frontmost. Prompts, git, answer, navigation, voice, and the live status keys are all pre‑mapped.
+
+Notes:
+- Install the plugin first (step 1 above) so the imported keys resolve to real actions.
+- The profile is bound to Apple's **Terminal.app**. If you use iTerm2/Ghostty/Warp, the import still works — just duplicate it onto that app (or assign keys there), since the auto‑activation is Terminal‑specific.
+- It's only a starting point — rebind or rearrange any key afterward.
 
 ## Install (build from source)
 
