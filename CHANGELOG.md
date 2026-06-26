@@ -10,6 +10,10 @@ All notable changes to Claude Console are documented here. Format based on
   Options+ profile that maps every key (prompts, git, answer, nav, voice, live status), so new users
   get the full layout without assigning keys by hand. Import via Logi Options+ → MX Creative Keypad →
   Import Profile. Bound to Terminal.app; auto-activates when Terminal is frontmost.
+- **Uninstall / clean-reinstall** — `scripts/uninstall.sh` plus a README section. The script removes
+  the app footprint (voice runtime + ~142 MB model, `/tmp` IPC files, the Microphone grant, any
+  crash-disable marker, and a dev `.link`) with a confirmation prompt and a `--dry-run`; the Logi
+  Options+ plugin/profile removal and `~/.claude/settings.json` bridge lines stay documented as manual.
 
 ## [1.1.1] — 2026-06-25
 
