@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Claude Console — uninstall / clean-reinstall helper.
+# Claude Console — leftover-data cleanup. (This is NOT the plugin uninstaller.)
 #
-# Removes the APP-LEVEL footprint: the voice runtime + speech model, the /tmp IPC files,
-# the Microphone permission, any crash-disable marker, and a dev plugin .link.
+# To uninstall the PLUGIN, do it in Logi Options+: right-click the Claude Console
+# plugin -> Uninstall (or run: logiplugintool uninstall ClaudeConsole), and delete the
+# imported "Claude Console — Keypad" profile there too. That is the actual uninstall.
 #
-# It does NOT touch (do these yourself — see README "Uninstall / clean reinstall"):
-#   • the plugin in Logi Options+ (GUI) — or run: logiplugintool uninstall ClaudeConsole
-#   • the imported "Claude Console — Keypad" profile (GUI)
+# This script only clears the app-level leftovers that Logi Options+ can't see and never
+# removes: the voice runtime + ~142 MB speech model, the /tmp IPC files, the Microphone
+# permission, any crash-disable marker, and a dev plugin .link. If you never used Voice,
+# there may be nothing here to clean.
+#
+# It does NOT touch:
+#   • the plugin or profile in Logi Options+ (remove those in the GUI — see above)
 #   • the statusLine + hook lines in ~/.claude/settings.json (hand-edit)
 #
 # Usage:
@@ -20,7 +25,7 @@ for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
     --yes|-y)  YES=1 ;;
-    -h|--help) grep '^#' "$0" | sed 's/^#\{1,\} \{0,1\}//'; exit 0 ;;
+    -h|--help) grep '^#' "$0" | grep -v '^#!' | sed 's/^#\{1,\} \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $a (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -33,7 +38,9 @@ HELPER_ID="com.rshankar.claudeconsole.voicehelper"
 
 sz() { du -sh "$1" 2>/dev/null | awk '{print $1}'; }
 
-echo "Claude Console uninstall — these will be removed:"
+echo "Claude Console — leftover-data cleanup."
+echo "This does NOT remove the plugin (uninstall that in Logi Options+). It clears the"
+echo "app-level leftovers Logi can't see. These will be removed:"
 echo
 if [ -d "$RUNTIME" ]; then
   echo "  • voice runtime + model   $RUNTIME  ($(sz "$RUNTIME"), incl. your prompts.json)"
@@ -45,9 +52,9 @@ echo "  • Microphone permission   tccutil reset Microphone $HELPER_ID"
 [ -f "$MARKER" ] && echo "  • crash-disable marker    $MARKER"
 [ -f "$LINK" ]   && echo "  • dev plugin link         $LINK  (+ restart LogiPluginService)"
 echo
-echo "NOT touched (manual — see README 'Uninstall / clean reinstall'):"
-echo "  • the plugin in Logi Options+  (or: logiplugintool uninstall ClaudeConsole)"
-echo "  • the imported 'Claude Console — Keypad' profile"
+echo "To remove the plugin itself: Logi Options+ → right-click Claude Console → Uninstall"
+echo "(and delete the 'Claude Console — Keypad' profile there). NOT touched by this script:"
+echo "  • the plugin + profile in Logi Options+  (or: logiplugintool uninstall ClaudeConsole)"
 echo "  • the statusLine + hooks in ~/.claude/settings.json"
 echo
 
@@ -69,5 +76,6 @@ if [ -f "$LINK" ]; then
 fi
 
 echo
-echo "Done. Still manual: remove the plugin + profile in Logi Options+, and delete the"
-echo "statusLine/hooks lines from ~/.claude/settings.json if you added them."
+echo "Leftovers cleared. If you haven't already, uninstall the plugin + profile in"
+echo "Logi Options+ (right-click Claude Console → Uninstall) — that's the actual removal —"
+echo "and delete the statusLine/hooks lines from ~/.claude/settings.json if you added them."

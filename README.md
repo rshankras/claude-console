@@ -50,6 +50,7 @@ Rather than mapping nine keys by hand, import the bundled profile to get the ful
 
 Notes:
 - Install the plugin first (step 1 above) so the imported keys resolve to real actions.
+- **Import only once — don't re‑import on an account that already has the profile.** The `.lp5` carries a fixed profile GUID, so importing it where a **Claude Console — Keypad** profile already exists collides with (and can duplicate) the existing one. Reinstalling the plugin? You already have the profile — just reinstall the plugin and the keys resolve again; no re‑import needed. To test a genuinely clean install, use a separate macOS account — see [`docs/clean-install-test.md`](docs/clean-install-test.md).
 - The profile is bound to Apple's **Terminal.app**. If you use iTerm2/Ghostty/Warp, the import still works — just duplicate it onto that app (or assign keys there), since the auto‑activation is Terminal‑specific.
 - It's only a starting point — rebind or rearrange any key afterward.
 
@@ -196,9 +197,9 @@ File‑based IPC in `/tmp` (`claude-console-*.json`); action keys type into the 
 
 Claude Console's footprint spans Logi's store, `~/.claude/claude-console/` (incl. the ~142 MB speech model), `/tmp`, a Microphone permission, and — if you wired the live bridge — `~/.claude/settings.json`.
 
-**1. Plugin + profile (in Logi Options+ — manual).** Remove the **Claude Console** plugin (or `logiplugintool uninstall ClaudeConsole`) and delete the imported **Claude Console — Keypad** profile.
+**1. Remove the plugin + profile — this is the actual uninstall (Logi Options+).** In Logi Options+, **right‑click the Claude Console plugin → Uninstall** (or `logiplugintool uninstall ClaudeConsole`), and delete the imported **Claude Console — Keypad** profile. For most people — anyone who never used Voice — this is all you need.
 
-**2. App footprint (scripted).** The helper prints its targets and asks before deleting:
+**2. Clear the leftover app data — optional cleanup (scripted).** Step 1 does **not** remove the voice runtime, the ~142 MB speech model, or the Microphone permission — Logi Options+ can't see them, so they're left behind. This script clears exactly those leftovers; **it never removes the plugin.** It prints its targets and asks before deleting:
 
 ```bash
 bash scripts/uninstall.sh            # confirm, then remove
