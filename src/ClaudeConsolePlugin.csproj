@@ -6,6 +6,12 @@
     <Nullable>disable</Nullable>
     <RootNamespace>Loupedeck.ClaudeConsolePlugin</RootNamespace>
 
+    <!-- Track releases in the assembly version too. The Logi Plugin Service keys its
+         crash-disable marker (Logs/plugin_crashes/) by assembly version; if this stays
+         1.0.0.0 forever, any one load-crash disables the plugin permanently. Bumping it
+         per release lets a new build dodge a stale marker. -->
+    <Version>1.1.1</Version>
+
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
 
