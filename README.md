@@ -50,7 +50,7 @@ Rather than mapping nine keys by hand, import the bundled profile to get the ful
 
 Notes:
 - Install the plugin first (step 1 above) so the imported keys resolve to real actions.
-- **Import only once — don't re‑import on an account that already has the profile.** The `.lp5` carries a fixed profile GUID, so importing it where a **Claude Console — Keypad** profile already exists collides with (and can duplicate) the existing one. Reinstalling the plugin? You already have the profile — just reinstall the plugin and the keys resolve again; no re‑import needed. To test a genuinely clean install, use a separate macOS account — see [`docs/clean-install-test.md`](docs/clean-install-test.md).
+- Import once. If you later reinstall or update the plugin, your profile stays put — just reinstall the plugin and the keys light up again; no need to re‑import.
 - The profile is bound to Apple's **Terminal.app**. If you use iTerm2/Ghostty/Warp, the import still works — just duplicate it onto that app (or assign keys there), since the auto‑activation is Terminal‑specific.
 - It's only a starting point — rebind or rearrange any key afterward.
 
