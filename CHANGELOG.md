@@ -3,6 +3,14 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Ready-made keypad layout** (`profiles/ClaudeConsole-Keypad.lp5`) — a one-click importable Logi
+  Options+ profile that maps every key (prompts, git, answer, nav, voice, live status), so new users
+  get the full layout without assigning keys by hand. Import via Logi Options+ → MX Creative Keypad →
+  Import Profile. Bound to Terminal.app; auto-activates when Terminal is frontmost.
+
 ## [1.1.1] — 2026-06-25
 
 ### Fixed
