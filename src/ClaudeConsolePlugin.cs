@@ -36,6 +36,12 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             // All actions are auto-discovered; we just start the IPC bridge.
             BridgeManager.Instance.StartPolling();
+
+            // Self-install the status-line + activity scripts and wire them into ~/.claude/settings.json
+            // so the live keys (Cost / Context / Activity) work with zero user setup. Idempotent, runs
+            // on a background thread, and takes effect on the user's next Claude Code session.
+            BridgeManager.Instance.EnsureBridgeAutoWired();
+
             PluginLog.Info("ClaudeConsolePlugin: Loaded — actions auto-discovered; bridge polling started");
         }
 
