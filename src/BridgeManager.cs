@@ -11,6 +11,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.Text.Json;
     using System.Text.Json.Nodes;
     using System.Threading;
+    using System.Threading.Tasks;
 
     using Loupedeck.ClaudeConsolePlugin.Models;
 
@@ -105,8 +106,13 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         public void StartPolling()
         {
-            _pollTimer = new Timer(PollState, null, 0, 500);
-            PluginLog.Info("BridgeManager: Started polling state file every 500ms");
+            // One-shot timer, re-armed at the END of each PollState (see its finally). This makes
+            // polls NON-OVERLAPPING: the next poll can't start until the previous one finishes, so a
+            // slow poll (osascript) can never pile callbacks onto the thread pool. An auto-repeating
+            // Timer(..., 0, 500) does NOT serialize callbacks, and that pile-up leaked threads until
+            // LogiPluginService hit the 4096-thread limit and aborted.
+            _pollTimer = new Timer(PollState, null, 0, Timeout.Infinite);
+            PluginLog.Info("BridgeManager: Started polling state file (~500ms, non-overlapping)");
         }
 
         public void StopPolling()
@@ -120,10 +126,12 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             try
             {
-                // ~Every second, refresh which Terminal tab is frontmost so the live keys follow the
+                // ~Every 2s, refresh which Terminal tab is frontmost so the live keys follow the
                 // session you're actually looking at. Keep the last known tab when Terminal isn't
-                // frontmost, so glancing away (e.g. to a browser) doesn't reset the display.
-                if (_pollTick++ % 2 == 0)
+                // frontmost, so glancing away (e.g. to a browser) doesn't reset the display. The
+                // frontmost-tab probe shells out to osascript, so we do it every 4th poll (not every
+                // poll) to keep that comparatively expensive call off the hot path.
+                if (_pollTick++ % 4 == 0)
                 {
                     var tty = QueryFrontmostTerminalTty();
                     if (!String.IsNullOrEmpty(tty))
@@ -152,6 +160,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             catch (Exception ex)
             {
                 PluginLog.Verbose(ex, "BridgeManager: PollState error");
+            }
+            finally
+            {
+                // Re-arm the one-shot: the next poll fires 500ms AFTER this one returns, so polls
+                // never overlap. Swallow ObjectDisposedException from a concurrent StopPolling.
+                try { _pollTimer?.Change(500, Timeout.Infinite); }
+                catch (ObjectDisposedException) { /* stopped */ }
             }
         }
 
@@ -410,48 +425,12 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static String EscapeForAppleScript(String s) =>
             s.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
-        private void RunOsascript(List<String> args)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "osascript",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardError = true,
-                    RedirectStandardOutput = true
-                };
-                foreach (var a in args)
-                {
-                    psi.ArgumentList.Add(a);
-                }
-
-                using var proc = Process.Start(psi);
-                if (proc != null)
-                {
-                    var outp = proc.StandardOutput.ReadToEnd();
-                    var err = proc.StandardError.ReadToEnd();
-                    proc.WaitForExit(3000);
-                    if (!String.IsNullOrWhiteSpace(outp))
-                    {
-                        PluginLog.Warning($"osascript out: {outp.Trim()}");
-                    }
-                    if (!String.IsNullOrWhiteSpace(err))
-                    {
-                        PluginLog.Warning($"osascript error: {err.Trim()}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                PluginLog.Warning(ex, "BridgeManager.RunOsascript: failed (is Accessibility permission granted?)");
-            }
-        }
-
-        // Like RunOsascript but returns stdout (trimmed) — for querying state (e.g. the frontmost
-        // Terminal tab's TTY), not just firing keystrokes.
-        private String RunOsascriptCapture(List<String> args)
+        // Run osascript with a HARD timeout. Reads both pipes on background tasks (a synchronous
+        // ReadToEnd() blocks with NO timeout — the WaitForExit(ms) after it is unreachable, which is
+        // exactly what leaked threads) and KILLS the process if it doesn't exit in time, so a hung
+        // osascript (locked screen, busy window server, an Accessibility prompt) can never wedge a
+        // poll thread. Returns stdout (trimmed) when wantOutput, else null.
+        private String RunOsascriptCore(List<String> args, Int32 timeoutMs, Boolean wantOutput)
         {
             try
             {
@@ -473,16 +452,52 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     return null;
                 }
-                var outp = proc.StandardOutput.ReadToEnd();
-                proc.StandardError.ReadToEnd();
-                proc.WaitForExit(2000);
-                return outp?.Trim();
+
+                // Drain both pipes asynchronously so a full output buffer can't deadlock us; then
+                // bound the wait and kill on timeout.
+                var outTask = proc.StandardOutput.ReadToEndAsync();
+                var errTask = proc.StandardError.ReadToEndAsync();
+
+                if (!proc.WaitForExit(timeoutMs))
+                {
+                    PluginLog.Warning($"osascript exceeded {timeoutMs}ms — killing (hung window server / locked screen / a11y prompt?)");
+                    try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                    return null;
+                }
+
+                var outp = SafeAwait(outTask);
+                var err = SafeAwait(errTask);
+                if (!wantOutput && !String.IsNullOrWhiteSpace(outp))
+                {
+                    PluginLog.Warning($"osascript out: {outp.Trim()}");
+                }
+                if (!String.IsNullOrWhiteSpace(err))
+                {
+                    PluginLog.Warning($"osascript error: {err.Trim()}");
+                }
+                return wantOutput ? outp?.Trim() : null;
             }
             catch (Exception ex)
             {
-                PluginLog.Verbose(ex, "BridgeManager.RunOsascriptCapture: failed");
+                PluginLog.Warning(ex, "BridgeManager.RunOsascriptCore: failed (is Accessibility permission granted?)");
                 return null;
             }
+        }
+
+        // Fire-and-forget osascript (keystrokes / AppleScript actions). Generous timeout because a
+        // long voice-transcript keystroke can legitimately take several seconds; still bounded so a
+        // real hang can't leak a thread. User-triggered — never runs on the poll timer.
+        private void RunOsascript(List<String> args) => RunOsascriptCore(args, 15000, wantOutput: false);
+
+        // Like RunOsascript but returns stdout (trimmed) — for querying state (e.g. the frontmost
+        // Terminal tab's TTY) on the poll timer, so it uses a short, snappy timeout.
+        private String RunOsascriptCapture(List<String> args) => RunOsascriptCore(args, 2000, wantOutput: true);
+
+        // Await a pipe-read task that has already reached EOF (the process exited). Never throws.
+        private static String SafeAwait(Task<String> t)
+        {
+            try { return t.GetAwaiter().GetResult(); }
+            catch { return null; }
         }
 
         // ------------------------------------------------------------------------------------------
