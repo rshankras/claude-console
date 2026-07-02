@@ -404,3 +404,11 @@ tools/voice/ClaudeVoiceHelper.app/
 
 # Claude Console — packaged plugin (attach to GitHub Releases, don't commit)
 *.lplug4
+
+# Secrets / signing keys — never commit (App Store Connect API keys, certs, etc.)
+*.p8
+*.pem
+*.key
+*.p12
+*.mobileprovision
+AuthKey_*
