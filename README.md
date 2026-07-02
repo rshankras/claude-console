@@ -14,7 +14,7 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 - **One‑press prompts** — Fix Bug, Write Tests, Explain, Refactor, Review, Optimize, Security, Document, Deploy.
 - **Answer prompts** — respond to Claude's questions from the keypad: Up/Down/Return to navigate menus, Yes/No to type a quick reply.
 - **Git, through Claude** — Commit, Diff, Push, Create PR, Status, Log.
-- **Terminal & session nav** — activate Terminal, new tab, new Claude session, next/prev tab.
+- **Terminal & session nav** — activate Terminal, new tab, new Claude session, next/prev tab. Prefer windows over tabs? There are **New Claude (Window)** and **Next/Prev Window** keys too.
 - **Offline voice dictation** — press, speak, press again; [whisper.cpp](https://github.com/ggerganov/whisper.cpp) transcribes locally and types it into your terminal.
 - **Voice "Go to Project"** — say a project name; it scans your folders, fuzzy‑matches, and opens a new tab `cd`'d into the project with `claude` running.
 - **Model & modes** — a **Model** key opens the `/model` picker and shows the current model live; **Mode** cycles Claude Code's input modes (normal → auto‑accept edits → plan); plus Compact, Context, Clear.
@@ -173,7 +173,7 @@ Reload the plugin (rebuild, or restart Logi Options+) to pick up edits. Delete t
 | **Prompts** | Fix Bug · Write Tests · Explore · Explain · Refactor · Review · Optimize · Security · Document · Deploy |
 | **Git** | Commit · Diff · Push · Create PR · Status · Log |
 | **Scroll** | Scroll Up · Scroll Down |
-| **Terminal** | Terminal · New Tab · New Claude · Next Tab · Prev Tab · **Go to Project** (voice) |
+| **Terminal** | Terminal · New Tab · New Claude · Next Tab · Prev Tab · New Claude (Window) · Next Window · Prev Window · **Go to Project** (voice) |
 | **Universal** | **Voice** |
 
 *\* live display, updates from the status line.*

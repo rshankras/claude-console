@@ -28,12 +28,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public ControlCommand()
             : base()
         {
-            this.AddParameter(Esc, "Esc", "Core");
-            this.AddParameter(Mode, "Mode", "Core");
-            this.AddParameter(Tab, "Tab", "Core");
-            this.AddParameter(Compact, "Compact", "Core");
-            this.AddParameter(Clear, "Clear", "Core");
-            this.AddParameter(Exit, "Exit", "Core");
+            this.AddParameter(Esc, "Esc", "Core")
+                .SetDescription("Interrupt Claude, exit a mode, or dismiss a menu (Escape)");
+            this.AddParameter(Mode, "Mode", "Core")
+                .SetDescription("Cycle input mode: normal → auto-accept edits → plan (Shift+Tab)");
+            this.AddParameter(Tab, "Tab", "Core")
+                .SetDescription("Accept the highlighted autocomplete and submit it (Tab, then Return)");
+            this.AddParameter(Compact, "Compact", "Core")
+                .SetDescription("Run /compact to shrink the context window");
+            this.AddParameter(Clear, "Clear", "Core")
+                .SetDescription("Run /clear to reset the conversation");
+            this.AddParameter(Exit, "Exit", "Core")
+                .SetDescription("Run /exit to quit the Claude Code session");
         }
 
         protected override void RunCommand(String actionParameter)

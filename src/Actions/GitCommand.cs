@@ -26,7 +26,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         {
             foreach (var c in Commands)
             {
-                this.AddParameter(c.Id, c.Name, "Git");
+                this.AddParameter(c.Id, c.Name, "Git")
+                    .SetDescription("Sends Claude: " + c.Prompt);
             }
         }
 

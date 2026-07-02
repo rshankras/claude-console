@@ -28,11 +28,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public AnswerCommand()
             : base()
         {
-            this.AddParameter(Yes, "Yes", "Answer");
-            this.AddParameter(No, "No", "Answer");
-            this.AddParameter(Up, "Arrow Up", "Answer");
-            this.AddParameter(Down, "Arrow Down", "Answer");
-            this.AddParameter(Enter, "Return", "Answer");
+            this.AddParameter(Yes, "Yes", "Answer")
+                .SetDescription("Type \"yes\" and press Enter — for plain-text questions (use Up/Down/Return for numbered menus)");
+            this.AddParameter(No, "No", "Answer")
+                .SetDescription("Type \"no\" and press Enter — for plain-text questions");
+            this.AddParameter(Up, "Arrow Up", "Answer")
+                .SetDescription("Move the selection up in a Claude Code menu (Up arrow)");
+            this.AddParameter(Down, "Arrow Down", "Answer")
+                .SetDescription("Move the selection down in a Claude Code menu (Down arrow)");
+            this.AddParameter(Enter, "Return", "Answer")
+                .SetDescription("Confirm the highlighted menu option / submit (Return)");
         }
 
         protected override void RunCommand(String actionParameter)

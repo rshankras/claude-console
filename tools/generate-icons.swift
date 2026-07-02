@@ -36,6 +36,10 @@ let icons: [(String, String, String)] = [
     ("next_tab", "arrow.right.circle.fill", Y),
     ("prev_tab", "arrow.left.circle.fill", Y),
     ("new_claude", "plus.bubble.fill", Y),
+    // Window nav — squares (vs the tab keys' circles) so window ≠ tab at a glance.
+    ("new_claude_window", "macwindow.badge.plus", Y),
+    ("next_window", "arrow.right.square.fill", Y),
+    ("prev_window", "arrow.left.square.fill", Y),
     ("project", "folder.fill", B),
     // Answer keys — respond when Claude prompts a question (basenames match AnswerCommand params).
     ("yes", "checkmark.circle.fill", G),
