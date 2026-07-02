@@ -3,6 +3,18 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.3.2] — 2026-07-02
+
+### Added
+- **Window navigation** — three keys for people who prefer separate Terminal windows over tabs:
+  **New Claude (Window)** (opens a new window already running `claude`), **Next Window** (`Cmd+`` `)
+  and **Prev Window** (`Cmd+Shift+`` `). They sit alongside the existing tab keys in the Terminal group.
+- **Action descriptions** — every keypad action now carries a one-line description shown in Logi
+  Options+ (Answer, Core, Terminal, Git, Prompts, Scroll), so it's clear what each key does before
+  you map it. Prompt keys show the exact text they'll type; git keys show the instruction they send.
+- **Plugin icon** — replaced the placeholder puzzle-piece with a proper icon (a terminal prompt with a
+  spark), reproducible via `tools/generate-plugin-icon.swift`.
+
 ## [1.3.1] — 2026-07-02
 
 ### Fixed
