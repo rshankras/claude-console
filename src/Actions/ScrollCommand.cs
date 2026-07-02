@@ -26,8 +26,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public ScrollCommand()
             : base()
         {
-            this.AddParameter(Up, "Scroll Up", "Scroll");
-            this.AddParameter(Down, "Scroll Down", "Scroll");
+            this.AddParameter(Up, "Scroll Up", "Scroll")
+                .SetDescription("Page up through the conversation transcript (Page Up)");
+            this.AddParameter(Down, "Scroll Down", "Scroll")
+                .SetDescription("Page down through the conversation transcript (Page Down)");
         }
 
         protected override void RunCommand(String actionParameter)

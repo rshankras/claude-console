@@ -44,7 +44,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     continue;
                 }
                 _prompts[p.Id] = p;
-                this.AddParameter(p.Id, p.Label ?? p.Id, "Prompts");
+                var param = this.AddParameter(p.Id, p.Label ?? p.Id, "Prompts");
+                if (!String.IsNullOrWhiteSpace(p.Prompt))
+                {
+                    param.SetDescription("Types this prompt into Claude Code: " + p.Prompt);
+                }
             }
         }
 
