@@ -3,6 +3,15 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.3.3] — 2026-07-02
+
+### Fixed
+- **Window-nav key icons no longer clash with the tab keys.** Next/Prev Window drew the same
+  line-arrow as Next/Prev Tab, set apart only by a circle-vs-square background that was invisible at
+  key size — so a window key looked identical to the matching tab key. They now use a solid triangle
+  in a square (`arrowtriangle.left/right.square.fill`), differing from the tabs' arrow-in-circle on
+  both the glyph *and* the surrounding shape. Regenerate via `tools/generate-icons.swift`.
+
 ## [1.3.2] — 2026-07-02
 
 ### Added
