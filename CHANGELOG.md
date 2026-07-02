@@ -3,6 +3,23 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.3.1] — 2026-07-02
+
+### Fixed
+- **Thread leak that crashed the Logi Plugin Service.** The live-status poller ran on an
+  auto-repeating 500 ms timer whose callback shelled out to `osascript` (to find the frontmost
+  Terminal tab) and blocked on an un-timed `ReadToEnd()`. A slow or hung `osascript` let poll
+  callbacks overlap and pile onto the thread pool, which grew unbounded until `LogiPluginService`
+  hit the macOS ~4096-thread limit and aborted (`SIGABRT`) — after which Logi crash-disabled the
+  plugin, so its keys showed only an exclamation mark / plain text and eventually vanished until a
+  Mac restart reset the count. The poll now runs on a **non-overlapping one-shot timer** (re-armed
+  only after each poll finishes), `osascript` calls are bounded by a **hard timeout that kills a
+  hung process**, and the frontmost-tab probe is throttled from ~1 s to ~2 s.
+
+### Changed
+- Bumped the assembly version to 1.3.1 (a fresh version also sidesteps any stale Logi crash-disable
+  marker, which is keyed by assembly version).
+
 ## [1.3.0] — 2026-06-26
 
 ### Added

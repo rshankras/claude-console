@@ -188,6 +188,14 @@ Claude Code ← status line (bash) + voice helper (Swift + whisper.cpp)
 
 File‑based IPC in `/tmp` (`claude-console-*.json`); action keys type into the terminal via `osascript`; voice records through a notarized helper app that owns its own Microphone permission, then transcribes with a bundled, self‑contained `whisper-cli` (no Homebrew at runtime). Full architecture and packaging notes in [SUBMISSION.md](SUBMISSION.md).
 
+## Troubleshooting
+
+**Keys show only an exclamation mark or plain text, then the whole plugin disappears (you drop to the default profile), and a Mac restart brings it back.** This was a thread leak, **fixed in 1.3.1**: the live‑status poller could accumulate threads until the *Logi Plugin Service* hit the OS thread limit and crashed, which disabled the plugin until the service restarted. **Update to 1.3.1 or later.**
+
+**Keys show only an exclamation mark / plain text right after building from source.** If you've *both* installed the released `.lplug4` *and* run `dotnet build` (which writes a dev `.link`), the plugin is registered twice and the service refuses the duplicate — the plugin log shows `Cannot load plugin … because plugin 'ClaudeConsole' is already loaded` and the keys don't resolve. Keep **one** source: uninstall the packaged plugin in Logi Options+ to develop against the `.link`, or remove the dev `.link` (`scripts/uninstall.sh` does this) to run the installed package.
+
+The plugin's own log — handy for either case — is at `~/Library/Application Support/Logi/LogiPluginService/Logs/plugin_logs/ClaudeConsole.log`.
+
 ## Building & packaging
 
 `dotnet build` hot‑reloads the plugin during development. `tools/voice/build.sh` builds the voice helper + bundles a self‑contained `whisper-cli` (ad‑hoc signed for dev); `tools/voice/sign-and-notarize.sh` produces the Developer‑ID‑signed, notarized release build. To produce a Marketplace package (`.lplug4`) and the full bundling/signing steps, see **[SUBMISSION.md](SUBMISSION.md)**.
