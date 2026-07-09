@@ -932,6 +932,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Stop voice capture and use the transcript to OPEN a project (new tab + cd + claude).
         public void StopVoiceCaptureForProject() => StopVoiceCaptureThen(NavigateToProjectByVoice);
 
+        // Stop voice capture and TYPE <paramref name="prefix"/> + transcript (voice prompt keys:
+        // a prompts.json entry with "voice": true dictates the arguments of its prompt/command).
+        public void StopVoiceCaptureWithPrefix(String prefix) =>
+            StopVoiceCaptureThen(text => InjectText(prefix + text, pressEnter: true));
+
         // Shared: signal the helper to stop, then wait for the transcript off the UI thread and run
         // <paramref name="handler"/> with it. An empty transcript (silence / mic denied) is ignored.
         private void StopVoiceCaptureThen(Action<String> handler)

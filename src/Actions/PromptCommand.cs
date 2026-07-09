@@ -34,6 +34,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         private readonly Dictionary<String, PromptDef> _prompts = new Dictionary<String, PromptDef>();
 
+        // Id of the voice-prompt entry currently recording, or null. One capture at a time: the
+        // recorder is a single global helper, so other voice-prompt keys are ignored while set.
+        private String _listeningId;
+
         public PromptCommand()
             : base()
         {
@@ -47,7 +51,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 var param = this.AddParameter(p.Id, p.Label ?? p.Id, "Prompts");
                 if (!String.IsNullOrWhiteSpace(p.Prompt))
                 {
-                    param.SetDescription("Types this prompt into Claude Code: " + p.Prompt);
+                    param.SetDescription(p.Voice
+                        ? "Press to dictate, press again to send. Types: " + p.Prompt + "<what you say>"
+                        : "Types this prompt into Claude Code: " + p.Prompt);
                 }
             }
         }
@@ -98,11 +104,44 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         protected override void RunCommand(String actionParameter)
         {
-            if (_prompts.TryGetValue(actionParameter, out var p) && !String.IsNullOrEmpty(p.Prompt))
+            if (!_prompts.TryGetValue(actionParameter, out var p) || String.IsNullOrEmpty(p.Prompt))
             {
-                BridgeManager.Instance.SendPrompt(p.Prompt);
-                PluginLog.Info($"PromptCommand: Sent prompt '{p.Id}'");
+                return;
             }
+
+            if (p.Voice)
+            {
+                RunVoicePrompt(p);
+                return;
+            }
+
+            BridgeManager.Instance.SendPrompt(p.Prompt);
+            PluginLog.Info($"PromptCommand: Sent prompt '{p.Id}'");
+        }
+
+        // Toggle dictation for a voice-prompt key (same recorder as the Voice key): first press
+        // starts listening, second press stops and sends prompt text + transcript.
+        private void RunVoicePrompt(PromptDef p)
+        {
+            var bridge = BridgeManager.Instance;
+            if (_listeningId == null)
+            {
+                bridge.StartVoiceCapture();
+                _listeningId = p.Id;
+            }
+            else if (_listeningId == p.Id)
+            {
+                bridge.StopVoiceCaptureWithPrefix(p.Prompt);
+                _listeningId = null;
+            }
+            else
+            {
+                PluginLog.Info($"PromptCommand: ignoring '{p.Id}' — voice prompt '{_listeningId}' is recording");
+                return;
+            }
+
+            this.ActionImageChanged(p.Id);
+            PluginLog.Info($"PromptCommand: voice prompt '{p.Id}' listening={_listeningId != null}");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
@@ -111,6 +150,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             _prompts.TryGetValue(actionParameter, out var p);
+            if (p != null && p.Id == _listeningId)
+            {
+                return KeyImage.Render(imageSize, "Listening", KeyImage.Red, null); // centred text, like Go to Project
+            }
             var icon = String.IsNullOrEmpty(p?.Icon) ? "explain" : p.Icon;
             // Accent is unused by KeyImage; the icon's baked colour is the key colour.
             return KeyImage.Render(imageSize, p?.Label ?? actionParameter, KeyImage.Blue, icon);

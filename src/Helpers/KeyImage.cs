@@ -22,6 +22,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         public static readonly BitmapColor Slate  = new BitmapColor(0x94, 0xA3, 0xB8);
         public static readonly BitmapColor Dark   = new BitmapColor(0x0D, 0x11, 0x17);
 
+        // User icon overrides: ~/.claude/claude-console/icons/<name>.png is checked before the
+        // embedded resources, so custom prompts (prompts.json) can carry their own icons — and an
+        // embedded icon can be overridden — without rebuilding the plugin.
+        private static readonly String UserIconsDir = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".claude", "claude-console", "icons");
+
         private static readonly BitmapColor Background = new BitmapColor(0x0D, 0x11, 0x17);
         private static readonly BitmapColor White = new BitmapColor(0xFF, 0xFF, 0xFF);
 
@@ -40,11 +47,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     try
                     {
-                        // Qualify with the "icons." folder segment: the SDK's resource finder matches
+                        // User file first (see UserIconsDir), then embedded. Embedded lookups are
+                        // qualified with the "icons." folder segment: the SDK's resource finder matches
                         // by name SUFFIX, so a bare "up.png" also matches "scroll_up.png" (and "tab.png"
                         // matches "new_tab.png"), and it returns the first alphabetically — the wrong one.
                         // "icons.up.png" pins the lookup to exactly one embedded resource.
-                        var img = PluginResources.ReadImage("icons." + icon + ".png");
+                        var img = LoadUserIcon(icon) ?? PluginResources.ReadImage("icons." + icon + ".png");
                         var w = bitmap.Width;
                         var h = bitmap.Height;
                         var s = (Int32)(Math.Min(w, h) * 0.82);
@@ -59,6 +67,30 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 bitmap.DrawText(label ?? "");
                 return bitmap.ToImage();
+            }
+        }
+
+        // Load an icon PNG from the user icons dir, or null if absent/unreadable. Only simple
+        // basenames are looked up (no path separators), so prompts.json can't reach outside the dir.
+        private static BitmapImage LoadUserIcon(String icon)
+        {
+            try
+            {
+                if (icon.IndexOfAny(new[] { '/', '\\' }) >= 0)
+                {
+                    return null;
+                }
+                var file = System.IO.Path.Combine(UserIconsDir, icon + ".png");
+                if (!System.IO.File.Exists(file))
+                {
+                    return null;
+                }
+                return BitmapImage.TryCreateFromFile(file, out var img) ? img : null;
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, $"KeyImage: user icon '{icon}' failed to load");
+                return null;
             }
         }
     }

@@ -3,6 +3,21 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.3.4] — 2026-07-09
+
+### Added
+- **Custom icons for prompt keys.** Key icons can now load from `~/.claude/claude-console/icons/<name>.png`
+  (checked before the embedded resources), so custom prompts in `prompts.json` can carry their own
+  icons — and any built-in icon can be overridden — without rebuilding the plugin. Only simple
+  basenames are looked up (no paths), and a missing/unreadable file falls back to the embedded set,
+  then to a text label.
+- **Voice prompt keys.** A `prompts.json` entry with `"voice": true` becomes a dictation toggle:
+  press to start listening (key face shows red "Listening"), speak, press again to stop — the
+  entry's prompt text is sent with the transcript appended. Made for slash commands that take
+  spoken arguments, e.g. `"prompt": "/apple:brainstorm "` + what you said. Uses the same on-device
+  Whisper recorder as the Voice key; one capture at a time (other voice keys are ignored while
+  recording).
+
 ## [1.3.3] — 2026-07-02
 
 ### Fixed
