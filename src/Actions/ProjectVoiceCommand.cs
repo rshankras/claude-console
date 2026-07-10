@@ -12,40 +12,43 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// a new Terminal tab, cd's into the match, and launches claude — one gesture, no typing.
     ///
     /// Reuses the same recorder as VoiceCommand; only the stop handler differs
-    /// (BridgeManager.StopVoiceCaptureForProject → NavigateToProjectByVoice).
+    /// (BridgeManager.StopVoiceCaptureForProject → NavigateToProjectByVoice). It also reuses the
+    /// same ListeningFace, so a recording Go to Project key looks exactly like a recording Voice key.
     /// </summary>
     public class ProjectVoiceCommand : PluginDynamicCommand
     {
-        private Boolean _listening;
+        private readonly ListeningFace _face;
 
         public ProjectVoiceCommand()
             : base(displayName: "Go to Project", description: "Speak a project name — opens a new tab, cd's there, and launches claude", groupName: "Terminal")
         {
+            _face = new ListeningFace(() => this.ActionImageChanged());
         }
 
         protected override void RunCommand(String actionParameter)
         {
             var bridge = BridgeManager.Instance;
-            if (!_listening)
+            if (!_face.IsActive)
             {
                 bridge.StartVoiceCapture();
+                _face.Start();
             }
             else
             {
                 bridge.StopVoiceCaptureForProject();
+                _face.Stop();
             }
 
-            _listening = !_listening;
             this.ActionImageChanged();
-            PluginLog.Info($"ProjectVoiceCommand: listening={_listening}");
+            PluginLog.Info($"ProjectVoiceCommand: listening={_face.IsActive}");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            _listening ? "Listening" : "Go to Project";
+            _face.IsActive ? "Listening" : "Go to Project";
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
-            _listening
-                ? KeyImage.Render(imageSize, "Listening", KeyImage.Red, null)   // null icon -> centred text
+            _face.IsActive
+                ? KeyImage.Render(imageSize, "Listening", KeyImage.Green, _face.Icon)
                 : KeyImage.Render(imageSize, "Project", KeyImage.Blue, "project");
     }
 }
