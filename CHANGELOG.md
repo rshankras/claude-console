@@ -3,7 +3,7 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.3.4] — 2026-07-10
 
 ### Changed
 - **Go to Project animates while it listens.** Pressing it drew a static "Listening" label while the
