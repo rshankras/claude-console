@@ -3,6 +3,14 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Go to Project animates while it listens.** Pressing it drew a static "Listening" label while the
+  Voice key animated a green equalizer, so two keys doing the same thing looked different. Both now
+  share one `ListeningFace` — the same wave frames, the same cadence — and the duplicated frame timer
+  is gone from `VoiceCommand`.
+
 ## [1.3.3] — 2026-07-02
 
 ### Fixed
