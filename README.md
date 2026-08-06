@@ -38,12 +38,16 @@ See [PRIVACY.md](PRIVACY.md) — everything runs on your Mac.
 Download the latest `ClaudeConsole_<ver>.lplug4` from [**Releases**](https://github.com/rshankras/claude-console/releases), then:
 
 1. **Double-click it** — Logi Options+ registers the plugin. (Or, with the Logi Plugin Tool: `logiplugintool install ./ClaudeConsole_<ver>.lplug4`.) If macOS blocks it, right-click → **Open**, or run `xattr -dr com.apple.quarantine ClaudeConsole_<ver>.lplug4`.
-2. In **Logi Options+**, select your MX Creative Keypad and **import the ready-made layout** so every key is mapped for you — see [Import the ready-made layout](#import-the-ready-made-layout) below. (Prefer to start fresh? You can instead drag individual **Claude Console** actions onto the keys.)
+2. That's it for the layout — since 1.7.1 the install **registers a "Claude Console" application in Options+ and imports the 9-key layout by itself** (Sessions on top, Clear / Voice / Esc, Yes / No / Tab; more pages behind it). Rearrange or rebind any key afterward. (On older versions, import the layout by hand — see [Import the ready-made layout](#import-the-ready-made-layout) below.)
 3. On first use, grant **Accessibility** to the Logi Plugin Service (so it can type into your terminal). For **voice**, press the Voice key and grant **Microphone** when prompted — the helper and speech model install themselves on first use.
 
 > Everything works straight from the download — including the live **Model / Cost / Context / Activity** keys. On first load the plugin installs its status-line + hook scripts and wires them into `~/.claude/settings.json` for you, so the live keys light up on your **next Claude Code session** with no setup. (Details, and how to opt out, in [The live status bridge](#the-live-status-bridge) below.)
 
 ## Import the ready-made layout
+
+> **Since 1.7.1 this happens automatically on install** — the package carries the profile and the
+> plugin registers its own Options+ application. The steps below are only for older versions, or
+> if you deleted the auto-imported profile and want it back without reinstalling.
 
 Rather than mapping nine keys by hand, import the bundled profile to get the full layout instantly:
 

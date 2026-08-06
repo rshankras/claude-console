@@ -3,6 +3,18 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.7.1] — 2026-08-06
+
+### Added
+- **The keypad layout installs itself.** Claude Console is now an application plugin associated
+  with Terminal.app (`HasApplication` + a real bundle id in `ClaudeConsoleApplication`), and the
+  package ships `profiles/DefaultProfile70.lp5` — so a fresh install registers a "Claude Console"
+  application in Logi Options+ and auto-imports the full 9-key layout (Sessions on top, Clear /
+  Voice / Esc, Yes / No / Tab), no manual profile import. The mechanism is the one Vizhi uses.
+  The pre-1.5 attempt at this crashed and disabled the plugin because `HasApplication` was enabled
+  while the application class still returned empty names — an application with no identity. With
+  the bundle id filled in, it registers cleanly.
+
 ## [1.7.0] — 2026-08-06
 
 Both features answer the same piece of user feedback: sometimes you want to LOOK at what's about

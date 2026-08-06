@@ -18,7 +18,7 @@ description: Physical hardware controls for Claude Code on the MX Creative Keypa
 pluginFileName: ClaudeConsolePlugin.dll
 
 # Plugin version.
-version: 1.7.0
+version: 1.7.1
 
 # Author of the plugin. The author can be a company or an individual developer.
 author: ravishankar
@@ -51,8 +51,11 @@ supportedDevices:
 
 # List of plugin capabilities.
 pluginCapabilities:
-    # Uncomment the following line if this plugin is an application plugin.
-    #- HasApplication
+    # Application plugin, associated with Terminal.app (ClaudeConsoleApplication). Required for the
+    # auto-imported default profile in profiles/DefaultProfile70.lp5. NOTE: enabling this with an
+    # EMPTY bundle name in the application class crashes the service's association machinery and
+    # trips the crash-disable marker — the class must name a real application.
+    - HasApplication
 
     # Uncomment the following line if the plugin sends keyboard shortcuts to the target application.
     #- ActivatesApplication
