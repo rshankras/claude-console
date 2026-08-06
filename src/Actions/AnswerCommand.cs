@@ -28,6 +28,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public AnswerCommand()
             : base()
         {
+            // Repaint Yes/No when the targeted session starts or stops waiting, so the badge is live.
+            BridgeManager.Instance.Grid.OnGridChanged += () =>
+            {
+                this.ActionImageChanged(Yes);
+                this.ActionImageChanged(No);
+            };
+
             this.AddParameter(Yes, "Yes", "Answer")
                 .SetDescription("Type \"yes\" and press Enter — for plain-text questions (use Up/Down/Return for numbered menus)");
             this.AddParameter(No, "No", "Answer")
@@ -78,6 +85,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             }
         }
 
+        // The risk of whatever the targeted session is waiting on — i.e. what pressing Yes right now
+        // would approve. None when nothing is pending, which leaves the key looking normal.
+        private static ApprovalRisk TargetRisk()
+        {
+            var bridge = BridgeManager.Instance;
+            var target = bridge.TargetTty();
+            if (String.IsNullOrEmpty(target))
+            {
+                return ApprovalRisk.None;
+            }
+
+            return bridge.Grid.Sessions.TryGetValue(target, out var session) ? session.Risk : ApprovalRisk.None;
+        }
+
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             // Icon basename == actionParameter (yes/no/up/down/enter .png in Resources/icons), matching
@@ -91,7 +112,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 case Enter: color = KeyImage.Green; break;
                 default: color = KeyImage.Slate; break; // Up, Down
             }
-            return KeyImage.Render(imageSize, this.GetCommandDisplayName(actionParameter, imageSize), color, actionParameter);
+
+            var label = this.GetCommandDisplayName(actionParameter, imageSize);
+
+            // Yes/No carry an approval badge for the session they'd answer: amber when it's waiting,
+            // red when what's waiting is destructive. That's the "glance from across the room" cue —
+            // you can see an answer is wanted, and whether to look first, before pressing anything.
+            if (actionParameter == Yes || actionParameter == No)
+            {
+                return KeyImage.RenderWithApprovalBadge(imageSize, label, color, actionParameter, TargetRisk());
+            }
+
+            return KeyImage.Render(imageSize, label, color, actionParameter);
         }
     }
 }

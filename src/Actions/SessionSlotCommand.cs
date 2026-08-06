@@ -129,7 +129,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             }
 
             var selected = session.Tty == _bridge.TargetTty();
-            return KeyImage.RenderSessionSlot(imageSize, IconFor(session.State), selected);
+            return KeyImage.RenderSessionSlot(imageSize, IconFor(session.State), selected, session.Risk);
         }
 
         private String IconFor(String state)

@@ -76,6 +76,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         private String StateFor(String tty) => Path.Combine(_sessionsDir, tty + ".json");
         private String ActivityFor(String tty) => Path.Combine(_activityDir, tty + ".json");
+        private String PendingFor(String tty) => Path.Combine(_activityDir, "pending-" + tty + ".json");
 
         /// <summary>Raised when something that changes a key's APPEARANCE changed.</summary>
         public event Action OnGridChanged;
@@ -235,7 +236,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
 
                 var projectDir = state.Workspace?.ProjectDir ?? state.Workspace?.CurrentDir;
-                sessions[tty] = new GridSession
+                var session = new GridSession
                 {
                     Tty = tty,
                     Project = ProjectName(projectDir),
@@ -246,6 +247,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     State = ReadActivityState(tty),
                     UpdatedAt = LastWrite(file),
                 };
+                this.ApplyPendingApproval(session);
+                sessions[tty] = session;
             }
 
             return sessions;
@@ -272,6 +275,74 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             return activity.State == "done" ? "ready" : activity.State;
+        }
+
+        // Fill in what (if anything) this session is waiting to be approved. Only meaningful while
+        // the session is actually waiting: once it moves on, a leftover pending file must not keep a
+        // badge lit, and the hook clears it — this is belt and braces for a missed clear.
+        private void ApplyPendingApproval(GridSession session)
+        {
+            if (session.State != "waiting")
+            {
+                return;
+            }
+
+            var pending = ReadPendingApproval(this.PendingFor(session.Tty));
+            if (pending == null)
+            {
+                // Waiting, but we don't know what for — an older Claude Code with no
+                // PermissionRequest hook, or an idle prompt. Still worth an "answer me" badge.
+                session.Risk = ApprovalRisk.Normal;
+                return;
+            }
+
+            session.PendingTool = pending.Value.Tool;
+            session.PendingCommand = pending.Value.Command;
+            session.Risk = RiskClassifier.Classify(pending.Value.Tool, pending.Value.Command);
+        }
+
+        /// <summary>
+        /// Pull the tool name and (for Bash) the shell command out of a captured PermissionRequest
+        /// payload. Parsed defensively on purpose: these payloads have demonstrably changed shape
+        /// between Claude Code versions, and a badge is never worth throwing on.
+        /// </summary>
+        internal static (String Tool, String Command)? ReadPendingApproval(String path)
+        {
+            try
+            {
+                var fi = new FileInfo(path);
+                if (!fi.Exists || fi.Length == 0 || fi.Length > MaxFileBytes)
+                {
+                    return null;
+                }
+
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    return null;
+                }
+
+                var tool = root.TryGetProperty("tool_name", out var t) && t.ValueKind == JsonValueKind.String
+                    ? t.GetString()
+                    : null;
+
+                String command = null;
+                if (root.TryGetProperty("tool_input", out var input) && input.ValueKind == JsonValueKind.Object)
+                {
+                    // `command` is guaranteed only for Bash — tool_input's shape is per-tool.
+                    if (input.TryGetProperty("command", out var c) && c.ValueKind == JsonValueKind.String)
+                    {
+                        command = c.GetString();
+                    }
+                }
+
+                return tool == null && command == null ? null : (tool, command);
+            }
+            catch
+            {
+                return null;   // mid-write or an unfamiliar shape
+            }
         }
 
         internal static Int32? ContextPercent(ClaudeState state)
@@ -303,6 +374,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             TryDelete(this.StateFor(tty));
             TryDelete(this.ActivityFor(tty));
+            TryDelete(this.PendingFor(tty));
         }
 
         // Persist slot→tty so assignments survive a plugin reload (a rebuild shouldn't reshuffle your

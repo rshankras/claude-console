@@ -3,6 +3,27 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.6.0] — 2026-08-06
+
+### Added
+- **The keypad now tells you what it's asking to approve.** When Claude wants permission, **Yes** and
+  **No** light with a badge — **amber** for a routine request, **red** when the pending command is
+  destructive or hard to undo (`sudo`, `rm -rf`, `git push`, `reset --hard`, `terraform apply`,
+  piping a download into a shell, and similar). The session key showing that session goes red too, so
+  across a set of sessions you can see *which* one wants attention and whether to look first.
+  - Driven by a new `PermissionRequest` hook, wired automatically like the others. It fires the
+    moment a tool needs approval and carries the tool and its input. (`Notification` can't do this —
+    it carries no tool name, and Claude Code delays it about six seconds for permission prompts, so
+    approving quickly means it never fires at all.)
+  - The badge is a **hint, not a gate**: Claude Code's own prompt is still what holds the command.
+  - Older Claude Code builds ignore the unknown hook, so the badge simply stays amber there.
+  - Risk matching is anchored on word boundaries, so `workforce` isn't mistaken for `--force` and
+    `confirm.sh` isn't mistaken for `rm`.
+
+### Fixed
+- **The Activity key's "Waiting" state works again.** It tested a `status` field the status line
+  never sends, so it silently read Ready forever; it now follows the session grid and the hooks.
+
 ## [1.5.0] — 2026-08-06
 
 ### Added

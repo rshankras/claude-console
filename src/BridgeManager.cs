@@ -980,6 +980,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             changed |= EnsureHook(hooks, "PostToolUse", "*", activityCmd + " busy");
             changed |= EnsureHook(hooks, "Notification", null, activityCmd + " waiting");
             changed |= EnsureHook(hooks, "Stop", null, activityCmd + " done");
+            // PermissionRequest fires the moment a tool needs approval and carries the tool name and
+            // its input, which is what tells a routine approval from `git push --force`. Notification
+            // can't: it has no tool name and is delayed ~6s for permission prompts. Unknown events are
+            // ignored by older Claude Code builds, so adding this is safe there — the badge simply
+            // stays amber instead of going red.
+            changed |= EnsureHook(hooks, "PermissionRequest", null, activityCmd + " permission");
 
             // --- statusLine (chain an existing one rather than clobbering it) ---
             var ourStatusCmd = "bash " + StatuslineScript;
