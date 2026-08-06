@@ -1212,7 +1212,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // Stop voice capture and TYPE the transcript into the focused terminal (dictation).
-        public void StopVoiceCapture() => StopVoiceCaptureThen(text => InjectText(text, pressEnter: true));
+        // submit: true sends it (Return) — the Voice key; false leaves it in the input box for the
+        // user to correct before sending — the Voice Draft key. Whisper mishears often enough that
+        // "fix it, then press Return yourself" deserves a first-class path.
+        public void StopVoiceCapture(Boolean submit = true) =>
+            StopVoiceCaptureThen(text => InjectText(text, pressEnter: submit));
 
         // Stop voice capture and use the transcript to OPEN a project (new tab + cd + claude).
         public void StopVoiceCaptureForProject() => StopVoiceCaptureThen(NavigateToProjectByVoice);

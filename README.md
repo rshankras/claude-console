@@ -11,15 +11,15 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 ## Features
 
 - **Live status** — Model, live cost, and context usage read straight from Claude Code's status line.
-- **One‑press prompts** — Fix Bug, Write Tests, Explain, Refactor, Review, Optimize, Security, Document, Deploy.
+- **One‑press prompts** — Fix Bug, Write Tests, Explain, Refactor, Review, Optimize, Security, Document, Deploy — all [customizable](#customizing-prompt-keys), and any key can be a **draft** that you edit before sending.
 - **Answer prompts** — respond to Claude's questions from the keypad: Up/Down/Return to navigate menus, Yes/No to type a quick reply.
 - **Git, through Claude** — Commit, Diff, Push, Create PR, Status, Log.
 - **Terminal & session nav** — activate Terminal, new tab, new Claude session, next/prev tab. Prefer windows over tabs? There are **New Claude (Window)** and **Next/Prev Window** keys too.
-- **Offline voice dictation** — press, speak, press again; [whisper.cpp](https://github.com/ggerganov/whisper.cpp) transcribes locally and types it into your terminal.
+- **Offline voice dictation** — press, speak, press again; [whisper.cpp](https://github.com/ggerganov/whisper.cpp) transcribes locally and types it into your terminal. **Voice** sends it straight away; **Voice Draft** leaves it in the input box so you can fix mis-hearings first.
 - **Voice "Go to Project"** — say a project name; it scans your folders, fuzzy‑matches, and opens a new tab `cd`'d into the project with `claude` running.
 - **Model & modes** — a **Model** key opens the `/model` picker and shows the current model live; **Mode** cycles Claude Code's input modes (normal → auto‑accept edits → plan); plus Compact, Context, Clear.
 - **A key per session** — run Claude in several Terminal tabs and each gets its own key showing project, state and context usage. Press one to focus that tab and point every other key at it.
-- **See what you're approving** — Yes/No light amber when Claude wants permission, and **red** when the pending command is destructive (`git push`, `rm -rf`, `sudo`…).
+- **See what you're approving** — Yes/No and the session's own key light **amber** when Claude wants permission, and **red** when the pending command is destructive (`git push`, `rm -rf`, `sudo`…). [Legend](#the-approval-badge).
 - **Accept autocomplete** — **Tab** completes a slash‑command / `@file` suggestion and runs it in one press.
 - **Types where it should** — every key finds Claude's own Terminal tab and types there, so a press can't land in Slack or a browser because you glanced away. Can't find it? It beeps and types nothing.
 
@@ -112,18 +112,23 @@ Without the hooks the **Activity** key reads **Ready** and never changes — its
 
 Run Claude in more than one Terminal tab and each session gets **its own key** in the **Sessions** group — project name, context usage, and a face for working / waiting / ready. Press one to jump to that tab.
 
-Pressing a session key also **aims every other key at it**, which is the point: you can approve a prompt in session 2 while looking at session 1, or while reading a browser. With only one session running, nothing changes — the keys just work, no selection needed. If you haven't picked a session and exactly one is waiting on you, that's the one that gets your **Yes**. When it's genuinely ambiguous the plugin won't guess; it beeps instead of answering the wrong Claude.
+Pressing a session key also **pins every other key to it**, which is the point: you can approve a prompt in session 2 while looking at session 1, or while reading a browser. The pin **holds** until you press another session key or that session exits — switching Terminal tabs does not move it. With only one session running, nothing changes — the keys just work, no selection needed. If you haven't picked a session and exactly one is waiting on you, that's the one that gets your **Yes**. When it's genuinely ambiguous the plugin won't guess; it beeps instead of answering the wrong Claude.
 
 Notes:
 - **Slots are stable.** A session keeps its key for as long as it lives — close one and the others stay put, so you don't approve the wrong session out of muscle memory. The freed key is reused by the next session you start.
+- A session waiting for approval shows a badge on its key — see [The approval badge](#the-approval-badge) for what the colours mean.
+- The pin survives a plugin reload, and is released automatically if its session exits, so the keys are never stranded on a closed tab. **Go to Project** drops it too, since that starts a session somewhere new.
 - A new session takes a key **immediately** (labelled "Claude" until it first renders a status line), and a closed tab clears within about two seconds.
 - Six sessions fit; beyond that the extras run fine, just without a key.
 - Terminal.app only, like the rest of the plugin.
 
 ## Using voice
 
-- **Voice key** — press (you'll hear a *Tink*), say your prompt, press again. It transcribes locally and types the text into Claude's Terminal tab.
+- **Voice key** — press (you'll hear a *Tink*), say your prompt, press again. It transcribes locally, types the text into Claude's Terminal tab, **and sends it**.
+- **Voice Draft key** — same flow, but the transcript is only **typed, not sent**: it sits in Claude's input box so you can fix anything whisper misheard, then submit with **Return** (keyboard or the keypad's Return key). Use Voice for quick prompts, Voice Draft for anything long enough to mis-transcribe.
 - **Go to Project** — press, say a project name (e.g. *"indie app autopilot"*), press again. Opens a new tab in that project running `claude`; reuses an idle shell tab, or opens a new one if `claude` is already running.
+
+Start and stop a recording with the **same** key — each voice key is its own start/stop toggle.
 
 First use prompts once for **Microphone** permission (granted to the helper, not the daemon). The plugin also needs **Accessibility** permission for the Logi Plugin Service (to type into the terminal).
 
@@ -142,9 +147,29 @@ When Claude asks something, answer from the keypad instead of the keyboard:
 - **Up / Down / Return** — navigate and confirm a selection menu: tool‑permission prompts, multiple‑choice questions (`AskUserQuestion`), plan‑mode confirmation.
 - **Yes / No** — type `yes` / `no` + Enter, for plain‑text questions ("Should I proceed?"). They type the word, so they won't select a *numbered* menu item — use Up/Down + Return for those.
 
-**The keys tell you what you'd be approving.** When Claude asks for permission, Yes and No light with a badge — **amber** for a routine request, **red** when the pending command is destructive or hard to undo (`sudo`, `rm -rf`, `git push`, `reset --hard`, `terraform apply`, piping a download into a shell…). The session key goes red too, so with several sessions running you can see which one wants attention, and whether to look at the screen before pressing anything.
+### The approval badge
 
-It's a **hint, not a gate** — Claude Code's own prompt is still what holds the command, and the classifier leans toward warning you unnecessarily rather than staying quiet. Powered by a `PermissionRequest` hook that the plugin wires up for you; on older Claude Code builds that don't have it, the badge just stays amber.
+**The keys tell you what you'd be approving.** When Claude asks for permission, a small filled dot appears in the **top-right corner** of the key:
+
+| Badge | Meaning | What to do |
+|-------|---------|------------|
+| *(none)* | Nothing is waiting for an answer. | — |
+| 🟡 **Amber** | Waiting on you, and it's **routine** — reading a file, running a test, an edit. | Press **Yes** without looking. |
+| 🔴 **Red** | Waiting on something **destructive or outward-facing**. | Look at the screen first. |
+
+Red is triggered by the pending command matching one of the patterns in [`src/RiskClassifier.cs`](src/RiskClassifier.cs) — `sudo`, `rm -rf`, `git push`, `git reset --hard`, `git clean -fd`, `--force`, `dd of=`, `mkfs`, `chmod 777`, `drop table`, `delete from`, piping a download into a shell, `kubectl delete`, `terraform apply`/`destroy`, `npm publish`, `gh release create`, `killall`, `shutdown`…
+
+The same pending request lights up **three keys at once**:
+
+- **Yes** and **No** — what pressing them *right now* would approve, for whichever session the keys are pinned to.
+- **That session's own key** — so with several sessions running you can see *which* one wants attention. It carries the same amber/red distinction.
+
+Two things worth knowing:
+
+- It's a **hint, not a gate.** Claude Code's own prompt is still what actually holds the command, and the classifier deliberately leans toward warning you unnecessarily — a badge that stayed quiet on a real `git push --force` would be worse than one that cries wolf. (Bare generic flags like a lone `-f` are *not* flagged, though: a badge that lights on every other command teaches you to ignore it.)
+- **Amber means "answer me", not "the plugin knows what this is."** A session waiting for a plain-text question, an idle prompt, or an older Claude Code build without the `PermissionRequest` hook all show amber. Only **red** is a specific claim about the command.
+
+The badge clears itself as soon as the session stops waiting. It's powered by a `PermissionRequest` hook the plugin wires up for you (see [The live status bridge](#the-live-status-bridge)).
 
 These keys focus Claude's Terminal tab automatically before typing (verified by its TTY), so they work even when another app is frontmost — if Terminal isn't running or the tab is gone, they beep and type nothing. Same Accessibility permission as the prompt keys.
 
@@ -173,12 +198,15 @@ The **Prompts** keys are defined in `~/.claude/claude-console/prompts.json` (see
   { "id": "ship", "label": "Ship", "icon": "create_pr",
     "prompt": "Run the tests; if green, commit with a conventional message and open a PR." },
   { "id": "standup", "label": "Standup", "icon": "log",
-    "prompt": "Summarize what we changed today as 3 standup bullets." }
+    "prompt": "Summarize what we changed today as 3 standup bullets." },
+  { "id": "explain_this", "label": "Explain…", "icon": "explain", "submit": false,
+    "prompt": "Explain how this code works, focusing on " }
 ]
 ```
 
 - **`id`** — unique key id · **`label`** — text under the icon · **`prompt`** — typed into the terminal on press.
 - **`icon`** — an embedded icon basename; its baked colour is the key's colour. Pick from: `fix_bug`, `write_tests`, `explore`, `explain`, `refactor`, `review`, `optimize`, `security`, `document`, `deploy`, `commit`, `diff`, `push`, `create_pr`, `status`, `log`, `project`, `terminal` (an unknown name falls back to text).
+- **`submit`** *(optional, default `true`)* — set `false` to make a **draft key**: it types the prompt but doesn't press Return, so you can edit or finish the sentence before sending it (with Return — keyboard or keypad). The third example above types a stem and leaves the cursor at the end.
 
 Reload the plugin (rebuild, or restart Logi Options+) to pick up edits. Delete the file to restore the built-in defaults.
 
@@ -186,14 +214,14 @@ Reload the plugin (rebuild, or restart Logi Options+) to pick up edits. Delete t
 
 | Group | Keys |
 |-------|------|
-| **Sessions** | Session 1-6* — one key per running Claude session (press to focus it and aim the other keys at it) |
+| **Sessions** | Session 1-6* — one key per running Claude session (press to focus it and pin the other keys to it) |
 | **Core** | Model* · Cost* · Activity* · Esc · Mode · Tab · Compact · Context · Clear · Exit |
 | **Answer** | Yes · No · Up · Down · Return |
 | **Prompts** | Fix Bug · Write Tests · Explore · Explain · Refactor · Review · Optimize · Security · Document · Deploy |
 | **Git** | Commit · Diff · Push · Create PR · Status · Log |
 | **Scroll** | Scroll Up · Scroll Down |
 | **Terminal** | Terminal · New Tab · New Claude · Next Tab · Prev Tab · New Claude (Window) · Next Window · Prev Window · **Go to Project** (voice) |
-| **Universal** | **Voice** |
+| **Universal** | **Voice** · **Voice Draft** |
 
 *\* live display, updates from the status line.*
 

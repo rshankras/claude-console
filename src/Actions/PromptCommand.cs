@@ -11,6 +11,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// can bind their own prompts and macros. If that file is missing or invalid, the built-in
     /// defaults are used (and written out once as an editable starter). A key's colour comes from
     /// its icon — an embedded basename like "fix_bug" / "deploy"; an unknown icon falls back to text.
+    ///
+    /// An entry with "submit": false is a DRAFT key: it types its prompt without pressing Return,
+    /// so the user can edit or extend it before sending. Absent means true — existing files keep
+    /// today's type-and-send behaviour.
     /// </summary>
     public class PromptCommand : PluginDynamicCommand
     {
@@ -47,7 +51,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 var param = this.AddParameter(p.Id, p.Label ?? p.Id, "Prompts");
                 if (!String.IsNullOrWhiteSpace(p.Prompt))
                 {
-                    param.SetDescription("Types this prompt into Claude Code: " + p.Prompt);
+                    param.SetDescription(p.Submits
+                        ? "Types this prompt into Claude Code: " + p.Prompt
+                        : "Types this prompt for you to edit before sending (press Return to send): " + p.Prompt);
                 }
             }
         }
@@ -100,8 +106,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         {
             if (_prompts.TryGetValue(actionParameter, out var p) && !String.IsNullOrEmpty(p.Prompt))
             {
-                BridgeManager.Instance.SendPrompt(p.Prompt);
-                PluginLog.Info($"PromptCommand: Sent prompt '{p.Id}'");
+                // "submit": false in prompts.json turns a key into a DRAFT: the prompt lands in the
+                // input box to be edited or extended, and the user sends it with Return.
+                BridgeManager.Instance.InjectText(p.Prompt, pressEnter: p.Submits);
+                PluginLog.Info($"PromptCommand: {(p.Submits ? "Sent" : "Drafted")} prompt '{p.Id}'");
             }
         }
 

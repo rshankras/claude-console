@@ -3,6 +3,27 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.7.0] — 2026-08-06
+
+Both features answer the same piece of user feedback: sometimes you want to LOOK at what's about
+to be sent — a voice transcript with a mis-heard word, a canned prompt that needs one more clause —
+before it goes. The shared mechanism is drafting: type into Claude's input box, don't press Return,
+let the user finish the thought and submit it themselves.
+
+### Added
+- **Voice Draft key** (Universal group). Same press-to-record, press-to-transcribe flow as Voice,
+  but the transcript is only typed — not sent. Fix whatever whisper misheard, then submit with
+  Return (keyboard or the keypad's Return key). Voice itself is unchanged: it still types and
+  sends in one go. Two keys rather than a mode, so both behaviours are always one press away and
+  no press depends on invisible state. New compose-glyph icon so the two keys read differently at
+  key size.
+- **`"submit": false` on prompt keys.** Any entry in `~/.claude/claude-console/prompts.json` can
+  now be a draft key: it types its prompt and leaves the cursor in the input box, so a stem like
+  "Explain how this code works, focusing on " becomes a fill-in-the-blank. Absent means `true` —
+  every existing prompts.json keeps its type-and-send behaviour. The README documents the flag
+  (and the fact, easy to miss, that the prompt keys were always fully customizable through that
+  file — labels, icons, prompt text, and how many keys there are).
+
 ## [1.6.2] — 2026-08-06
 
 ### Fixed
