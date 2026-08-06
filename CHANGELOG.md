@@ -28,6 +28,16 @@ let the user finish the thought and submit it themselves.
   prompts.json is upgraded in place — the seed file wins over the built-ins, so without this no
   existing install would ever see the new prompts. Any edit at all (a reworded prompt, a swapped
   icon, an added key) marks the file as yours and blocks the upgrade.
+- **Designer icon set adopted** across every key — the July icon pack's "custom coloured"
+  variant (38 hand-drawn line icons, softer harmonized palette) replaces the SF Symbols
+  originals. Threshold and model variants (gauge amber/red, the three model brains) are
+  recoloured from the designer's own glyphs at build time, Voice Draft is composed from the
+  designer's mic plus stroke-matched wave bars, and the few icons the pack predates (Deploy,
+  hourglasses, window nav) are regenerated in the designer's palette so nothing looks foreign.
+  The plugin tile is the pack's dark-terminal-with-starburst mark. Sources live in
+  `assets/designer-icons/`; `tools/convert-designer-icons.swift` renders them, and
+  `tools/generate-icons.swift` now owns only the leftovers — the two scripts can't overwrite
+  each other's output.
 - **Session-key face redesigned**, iterated against photos of the real keypad. The project name
   is now the key's single-line label — the largest, crispest text the hardware can render, in the
   same style as every other key — instead of sharing a shrunken two-line label with the context %.

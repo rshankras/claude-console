@@ -1,81 +1,37 @@
 // generate-icons.swift — renders SF Symbols to colored-on-transparent PNGs for Keypad key faces.
+//
+// Owns ONLY the icons the designer pack doesn't cover — everything else is rendered by
+// tools/convert-designer-icons.swift from assets/designer-icons/. The two sets are disjoint:
+// re-running this script must never overwrite a designer icon.
+//
 // Usage: swift generate-icons.swift <output-dir>
 import AppKit
 
-// Bright palette that reads well on a dark key. (name, SF Symbol, hex tint)
-let G = "22c55e", R = "ef4444", A = "f59e0b", B = "60a5fa", P = "a78bfa", Y = "94a3b8"
+// The DESIGNER's palette (sampled from the pack), so these SF-generated stragglers sit in the
+// same colour family as the designer icons around them.
+let G = "7FC17A", R = "CE655C", A = "DFA658", B = "81A8ED", P = "A194EB", Y = "9DA5B7"
 let icons: [(String, String, String)] = [
-    ("voice", "mic.fill", P),
-    ("voice_draft", "waveform.and.mic", P),          // dictate-then-edit — mic WITH a waveform: still reads "voice" (a bare pencil didn't), but its silhouette differs from Voice's plain mic
-    ("esc", "hand.raised.fill", R),                 // red stop-hand — "interrupt/stop"; distinct from No's red ✕ (xmark.circle.fill)
-    ("clear", "trash.fill", A),
-    ("exit", "power", R),
-    ("plan", "switch.2", P),                         // "Mode" key (action id still "plan") — Shift+Tab mode cycler
-    ("tab", "arrow.right.to.line", Y),               // Tab+Enter — accept autocomplete & submit (distinct from Mode's Shift+Tab)
-    ("compact", "arrow.down.right.and.arrow.up.left", Y),
-    ("context", "doc.text.fill", Y),
-    ("model", "sparkles", P),
-    ("deploy", "shippingbox.fill", G),
-    ("commit", "checkmark.seal.fill", A),
-    ("diff", "plusminus", A),
-    ("push", "arrow.up.circle.fill", A),
-    ("create_pr", "arrow.triangle.branch", A),
-    ("status", "info.circle.fill", A),
-    ("log", "list.bullet", A),
-    ("fix_bug", "ant.fill", B),
-    ("write_tests", "checklist", B),
-    ("explore", "binoculars.fill", B),
-    ("explain", "text.bubble.fill", B),
-    ("refactor", "arrow.triangle.2.circlepath", B),
-    ("review", "eye.fill", B),
-    ("optimize", "bolt.fill", B),
-    ("security", "lock.shield.fill", B),
-    ("document", "text.book.closed.fill", B),
-    ("cost", "dollarsign.circle.fill", G),
+    // (voice_draft is composed from designer parts — see convert-designer-icons.swift)
+    ("context", "doc.text.fill", Y),                 // legacy basename, kept for old bindings
+    ("model", "sparkles", P),                        // legacy basename, kept for old bindings
+    ("deploy", "shippingbox.fill", G),               // 10th prompt key — absent from the pack
     ("terminal", "terminal.fill", Y),
-    ("new_tab", "plus.square.fill", Y),
-    ("next_tab", "arrow.right.circle.fill", Y),
-    ("prev_tab", "arrow.left.circle.fill", Y),
-    ("new_claude", "plus.bubble.fill", Y),
     // Window nav — solid TRIANGLES in squares. Differs from the tab keys' line-arrows-in-circles on
     // BOTH the inner glyph (▶ vs →) and the outer shape (square vs circle), so window ≠ tab even on a
     // tiny dark key (a plain arrow.*.square just re-drew the tab arrow in a near-invisible square).
     ("new_claude_window", "macwindow.badge.plus", Y),
     ("next_window", "arrowtriangle.right.square.fill", Y),
     ("prev_window", "arrowtriangle.left.square.fill", Y),
-    ("project", "folder.fill", B),
-    // Answer keys — respond when Claude prompts a question (basenames match AnswerCommand params).
-    ("yes", "checkmark.circle.fill", G),
-    ("no", "xmark.circle.fill", R),
-    ("up", "arrowtriangle.up.fill", Y),
-    ("down", "arrowtriangle.down.fill", Y),
-    ("enter", "return", G),
-    // Scroll keys — page back/forward through the conversation (basenames match ScrollCommand params).
-    // Arrow-to-line reads as "page/jump", clearly distinct from the solid Answer arrowtriangles above.
-    ("scroll_up", "arrow.up.to.line", B),
-    ("scroll_down", "arrow.down.to.line", B),
-    // Live-display face icon (Context usage key) + amber/red variants for the fill warning (#2).
-    ("gauge", "gauge.medium", B),
-    ("gauge_warn", "gauge.medium", A),   // 75%+  — getting full
-    ("gauge_crit", "gauge.medium", R),   // 90%+  — compact soon
-    // Model cycle fallback brain — shown before the live model is known.
-    ("brain", "brain", P),
-    // Activity status key (#3): working / needs-you / idle.
+    // Activity status key: working / needs-you (the ready state is the designer "done" icon).
     ("busy", "hourglass", B),
     ("busy0", "hourglass.tophalf.filled", B),     // animated "Working" — sand flips top↔bottom
     ("busy1", "hourglass.bottomhalf.filled", B),
     ("waiting", "bell.badge.fill", R),
-    ("done", "circle.fill", G),          // ready/idle status dot — distinct from the Yes checkmark
 ]
 
-// Coloured model brains — rendered IN COLOUR (not white) so each tier is distinguishable at a
-// glance. Basenames brain_<id> are used by the Model key's live display (ModelCycleCommand) to
-// tint the current-model brain (opus / sonnet / haiku).
-let coloredIcons: [(String, String, String)] = [
-    ("brain_haiku",  "brain", G),  // fast      → green
-    ("brain_sonnet", "brain", B),  // balanced  → blue
-    ("brain_opus",   "brain", P),  // top tier  → purple
-]
+// No coloured brains here any more — brain and brain_haiku/sonnet/opus are designer recolors
+// (see convert-designer-icons.swift).
+let coloredIcons: [(String, String, String)] = []
 
 // Voice "listening" animation: equalizer frames VoiceCommand cycles while recording. Hand-drawn
 // bars (not an SF Symbol) so cycling them reads as live, bouncing audio. Heights are fractions of
