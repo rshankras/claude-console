@@ -28,6 +28,12 @@ let the user finish the thought and submit it themselves.
   prompts.json is upgraded in place — the seed file wins over the built-ins, so without this no
   existing install would ever see the new prompts. Any edit at all (a reworded prompt, a swapped
   icon, an added key) marks the file as yours and blocks the upgrade.
+- **Session-key face polish**, from a photo of the real hardware: the state icon is optically
+  centred in the space above the label (it was glued to the top edge with a dead band beneath);
+  the pin brackets are thicker so the selected session reads from an arm's length; the approval
+  badge gets a halo ring for a clean silhouette; and when a pinned session is waiting on you —
+  the one state that matters most — the badge now owns the top-right corner instead of being
+  drawn over the bracket.
 - **`"submit": false` on prompt keys.** Any entry in `~/.claude/claude-console/prompts.json` can
   now be a draft key: it types its prompt and leaves the cursor in the input box, so a stem like
   "Explain how this code works, focusing on " becomes a fill-in-the-blank. Absent means `true` —

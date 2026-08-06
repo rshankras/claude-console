@@ -87,12 +87,15 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     try
                     {
-                        // Small and tucked to the top: the service renders the two-line label
-                        // (project + context %) underneath, and at 0.55 the icon crowded it enough
-                        // that the second line was clipped off the bottom of the key.
+                        // Optically centred in the area ABOVE the label: the service renders the
+                        // two-line label (project + context %) over the lower part of the key, and
+                        // an icon whose bottom edge passes ~52% crowds it into clipping (0.55
+                        // top-anchored did exactly that — the 1.6.1 bug). 7% + 44% ends at 51%:
+                        // as large as the label zone allows, without the glued-to-the-edge look
+                        // that top-anchoring at 2% had.
                         var img = PluginResources.ReadImage("icons." + icon + ".png");
-                        var s = (Int32)(Math.Min(bitmap.Width, bitmap.Height) * 0.38);
-                        bitmap.DrawImage(img, (bitmap.Width - s) / 2, (Int32)(bitmap.Height * 0.02), s, s);
+                        var s = (Int32)(Math.Min(bitmap.Width, bitmap.Height) * 0.44);
+                        bitmap.DrawImage(img, (bitmap.Width - s) / 2, (Int32)(bitmap.Height * 0.07), s, s);
                     }
                     catch (Exception ex)
                     {
@@ -102,7 +105,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 if (selected)
                 {
-                    DrawSelectionCorners(bitmap);
+                    DrawSelectionCorners(bitmap, badgePresent: risk != ApprovalRisk.None);
                 }
 
                 DrawApprovalBadge(bitmap, risk);
@@ -152,7 +155,9 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         // A filled dot in the top-right corner. Amber = something wants an answer; red = that
         // something is destructive. Drawn in code so no new icon art has to ship (and so the two
-        // states can never drift apart visually).
+        // states can never drift apart visually). A thin background-colour halo ring gives the dot
+        // a clean silhouette over whatever sits behind it (an icon corner on Yes/No, a bracket on
+        // a session key) — the standard notification-dot treatment.
         private static void DrawApprovalBadge(BitmapBuilder bitmap, ApprovalRisk risk)
         {
             if (risk == ApprovalRisk.None)
@@ -162,25 +167,38 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             var scale = Math.Min(bitmap.Width, bitmap.Height) / 96f;
             var radius = Math.Max(2, (Int32)(9 * scale));
+            var halo = Math.Max(1, (Int32)(2 * scale));
             var inset = (Int32)(3 * scale);
             var cx = bitmap.Width - inset - radius;
             var cy = inset + radius;
 
+            bitmap.FillCircle(cx, cy, radius + halo, Background);
             bitmap.FillCircle(cx, cy, radius, risk == ApprovalRisk.High ? BadgeRisk : BadgeWaiting);
         }
 
-        // Two top corner brackets. Everything scales off the key's short side so the marker looks
-        // the same on every PluginImageSize the SDK asks for.
-        private static void DrawSelectionCorners(BitmapBuilder bitmap)
+        // Top corner brackets marking the pinned session. Everything scales off the key's short
+        // side so the marker looks the same on every PluginImageSize the SDK asks for. 3px arms on
+        // purpose: selection must read from an arm's length without focusing, and 2px didn't.
+        private static void DrawSelectionCorners(BitmapBuilder bitmap, Boolean badgePresent)
         {
             var scale = Math.Min(bitmap.Width, bitmap.Height) / 96f;
             var inset = (Int32)(4 * scale);
-            var arm = (Int32)(14 * scale);
-            var thickness = Math.Max(1, (Int32)(2 * scale));
+            var arm = (Int32)(18 * scale);
+            var thickness = Math.Max(2, (Int32)(3 * scale));
 
             // top-left
             bitmap.FillRectangle(inset, inset, arm, thickness, Selection);
             bitmap.FillRectangle(inset, inset, thickness, arm, Selection);
+
+            // The badge owns the top-right corner while an approval is pending — pinned-and-
+            // waiting is the single most important state this key has, and dot-over-bracket
+            // turned it to mush (a shortened bracket stub reads as a rendering glitch, so the
+            // whole bracket yields; the left one alone still marks the pin).
+            if (badgePresent)
+            {
+                return;
+            }
+
             // top-right
             bitmap.FillRectangle(bitmap.Width - inset - arm, inset, arm, thickness, Selection);
             bitmap.FillRectangle(bitmap.Width - inset - thickness, inset, thickness, arm, Selection);
