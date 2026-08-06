@@ -3,6 +3,33 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.5.0] — 2026-08-06
+
+### Added
+- **A key per Claude session.** The new **Sessions** group gives each running Claude Code session
+  its own LCD key showing its project name, context usage, and whether it's working, waiting on you,
+  or ready. Press one to jump to that Terminal tab — and to point every other key at it, so you can
+  approve a prompt in session 2 while looking at session 1, or at a browser. Six slots fill a page
+  alongside Yes / No / Voice.
+  - **Slots are stable.** A session keeps its key for as long as it lives; when one exits the others
+    do *not* shuffle, so muscle memory can't send an approval to the wrong session. The freed key is
+    reused by the next session to start.
+  - Sessions are discovered from a `ps` scan as well as the status line, so a brand-new session
+    lights a key immediately (labelled "Claude" until it first renders), and a **closed tab clears
+    within ~2 seconds** instead of lingering on a timer.
+  - Slot assignments are remembered across a plugin reload.
+
+### Changed
+- **Typing keys follow the selected session.** With one session running nothing changes. With
+  several, keys target the session you last selected or focused; if you haven't chosen and exactly
+  one session is waiting on you, that one is used. When it's genuinely ambiguous the plugin declines
+  to guess and the injection guard beeps rather than typing into the wrong session.
+
+### Fixed
+- **The Activity key's "Waiting" fallback never worked.** It tested a `status` field that Claude
+  Code's status line does not send, so without the hooks the key always read Ready. README claimed
+  otherwise; both are corrected.
+
 ## [1.4.0] — 2026-08-06
 
 ### Changed

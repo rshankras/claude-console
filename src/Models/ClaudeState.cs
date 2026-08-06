@@ -29,6 +29,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
 
         [JsonPropertyName("session_id")]
         public String SessionId { get; set; }
+
+        [JsonPropertyName("workspace")]
+        public WorkspaceInfo Workspace { get; set; }
+
+        /// <summary>
+        /// Claude Code's own name for the session, e.g. "port-vizhi-features-claude-console".
+        /// Too long for a key label, but good tooltip material.
+        /// </summary>
+        [JsonPropertyName("session_name")]
+        public String SessionName { get; set; }
+    }
+
+    /// <summary>
+    /// Where the session is working. <c>project_dir</c> is the repo/project root and stays put as
+    /// Claude moves around, so its basename is the stable label for a session grid key;
+    /// <c>current_dir</c> can point at a subdirectory.
+    /// </summary>
+    public class WorkspaceInfo
+    {
+        [JsonPropertyName("project_dir")]
+        public String ProjectDir { get; set; }
+
+        [JsonPropertyName("current_dir")]
+        public String CurrentDir { get; set; }
     }
 
     public class ModelInfo
