@@ -62,6 +62,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         private readonly String _activityDir;
         private readonly String _registryFile;
 
+        // Last result of the `ps` scan, reused on the polls that don't run one.
+        private IReadOnlyCollection<String> _lastLiveTtys;
+
         public SessionRegistry()
             : this(IpcPaths.SessionsDir, IpcPaths.ActivityDir, IpcPaths.RegistryFile)
         {
@@ -126,6 +129,16 @@ namespace Loupedeck.ClaudeConsolePlugin
                     t != null && _sessions.TryGetValue(t, out var s) ? s.VisualKey : ""));
 
                 var next = ReadSessionsFromDisk();
+
+                // The `ps` scan only runs every 4th poll. On the polls in between, reuse the last
+                // known set rather than treating "no scan" as "nothing is alive" — otherwise
+                // provisional sessions (a live tab with no state file yet) vanish and reappear
+                // twice a second, the keys flicker, and a press can land on a momentarily empty slot.
+                liveTtys ??= _lastLiveTtys;
+                if (liveTtys != null)
+                {
+                    _lastLiveTtys = liveTtys;
+                }
 
                 if (liveTtys != null)
                 {
@@ -352,11 +365,15 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 return null;
             }
-            if (ctx.UsedPercentage > 0)
+            // Both of these are null on a session that hasn't used any context yet — report "unknown"
+            // rather than a misleading 0%.
+            if (ctx.UsedPercentage is > 0)
             {
-                return (Int32)Math.Round(ctx.UsedPercentage);
+                return (Int32)Math.Round(ctx.UsedPercentage.Value);
             }
-            return ctx.MaxTokens > 0 ? (Int32)Math.Round(100.0 * ctx.TotalInputTokens / ctx.MaxTokens) : (Int32?)null;
+            var used = ctx.TotalInputTokens ?? 0;
+            var max = ctx.MaxTokens ?? 0;
+            return max > 0 && used > 0 ? (Int32)Math.Round(100.0 * used / max) : (Int32?)null;
         }
 
         /// <summary>Basename of the project dir, or "Claude" when unknown.</summary>

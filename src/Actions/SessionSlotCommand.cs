@@ -111,7 +111,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return String.Empty;   // empty slot: no label at all, so the key reads as unused
             }
 
-            var ctx = session.CtxPercent.HasValue ? $"{session.CtxPercent}%" : "--";
+            // Context reads as "42%"; a session that hasn't used any yet has nothing useful to show,
+            // so the line is left blank rather than claiming "0%" or "--".
+            var ctx = session.CtxPercent.HasValue ? $"{session.CtxPercent}%" : String.Empty;
             return $"{Truncate(session.Project, 12)}{Environment.NewLine}{ctx}";
         }
 

@@ -3,6 +3,30 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.6.1] — 2026-08-06
+
+First release actually exercised on hardware. Three bugs, all of which made the plugin look broken
+on a real keypad; none were reachable from the tests as they stood.
+
+### Fixed
+- **Every session key read "Claude" instead of the project name.** Claude Code sends `null` — not
+  `0` — for context and cost figures it doesn't have yet, which is the normal state of a session
+  that hasn't done any work. Those fields were declared as non-nullable numbers, so a single `null`
+  made the *entire* status-line payload fail to parse; the session was discarded and re-added by the
+  process scan as an unnamed placeholder. **This affected every live key** (Model / Cost / Context /
+  Activity), not just the grid — on a fresh session they all silently showed defaults. All payload
+  numbers are now nullable, and a session with no context usage yet shows a blank rather than a
+  misleading "0%".
+- **Nothing could be typed or focused when a Terminal window had no tabs.** Terminal raises
+  "Can't get every tab of item N of every window" (-1728) for such windows — a settings or inspector
+  window is enough — which aborted the whole focus script. Since every typing key runs that script
+  first, **Yes / No / prompts / voice all silently did nothing**, and pressing a session key didn't
+  bring its tab up. Such windows are now skipped.
+- **Session keys flickered, and presses hit "empty" slots.** The process scan runs on every 4th
+  poll; on the polls in between, "no scan" was being treated as "nothing is alive", so sessions
+  vanished and reappeared twice a second. The last known scan is now carried over.
+- Session keys no longer clip their bottom line — the icon was crowding the two-line label.
+
 ## [1.6.0] — 2026-08-06
 
 ### Added

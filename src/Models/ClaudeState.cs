@@ -64,31 +64,37 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         public String ModelId { get; set; }
     }
 
+    // NOTE: every number below is NULLABLE on purpose. Claude Code sends `null` — not 0 — for
+    // figures it doesn't have yet, which is the normal state of a session that hasn't done any work.
+    // Declared non-nullable, a single null makes System.Text.Json throw and the WHOLE state object
+    // fails to parse, blanking every live key. That is exactly what happened in 1.6.0: a fresh
+    // session sends "used_percentage": null, the parse threw, the session was dropped, and the grid
+    // fell back to showing it as an unnamed "Claude". Keep these nullable.
     public class CostInfo
     {
         [JsonPropertyName("total_cost_usd")]
-        public Decimal TotalCostUsd { get; set; }
+        public Decimal? TotalCostUsd { get; set; }
 
         [JsonPropertyName("total_lines_added")]
-        public Int32 TotalLinesAdded { get; set; }
+        public Int32? TotalLinesAdded { get; set; }
 
         [JsonPropertyName("total_lines_removed")]
-        public Int32 TotalLinesRemoved { get; set; }
+        public Int32? TotalLinesRemoved { get; set; }
     }
 
     public class ContextInfo
     {
         [JsonPropertyName("used_percentage")]
-        public Double UsedPercentage { get; set; }
+        public Double? UsedPercentage { get; set; }
 
         [JsonPropertyName("total_input_tokens")]
-        public Int32 TotalInputTokens { get; set; }
+        public Int32? TotalInputTokens { get; set; }
 
         [JsonPropertyName("total_output_tokens")]
-        public Int32 TotalOutputTokens { get; set; }
+        public Int32? TotalOutputTokens { get; set; }
 
         [JsonPropertyName("context_window_size")]
-        public Int32 MaxTokens { get; set; }
+        public Int32? MaxTokens { get; set; }
     }
 
     public class SessionInfo
@@ -97,7 +103,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         public String Id { get; set; }
 
         [JsonPropertyName("turns")]
-        public Int32 Turns { get; set; }
+        public Int32? Turns { get; set; }
     }
 
     /// <summary>

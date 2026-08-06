@@ -87,9 +87,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     try
                     {
+                        // Small and tucked to the top: the service renders the two-line label
+                        // (project + context %) underneath, and at 0.55 the icon crowded it enough
+                        // that the second line was clipped off the bottom of the key.
                         var img = PluginResources.ReadImage("icons." + icon + ".png");
-                        var s = (Int32)(Math.Min(bitmap.Width, bitmap.Height) * 0.55);
-                        bitmap.DrawImage(img, (bitmap.Width - s) / 2, (Int32)(bitmap.Height * 0.04), s, s);
+                        var s = (Int32)(Math.Min(bitmap.Width, bitmap.Height) * 0.38);
+                        bitmap.DrawImage(img, (bitmap.Width - s) / 2, (Int32)(bitmap.Height * 0.02), s, s);
                     }
                     catch (Exception ex)
                     {

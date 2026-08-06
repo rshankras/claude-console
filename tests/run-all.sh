@@ -12,10 +12,18 @@ STATUS=0
 
 # The grid code DELETES state files for sessions it judges dead. Tests must therefore drive a
 # throwaway root, never the live one — pointed at /tmp/claude-console a test run would wipe a
-# running session's state. Fingerprint the live root before and after to prove they never do.
+# running session's state.
+#
+# Detect that by leaving a canary in the live root and checking it survives. Comparing a full
+# directory listing would NOT work: with the plugin installed, Claude Code and the plugin write
+# there continuously, so any snapshot differs by the time the suite finishes. Only a test that
+# deletes or wipes the root can remove the canary.
 LIVE_ROOT="/tmp/claude-console"
-live_fingerprint() { ls -la "$LIVE_ROOT" 2>/dev/null | sort; }
-LIVE_BEFORE="$(live_fingerprint)"
+CANARY="$LIVE_ROOT/.suite-canary"
+CANARY_PLACED=0
+if [ -d "$LIVE_ROOT" ]; then
+  if : > "$CANARY" 2>/dev/null; then CANARY_PLACED=1; fi
+fi
 
 echo "▶ C# unit tests"
 if ! dotnet test "$REPO/tests/ClaudeConsolePlugin.Tests.csproj" --nologo "$@"; then
@@ -29,11 +37,14 @@ if ! bash "$REPO/tests/scripts/test-bridge-scripts.sh"; then
 fi
 
 echo
-echo "▶ live IPC root untouched"
-if [ "$(live_fingerprint)" = "$LIVE_BEFORE" ]; then
-  echo "  ok   $LIVE_ROOT unchanged by the test run"
+echo "▶ live IPC root not wiped"
+if [ "$CANARY_PLACED" -eq 0 ]; then
+  echo "  skip no live IPC root on this machine — nothing a test could destroy"
+elif [ -f "$CANARY" ]; then
+  rm -f "$CANARY"
+  echo "  ok   $LIVE_ROOT survived the test run"
 else
-  echo "  FAIL a suite wrote to or deleted from the LIVE IPC root ($LIVE_ROOT)."
+  echo "  FAIL a suite deleted the LIVE IPC root ($LIVE_ROOT) — that wipes running sessions' state."
   echo "       Tests must use an injected temp root — see SessionRegistryTests."
   STATUS=1
 fi

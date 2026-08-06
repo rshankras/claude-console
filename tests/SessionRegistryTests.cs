@@ -281,6 +281,38 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(marker, File.GetLastWriteTimeUtc(_registryFile));
         }
 
+        [Fact]
+        public void Sessions_survive_the_polls_that_do_not_rescan_processes()
+        {
+            // The `ps` scan runs every 4th poll; the others pass null. Treating null as "nothing is
+            // alive" made provisional sessions vanish and reappear twice a second — the keys
+            // flickered and a press could land on a momentarily empty slot ("slot N is empty").
+            var registry = this.NewRegistry();
+            registry.Refresh(new HashSet<String> { "ttys004" });   // scan tick: provisional appears
+            Assert.NotNull(registry.SlotSession(1));
+
+            registry.Refresh(null);                                // in-between tick
+            registry.Refresh(null);
+
+            Assert.NotNull(registry.SlotSession(1));
+            Assert.Equal("ttys004", registry.SlotSession(1).Tty);
+        }
+
+        [Fact]
+        public void A_scan_that_reports_nothing_still_reaps()
+        {
+            // An explicit empty scan means "nothing is running" and must be honoured — only a null
+            // (no scan this tick) is the one we carry over.
+            WriteSession("ttys001", "/Users/x/alpha", 1);
+            var registry = this.NewRegistry();
+            registry.Refresh(new HashSet<String> { "ttys001" });
+            Assert.NotNull(registry.SlotSession(1));
+
+            registry.Refresh(new HashSet<String>());
+
+            Assert.Null(registry.SlotSession(1));
+        }
+
         // --- change notification ---------------------------------------------------------------
 
         [Fact]

@@ -490,14 +490,19 @@ namespace Loupedeck.ClaudeConsolePlugin
             "  if targetTty is not \"\" then\n" +
             "    set found to false\n" +
             "    repeat with terminalWindow in windows\n" +
-            "      repeat with terminalTab in tabs of terminalWindow\n" +
-            "        if (tty of terminalTab as text) is targetTty then\n" +
-            "          set selected tab of terminalWindow to terminalTab\n" +
-            "          set index of terminalWindow to 1\n" +
-            "          set found to true\n" +
-            "          exit repeat\n" +
-            "        end if\n" +
-            "      end repeat\n" +
+            // Not every Terminal window has tabs — a settings/inspector window raises
+            // "Can't get every tab of item N of every window" (-1728), which aborted the whole
+            // script and left the plugin unable to focus OR type. Skip such windows instead.
+            "      try\n" +
+            "        repeat with terminalTab in tabs of terminalWindow\n" +
+            "          if (tty of terminalTab as text) is targetTty then\n" +
+            "            set selected tab of terminalWindow to terminalTab\n" +
+            "            set index of terminalWindow to 1\n" +
+            "            set found to true\n" +
+            "            exit repeat\n" +
+            "          end if\n" +
+            "        end repeat\n" +
+            "      end try\n" +
             "      if found then exit repeat\n" +
             "    end repeat\n" +
             "    if not found then\n" +
