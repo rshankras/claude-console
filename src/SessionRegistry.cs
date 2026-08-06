@@ -90,6 +90,28 @@ namespace Loupedeck.ClaudeConsolePlugin
             get { lock (_lock) { return new Dictionary<String, GridSession>(_sessions, StringComparer.Ordinal); } }
         }
 
+        /// <summary>
+        /// TTY of the session pinned by a session-key press, or null when the keys follow the
+        /// frontmost tab. Persisted alongside the slot assignments so a plugin reload — which
+        /// happens on every rebuild and every upgrade — doesn't silently drop your selection.
+        /// </summary>
+        public String FocusedSession
+        {
+            get { lock (_lock) { return _registry.FocusedSession; } }
+            set
+            {
+                lock (_lock)
+                {
+                    if (String.Equals(_registry.FocusedSession, value, StringComparison.Ordinal))
+                    {
+                        return;   // the poll asks constantly; only a real change is worth a write
+                    }
+                    _registry.FocusedSession = value;
+                    this.Persist();
+                }
+            }
+        }
+
         /// <summary>The session on a 1-based slot, or null when that key is empty.</summary>
         public GridSession SlotSession(Int32 slot)
         {

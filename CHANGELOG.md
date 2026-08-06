@@ -3,6 +3,26 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.6.2] — 2026-08-06
+
+### Fixed
+- **Picking a session didn't stick — keys drifted back to whatever Terminal tab was in front.**
+  Pressing a session key set the target in the same field the ~2.5s frontmost-tab poll overwrites,
+  so the choice survived only until the next poll. Select session 2, glance back at session 1, then
+  press Clear, and `/clear` wiped session 1 — the exact thing the grid exists to prevent. (A press
+  landing while a poll's `osascript` was still in flight was reverted outright, before you could
+  look anywhere.) A session key now **pins** its session: every key — Yes / No / Clear / Compact /
+  Esc / prompts / voice — and the live Model / Cost / Context / Activity readouts stay on it until
+  you press another session key or it exits. Switching Terminal tabs no longer moves the target,
+  which is the whole point of answering session 2 while you're reading session 1. With nothing
+  pinned the keys still follow the frontmost tab, so single-session use is unchanged.
+- The pin is released automatically when its session exits, so the keys can never be stranded on a
+  closed tab, and "Go to Project" drops it — that opens a new session, and holding the old pin
+  would have sent your next keypress to the wrong one.
+- The pin persists across a plugin reload, alongside the slot assignments (this is what
+  `focused_session` in `registry.json` was always for — it was written into the schema but never
+  read or set).
+
 ## [1.6.1] — 2026-08-06
 
 First release actually exercised on hardware. Three bugs, all of which made the plugin look broken

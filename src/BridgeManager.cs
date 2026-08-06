@@ -74,6 +74,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         private ClaudeState _currentState;
         private ActivityState _activity;
         private String _activeTty;   // normalized TTY (e.g. "ttys003") of the frontmost Terminal tab; null until known
+        private String _pinnedTty;   // session PINNED by a session-key press; outranks _activeTty (see TargetTty)
         private Int32 _pollTick;     // drives the ~1s cadence of the frontmost-tab check
 
         public event Action<ClaudeState> OnStateChanged;
@@ -87,8 +88,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         public ActivityState CurrentActivity => _activity;
 
         // Test seam: lets the unit tests stand in a known target tab instead of shelling out to
-        // osascript to discover the frontmost one.
+        // osascript to discover the frontmost one. Assigning ActiveTty is exactly what the
+        // frontmost-tab probe does, so it is also how the tests simulate a poll.
         internal String ActiveTty { get => _activeTty; set => _activeTty = value; }
+
+        // Test seam: the pinned session, so a test can assert the pin was set/released without
+        // reaching through TargetTty's fallbacks.
+        internal String PinnedTty => _pinnedTty;
 
         // ------------------------------------------------------------------------------------------
         // Singleton — the SDK auto-discovers PluginDynamicCommand/Adjustment subclasses and
@@ -120,6 +126,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             EnsureIpcRoot();
             CleanupLegacyIpcFiles();
             Grid.LoadPersisted();   // keep slot assignments across a plugin reload
+            _pinnedTty = Grid.FocusedSession;   // ...and the session you had selected
 
             // One-shot timer, re-armed at the END of each PollState (see its finally). This makes
             // polls NON-OVERLAPPING: the next poll can't start until the previous one finishes, so a
@@ -320,13 +327,28 @@ namespace Loupedeck.ClaudeConsolePlugin
         // ------------------------------------------------------------------------------------------
         // Targeting — which session the typing keys act on.
         //
-        // Pressing a session key focuses that tab AND sets _activeTty immediately (see SelectSlot),
-        // so there is no window where a press lands on the previously-focused tab. Everything else
-        // keeps following the frontmost tab, which is what single-session users already expect.
+        // Pressing a session key PINS that session (see SelectSlot); with nothing pinned the keys
+        // follow the frontmost Terminal tab, which is what single-session users already expect.
         // ------------------------------------------------------------------------------------------
         internal String TargetTty()
         {
             var live = Grid.LiveSessions();
+
+            // 0. An explicit session-key press wins over everything below, and keeps winning. This
+            //    is the entire point of the grid: act on session 2 while you are looking at session
+            //    1, or at a browser. It must NOT be a field the frontmost-tab probe can overwrite —
+            //    that made a selection decay within ~2.5s, and let a probe already in flight when
+            //    you pressed silently revert the press. Released only by pinning another session,
+            //    or automatically when this one exits so the keys are never stranded on a dead tab.
+            var pinned = _pinnedTty;
+            if (!String.IsNullOrEmpty(pinned))
+            {
+                if (live.Any(s => s.Tty == pinned))
+                {
+                    return pinned;
+                }
+                this.ClearPin();
+            }
 
             // 1. The tracked tab, when it is a session we know about.
             var active = _activeTty;
@@ -354,9 +376,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
-        /// Press a session key: focus that tab and make it the target for every subsequent key.
-        /// Setting _activeTty here rather than waiting for the next frontmost probe is what makes
-        /// "press slot 2, then Yes" land in slot 2 instead of racing a 2-second poll.
+        /// Press a session key: focus that tab and make it the target for every subsequent key,
+        /// until you pin a different session or this one exits. The pin is what makes "press slot
+        /// 2, then Clear" land in slot 2 even minutes later, and even if you have since switched
+        /// Terminal back to another tab.
         /// </summary>
         public void SelectSlot(Int32 slot)
         {
@@ -366,9 +389,25 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            _activeTty = session.Tty;
+            _pinnedTty = session.Tty;
+            Grid.FocusedSession = session.Tty;   // survives a plugin reload, like the slot assignments
+            _activeTty = session.Tty;            // so a later un-pin falls back somewhere sensible
             FocusTab(session.Tty);
-            PluginLog.Info($"BridgeManager: selected slot {slot} -> {session.Tty} ({session.Project})");
+            PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.Tty} ({session.Project})");
+        }
+
+        // Drop the pin and go back to following the frontmost tab. Called when the pinned session
+        // exits, and when we deliberately start a session somewhere else (voice "go to project").
+        private void ClearPin()
+        {
+            if (_pinnedTty == null)
+            {
+                return;
+            }
+
+            PluginLog.Info($"BridgeManager: released the pin on {_pinnedTty} — keys follow the frontmost tab again");
+            _pinnedTty = null;
+            Grid.FocusedSession = null;
         }
 
         // Bring a specific Terminal tab to the front. Same tab-by-TTY script the injection guard
@@ -1353,6 +1392,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 return;
             }
+
+            // Opening a project is an explicit "I'm working here now", and it starts a session in a
+            // tab that has no key yet. Holding a pin from before would quietly send Yes / Clear /
+            // voice to the OLD session while you type in the new one.
+            this.ClearPin();
+
             // Single-quote the path for the shell so spaces are safe (project paths have no quotes).
             var cmd = "cd '" + path + "' && claude";
             var script =

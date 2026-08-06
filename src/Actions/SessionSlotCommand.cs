@@ -8,9 +8,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// Session keys (group "Sessions") — one LCD key per running Claude Code session.
     ///
     /// Each key shows the session's project name, its context usage, and a face for what it's doing
-    /// (working / waiting on you / ready). Pressing one focuses that Terminal tab AND points every
-    /// other key at it, so you can answer a prompt in session 2 while looking at session 1 — or at
-    /// a browser. Slots are stable: when a session exits, the others keep their keys.
+    /// (working / waiting on you / ready). Pressing one focuses that Terminal tab AND pins every
+    /// other key to it, so you can answer a prompt in session 2 while looking at session 1 — or at
+    /// a browser. The pin holds until you press another session key or that session exits; it is
+    /// deliberately NOT undone by switching Terminal tabs (see BridgeManager.TargetTty). Slots are
+    /// stable: when a session exits, the others keep their keys.
     ///
     /// Six slots fill one 9-key page alongside Yes / No / Voice. Empty slots draw a blank face and
     /// do nothing on press.
@@ -36,7 +38,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             for (var slot = 1; slot <= SessionRegistry.SlotCount; slot++)
             {
                 this.AddParameter(slot.ToString(), $"Session {slot}", "Sessions")
-                    .SetDescription($"Claude session {slot}: shows its project, state and context usage; press to focus that Terminal tab and aim the other keys at it");
+                    .SetDescription($"Claude session {slot}: shows its project, state and context usage; press to focus that Terminal tab and keep every other key aimed at it until you pick another session");
             }
 
             _bridge.Grid.OnGridChanged += this.OnGridChanged;

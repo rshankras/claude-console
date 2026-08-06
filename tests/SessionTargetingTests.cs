@@ -135,6 +135,117 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Selection_survives_the_frontmost_tab_probe()
+        {
+            // THE bug this pin exists for. The poll re-reads Terminal's front tab every ~2.5s and
+            // used to write it into the same field SelectSlot had just set, so a selection decayed
+            // within seconds: press slot 2, look back at session 1, press Clear — and /clear wiped
+            // session 1. Assigning ActiveTty here IS that probe.
+            WriteSession("ttys001", "alpha");
+            WriteSession("ttys002", "beta");
+            var bridge = BridgeWith("ttys001", "ttys002");
+            bridge.OsascriptRunner = (args, timeout, wantOutput) => "ok";
+
+            bridge.SelectSlot(2);
+            bridge.ActiveTty = "ttys001";   // poll: you are now looking at session 1's tab
+
+            Assert.Equal("ttys002", bridge.TargetTty());
+        }
+
+        [Fact]
+        public void Selection_outranks_a_session_that_is_waiting_on_you()
+        {
+            // With nothing pinned, a lone waiting session is the obvious target. Once you have
+            // picked one explicitly, it isn't — answering the other Claude is the exact mistake
+            // the grid exists to prevent.
+            WriteSession("ttys001", "alpha");
+            WriteSession("ttys002", "beta");
+            WriteActivity("ttys001", "waiting");
+            var bridge = BridgeWith("ttys001", "ttys002");
+            bridge.OsascriptRunner = (args, timeout, wantOutput) => "ok";
+
+            bridge.SelectSlot(2);
+            bridge.ActiveTty = "ttys009";   // Terminal isn't frontmost at all
+
+            Assert.Equal("ttys002", bridge.TargetTty());
+        }
+
+        [Fact]
+        public void Injection_still_goes_to_the_selected_session_after_a_poll()
+        {
+            // End to end, with the poll running in between — this is "press slot 2, then Clear
+            // three minutes later", which is how the bug was reported.
+            WriteSession("ttys001", "alpha");
+            WriteSession("ttys002", "beta");
+            var bridge = BridgeWith("ttys001", "ttys002");
+
+            List<String> lastArgs = null;
+            bridge.OsascriptRunner = (args, timeout, wantOutput) => { lastArgs = args; return "ok"; };
+
+            bridge.SelectSlot(2);
+            bridge.ActiveTty = "ttys001";
+            bridge.SendPrompt("/clear");
+
+            Assert.Equal("/dev/ttys002", lastArgs[2]);
+        }
+
+        [Fact]
+        public void Selecting_another_slot_moves_the_selection()
+        {
+            WriteSession("ttys001", "alpha");
+            WriteSession("ttys002", "beta");
+            var bridge = BridgeWith("ttys001", "ttys002");
+            bridge.OsascriptRunner = (args, timeout, wantOutput) => "ok";
+
+            bridge.SelectSlot(2);
+            bridge.SelectSlot(1);
+
+            Assert.Equal("ttys001", bridge.TargetTty());
+        }
+
+        [Fact]
+        public void Selection_is_released_when_that_session_exits()
+        {
+            // A pin must never strand the keys on a tab that no longer exists — that would beep on
+            // every press with no way back short of pressing another session key.
+            WriteSession("ttys001", "alpha");
+            WriteSession("ttys002", "beta");
+            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json"));
+            grid.Refresh(new HashSet<String>(new[] { "ttys001", "ttys002" }, StringComparer.Ordinal));
+            var bridge = new BridgeManager { Grid = grid };
+            bridge.OsascriptRunner = (args, timeout, wantOutput) => "ok";
+
+            bridge.SelectSlot(2);
+            File.Delete(Path.Combine(_sessionsDir, "ttys002.json"));
+            grid.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));   // tab closed
+
+            Assert.Equal("ttys001", bridge.TargetTty());
+            Assert.Null(bridge.PinnedTty);
+            Assert.Null(grid.FocusedSession);
+        }
+
+        [Fact]
+        public void Selection_survives_a_plugin_reload()
+        {
+            // Rebuilding the plugin reloads it; losing your selection every time you iterate is the
+            // same annoyance the persisted slot assignments already fix.
+            var registryFile = Path.Combine(_root, "registry.json");
+            WriteSession("ttys001", "alpha");
+            WriteSession("ttys002", "beta");
+
+            var grid = new SessionRegistry(_sessionsDir, _activityDir, registryFile);
+            grid.Refresh(new HashSet<String>(new[] { "ttys001", "ttys002" }, StringComparer.Ordinal));
+            var bridge = new BridgeManager { Grid = grid };
+            bridge.OsascriptRunner = (args, timeout, wantOutput) => "ok";
+            bridge.SelectSlot(2);
+
+            var reloaded = new SessionRegistry(_sessionsDir, _activityDir, registryFile);
+            reloaded.LoadPersisted();
+
+            Assert.Equal("ttys002", reloaded.FocusedSession);
+        }
+
+        [Fact]
         public void Selecting_an_empty_slot_does_nothing()
         {
             WriteSession("ttys001", "alpha");
