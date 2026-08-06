@@ -19,15 +19,16 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 - **Voice "Go to Project"** — say a project name; it scans your folders, fuzzy‑matches, and opens a new tab `cd`'d into the project with `claude` running.
 - **Model & modes** — a **Model** key opens the `/model` picker and shows the current model live; **Mode** cycles Claude Code's input modes (normal → auto‑accept edits → plan); plus Compact, Context, Clear.
 - **Accept autocomplete** — **Tab** completes a slash‑command / `@file` suggestion and runs it in one press.
+- **Types where it should** — every key finds Claude's own Terminal tab and types there, so a press can't land in Slack or a browser because you glanced away. Can't find it? It beeps and types nothing.
 
 See [PRIVACY.md](PRIVACY.md) — everything runs on your Mac.
 
 ## Requirements
 
 - **macOS on Apple Silicon** (whisper.cpp uses Metal).
-- **Logitech MX Creative Keypad** + **Logi Options+** (installs the *Logi Plugin Service*).
+- **Logitech MX Creative Keypad** + **Logi Options+ 6.4 or newer** (installs the *Logi Plugin Service*). 1.4.0 onwards is built for the .NET 10 runtime that ships with Plugin Service 6.4 — on an older Options+ the plugin will not load, so let Options+ update itself first. (Staying on an older Options+? Use [1.3.4](https://github.com/rshankras/claude-console/releases).)
 - **[Claude Code](https://claude.com/claude-code)** CLI.
-- To build from source: **.NET 8 SDK** and the **Logi Plugin Tool** (`dotnet tool install --global LogiPluginTool`).
+- To build from source: **.NET 10 SDK** and the **Logi Plugin Tool** (`dotnet tool install --global LogiPluginTool`).
 - For voice: **whisper.cpp** (`brew install whisper-cpp`) — needed only to *build* the bundled, self-contained `whisper-cli`. The speech model downloads automatically on first use.
 
 ## Install (released plugin)
@@ -51,7 +52,7 @@ Rather than mapping nine keys by hand, import the bundled profile to get the ful
 Notes:
 - Install the plugin first (step 1 above) so the imported keys resolve to real actions.
 - Import once. If you later reinstall or update the plugin, your profile stays put — just reinstall the plugin and the keys light up again; no need to re‑import.
-- The profile is bound to Apple's **Terminal.app**. If you use iTerm2/Ghostty/Warp, the import still works — just duplicate it onto that app (or assign keys there), since the auto‑activation is Terminal‑specific.
+- The profile is bound to Apple's **Terminal.app**, and so are the keys themselves: since 1.4.0 every typing key (prompts, answers, voice) focuses Claude's Terminal.app tab before it types — it will not type into iTerm2/Ghostty/Warp or any other app.
 - It's only a starting point — rebind or rearrange any key afterward.
 
 ## Install (build from source)
@@ -75,7 +76,7 @@ A pre‑packaged install via the Logitech Marketplace is planned — see [SUBMIS
 
 ## The live status bridge
 
-The live keys read two `/tmp` files that Claude Code writes via a status‑line handler (Cost / Model / Context ← `claude-console-state.json`) and four hooks (Activity ← `claude-console-activity.json`).
+The live keys read state files under a private `/tmp/claude-console/` directory that Claude Code writes via a status‑line handler (Cost / Model / Context ← `sessions/`) and four hooks (Activity ← `activity/`). Everything in it is owner‑only (0700 dirs / 0600 files), so your prompts and session state are never readable by other users on the Mac.
 
 **This is set up automatically — no action needed.** On first load the plugin writes both scripts to `~/.claude/claude-console/scripts/` and merges the `statusLine` + hooks into `~/.claude/settings.json` for you. It's careful about it: backs `settings.json` up first (`settings.json.claude-console.bak`), only **appends** a hook when it isn't already present, and **chains** an existing `statusLine` (records yours and runs it through, so your custom status bar still renders) rather than overwriting it. The live keys come alive on your **next Claude Code session** — Claude Code reads hooks/statusLine at session start, so a session already running won't pick them up. To opt out, create an empty file at `~/.claude/claude-console/no-autowire` before first load.
 
@@ -108,7 +109,7 @@ Even with no bridge at all, the **Activity** key still shows **Waiting** on a pe
 
 ## Using voice
 
-- **Voice key** — press (you'll hear a *Tink*), say your prompt, press again. It transcribes locally and types the text into the focused terminal.
+- **Voice key** — press (you'll hear a *Tink*), say your prompt, press again. It transcribes locally and types the text into Claude's Terminal tab.
 - **Go to Project** — press, say a project name (e.g. *"indie app autopilot"*), press again. Opens a new tab in that project running `claude`; reuses an idle shell tab, or opens a new one if `claude` is already running.
 
 First use prompts once for **Microphone** permission (granted to the helper, not the daemon). The plugin also needs **Accessibility** permission for the Logi Plugin Service (to type into the terminal).
@@ -128,23 +129,23 @@ When Claude asks something, answer from the keypad instead of the keyboard:
 - **Up / Down / Return** — navigate and confirm a selection menu: tool‑permission prompts, multiple‑choice questions (`AskUserQuestion`), plan‑mode confirmation.
 - **Yes / No** — type `yes` / `no` + Enter, for plain‑text questions ("Should I proceed?"). They type the word, so they won't select a *numbered* menu item — use Up/Down + Return for those.
 
-These inject keystrokes into the focused terminal, so keep it frontmost (same Accessibility permission as the prompt keys).
+These keys focus Claude's Terminal tab automatically before typing (verified by its TTY), so they work even when another app is frontmost — if Terminal isn't running or the tab is gone, they beep and type nothing. Same Accessibility permission as the prompt keys.
 
 ## Accepting autocomplete & switching modes
 
 - **Tab** — completes Claude Code's highlighted suggestion (a `/slash` command or an `@file` mention) **and submits it** in one press, so you can fire a slash command without the keyboard. Because it always presses Return, it also sends `@file` completions and half‑typed commands — use **Up / Down / Return** if you want to complete *without* sending.
 - **Mode** — sends **Shift+Tab**, which cycles Claude Code's input modes shown at the bottom of the TUI: **normal → auto‑accept edits → plan**. From normal, one press lands on auto‑accept edits and a second reaches plan mode.
 
-Both inject keystrokes into the frontmost terminal (same Accessibility permission as the other keys).
+Both focus Claude's Terminal tab before sending keys (same Accessibility permission as the other keys).
 
 ## Scrolling the conversation
 
-**Scroll Up / Scroll Down** page back and forth through the Claude Code transcript so you can read earlier messages without touching the keyboard. They send Page Up / Page Down to the focused terminal and work in both rendering modes:
+**Scroll Up / Scroll Down** page back and forth through the Claude Code transcript so you can read earlier messages without touching the keyboard. They send Page Up / Page Down to Claude's Terminal tab and work in both rendering modes:
 
 - **Classic mode** (default) — Claude Code leaves the conversation in the terminal's scrollback, so these scroll Terminal natively. Keep a generous scrollback limit (Terminal ▸ Settings ▸ Profiles ▸ Window ▸ Scrollback) so there's history to scroll through.
 - **Fullscreen mode** (`/tui fullscreen`) — Claude Code scrolls its own buffer by half a screen.
 
-Like the prompt and answer keys, these inject into the frontmost terminal, so keep it focused.
+Like the prompt and answer keys, these focus Claude's Terminal tab automatically before scrolling.
 
 ## Customizing prompt keys
 
@@ -182,11 +183,11 @@ Reload the plugin (rebuild, or restart Logi Options+) to pick up edits. Delete t
 
 ```
 MX Creative Keypad → Logi Plugin Service → C# plugin (BridgeManager)
-                                                  ↕  file IPC in /tmp
+                                                  ↕  file IPC in /tmp/claude-console (owner-only)
 Claude Code ← status line (bash) + voice helper (Swift + whisper.cpp)
 ```
 
-File‑based IPC in `/tmp` (`claude-console-*.json`); action keys type into the terminal via `osascript`; voice records through a notarized helper app that owns its own Microphone permission, then transcribes with a bundled, self‑contained `whisper-cli` (no Homebrew at runtime). Full architecture and packaging notes in [SUBMISSION.md](SUBMISSION.md).
+File‑based IPC under a private `/tmp/claude-console/` root (0700 dirs / 0600 files); action keys focus Claude's Terminal tab (verified by TTY) and type via `osascript`; voice records through a notarized helper app that owns its own Microphone permission, then transcribes with a bundled, self‑contained `whisper-cli` (no Homebrew at runtime). Full architecture and packaging notes in [SUBMISSION.md](SUBMISSION.md).
 
 ## Troubleshooting
 
@@ -196,9 +197,23 @@ File‑based IPC in `/tmp` (`claude-console-*.json`); action keys type into the 
 
 The plugin's own log — handy for either case — is at `~/Library/Application Support/Logi/LogiPluginService/Logs/plugin_logs/ClaudeConsole.log`.
 
+## Tests
+
+```bash
+bash tests/run-all.sh
+```
+
+Runs the C# unit tests (xUnit — injection guard, IPC file permissions, stale-file pruning, TTY
+normalisation, voice project matching) and the bridge script tests (the two bash writers, checked
+against a temp IPC root for paths, payloads and `0700`/`0600` permissions).
+
+Safe to run at any time: the test project builds the plugin with `SkipPluginLink=true`, so a test
+run never writes the dev `.link` into your live Logi plugin directory and never reloads the Logi
+Plugin Service.
+
 ## Building & packaging
 
-`dotnet build` hot‑reloads the plugin during development. `tools/voice/build.sh` builds the voice helper + bundles a self‑contained `whisper-cli` (ad‑hoc signed for dev); `tools/voice/sign-and-notarize.sh` produces the Developer‑ID‑signed, notarized release build. To produce a Marketplace package (`.lplug4`) and the full bundling/signing steps, see **[SUBMISSION.md](SUBMISSION.md)**.
+`dotnet build` hot‑reloads the plugin during development — it writes a dev `.link` into the live Logi plugin directory and restarts the service. To build **without** touching your installed plugin, add `-p:SkipPluginLink=true` (a full build, resources and all; it just skips the link + reload). `tools/voice/build.sh` builds the voice helper + bundles a self‑contained `whisper-cli` (ad‑hoc signed for dev); `tools/voice/sign-and-notarize.sh` produces the Developer‑ID‑signed, notarized release build. To produce a Marketplace package (`.lplug4`) and the full bundling/signing steps, see **[SUBMISSION.md](SUBMISSION.md)**.
 
 ## Uninstall / clean reinstall
 
@@ -213,7 +228,7 @@ bash scripts/uninstall.sh            # confirm, then remove
 bash scripts/uninstall.sh --dry-run  # preview only
 ```
 
-It removes `~/.claude/claude-console/` (voice helper, whisper, the speech model, your `prompts.json`, and the auto-installed bridge scripts), the `/tmp/claude-console-*` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present.
+It removes `~/.claude/claude-console/` (voice helper, whisper, the speech model, your `prompts.json`, and the auto-installed bridge scripts), the `/tmp/claude-console` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present.
 
 **3. Live‑status bridge (manual).** The plugin auto-wired a `statusLine` + four `claude-console` hooks into `~/.claude/settings.json` on first run. Restore your pre-install config from the backup it made — `~/.claude/settings.json.claude-console.bak` — or just delete the `statusLine` block and the four `claude-console` hook entries by hand. (Do this after step 2, since removing the scripts leaves those entries pointing at nothing.)
 

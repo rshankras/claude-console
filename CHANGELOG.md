@@ -3,6 +3,41 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.4.0] — 2026-08-06
+
+### Changed
+- **Now targets .NET 10** to match the updated Logi Plugin Service (PluginApi 6.4 is built on the
+  .NET 10 runtime; building against it from net8.0 fails with CS1705). `minimumLoupedeckVersion`
+  is now 6.4 — install the current Logi Options+ before updating the plugin.
+- **Keys now focus Claude's Terminal tab before typing.** Previously every typing key (Yes/No,
+  prompts, git, Esc, Tab, voice…) injected into whatever app was frontmost — glance at Slack,
+  press Yes, and "yes⏎" landed in Slack. Injection is now guarded: a single AppleScript run first
+  activates Terminal.app and selects the tracked tab (verified by its TTY), then types; if
+  Terminal isn't running or the tab is gone, it beeps and types **nothing**. Strict Terminal.app
+  by design. Prompt text also now travels as an osascript argument instead of being escaped into
+  the script source.
+
+### Added
+- **A test suite** (`bash tests/run-all.sh`) — 47 xUnit tests plus 15 bash-script checks, covering
+  the injection guard (focus precedes typing; prompt text is passed as an argument, never
+  interpolated into the script), IPC file permissions and symlink refusal, stale-file pruning, TTY
+  normalisation, and voice project matching. The plugin's PostBuild target is now gated behind
+  `SkipPluginLink`, so running the tests can't write the dev `.link` into the live Logi plugin
+  directory or hot-reload the running service.
+
+### Security
+- **All IPC moved into a private root.** Session state, activity flags, and voice transcripts —
+  which carry your prompts, cwd, and dictation — were world-readable loose files in `/tmp`. They
+  now live under `/tmp/claude-console/` with owner-only permissions (0700 dirs / 0600 files),
+  symlink refusal on the plugin side, and an ownership guard in the bash scripts. Legacy loose
+  `/tmp/claude-console-*` files are cleaned up on plugin load.
+- **Removed `cmd-queue.jsonl`** — an append-only, never-read, world-readable log of every prompt
+  key ever pressed. Nothing consumed it; it no longer exists.
+- **Stale-file pruning.** Per-tab state/activity/voice files from dead sessions are now deleted
+  after 10 minutes; previously they accumulated until reboot.
+- **Bounded reads + settings hardening.** The plugin ignores IPC files over 1 MB and refuses to
+  rewrite `~/.claude/settings.json` through a symlink.
+
 ## [1.3.4] — 2026-07-10
 
 ### Changed

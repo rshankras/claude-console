@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>ClaudeConsolePlugin.Tests</AssemblyName>
+    <RootNamespace>Loupedeck.ClaudeConsolePlugin.Tests</RootNamespace>
+
+    <!-- The plugin is macOS-only (osascript, TCC, Logi Plugin Service), so the Unix file-mode
+         APIs the permission tests use are always supported here. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+
+    <!-- Keep test output out of the plugin's bin/ tree (which gets packaged into the .lplug4). -->
+    <BaseOutputPath>$(MSBuildThisFileDirectory)bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SkipPluginLink stops the plugin's PostBuild target from writing the dev .link into the
+         LIVE Logi plugin directory and hot-reloading LogiPluginService. Without it, running the
+         tests would mutate the user's installed plugin as a side effect. -->
+    <ProjectReference Include="..\src\ClaudeConsolePlugin.csproj"
+                      AdditionalProperties="SkipPluginLink=true" />
+  </ItemGroup>
+
+</Project>

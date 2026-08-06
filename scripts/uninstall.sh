@@ -47,7 +47,7 @@ if [ -d "$RUNTIME" ]; then
 else
   echo "  • voice runtime           (not present)"
 fi
-echo "  • IPC temp files          /tmp/claude-console-*"
+echo "  • IPC temp files          /tmp/claude-console/ (and legacy /tmp/claude-console-*)"
 echo "  • Microphone permission   tccutil reset Microphone $HELPER_ID"
 [ -f "$MARKER" ] && echo "  • crash-disable marker    $MARKER"
 [ -f "$LINK" ]   && echo "  • dev plugin link         $LINK  (+ restart LogiPluginService)"
@@ -67,7 +67,7 @@ if [ "$YES" -ne 1 ]; then
 fi
 
 [ -d "$RUNTIME" ] && rm -rf "$RUNTIME" && echo "removed $RUNTIME"
-rm -rf /tmp/claude-console-* 2>/dev/null && echo "cleared /tmp/claude-console-* IPC files"
+rm -rf /tmp/claude-console /tmp/claude-console-* 2>/dev/null && echo "cleared /tmp/claude-console IPC files"
 tccutil reset Microphone "$HELPER_ID" >/dev/null 2>&1 && echo "reset Microphone permission for $HELPER_ID"
 [ -f "$MARKER" ] && rm -f "$MARKER" && echo "removed crash-disable marker"
 if [ -f "$LINK" ]; then
