@@ -4,8 +4,21 @@
 # Writes the state to a SHARED file (fallback / single session) AND a PER-TAB file keyed by the
 # terminal tab's TTY, so the keypad's live keys (Model/Cost/Context) can follow whichever tab is
 # frontmost when you run several Claude Code sessions at once. macOS/Linux only.
+#
+# The state carries your cwd, model, and session cost, so it lives in a PRIVATE root —
+# /tmp/claude-console, 0700 dir / 0600 files — matching the plugin's PrivateFiles rules.
 
-STATE_FILE="/tmp/claude-console-state.json"
+umask 077
+# CLAUDE_CONSOLE_IPC_ROOT is a test hook (tests/scripts/test-bridge-scripts.sh) so the suite can
+# run against a temp root. Don't set it in your shell — the plugin always reads the default path.
+ROOT="${CLAUDE_CONSOLE_IPC_ROOT:-/tmp/claude-console}"
+SESSIONS="$ROOT/sessions"
+mkdir -p "$SESSIONS"
+# Refuse a root another local user squatted before we could create it.
+[ -O "$ROOT" ] || exit 0
+chmod 700 "$ROOT" 2>/dev/null
+
+STATE_FILE="$SESSIONS/shared.json"
 
 # Claude Code pipes the session JSON in — capture it once.
 JSON="$(cat)"
@@ -30,7 +43,7 @@ for _ in 1 2 3 4 5 6; do
   { [ -z "$pid" ] || [ "$pid" -le 1 ]; } && break
 done
 
-[ -n "$tty_key" ] && write "/tmp/claude-console-state-$tty_key.json"
+[ -n "$tty_key" ] && write "$SESSIONS/$tty_key.json"
 
 # Chain: when the plugin auto-wires the bridge and you ALREADY had a statusLine, it takes over the
 # statusLine slot and records your previous command here, so your status bar still renders. We feed

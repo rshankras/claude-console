@@ -11,6 +11,17 @@
 #
 # Like the statusline handler, this writes a SHARED file plus a PER-TAB file keyed by the terminal
 # tab's TTY, so the Activity key can follow whichever tab is frontmost across multiple sessions.
+# Files live in the private /tmp/claude-console root (0700/0600 — matches the plugin).
+
+umask 077
+# CLAUDE_CONSOLE_IPC_ROOT is a test hook (tests/scripts/test-bridge-scripts.sh) so the suite can
+# run against a temp root. Don't set it in your shell — the plugin always reads the default path.
+ROOT="${CLAUDE_CONSOLE_IPC_ROOT:-/tmp/claude-console}"
+ACTIVITY="$ROOT/activity"
+mkdir -p "$ACTIVITY"
+# Refuse a root another local user squatted before we could create it.
+[ -O "$ROOT" ] || exit 0
+chmod 700 "$ROOT" 2>/dev/null
 
 STATE="${1:-done}"
 TS="$(date +%s)"
@@ -19,7 +30,7 @@ PAYLOAD="$(printf '{"state":"%s","ts":%s}' "$STATE" "$TS")"
 # Atomic write (tmp + mv) so the 500ms poller never reads a half-written file.
 write() { printf '%s\n' "$PAYLOAD" > "$1.tmp.$$" && mv "$1.tmp.$$" "$1"; }
 
-write "/tmp/claude-console-activity.json"
+write "$ACTIVITY/shared.json"
 
 # Per-tab file: climb the parent chain until a real controlling TTY appears (the hook may be
 # spawned without one, showing "??").
@@ -35,4 +46,4 @@ for _ in 1 2 3 4 5 6; do
   { [ -z "$pid" ] || [ "$pid" -le 1 ]; } && break
 done
 
-[ -n "$tty_key" ] && write "/tmp/claude-console-activity-$tty_key.json"
+[ -n "$tty_key" ] && write "$ACTIVITY/$tty_key.json"

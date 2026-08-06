@@ -17,25 +17,38 @@ namespace Loupedeck.ClaudeConsolePlugin
 
     /// <summary>
     /// Bridge Manager — Connects the Logitech Actions SDK plugin to Claude Code
-    /// via file-based IPC in the system temp directory.
+    /// via file-based IPC under a private root in the system temp directory
+    /// (owner-only 0700 dirs / 0600 files — see PrivateFiles).
     ///
-    /// Reads: state.json (statusline data)
-    /// Writes: cmd-queue.jsonl (commands)
+    /// Reads:  sessions/ + activity/ (statusline + hook data, per Terminal tab)
+    /// Types:  keystrokes into the TTY-verified Claude tab in Terminal.app
     /// </summary>
     public class BridgeManager
     {
         // The bash hook/statusline scripts hardcode /tmp, so the plugin MUST read/write there too.
         // On macOS Path.GetTempPath() returns /var/folders/.../T/ — a DIFFERENT dir — which is why
         // the live displays showed defaults. Match the scripts: /tmp on macOS/Linux, temp on Windows.
+        //
+        // Everything lives under ONE private root (0700 dirs / 0600 files — see PrivateFiles):
+        //   sessions/<tty>.json + sessions/shared.json   statusline state (per tab / fallback)
+        //   activity/<tty>.json + activity/shared.json   hook-pushed activity
+        //   voice/                                       stop flag, transcript, recording
+        // Session state and transcripts carry the user's prompts and dictation, so they must not
+        // be world-readable the way the old loose /tmp/claude-console-*.json files were.
         private static readonly String TempDir =
             Environment.OSVersion.Platform == PlatformID.Win32NT ? Path.GetTempPath() : "/tmp";
-        private static readonly String StateFile = Path.Combine(TempDir, "claude-console-state.json");
-        private static readonly String CommandQueueFile = Path.Combine(TempDir, "claude-console-cmd-queue.jsonl");
-        private static readonly String ActivityFile = Path.Combine(TempDir, "claude-console-activity.json");
+        private static readonly String IpcRoot = Path.Combine(TempDir, "claude-console");
+        private static readonly String SessionsDir = Path.Combine(IpcRoot, "sessions");
+        private static readonly String ActivityDir = Path.Combine(IpcRoot, "activity");
+        private static readonly String VoiceDir = Path.Combine(IpcRoot, "voice");
+        private static readonly String StateFile = Path.Combine(SessionsDir, "shared.json");
+        private static readonly String ActivityFile = Path.Combine(ActivityDir, "shared.json");
 
-        // Voice capture IPC (must match ClaudeVoiceHelper's defaults in tools/voice/).
-        private static readonly String VoiceStopFile = Path.Combine(TempDir, "claude-console-voice.stop");
-        private static readonly String VoiceTranscriptFile = Path.Combine(TempDir, "claude-console-voice-transcript.txt");
+        // Voice capture IPC. Every path is passed to ClaudeVoiceHelper explicitly, so moving them
+        // needs no helper rebuild (re-signing the helper would silently reset its Microphone grant).
+        private static readonly String VoiceStopFile = Path.Combine(VoiceDir, "stop");
+        private static readonly String VoiceTranscriptFile = Path.Combine(VoiceDir, "transcript.txt");
+        private static readonly String VoiceWavFile = Path.Combine(VoiceDir, "capture.wav");
 
         // Runtime home shared with the voice helper: ~/.claude/claude-console/
         private static readonly String ClaudeConsoleHome = Path.Combine(
@@ -79,6 +92,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         public ClaudeState CurrentState => _currentState;
         public ActivityState CurrentActivity => _activity;
 
+        // Test seam: lets the unit tests stand in a known target tab instead of shelling out to
+        // osascript to discover the frontmost one.
+        internal String ActiveTty { get => _activeTty; set => _activeTty = value; }
+
         // ------------------------------------------------------------------------------------------
         // Singleton — the SDK auto-discovers PluginDynamicCommand/Adjustment subclasses and
         // instantiates them with their parameterless constructors, so they cannot receive the
@@ -106,6 +123,9 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         public void StartPolling()
         {
+            EnsureIpcRoot();
+            CleanupLegacyIpcFiles();
+
             // One-shot timer, re-armed at the END of each PollState (see its finally). This makes
             // polls NON-OVERLAPPING: the next poll can't start until the previous one finishes, so a
             // slow poll (osascript) can never pile callbacks onto the thread pool. An auto-repeating
@@ -156,6 +176,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                     _activity = act;
                     OnActivityChanged?.Invoke(_activity);
                 }
+
+                // ~Every 60s, prune per-tab files from dead sessions so closed tabs don't
+                // accumulate state on disk forever.
+                if (_pollTick % 120 == 1)
+                {
+                    PruneStaleIpcFiles();
+                }
             }
             catch (Exception ex)
             {
@@ -195,21 +222,86 @@ namespace Loupedeck.ClaudeConsolePlugin
         // whichever tab is frontmost. Falls back to the shared file (last writer) when the active
         // tab has no per-TTY file yet, or when Terminal isn't the frontmost app.
         // ------------------------------------------------------------------------------------------
-        private String ActiveStateFile() => PerTty("state", StateFile);
-        private String ActiveActivityFile() => PerTty("activity", ActivityFile);
+        private String ActiveStateFile() => PerTty(SessionsDir, StateFile);
+        private String ActiveActivityFile() => PerTty(ActivityDir, ActivityFile);
 
-        private String PerTty(String kind, String shared)
+        private String PerTty(String dir, String shared)
         {
             var tty = _activeTty;
             if (!String.IsNullOrEmpty(tty))
             {
-                var p = Path.Combine(TempDir, $"claude-console-{kind}-{tty}.json");
+                var p = Path.Combine(dir, tty + ".json");
                 if (File.Exists(p))
                 {
                     return p;
                 }
             }
             return shared;
+        }
+
+        // Create the private IPC tree (0700). The bash scripts also mkdir it (whichever runs
+        // first wins), so both sides must agree on the layout.
+        private static void EnsureIpcRoot()
+        {
+            try
+            {
+                PrivateFiles.EnsurePrivateDirectory(IpcRoot);
+                PrivateFiles.EnsurePrivateDirectory(SessionsDir);
+                PrivateFiles.EnsurePrivateDirectory(ActivityDir);
+                PrivateFiles.EnsurePrivateDirectory(VoiceDir);
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager: could not secure the IPC root");
+            }
+        }
+
+        // Pre-1.4 builds wrote world-readable loose files (/tmp/claude-console-*.json, cmd-queue,
+        // voice transcript). Clear them once on load; the glob can't match the new root dir.
+        private static void CleanupLegacyIpcFiles()
+        {
+            try
+            {
+                foreach (var f in Directory.GetFiles(TempDir, "claude-console-*"))
+                {
+                    TryDelete(f);
+                }
+            }
+            catch { /* best effort */ }
+        }
+
+        // Delete per-tab/voice files not written for 10+ minutes. A live session's statusline
+        // refreshes on every assistant message, so anything this old belongs to a dead tab.
+        private static readonly TimeSpan StaleIpcAge = TimeSpan.FromMinutes(10);
+
+        private static void PruneStaleIpcFiles() =>
+            PruneStaleFiles(new[] { SessionsDir, ActivityDir, VoiceDir }, DateTime.UtcNow - StaleIpcAge);
+
+        // Split out so the tests can drive it against a temp root and a controlled cutoff.
+        internal static void PruneStaleFiles(IEnumerable<String> dirs, DateTime cutoff)
+        {
+            foreach (var dir in dirs)
+            {
+                try
+                {
+                    if (!Directory.Exists(dir))
+                    {
+                        continue;
+                    }
+                    foreach (var f in Directory.GetFiles(dir))
+                    {
+                        try
+                        {
+                            if (File.GetLastWriteTimeUtc(f) < cutoff)
+                            {
+                                File.Delete(f);
+                            }
+                        }
+                        catch { /* best effort */ }
+                    }
+                }
+                catch { /* best effort */ }
+            }
         }
 
         // The TTY (e.g. "ttys003") of the frontmost Terminal tab, or null if Terminal isn't the
@@ -235,7 +327,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // "/dev/ttys003" (osascript) -> "ttys003"; "ttys003" (ps) stays "ttys003".
-        private static String NormalizeTty(String raw)
+        internal static String NormalizeTty(String raw)
         {
             if (String.IsNullOrWhiteSpace(raw))
             {
@@ -259,8 +351,15 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 try
                 {
-                    if (!File.Exists(filePath))
+                    var fi = new FileInfo(filePath);
+                    if (!fi.Exists)
                     {
+                        return null;
+                    }
+                    if (fi.Length > MaxIpcFileBytes)
+                    {
+                        // State/activity files are a few KB; anything huge is corrupt or hostile.
+                        PluginLog.Warning($"BridgeManager: {filePath} is {fi.Length} bytes (cap {MaxIpcFileBytes}) — ignoring");
                         return null;
                     }
 
@@ -285,53 +384,54 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
-        /// Write a command to the queue file (append-based to avoid overwrite races).
+        /// Type a prompt into the tracked Claude tab and press Return.
         /// </summary>
-        public void SendCommand(String action, Dictionary<String, String> args = null)
-        {
-            var cmd = new Dictionary<String, Object>
-            {
-                { "action", action },
-                { "args", args ?? new Dictionary<String, String>() },
-                { "timestamp", DateTime.UtcNow.ToString("o") },
-                { "session_id", "default" }
-            };
+        public void SendPrompt(String prompt) => InjectText(prompt, pressEnter: true);
 
-            var line = JsonSerializer.Serialize(cmd);
-
-            try
-            {
-                File.AppendAllText(CommandQueueFile, line + Environment.NewLine);
-            }
-            catch (Exception ex)
-            {
-                PluginLog.Warning(ex, "BridgeManager: Failed to append command");
-            }
-        }
+        // ------------------------------------------------------------------------------------------
+        // Guarded keystroke injection — every injection FIRST focuses the tracked Claude tab in
+        // Terminal.app (verified by TTY), then types, all in ONE osascript run so no app switch can
+        // slip in between. If Terminal isn't running or the tracked tab is gone, the script beeps
+        // and types NOTHING — a key press can never land in Slack or a browser. Strict Terminal.app
+        // by design (the profile is Terminal-bound). Ported from Vizhi's focusTerminal.
+        // ------------------------------------------------------------------------------------------
+        // argv item 1 = target tty ("/dev/ttysNNN"), or "" to use Terminal's front tab.
+        private const String FocusGuardScript =
+            "on run argv\n" +
+            "set targetTty to item 1 of argv\n" +
+            "if application \"Terminal\" is not running then\n" +  // never auto-launch Terminal
+            "  beep\n" +
+            "  return \"no-terminal\"\n" +
+            "end if\n" +
+            "tell application \"Terminal\"\n" +
+            "  activate\n" +
+            "  if targetTty is not \"\" then\n" +
+            "    set found to false\n" +
+            "    repeat with terminalWindow in windows\n" +
+            "      repeat with terminalTab in tabs of terminalWindow\n" +
+            "        if (tty of terminalTab as text) is targetTty then\n" +
+            "          set selected tab of terminalWindow to terminalTab\n" +
+            "          set index of terminalWindow to 1\n" +
+            "          set found to true\n" +
+            "          exit repeat\n" +
+            "        end if\n" +
+            "      end repeat\n" +
+            "      if found then exit repeat\n" +
+            "    end repeat\n" +
+            "    if not found then\n" +
+            "      beep\n" +
+            "      return \"tab-missing\"\n" +
+            "    end if\n" +
+            "  end if\n" +
+            "end tell\n" +
+            "delay 0.05\n";  // let activation settle before System Events types
 
         /// <summary>
-        /// Send a keystroke command to the active terminal.
-        /// </summary>
-        public void SendKeystroke(String key)
-        {
-            SendCommand("keystroke", new Dictionary<String, String> { { "key", key } });
-        }
-
-        /// <summary>
-        /// Send a prompt to Claude Code: log it to the queue (history / simulator parity) AND
-        /// type it into the focused terminal so it actually runs on real hardware.
-        /// </summary>
-        public void SendPrompt(String prompt)
-        {
-            SendCommand("prompt", new Dictionary<String, String> { { "text", prompt } });
-            InjectText(prompt, pressEnter: true);
-        }
-
-        /// <summary>
-        /// Type text into the frontmost application (the user's terminal) and optionally press
-        /// Return. macOS-only for now, via osascript + System Events. Requires the Logi Plugin
-        /// Service to have Accessibility permission (granted once on first use).
-        /// Newlines are flattened to spaces so a multi-line voice transcript doesn't submit early.
+        /// Type text into the tracked Claude tab and optionally press Return. macOS-only, via
+        /// osascript + System Events; requires the Logi Plugin Service to have Accessibility
+        /// permission (granted once on first use). The text travels as an osascript argument —
+        /// no AppleScript string escaping. Newlines are flattened to spaces so a multi-line
+        /// voice transcript doesn't submit early.
         /// </summary>
         public void InjectText(String text, Boolean pressEnter)
         {
@@ -347,29 +447,22 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             var flattened = text.Replace("\r", " ").Replace("\n", " ");
-            var escaped = EscapeForAppleScript(flattened);
-
-            var args = new List<String>
-            {
-                "-e", $"tell application \"System Events\" to keystroke \"{escaped}\""
-            };
+            var body = "tell application \"System Events\" to keystroke (item 2 of argv)\n";
             if (pressEnter)
             {
                 // A leading "/" opens Claude Code's slash-command autocomplete. Pressing Return
                 // before it finishes filtering to the typed command selects whatever is highlighted
                 // (often a recent command like /copy), so pause to let the menu settle first. Harmless
                 // for plain text (Git/Prompts/voice) where no menu is shown.
-                args.Add("-e");
-                args.Add("delay 0.35");
-                args.Add("-e");
-                args.Add("tell application \"System Events\" to key code 36"); // Return
+                body += "delay 0.35\n" +
+                        "tell application \"System Events\" to key code 36\n"; // Return
             }
 
-            RunOsascript(args);
+            RunGuardedInjection(body, flattened);
         }
 
         /// <summary>
-        /// Send a single key chord to the focused terminal, e.g. Shift+Tab to toggle plan mode.
+        /// Send a single key chord to the tracked Claude tab, e.g. Shift+Tab to toggle plan mode.
         /// <paramref name="appleScriptKeySpec"/> is the body of a System Events key statement,
         /// for example: <c>key code 48 using {shift down}</c> (key code 48 = Tab).
         /// </summary>
@@ -381,10 +474,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            RunOsascript(new List<String>
-            {
-                "-e", $"tell application \"System Events\" to {appleScriptKeySpec}"
-            });
+            RunGuardedInjection($"tell application \"System Events\" to {appleScriptKeySpec}\n");
         }
 
         /// <summary>
@@ -399,12 +489,33 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            RunOsascript(new List<String>
+            RunGuardedInjection(
+                "tell application \"System Events\" to key code 48\n" + // Tab — accept the suggestion
+                "delay 0.3\n" +                                          // let the completion register
+                "tell application \"System Events\" to key code 36\n"); // Return — submit
+        }
+
+        // Compose focus guard + injection body into one script and run it. textArg (when non-null)
+        // becomes argv item 2 — passing text as an argument sidesteps AppleScript escaping entirely.
+        private void RunGuardedInjection(String injectionBody, String textArg = null)
+        {
+            var script = FocusGuardScript + injectionBody + "return \"ok\"\n" + "end run";
+            var tty = _activeTty;
+            var args = new List<String>
             {
-                "-e", "tell application \"System Events\" to key code 48", // Tab — accept the suggestion
-                "-e", "delay 0.3",                                         // let the completion register
-                "-e", "tell application \"System Events\" to key code 36", // Return — submit
-            });
+                "-e", script,
+                String.IsNullOrEmpty(tty) ? "" : "/dev/" + tty,
+            };
+            if (textArg != null)
+            {
+                args.Add(textArg);
+            }
+
+            var result = RunOsascriptCore(args, 15000, wantOutput: true);
+            if (result != "ok")
+            {
+                PluginLog.Warning($"BridgeManager: injection skipped ({result ?? "osascript failed"}) — Claude's Terminal tab is unavailable");
+            }
         }
 
         /// <summary>
@@ -422,16 +533,27 @@ namespace Loupedeck.ClaudeConsolePlugin
             RunOsascript(new List<String> { "-e", script });
         }
 
-        private static String EscapeForAppleScript(String s) =>
-            s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        // State/activity files are a few KB — refuse to slurp anything huge (corrupt or hostile).
+        private const Int64 MaxIpcFileBytes = 1 << 20;
 
         // Run osascript with a HARD timeout. Reads both pipes on background tasks (a synchronous
         // ReadToEnd() blocks with NO timeout — the WaitForExit(ms) after it is unreachable, which is
         // exactly what leaked threads) and KILLS the process if it doesn't exit in time, so a hung
         // osascript (locked screen, busy window server, an Accessibility prompt) can never wedge a
         // poll thread. Returns stdout (trimmed) when wantOutput, else null.
+        // Test seam: when set, replaces the real osascript invocation so the unit tests can assert
+        // on the exact script + arguments a key press would send without driving the window server.
+        // Null in production — nothing but the tests ever assigns it.
+        internal Func<List<String>, Int32, Boolean, String> OsascriptRunner { get; set; }
+
         private String RunOsascriptCore(List<String> args, Int32 timeoutMs, Boolean wantOutput)
         {
+            var runner = this.OsascriptRunner;
+            if (runner != null)
+            {
+                return runner(args, timeoutMs, wantOutput);
+            }
+
             try
             {
                 var psi = new ProcessStartInfo
@@ -521,6 +643,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             EnsureVoiceRuntimeInstalled();
 
             // Clear any stale transcript/flag so we never type a previous result.
+            EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
             TryDelete(VoiceStopFile);
 
@@ -545,6 +668,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 VoiceHelperApp, "--args",
                 "--maxsec", "60",
+                "--out", VoiceWavFile,
                 "--stopflag", VoiceStopFile,
                 "--transcript", VoiceTranscriptFile,
                 "--model", VoiceModelFile,
@@ -695,6 +819,14 @@ namespace Loupedeck.ClaudeConsolePlugin
         // hook only if ours isn't already there, and chains (never clobbers) an existing statusLine.
         private void EnsureBridgeWired()
         {
+            // Refuse a symlinked settings.json — a planted link could redirect our atomic
+            // rename-over-write somewhere else entirely. (LinkTarget is null for a missing file.)
+            if (new FileInfo(SettingsFile).LinkTarget != null)
+            {
+                PluginLog.Warning("Bridge auto-wire: settings.json is a symlink — leaving it untouched");
+                return;
+            }
+
             JsonObject root;
             if (File.Exists(SettingsFile))
             {
@@ -1048,7 +1180,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // Lowercase, drop common filler/command words ("open the X project"), keep letters+digits only.
-        private static String NormalizeForMatch(String s)
+        internal static String NormalizeForMatch(String s)
         {
             s = (s ?? "").ToLowerInvariant();
             foreach (var w in new[] { "go to", "switch to", "open", "launch", "the", "project", "folder", "claude" })
@@ -1058,7 +1190,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             return new String(s.Where(Char.IsLetterOrDigit).ToArray());
         }
 
-        private static Int32 MatchScore(String t, String f)
+        internal static Int32 MatchScore(String t, String f)
         {
             if (t == f) return 1000;
             if (f.StartsWith(t) || t.StartsWith(f)) return 700 + Math.Min(t.Length, f.Length);
@@ -1074,7 +1206,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             return 0;
         }
 
-        private static Int32 LongestCommonSubstringLength(String a, String b)
+        internal static Int32 LongestCommonSubstringLength(String a, String b)
         {
             if (a.Length == 0 || b.Length == 0) return 0;
             var prev = new Int32[b.Length + 1];
