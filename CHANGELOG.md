@@ -15,8 +15,19 @@ let the user finish the thought and submit it themselves.
   but the transcript is only typed — not sent. Fix whatever whisper misheard, then submit with
   Return (keyboard or the keypad's Return key). Voice itself is unchanged: it still types and
   sends in one go. Two keys rather than a mode, so both behaviours are always one press away and
-  no press depends on invisible state. New compose-glyph icon so the two keys read differently at
-  key size.
+  no press depends on invisible state. Its icon is a mic WITH a waveform — still reads as a voice
+  key (a first-cut pencil glyph didn't, per user feedback), but its silhouette differs from Voice's
+  plain mic so the two keys don't blur together at key size.
+- **The default prompts are now worth a key.** Users pointed out that "Explain how this code
+  works" or "Refactor this for clarity" add nothing over typing the one word yourself. Every
+  default prompt has been rewritten to carry what an expert would actually type: it scopes itself
+  to something concrete (the uncommitted diff, the code under discussion — or it asks), names a
+  method, and says what the output should look like. Review asks for file:line + severity + a
+  failure scenario per finding; Optimize demands evidence of the bottleneck before touching
+  anything; Deploy stops for approval before anything goes public. An **unedited** pre-1.7
+  prompts.json is upgraded in place — the seed file wins over the built-ins, so without this no
+  existing install would ever see the new prompts. Any edit at all (a reworded prompt, a swapped
+  icon, an added key) marks the file as yours and blocks the upgrade.
 - **`"submit": false` on prompt keys.** Any entry in `~/.claude/claude-console/prompts.json` can
   now be a draft key: it types its prompt and leaves the cursor in the input box, so a stem like
   "Explain how this code works, focusing on " becomes a fill-in-the-blank. Absent means `true` —

@@ -11,7 +11,7 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 ## Features
 
 - **Live status** — Model, live cost, and context usage read straight from Claude Code's status line.
-- **One‑press prompts** — Fix Bug, Write Tests, Explain, Refactor, Review, Optimize, Security, Document, Deploy — all [customizable](#customizing-prompt-keys), and any key can be a **draft** that you edit before sending.
+- **One‑press prompts** — Fix Bug, Write Tests, Explore, Explain, Refactor, Review, Optimize, Security, Document, Deploy. One-word keys, **full structured prompts** underneath — and all of it [customizable](#customizing-prompt-keys): reword, add, remove, or make any key a **draft** you edit before sending.
 - **Answer prompts** — respond to Claude's questions from the keypad: Up/Down/Return to navigate menus, Yes/No to type a quick reply.
 - **Git, through Claude** — Commit, Diff, Push, Create PR, Status, Log.
 - **Terminal & session nav** — activate Terminal, new tab, new Claude session, next/prev tab. Prefer windows over tabs? There are **New Claude (Window)** and **Next/Prev Window** keys too.
@@ -191,7 +191,9 @@ Like the prompt and answer keys, these focus Claude's Terminal tab automatically
 
 ## Customizing prompt keys
 
-The **Prompts** keys are defined in `~/.claude/claude-console/prompts.json` (seeded with the defaults on first run). Edit it to bind your own prompts and macros — each entry becomes its own bindable key:
+Every **Prompts** key is yours to change. The keys show one-word labels (Explore, Review, …), but each sends a **full, structured prompt** — Review, for instance, asks for a senior-engineer pass with file:line, severity, and a concrete failure scenario per finding; Deploy runs the checks but stops for your approval before anything goes public.
+
+All of it is defined in `~/.claude/claude-console/prompts.json` (seeded with the defaults on first run). Edit it to suit how you work — reword any prompt, relabel or re-icon a key, delete keys you never press, or add your own macros. Each entry becomes its own bindable key, and there's no fixed count:
 
 ```json
 [
@@ -208,7 +210,9 @@ The **Prompts** keys are defined in `~/.claude/claude-console/prompts.json` (see
 - **`icon`** — an embedded icon basename; its baked colour is the key's colour. Pick from: `fix_bug`, `write_tests`, `explore`, `explain`, `refactor`, `review`, `optimize`, `security`, `document`, `deploy`, `commit`, `diff`, `push`, `create_pr`, `status`, `log`, `project`, `terminal` (an unknown name falls back to text).
 - **`submit`** *(optional, default `true`)* — set `false` to make a **draft key**: it types the prompt but doesn't press Return, so you can edit or finish the sentence before sending it (with Return — keyboard or keypad). The third example above types a stem and leaves the cursor at the end.
 
-Reload the plugin (rebuild, or restart Logi Options+) to pick up edits. Delete the file to restore the built-in defaults.
+Reload the plugin to pick up edits (restart Logi Options+ / `killall LogiPluginService`, or rebuild if you develop from source). Delete the file to restore the built-in defaults.
+
+**Your edits are permanent.** The moment you change anything in the file, it's yours — no plugin update will ever overwrite it. Only a prompts.json still in its untouched factory state is upgraded in place when a new release improves the default prompts (this happened once, in 1.7.0, when the defaults grew from one-liners into real prompts).
 
 ## Key map
 
