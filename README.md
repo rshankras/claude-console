@@ -19,6 +19,7 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 - **Voice "Go to Project"** — say a project name; it scans your folders, fuzzy‑matches, and opens a new tab `cd`'d into the project with `claude` running.
 - **Model & modes** — a **Model** key opens the `/model` picker and shows the current model live; **Mode** cycles Claude Code's input modes (normal → auto‑accept edits → plan); plus Compact, Context, Clear.
 - **A key per session** — run Claude in several Terminal tabs and each gets its own key showing project, state and context usage. Press one to focus that tab and point every other key at it.
+- **See what you're approving** — Yes/No light amber when Claude wants permission, and **red** when the pending command is destructive (`git push`, `rm -rf`, `sudo`…).
 - **Accept autocomplete** — **Tab** completes a slash‑command / `@file` suggestion and runs it in one press.
 - **Types where it should** — every key finds Claude's own Terminal tab and types there, so a press can't land in Slack or a browser because you glanced away. Can't find it? It beeps and types nothing.
 
@@ -93,10 +94,11 @@ Add this to `~/.claude/settings.json` — the scripts live at `~/.claude/claude-
     "command": "bash ~/.claude/claude-console/scripts/statusline-handler.sh"
   },
   "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh busy" }] }],
-    "PostToolUse":      [{ "matcher": "*", "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh busy" }] }],
-    "Notification":     [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh waiting" }] }],
-    "Stop":             [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh done" }] }]
+    "UserPromptSubmit":  [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh busy" }] }],
+    "PostToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh busy" }] }],
+    "Notification":      [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh waiting" }] }],
+    "Stop":              [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh done" }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh permission" }] }]
   }
 }
 ```
@@ -139,6 +141,10 @@ When Claude asks something, answer from the keypad instead of the keyboard:
 
 - **Up / Down / Return** — navigate and confirm a selection menu: tool‑permission prompts, multiple‑choice questions (`AskUserQuestion`), plan‑mode confirmation.
 - **Yes / No** — type `yes` / `no` + Enter, for plain‑text questions ("Should I proceed?"). They type the word, so they won't select a *numbered* menu item — use Up/Down + Return for those.
+
+**The keys tell you what you'd be approving.** When Claude asks for permission, Yes and No light with a badge — **amber** for a routine request, **red** when the pending command is destructive or hard to undo (`sudo`, `rm -rf`, `git push`, `reset --hard`, `terraform apply`, piping a download into a shell…). The session key goes red too, so with several sessions running you can see which one wants attention, and whether to look at the screen before pressing anything.
+
+It's a **hint, not a gate** — Claude Code's own prompt is still what holds the command, and the classifier leans toward warning you unnecessarily rather than staying quiet. Powered by a `PermissionRequest` hook that the plugin wires up for you; on older Claude Code builds that don't have it, the badge just stays amber.
 
 These keys focus Claude's Terminal tab automatically before typing (verified by its TTY), so they work even when another app is frontmost — if Terminal isn't running or the tab is gone, they beep and type nothing. Same Accessibility permission as the prompt keys.
 

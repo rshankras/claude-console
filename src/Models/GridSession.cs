@@ -43,10 +43,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         /// <summary>True when discovered by `ps` alone — no statusline file has landed yet.</summary>
         public Boolean IsProvisional { get; set; }
 
+        /// <summary>The tool awaiting approval, e.g. "Bash". Null when nothing is pending.</summary>
+        public String PendingTool { get; set; }
+
+        /// <summary>The shell command awaiting approval, when the pending tool is Bash.</summary>
+        public String PendingCommand { get; set; }
+
+        /// <summary>How much attention the pending approval deserves. See RiskClassifier.</summary>
+        public ApprovalRisk Risk { get; set; } = ApprovalRisk.None;
+
         /// <summary>
         /// Fields that change what the key LOOKS like. Compared to decide whether to repaint, so a
         /// heartbeat-only update (UpdatedAt moving) doesn't churn the LCD every poll.
         /// </summary>
-        public String VisualKey => $"{this.Tty}|{this.Project}|{this.State}|{this.CtxPercent}";
+        public String VisualKey => $"{this.Tty}|{this.Project}|{this.State}|{this.CtxPercent}|{this.Risk}";
     }
 }

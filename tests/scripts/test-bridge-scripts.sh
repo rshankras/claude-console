@@ -96,6 +96,33 @@ if [ -n "$TTY_KEY" ]; then
   check_file "writes the per-tab activity file" "$CLAUDE_CONSOLE_IPC_ROOT/activity/$TTY_KEY.json"
 fi
 
+echo "activity-hook.sh — permission mode"
+PERM_PAYLOAD='{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"git push --force"}}'
+printf '%s' "$PERM_PAYLOAD" | bash "$ACTIVITY_HOOK" permission >/dev/null 2>&1
+
+# "permission" must land as the waiting STATE (the plugin only knows busy/waiting/ready)...
+case "$(cat "$CLAUDE_CONSOLE_IPC_ROOT/activity/shared.json" 2>/dev/null)" in
+  *'"state":"waiting"'*) ok "permission maps to the waiting state" ;;
+  *) bad "permission maps to the waiting state" "got [$(cat "$CLAUDE_CONSOLE_IPC_ROOT/activity/shared.json" 2>/dev/null)]" ;;
+esac
+
+if [ -n "$TTY_KEY" ]; then
+  PENDING="$CLAUDE_CONSOLE_IPC_ROOT/activity/pending-$TTY_KEY.json"
+  # ...and the payload must be captured verbatim, since C# parses it (no jq in the hook).
+  check_file "captures the permission payload" "$PENDING"
+  check_eq   "payload is stored verbatim" "$PERM_PAYLOAD" "$(cat "$PENDING" 2>/dev/null)"
+  check_eq   "pending file is owner-only (600)" "600" "$(mode_of "$PENDING")"
+
+  # A stale pending file would leave a red badge lit after the command already ran, so any
+  # non-permission event must clear it.
+  printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
+  if [ -f "$PENDING" ]; then
+    bad "moving on clears the pending payload" "pending file survived a busy event"
+  else
+    ok "moving on clears the pending payload"
+  fi
+fi
+
 echo "hostile root"
 # A root owned by someone else (simulated here by a plain file where the dir should be) must make
 # the scripts bail rather than write state into it.
