@@ -70,37 +70,59 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
-        /// A session-grid key face. The icon is drawn TOP-anchored and smaller than a normal key's,
-        /// because the Logi service renders the key's label (project + context %) underneath it —
-        /// see SessionSlotCommand.GetCommandDisplayName. Drawing text here as well would double it up.
-        /// An empty slot is a plain dark face. <paramref name="selected"/> adds corner brackets so
-        /// you can see which session the typing keys are pointed at.
+        /// A session-grid key face. Hardware taught the layout (photos, 3 iterations):
+        /// the bitmap covers only the UPPER SQUARE of the key — the service always reserves the
+        /// bottom strip for the label, and that strip's single-line font is the largest, crispest
+        /// text a key can carry (two-line labels get shrunk; in-bitmap text at comparable size
+        /// clips). So identity goes where the platform is strongest: the PROJECT NAME is the
+        /// service label (SessionSlotCommand.GetCommandDisplayName), matching every other key's
+        /// design language — and the bitmap carries the state icon with the small slate context %
+        /// under it. An empty slot is a plain dark face. <paramref name="selected"/> adds corner
+        /// brackets so you can see which session the typing keys are pointed at.
         /// </summary>
         public static BitmapImage RenderSessionSlot(
-            PluginImageSize imageSize, String icon, Boolean selected, ApprovalRisk risk = ApprovalRisk.None)
+            PluginImageSize imageSize, String icon, Int32? ctxPercent,
+            Boolean selected, ApprovalRisk risk = ApprovalRisk.None)
         {
             using (var bitmap = new BitmapBuilder(imageSize))
             {
                 bitmap.Clear(Background);
+                var w = bitmap.Width;
+                var h = bitmap.Height;
+                var scale = Math.Min(w, h) / 96f;
+                var pad = (Int32)(2 * scale);
 
                 if (!String.IsNullOrEmpty(icon))
                 {
                     try
                     {
-                        // Optically centred in the area ABOVE the label: the service renders the
-                        // two-line label (project + context %) over the lower part of the key, and
-                        // an icon whose bottom edge passes ~52% crowds it into clipping (0.55
-                        // top-anchored did exactly that — the 1.6.1 bug). 7% + 44% ends at 51%:
-                        // as large as the label zone allows, without the glued-to-the-edge look
-                        // that top-anchoring at 2% had.
                         var img = PluginResources.ReadImage("icons." + icon + ".png");
-                        var s = (Int32)(Math.Min(bitmap.Width, bitmap.Height) * 0.44);
-                        bitmap.DrawImage(img, (bitmap.Width - s) / 2, (Int32)(bitmap.Height * 0.07), s, s);
+                        var s = (Int32)(Math.Min(w, h) * 0.44);
+                        bitmap.DrawImage(img, (w - s) / 2, (Int32)(h * 0.06), s, s);
                     }
                     catch (Exception ex)
                     {
                         PluginLog.Verbose(ex, $"KeyImage: session icon '{icon}' failed to load");
                     }
+                }
+
+                if (ctxPercent.HasValue)
+                {
+                    // White and readable — slate at 13 was fine print on the real key. Colour
+                    // carries meaning, matching the Context gauge key's thresholds: amber when the
+                    // window is filling (75%+), red when it's nearly full (90%+) — so a session
+                    // that needs /compact flags itself from across the room.
+                    // Drawn TWICE, 1px apart: DrawText has no weight parameter, and the double
+                    // strike is a renderer-proof bold.
+                    var pct = ctxPercent.Value;
+                    var color = pct >= 90 ? Red : pct >= 75 ? Orange : White;
+                    var text = $"{pct}%";
+                    var y = (Int32)(h * 0.54);
+                    var th = (Int32)(h * 0.40);
+                    var size = (Int32)(17 * scale);
+                    var embolden = Math.Max(1, (Int32)(1 * scale));
+                    bitmap.DrawText(text, pad, y, w - (2 * pad), th, color, fontSize: size);
+                    bitmap.DrawText(text, pad + embolden, y, w - (2 * pad), th, color, fontSize: size);
                 }
 
                 if (selected)

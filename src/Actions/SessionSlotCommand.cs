@@ -17,8 +17,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// Six slots fill one 9-key page alongside Yes / No / Voice. Empty slots draw a blank face and
     /// do nothing on press.
     ///
-    /// The face is icon-only; the text under it is the SDK label (GetCommandDisplayName), which the
-    /// Logi service renders — the same split ContextCommand and CostDisplayCommand already use.
+    /// Face layout (tuned on hardware): the PROJECT NAME is the single-line SDK label — the
+    /// service's one-line label font is the largest, crispest text a key can carry, and it matches
+    /// every other key's design language. The bitmap (which covers only the upper square of the
+    /// key) holds the state icon with the small slate context % under it. Two-line labels shrink
+    /// and clip (the 1.6.1 bug); large in-bitmap text clips at the edges — both dead ends, tried.
     /// </summary>
     public class SessionSlotCommand : PluginDynamicCommand
     {
@@ -110,30 +113,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             var session = _bridge.Grid.SlotSession(slot);
             if (session == null)
             {
-                return String.Empty;   // empty slot: no label at all, so the key reads as unused
+                // Empty slot: String.Empty deliberately — the service then falls back to the
+                // registered name ("Session 3"), which is a useful hint on an unused key.
+                return String.Empty;
             }
 
-            // Context reads as "42%"; a session that hasn't used any yet has nothing useful to show,
-            // so the line is left blank rather than claiming "0%" or "--".
-            var ctx = session.CtxPercent.HasValue ? $"{session.CtxPercent}%" : String.Empty;
-            return $"{Truncate(session.Project, 12)}{Environment.NewLine}{ctx}";
+            // The project name, SINGLE line — the service renders a one-line label in the same
+            // large crisp font as every other key's ("Clear", "Draft"); a second line makes it
+            // shrink both (and is what clipped in 1.6.1). The context % lives in the bitmap.
+            return Truncate(session.Project, 12);
         }
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             if (!TryGetSlot(actionParameter, out var slot))
             {
-                return KeyImage.RenderSessionSlot(imageSize, null, selected: false);
+                return KeyImage.RenderSessionSlot(imageSize, null, null, selected: false);
             }
 
             var session = _bridge.Grid.SlotSession(slot);
             if (session == null)
             {
-                return KeyImage.RenderSessionSlot(imageSize, null, selected: false);
+                return KeyImage.RenderSessionSlot(imageSize, null, null, selected: false);
             }
 
             var selected = session.Tty == _bridge.TargetTty();
-            return KeyImage.RenderSessionSlot(imageSize, IconFor(session.State), selected, session.Risk);
+            // Null CtxPercent (no context used yet) draws nothing — a blank beats a misleading "0%".
+            return KeyImage.RenderSessionSlot(
+                imageSize, IconFor(session.State), session.CtxPercent, selected, session.Risk);
         }
 
         private String IconFor(String state)
