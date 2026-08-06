@@ -25,30 +25,20 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// </summary>
     public class BridgeManager
     {
-        // The bash hook/statusline scripts hardcode /tmp, so the plugin MUST read/write there too.
-        // On macOS Path.GetTempPath() returns /var/folders/.../T/ — a DIFFERENT dir — which is why
-        // the live displays showed defaults. Match the scripts: /tmp on macOS/Linux, temp on Windows.
-        //
-        // Everything lives under ONE private root (0700 dirs / 0600 files — see PrivateFiles):
-        //   sessions/<tty>.json + sessions/shared.json   statusline state (per tab / fallback)
-        //   activity/<tty>.json + activity/shared.json   hook-pushed activity
-        //   voice/                                       stop flag, transcript, recording
-        // Session state and transcripts carry the user's prompts and dictation, so they must not
-        // be world-readable the way the old loose /tmp/claude-console-*.json files were.
-        private static readonly String TempDir =
-            Environment.OSVersion.Platform == PlatformID.Win32NT ? Path.GetTempPath() : "/tmp";
-        private static readonly String IpcRoot = Path.Combine(TempDir, "claude-console");
-        private static readonly String SessionsDir = Path.Combine(IpcRoot, "sessions");
-        private static readonly String ActivityDir = Path.Combine(IpcRoot, "activity");
-        private static readonly String VoiceDir = Path.Combine(IpcRoot, "voice");
-        private static readonly String StateFile = Path.Combine(SessionsDir, "shared.json");
-        private static readonly String ActivityFile = Path.Combine(ActivityDir, "shared.json");
+        // The private IPC layout lives in IpcPaths (shared with SessionRegistry). Local aliases keep
+        // the rest of this file readable.
+        private static readonly String TempDir = IpcPaths.TempDir;
+        private static readonly String SessionsDir = IpcPaths.SessionsDir;
+        private static readonly String ActivityDir = IpcPaths.ActivityDir;
+        private static readonly String VoiceDir = IpcPaths.VoiceDir;
+        private static readonly String StateFile = IpcPaths.SharedStateFile;
+        private static readonly String ActivityFile = IpcPaths.SharedActivityFile;
 
         // Voice capture IPC. Every path is passed to ClaudeVoiceHelper explicitly, so moving them
         // needs no helper rebuild (re-signing the helper would silently reset its Microphone grant).
-        private static readonly String VoiceStopFile = Path.Combine(VoiceDir, "stop");
-        private static readonly String VoiceTranscriptFile = Path.Combine(VoiceDir, "transcript.txt");
-        private static readonly String VoiceWavFile = Path.Combine(VoiceDir, "capture.wav");
+        private static readonly String VoiceStopFile = IpcPaths.VoiceStopFile;
+        private static readonly String VoiceTranscriptFile = IpcPaths.VoiceTranscriptFile;
+        private static readonly String VoiceWavFile = IpcPaths.VoiceWavFile;
 
         // Runtime home shared with the voice helper: ~/.claude/claude-console/
         private static readonly String ClaudeConsoleHome = Path.Combine(
@@ -89,6 +79,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         public event Action<ClaudeState> OnStateChanged;
         public event Action<ActivityState> OnActivityChanged;
 
+        /// <summary>The session grid — one row per live Claude Code session. See SessionRegistry.</summary>
+        /// <remarks>Settable internally so tests can inject a registry rooted in a temp directory.</remarks>
+        public SessionRegistry Grid { get; internal set; } = new SessionRegistry();
+
         public ClaudeState CurrentState => _currentState;
         public ActivityState CurrentActivity => _activity;
 
@@ -125,6 +119,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             EnsureIpcRoot();
             CleanupLegacyIpcFiles();
+            Grid.LoadPersisted();   // keep slot assignments across a plugin reload
 
             // One-shot timer, re-armed at the END of each PollState (see its finally). This makes
             // polls NON-OVERLAPPING: the next poll can't start until the previous one finishes, so a
@@ -159,6 +154,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                         _activeTty = tty;
                     }
                 }
+
+                // Refresh the session grid. The `ps` scan runs on a DIFFERENT tick from the osascript
+                // frontmost probe above (2 vs 0) so the two subprocess calls never share a poll —
+                // stacking expensive calls on one tick is how the 1.3.1 thread leak began.
+                var liveTtys = _pollTick % 4 == 2 ? ScanClaudeTtys() : null;
+                Grid.Refresh(liveTtys);
 
                 var newState = ReadJsonWithRetry<ClaudeState>(ActiveStateFile());
 
@@ -227,7 +228,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         private String PerTty(String dir, String shared)
         {
-            var tty = _activeTty;
+            var tty = TargetTty();
             if (!String.IsNullOrEmpty(tty))
             {
                 var p = Path.Combine(dir, tty + ".json");
@@ -245,10 +246,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             try
             {
-                PrivateFiles.EnsurePrivateDirectory(IpcRoot);
-                PrivateFiles.EnsurePrivateDirectory(SessionsDir);
-                PrivateFiles.EnsurePrivateDirectory(ActivityDir);
-                PrivateFiles.EnsurePrivateDirectory(VoiceDir);
+                IpcPaths.EnsureAll();
             }
             catch (Exception ex)
             {
@@ -302,6 +300,90 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
                 catch { /* best effort */ }
             }
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Which Terminal tabs are running Claude right now. Bounded and killed on hang, exactly like
+        // the osascript calls — a wedged `ps` must never be able to pile up poll threads.
+        // ------------------------------------------------------------------------------------------
+        private HashSet<String> ScanClaudeTtys()
+        {
+            if (!OperatingSystem.IsMacOS())
+            {
+                return null;
+            }
+
+            var output = RunCapture("/bin/ps", new List<String> { "-axo", "pid=,ppid=,tty=,command=" }, 5000);
+            return output == null ? null : ClaudeProcessWatcher.TtysFrom(output);
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Targeting — which session the typing keys act on.
+        //
+        // Pressing a session key focuses that tab AND sets _activeTty immediately (see SelectSlot),
+        // so there is no window where a press lands on the previously-focused tab. Everything else
+        // keeps following the frontmost tab, which is what single-session users already expect.
+        // ------------------------------------------------------------------------------------------
+        internal String TargetTty()
+        {
+            var live = Grid.LiveSessions();
+
+            // 1. The tracked tab, when it is a session we know about.
+            var active = _activeTty;
+            if (!String.IsNullOrEmpty(active) && live.Any(s => s.Tty == active))
+            {
+                return active;
+            }
+
+            // 2. Exactly one session waiting on you — the obvious thing to answer.
+            var waiting = live.Where(s => s.State == "waiting").ToList();
+            if (waiting.Count == 1)
+            {
+                return waiting[0].Tty;
+            }
+
+            // 3. Exactly one session at all.
+            if (live.Count == 1)
+            {
+                return live[0].Tty;
+            }
+
+            // 4. Ambiguous (or nothing running): fall back to the tracked tab, which may be null —
+            //    the injection guard then beeps rather than typing somewhere unintended.
+            return active;
+        }
+
+        /// <summary>
+        /// Press a session key: focus that tab and make it the target for every subsequent key.
+        /// Setting _activeTty here rather than waiting for the next frontmost probe is what makes
+        /// "press slot 2, then Yes" land in slot 2 instead of racing a 2-second poll.
+        /// </summary>
+        public void SelectSlot(Int32 slot)
+        {
+            var session = Grid.SlotSession(slot);
+            if (session == null)
+            {
+                return;
+            }
+
+            _activeTty = session.Tty;
+            FocusTab(session.Tty);
+            PluginLog.Info($"BridgeManager: selected slot {slot} -> {session.Tty} ({session.Project})");
+        }
+
+        // Bring a specific Terminal tab to the front. Same tab-by-TTY script the injection guard
+        // uses, minus the typing.
+        private void FocusTab(String tty)
+        {
+            if (!OperatingSystem.IsMacOS())
+            {
+                return;
+            }
+
+            RunOsascriptCore(
+                new List<String> { "-e", FocusGuardScript + "return \"ok\"\n" + "end run", "/dev/" + tty },
+                15000,
+                wantOutput: true);
         }
 
         // The TTY (e.g. "ttys003") of the frontmost Terminal tab, or null if Terminal isn't the
@@ -500,7 +582,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         private void RunGuardedInjection(String injectionBody, String textArg = null)
         {
             var script = FocusGuardScript + injectionBody + "return \"ok\"\n" + "end run";
-            var tty = _activeTty;
+            var tty = TargetTty();
             var args = new List<String>
             {
                 "-e", script,
@@ -554,11 +636,32 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return runner(args, timeoutMs, wantOutput);
             }
 
+            return RunBounded("osascript", args, timeoutMs, wantOutput);
+        }
+
+        // Test seam for the process scan: lets the tests feed captured `ps` output.
+        internal Func<String> PsRunner { get; set; }
+
+        // Run a plain capture-only subprocess (the `ps` session scan) under the same hard-timeout
+        // discipline as osascript.
+        private String RunCapture(String file, List<String> args, Int32 timeoutMs)
+        {
+            var runner = this.PsRunner;
+            if (runner != null)
+            {
+                return runner();
+            }
+
+            return RunBounded(file, args, timeoutMs, wantOutput: true);
+        }
+
+        private static String RunBounded(String file, List<String> args, Int32 timeoutMs, Boolean wantOutput)
+        {
             try
             {
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "osascript",
+                    FileName = file,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardError = true,
@@ -582,7 +685,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 if (!proc.WaitForExit(timeoutMs))
                 {
-                    PluginLog.Warning($"osascript exceeded {timeoutMs}ms — killing (hung window server / locked screen / a11y prompt?)");
+                    PluginLog.Warning($"{file} exceeded {timeoutMs}ms — killing (hung window server / locked screen / a11y prompt?)");
                     try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
                     return null;
                 }
@@ -591,11 +694,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var err = SafeAwait(errTask);
                 if (!wantOutput && !String.IsNullOrWhiteSpace(outp))
                 {
-                    PluginLog.Warning($"osascript out: {outp.Trim()}");
+                    PluginLog.Warning($"{file} out: {outp.Trim()}");
                 }
                 if (!String.IsNullOrWhiteSpace(err))
                 {
-                    PluginLog.Warning($"osascript error: {err.Trim()}");
+                    PluginLog.Warning($"{file} error: {err.Trim()}");
                 }
                 return wantOutput ? outp?.Trim() : null;
             }

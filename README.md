@@ -18,6 +18,7 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 - **Offline voice dictation** — press, speak, press again; [whisper.cpp](https://github.com/ggerganov/whisper.cpp) transcribes locally and types it into your terminal.
 - **Voice "Go to Project"** — say a project name; it scans your folders, fuzzy‑matches, and opens a new tab `cd`'d into the project with `claude` running.
 - **Model & modes** — a **Model** key opens the `/model` picker and shows the current model live; **Mode** cycles Claude Code's input modes (normal → auto‑accept edits → plan); plus Compact, Context, Clear.
+- **A key per session** — run Claude in several Terminal tabs and each gets its own key showing project, state and context usage. Press one to focus that tab and point every other key at it.
 - **Accept autocomplete** — **Tab** completes a slash‑command / `@file` suggestion and runs it in one press.
 - **Types where it should** — every key finds Claude's own Terminal tab and types there, so a press can't land in Slack or a browser because you glanced away. Can't find it? It beeps and types nothing.
 
@@ -103,9 +104,19 @@ Add this to `~/.claude/settings.json` — the scripts live at `~/.claude/claude-
 The status‑line handler captures session state for the plugin and prints no visible status line. Restart Claude Code so the changes take effect.
 </details>
 
-Even with no bridge at all, the **Activity** key still shows **Waiting** on a permission prompt and **Ready** otherwise, and the **Context** key turns **amber at 75%** / **red at 90%** so you compact before an auto‑compaction. The Activity key's full **working / waiting / done** detail — handy for watching a long agentic run from across the room — comes from the hooks above.
+Without the hooks the **Activity** key reads **Ready** and never changes — its working / waiting / done detail, handy for watching a long agentic run from across the room, comes entirely from the hooks above. (Versions before 1.5.0 claimed it could still show **Waiting** on a permission prompt without them; it never could.) The **Context** key needs only the status line, and turns **amber at 75%** / **red at 90%** so you compact before an auto‑compaction.
 
-**Multiple tabs:** run several Claude Code sessions in different Terminal tabs and the live keys (Model / Cost / Context / Activity) follow whichever tab is **frontmost** — each session writes a per‑tab state file keyed by its TTY, and the plugin reads the one matching the active tab (falling back to the shared file otherwise). Terminal.app only.
+## Several sessions at once
+
+Run Claude in more than one Terminal tab and each session gets **its own key** in the **Sessions** group — project name, context usage, and a face for working / waiting / ready. Press one to jump to that tab.
+
+Pressing a session key also **aims every other key at it**, which is the point: you can approve a prompt in session 2 while looking at session 1, or while reading a browser. With only one session running, nothing changes — the keys just work, no selection needed. If you haven't picked a session and exactly one is waiting on you, that's the one that gets your **Yes**. When it's genuinely ambiguous the plugin won't guess; it beeps instead of answering the wrong Claude.
+
+Notes:
+- **Slots are stable.** A session keeps its key for as long as it lives — close one and the others stay put, so you don't approve the wrong session out of muscle memory. The freed key is reused by the next session you start.
+- A new session takes a key **immediately** (labelled "Claude" until it first renders a status line), and a closed tab clears within about two seconds.
+- Six sessions fit; beyond that the extras run fine, just without a key.
+- Terminal.app only, like the rest of the plugin.
 
 ## Using voice
 
@@ -169,6 +180,7 @@ Reload the plugin (rebuild, or restart Logi Options+) to pick up edits. Delete t
 
 | Group | Keys |
 |-------|------|
+| **Sessions** | Session 1-6* — one key per running Claude session (press to focus it and aim the other keys at it) |
 | **Core** | Model* · Cost* · Activity* · Esc · Mode · Tab · Compact · Context · Clear · Exit |
 | **Answer** | Yes · No · Up · Down · Return |
 | **Prompts** | Fix Bug · Write Tests · Explore · Explain · Refactor · Review · Optimize · Security · Document · Deploy |
