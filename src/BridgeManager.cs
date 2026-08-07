@@ -520,11 +520,25 @@ namespace Loupedeck.ClaudeConsolePlugin
         //   press 2 -> StopVoiceCapture writes the stop flag; the helper transcribes -> writes the
         //              transcript; a background thread reads it and types it into the focused terminal.
         // ------------------------------------------------------------------------------------------
+        /// <summary>
+        /// The platforms with a working capture backend: the signed helper app on macOS, the
+        /// WinMM helper exe on Windows. Testable for the same reason as AutoWireSupported — a
+        /// silent platform gate is how Phase 4 shipped unreachable.
+        /// </summary>
+        internal static Boolean VoiceSupported =>
+            OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
+
         public void StartVoiceCapture()
         {
+            if (OperatingSystem.IsWindows())
+            {
+                this.StartVoiceCaptureWindows();
+                return;
+            }
+
             if (!OperatingSystem.IsMacOS())
             {
-                PluginLog.Info("BridgeManager.StartVoiceCapture: non-macOS — not implemented");
+                PluginLog.Info("BridgeManager.StartVoiceCapture: unsupported platform");
                 return;
             }
 
@@ -573,6 +587,56 @@ namespace Loupedeck.ClaudeConsolePlugin
             PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
         }
 
+        // Windows whisper-cli lives in the same runtime-home dir as the macOS bundle, with the
+        // platform's suffix. Installed by EnsureVoiceRuntimeInstalled from the package (or by
+        // hand from a whisper.cpp release during development).
+        private static readonly String WindowsWhisperCli = Path.Combine(WhisperBinDir, "whisper-cli.exe");
+
+        // The same flow as macOS with the platform differences flattened out: the helper is a
+        // plain exe launched directly (no LaunchServices, no TCC — Windows mic permission is a
+        // Settings toggle the helper documents), and whisper is REQUIRED up front — the Windows
+        // helper has no embedded fallback, so recording without it would always type nothing.
+        private void StartVoiceCaptureWindows()
+        {
+            EnsureVoiceRuntimeInstalled();
+
+            EnsureIpcRoot();
+            TryDelete(VoiceTranscriptFile);
+            TryDelete(VoiceStopFile);
+
+            var helper = PluginPaths.PackagedFile("claude-console-voice.exe");
+            if (helper == null)
+            {
+                PluginLog.Warning("BridgeManager.StartVoiceCapture: claude-console-voice.exe not found in the plugin package");
+                return;
+            }
+
+            if (!File.Exists(WindowsWhisperCli))
+            {
+                PluginLog.Warning($"BridgeManager.StartVoiceCapture: whisper-cli.exe missing at {WhisperBinDir} — voice needs the whisper bundle installed");
+                _platform.Alert();
+                return;
+            }
+
+            if (!EnsureVoiceModel())
+            {
+                PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
+                _platform.Alert();
+                return;
+            }
+
+            RunDetached(helper, new List<String>
+            {
+                "--maxsec", "60",
+                "--out", VoiceWavFile,
+                "--stopflag", VoiceStopFile,
+                "--transcript", VoiceTranscriptFile,
+                "--model", VoiceModelFile,
+                "--whisper", WindowsWhisperCli,
+            });
+            PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+        }
+
         // ------------------------------------------------------------------------------------------
         // Package bootstrap — when the helper + whisper ship INSIDE the .lplug4 (release builds), copy
         // them into the runtime home on first use so a package-only install has working voice. Files
@@ -581,6 +645,12 @@ namespace Loupedeck.ClaudeConsolePlugin
         // ------------------------------------------------------------------------------------------
         private void EnsureVoiceRuntimeInstalled()
         {
+            if (OperatingSystem.IsWindows())
+            {
+                this.EnsureVoiceRuntimeInstalledWindows();
+                return;
+            }
+
             try
             {
                 // The SDK loads the plugin in a context where Assembly.Location is empty, so use the
@@ -619,6 +689,54 @@ namespace Loupedeck.ClaudeConsolePlugin
             catch (Exception ex)
             {
                 PluginLog.Warning(ex, "BridgeManager.EnsureVoiceRuntimeInstalled failed");
+            }
+        }
+
+        // The Windows analogue of the ditto branch above: a release package carries whisper's
+        // Windows build under bin\voice\whisper-bin-win\ (its own directory — voice\whisper-bin
+        // holds the macOS dylibs), and it is copied into the runtime home on first use. Plain
+        // managed copy: no quarantine to strip, nothing to chmod. A dev machine where whisper-bin
+        // was placed by hand is left alone.
+        private void EnsureVoiceRuntimeInstalledWindows()
+        {
+            try
+            {
+                if (File.Exists(WindowsWhisperCli))
+                {
+                    return;   // already installed (by a previous run, or by hand)
+                }
+
+                var pkgDir = PluginPaths.PluginDirectory;
+                if (String.IsNullOrEmpty(pkgDir))
+                {
+                    return;
+                }
+
+                var pkgWhisper = Path.Combine(pkgDir, "voice", "whisper-bin-win");
+                if (!Directory.Exists(pkgWhisper))
+                {
+                    return;   // dev build — nothing packaged
+                }
+
+                PluginLog.Info($"BridgeManager: installing whisper bundle from package -> {WhisperBinDir}");
+                CopyTree(pkgWhisper, WhisperBinDir);
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager.EnsureVoiceRuntimeInstalledWindows failed");
+            }
+        }
+
+        private static void CopyTree(String from, String to)
+        {
+            Directory.CreateDirectory(to);
+            foreach (var dir in Directory.GetDirectories(from, "*", SearchOption.AllDirectories))
+            {
+                Directory.CreateDirectory(Path.Combine(to, Path.GetRelativePath(from, dir)));
+            }
+            foreach (var file in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+            {
+                File.Copy(file, Path.Combine(to, Path.GetRelativePath(from, file)), overwrite: true);
             }
         }
 
@@ -1016,7 +1134,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // <paramref name="handler"/> with it. An empty transcript (silence / mic denied) is ignored.
         private void StopVoiceCaptureThen(Action<String> handler)
         {
-            if (!OperatingSystem.IsMacOS())
+            if (!VoiceSupported)
             {
                 return;
             }

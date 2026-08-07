@@ -135,5 +135,16 @@ written by the PLUGIN, so its presence proves both sides agree on the root.
   through because fixtures encoded an assumption instead of testing the real path. Prefer driving
   `WindowsPlatformBridge` over calling the pure helpers directly.
 - Don't touch the macOS backend. It ships and works; this branch must not regress it.
-- Voice (Phase 5) is deliberately not implemented on Windows. Leave it.
+- Voice (Phase 5) IS now implemented on Windows (2026-08-07, at the user's request —
+  superseding the earlier "leave it"). `claude-console-voice.exe` records the default mic via
+  WinMM at 16 kHz mono (no audio library), honors the same `--maxsec/--out/--stopflag/
+  --transcript/--model/--whisper` contract as ClaudeVoiceHelper.app, runs `whisper-cli.exe`,
+  and writes the transcript atomically (always — empty on silence/failure, ending the plugin's
+  wait). `BridgeManager.VoiceSupported` gates both start and stop. Runtime prerequisites in
+  `~/.claude/claude-console/`: `whisper-bin\whisper-cli.exe` (+ ggml DLLs; on this machine from
+  the whisper.cpp v1.9.2 `whisper-bin-x64.zip` release, sha-unverified — a packaged install
+  copies `bin\voice\whisper-bin-win\` there via EnsureVoiceRuntimeInstalledWindows, WHICH THE
+  MAC PACK FLOW MUST NOW BUNDLE) and `whisper\ggml-base.en.bin` (sha-verified download,
+  EnsureVoiceModel — already cross-platform). Known rough edge: helper startup is ~1 s, so the
+  first spoken word right after the keypress can clip.
 - Commit as you go with real explanations. The Mac session will pull this back.
