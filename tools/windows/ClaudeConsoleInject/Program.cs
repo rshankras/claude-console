@@ -89,6 +89,14 @@ internal static class Program
 
     // ---- commands ----------------------------------------------------------
 
+    // Mirrors the macOS backend's settling delays (MacPlatformBridge.InjectText / TabThenEnter).
+    // They are not decoration: Claude Code groups a rapid input burst as a PASTE, and a Return
+    // inside a paste becomes a newline in the input box instead of a submit — text landed but
+    // nothing sent (seen on real hardware 2026-08-07: probe text present, transcript empty).
+    // The pause also lets the slash-command autocomplete settle before Return, same as macOS.
+    private const Int32 SubmitDelayMs = 350;
+    private const Int32 TabEnterDelayMs = 300;
+
     [SupportedOSPlatform("windows")]
     private static Int32 InjectText(Dictionary<String, String> opts)
     {
@@ -104,12 +112,18 @@ internal static class Program
             AppendChar(records, ch);
         }
 
+        var phases = new List<(List<INPUT_RECORD> Records, Int32 DelayBeforeMs)> { (records, 0) };
+
         if (String.Equals(opts.GetValueOrDefault("--submit"), "true", StringComparison.OrdinalIgnoreCase))
         {
-            AppendKey(records, VkReturn, '\r', 0);
+            // Return in its OWN write, after the settle — never in the text burst, where the
+            // paste grouping would turn it into a newline.
+            var ret = new List<INPUT_RECORD>();
+            AppendKey(ret, VkReturn, '\r', 0);
+            phases.Add((ret, SubmitDelayMs));
         }
 
-        return Deliver(opts, records);
+        return Deliver(opts, phases);
     }
 
     [SupportedOSPlatform("windows")]
@@ -124,18 +138,25 @@ internal static class Program
 
         var records = new List<INPUT_RECORD>();
         AppendKey(records, vk, '\0', ModifiersFrom(opts.GetValueOrDefault("--mods")));
-        return Deliver(opts, records);
+        return Deliver(opts, new List<(List<INPUT_RECORD>, Int32)> { (records, 0) });
     }
 
     [SupportedOSPlatform("windows")]
     private static Int32 InjectTabThenEnter(Dictionary<String, String> opts)
     {
-        // One attach, one write: Tab to accept the completion, then Return to submit. Two separate
-        // runs would leave a gap in which the completion might not have registered.
-        var records = new List<INPUT_RECORD>();
-        AppendKey(records, VkTab, '\t', 0);
-        AppendKey(records, VkReturn, '\r', 0);
-        return Deliver(opts, records);
+        // ONE attach, TWO writes: Tab to accept the completion, a settle so it registers, then
+        // Return to submit — the same rhythm the macOS backend uses (key code 48, delay 0.3,
+        // key code 36). Tab and Return in one burst read as a paste and never submit.
+        var tab = new List<INPUT_RECORD>();
+        AppendKey(tab, VkTab, '\t', 0);
+        var ret = new List<INPUT_RECORD>();
+        AppendKey(ret, VkReturn, '\r', 0);
+
+        return Deliver(opts, new List<(List<INPUT_RECORD>, Int32)>
+        {
+            (tab, 0),
+            (ret, TabEnterDelayMs),
+        });
     }
 
     /// <summary>
@@ -241,7 +262,7 @@ internal static class Program
     // ---- delivery ----------------------------------------------------------
 
     [SupportedOSPlatform("windows")]
-    private static Int32 Deliver(Dictionary<String, String> opts, List<INPUT_RECORD> records)
+    private static Int32 Deliver(Dictionary<String, String> opts, List<(List<INPUT_RECORD> Records, Int32 DelayBeforeMs)> phases)
     {
         if (!Int32.TryParse(opts.GetValueOrDefault("--pid"), NumberStyles.None, CultureInfo.InvariantCulture, out var pid))
         {
@@ -262,7 +283,7 @@ internal static class Program
             }
         }
 
-        if (records.Count == 0)
+        if (phases.Count == 0 || phases.TrueForAll(p => p.Records.Count == 0))
         {
             return ExitOk;
         }
@@ -288,12 +309,27 @@ internal static class Program
 
             try
             {
-                // ONE write for the whole burst — the console's input buffer receives it as a unit,
-                // so a user typing concurrently cannot interleave into the middle of a prompt.
-                var arr = records.ToArray();
-                if (!WriteConsoleInputW(handle, arr, (UInt32)arr.Length, out var written) || written != arr.Length)
+                // ONE attach for all phases, ONE write per phase. Within a phase the burst is a
+                // unit — a user typing concurrently cannot interleave into the middle of a
+                // prompt. BETWEEN phases sits a deliberate settle (see SubmitDelayMs): Claude
+                // Code groups a rapid burst as a paste, so a submit's Return must arrive as its
+                // own later write or it becomes a newline in the input box.
+                foreach (var (records, delayBeforeMs) in phases)
                 {
-                    return ExitFailed;
+                    if (records.Count == 0)
+                    {
+                        continue;
+                    }
+                    if (delayBeforeMs > 0)
+                    {
+                        Thread.Sleep(delayBeforeMs);
+                    }
+
+                    var arr = records.ToArray();
+                    if (!WriteConsoleInputW(handle, arr, (UInt32)arr.Length, out var written) || written != arr.Length)
+                    {
+                        return ExitFailed;
+                    }
                 }
                 return ExitOk;
             }
