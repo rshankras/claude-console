@@ -362,5 +362,72 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.Navigate(TerminalAction.NewTab);       // no-op, must not throw
             bridge.LaunchClaudeInProject(@"C:\dev\proj");
         }
+
+        // --- the REAL command-line resolver (Windows only — no-ops elsewhere) ---------------------
+        //
+        // The second regression in this area shipped one layer below the last one: the test above
+        // injects CommandLineResolver, so the real batched PowerShell query was never exercised.
+        // Its -Command string said `ForEach-Object {{ … }}` — doubled braces, written as if the
+        // string were interpolated when that segment is a plain literal — which makes PowerShell
+        // emit the scriptblock's TEXT instead of evaluating it. Nothing parsed, every command line
+        // stayed null, and the Desktop filter was blind on real hardware while 338 tests passed.
+        // These run the actual powershell.exe round trip.
+
+        [Fact]
+        public void The_real_batched_resolver_reads_an_actual_command_line()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var resolved = WindowsPlatformBridge.ResolveCommandLines(new[] { Environment.ProcessId });
+
+            Assert.True(resolved.TryGetValue(Environment.ProcessId, out var cmd),
+                "the batched PowerShell query returned nothing parseable for the current process");
+            Assert.False(String.IsNullOrWhiteSpace(cmd));
+        }
+
+        [Fact]
+        public void A_desktop_marked_process_is_excluded_through_the_real_resolver()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            // A live decoy whose command line carries an Electron --type= switch, discovered the
+            // way the real scan discovers everything: name only, command line resolved by the
+            // REAL batched query. If that query breaks again, the decoy sails through the Desktop
+            // filter and this fails.
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("-NoProfile");
+            psi.ArgumentList.Add("-NonInteractive");
+            psi.ArgumentList.Add("-Command");
+            psi.ArgumentList.Add("# --type=renderer decoy for A_desktop_marked_process_is_excluded_through_the_real_resolver\nStart-Sleep -Seconds 60");
+
+            using var decoy = System.Diagnostics.Process.Start(psi);
+            try
+            {
+                var bridge = new WindowsPlatformBridge
+                {
+                    ProcessEnumerator = () => new[]
+                    {
+                        Proc(decoy.Id, "claude.exe", cmd: null, start: decoy.StartTime),
+                    },
+                };
+
+                Assert.Empty(bridge.DiscoverSessions());
+            }
+            finally
+            {
+                try { decoy.Kill(); } catch { }
+            }
+        }
     }
 }

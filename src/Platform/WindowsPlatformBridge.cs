@@ -217,7 +217,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// Claude Desktop, and a machine with Desktop open has a dozen of them. One PowerShell
         /// spawn per scan-with-new-pids is fine; a dozen would not be.
         /// </summary>
-        private static Dictionary<Int32, String> ResolveCommandLines(IEnumerable<Int32> pids)
+        internal static Dictionary<Int32, String> ResolveCommandLines(IEnumerable<Int32> pids)
         {
             var result = new Dictionary<Int32, String>();
             var list = pids?.Distinct().ToList() ?? new List<Int32>();
@@ -229,6 +229,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             // Deliberately NOT a System.Management dependency: that would add a NuGet assembly to
             // the shipped package. Shell out under the same hard timeout discipline every backend
             // uses (BoundedProcess). Tab-separated so a command line containing commas is safe.
+            //
+            // Single braces, and it matters: `ForEach-Object {{ … }}` makes PowerShell emit the
+            // inner scriptblock's TEXT once per row instead of evaluating it — no pid, no tab,
+            // nothing parses, and every command line silently stays null. On real hardware
+            // (2026-08-07) that let all of Claude Desktop's processes through the marker filter
+            // and the keypad typed into a windowless GPU process.
             var filter = String.Join(" or ", list.Select(p => $"ProcessId={p}"));
             var output = BoundedProcess.Run(
                 "powershell.exe",
@@ -236,7 +242,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 {
                     "-NoProfile", "-NonInteractive", "-Command",
                     $"Get-CimInstance Win32_Process -Filter \"{filter}\" | " +
-                    "ForEach-Object {{ \"$($_.ProcessId)`t$($_.CommandLine)\" }}",
+                    "ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
                 },
                 8000,
                 wantOutput: true);
