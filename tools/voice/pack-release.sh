@@ -45,6 +45,13 @@ echo ">>> building plugin (Release)"
 LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/ClaudeConsolePlugin.link"
 [ -f "$LINK" ] && { rm -f "$LINK"; echo ">>> removed a stale dev .link (would have collided with the package)"; }
 
+# --- build the Windows helpers into the same bin/ (cross-compiled from macOS) ---------------------
+# One .lplug4 serves both platforms: LoupedeckPackage.yaml points pluginFolderMac AND
+# pluginFolderWin at bin/, so these two exes ride along beside the plugin DLL and are simply
+# never launched on macOS.
+echo ">>> building Windows helper payload"
+bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64
+
 # --- embed the notarized voice payload next to the plugin DLL (bin/voice/) ------------------------
 PKG_VOICE="$ROOT/bin/Release/bin/voice"
 echo ">>> embedding voice payload -> $PKG_VOICE"

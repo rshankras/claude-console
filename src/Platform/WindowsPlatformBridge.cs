@@ -6,10 +6,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     using System.Linq;
 
     /// <summary>
-    /// The Windows backend. PHASE 1 — session discovery only: it can see which Claude sessions are
-    /// running and mint their keys, so the grid, slots and pinning work. Injection (Phase 2),
-    /// navigation (Phase 3) and voice (Phase 5) still report Unsupported, which surfaces as a
-    /// logged no-op rather than a wrong keystroke.
+    /// The Windows backend: session discovery (Phase 1), console injection via a short-lived
+    /// helper (Phase 2), and terminal control through wt.exe (Phase 3). Voice is not implemented
+    /// (Phase 5) — those keys log and no-op rather than pretending.
+    ///
+    /// NOTHING HERE HAS RUN ON WINDOWS HARDWARE. The decision logic is unit-tested on macOS and
+    /// the helpers cross-compile clean, but the Win32 calls themselves are unverified — see the
+    /// ordered checklist in docs/windows-port-2.0-plan.md, starting with
+    /// `claude-console-inject selftest`.
     ///
     /// Sessions are keyed by the Claude process (PID + start time), never by window title: the
     /// 2026-08-07 spike found every Claude tab reports the identical title "✳ Claude Code", and
@@ -20,8 +24,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     {
         public String Name => "Windows";
 
-        // Phase 1: discovery works, injection does not. Flipped to true in Phase 2.
-        public Boolean IsSupported => false;
+        // Discovery, injection and terminal control are all implemented (Phases 1-3). Voice is
+        // not (Phase 5) — those keys log and no-op. Nothing gates on this today; it is the
+        // backend's own statement of whether it has a working implementation, and Windows now does.
+        public Boolean IsSupported => OperatingSystem.IsWindows();
 
         /// <summary>
         /// Enumerates the process table. Injectable so the discovery logic is testable on any OS —

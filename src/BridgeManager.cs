@@ -675,9 +675,45 @@ namespace Loupedeck.ClaudeConsolePlugin
         // so a plugin upgrade updates them) and mark them executable.
         private void EnsureBridgeInstalled()
         {
+            if (OperatingSystem.IsWindows())
+            {
+                // The Windows shim is a compiled exe shipped in the plugin package — there is
+                // nothing to extract, and nothing to chmod.
+                return;
+            }
+
             Directory.CreateDirectory(ScriptsDir);
             ExtractEmbeddedScript("ClaudeConsole.statusline-handler.sh", StatuslineScript);
             ExtractEmbeddedScript("ClaudeConsole.activity-hook.sh", ActivityScript);
+        }
+
+        /// <summary>
+        /// The handler Claude Code should invoke: the bash script on macOS, the packaged shim on
+        /// Windows. Null on Windows when the shim is missing from the package — we then leave
+        /// settings.json alone rather than wiring a command that cannot run.
+        /// </summary>
+        internal String BridgeHandlerPath(String state) =>
+            OperatingSystem.IsWindows() ? HookExePath : (state == null ? StatuslineScript : ActivityScript);
+
+        /// <summary>Where the Windows hook shim lives — beside the plugin DLL. Settable for tests.</summary>
+        internal String HookExePath { get; set; } = FindHookExe();
+
+        private static String FindHookExe()
+        {
+            try
+            {
+                var dir = AppContext.BaseDirectory;
+                if (String.IsNullOrEmpty(dir))
+                {
+                    return null;
+                }
+                var candidate = Path.Combine(dir, "claude-console-hook.exe");
+                return File.Exists(candidate) ? candidate : null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static void ExtractEmbeddedScript(String resourceName, String destPath)
@@ -745,28 +781,37 @@ namespace Loupedeck.ClaudeConsolePlugin
                 root = new JsonObject();
             }
 
+            var isWindows = OperatingSystem.IsWindows();
+            var statusHandler = this.BridgeHandlerPath(null);
+            var activityHandler = this.BridgeHandlerPath("busy");
+
+            if (isWindows && (statusHandler == null || activityHandler == null))
+            {
+                PluginLog.Warning("Bridge auto-wire: claude-console-hook.exe is missing from the package — leaving settings.json untouched");
+                return;
+            }
+
             var changed = false;
 
             // --- hooks (additive — append our entry only when it isn't already present) ---
-            var activityCmd = "bash " + ActivityScript;
             if (root["hooks"] is not JsonObject hooks)
             {
                 hooks = new JsonObject();
                 root["hooks"] = hooks;
             }
-            changed |= EnsureHook(hooks, "UserPromptSubmit", null, activityCmd + " busy");
-            changed |= EnsureHook(hooks, "PostToolUse", "*", activityCmd + " busy");
-            changed |= EnsureHook(hooks, "Notification", null, activityCmd + " waiting");
-            changed |= EnsureHook(hooks, "Stop", null, activityCmd + " done");
+            changed |= EnsureHook(hooks, "UserPromptSubmit", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
+            changed |= EnsureHook(hooks, "PostToolUse", "*", BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
+            changed |= EnsureHook(hooks, "Notification", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "waiting"));
+            changed |= EnsureHook(hooks, "Stop", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "done"));
             // PermissionRequest fires the moment a tool needs approval and carries the tool name and
             // its input, which is what tells a routine approval from `git push --force`. Notification
             // can't: it has no tool name and is delayed ~6s for permission prompts. Unknown events are
             // ignored by older Claude Code builds, so adding this is safe there — the badge simply
             // stays amber instead of going red.
-            changed |= EnsureHook(hooks, "PermissionRequest", null, activityCmd + " permission");
+            changed |= EnsureHook(hooks, "PermissionRequest", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "permission"));
 
             // --- statusLine (chain an existing one rather than clobbering it) ---
-            var ourStatusCmd = "bash " + StatuslineScript;
+            var ourStatusCmd = BridgeWiring.StatuslineCommand(isWindows, statusHandler);
             var sl = root["statusLine"] as JsonObject;
             var existingCmd = sl?["command"]?.GetValue<String>();
             if (String.IsNullOrWhiteSpace(existingCmd))
@@ -775,7 +820,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 TryDelete(StatuslineChainFile);
                 changed = true;
             }
-            else if (existingCmd.Contains("statusline-handler.sh"))
+            else if (BridgeWiring.IsOurs(existingCmd))
             {
                 // already ours — nothing to do
             }

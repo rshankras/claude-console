@@ -19,8 +19,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
             if (OperatingSystem.IsWindows())
             {
-                // Phase 1: discovery only — the grid populates, but injection is still a logged
-                // no-op (IsSupported stays false until Phase 2). See docs/windows-port-2.0-plan.md.
+                // Discovery + injection + terminal control. Voice is still a no-op (Phase 5).
+                // See docs/windows-port-2.0-plan.md for the hardware verification checklist.
                 return new WindowsPlatformBridge();
             }
 

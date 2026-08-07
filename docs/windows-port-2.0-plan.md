@@ -259,7 +259,41 @@ Original scope, for reference:
 - **Supported host for full nav = Windows Terminal.** conhost / VS Code get injection + pin
   (still the core value); relative nav/focus degrade. Documented, not hidden.
 
-### Phase 4 — Windows hooks + IPC
+### Phase 4 — Windows hooks + IPC — ✅ CODE DONE 2026-08-07, ⚠️ UNVERIFIED ON HARDWARE
+`BridgeWiring` (pure command construction) + `tools/windows/ClaudeConsoleHook/`. 332 C# tests
+green (+17). The shim is one exe, arg-dispatched: `statusline` and `activity <state>`.
+
+Two things MUST agree with the plugin or the live keys silently show defaults forever — the
+hardest class of bug to notice, so both are pinned by contract tests that read the shim's source:
+the **IPC root** (`Path.GetTempPath()\claude-console`, mirroring `IpcPaths`) and the **session
+key** (`pid-<pid>-<utcStartTicks>`, mirroring `WindowsProcessWatcher.SessionKeyFor`).
+
+The shim climbs the parent chain to find the Claude process, because a hook is spawned *below*
+Claude (Claude → shell → hook) — keying on its own PID would produce a key matching no session.
+That is the same reason the bash scripts climb until a real tty appears. Like them, it stays dumb:
+Claude's JSON is written through verbatim, all parsing stays in `ClaudeState`.
+
+### Phase 5 — Windows voice — ❌ NOT IN 1.8.0 (deliberate)
+Needs a whisper.cpp Windows binary and WASAPI capture, neither of which can be obtained or
+verified from macOS. The voice keys log and no-op on Windows rather than shipping unrun code.
+Everything reusable is already platform-neutral (model download + sha256 verify, `MatchProject`,
+`ListeningFace`), so this stays a contained follow-up — extract `IVoiceCapture` rather than adding
+an `if (IsWindows)` ladder.
+
+### Phase 6 — Packaging — ✅ DONE 2026-08-07 (ships in 1.8.0)
+- `pluginFolderWin: bin` uncommented — **one .lplug4 now serves both platforms**, since both
+  folder keys point at `bin/` and each platform simply ignores the other's payload.
+- `ClaudeConsoleApplication.GetProcessName()` → `"WindowsTerminal"` (was a `"Terminal"`
+  placeholder). This is what binds the packaged default profile on Windows the way
+  `GetBundleName` does on macOS.
+- `tools/windows/build-windows-payload.sh` publishes both helpers and stages them into `bin/`;
+  `pack-release.sh` now calls it, so a release build carries Windows automatically.
+- **Framework-dependent, not self-contained.** Self-contained added ~70 MB of runtime *per
+  helper* (137 MB total). Any machine running Options+ 6.4 already has .NET — the Plugin Service
+  itself is built on 10 — and `RollForward=LatestMajor` lets the net8.0 helpers run on it. Both
+  exes are now ~160 KB and the package stays 10 MB.
+
+### Phase 4 (original scope, for reference) —
 - **Compiled hook shim** `claude-console-hook.exe` (recommended over PowerShell): one shim,
   arg-dispatched for statusline vs activity. It finds its session key exactly the way the bash
   scripts find the TTY — they climb the parent chain with `ps -o tty=` until a real tty appears
