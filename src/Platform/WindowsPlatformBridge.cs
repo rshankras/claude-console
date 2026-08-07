@@ -298,23 +298,87 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         }
 
         // ------------------------------------------------------------------------------------------
-        // Not yet implemented — Phase 3 (navigation).
+        // Terminal control (Phase 3) — via wt.exe, the only supported way to drive Windows Terminal.
+        //
+        // TWO HONEST GAPS, both consequences of Windows Terminal having no automation API:
+        //
+        // 1. QueryFrontmostSession returns null — "I don't know". Nothing supported maps a terminal
+        //    TAB to the process running in it, so we cannot say which session the user is looking
+        //    at. This is NOT a silent failure: BridgeManager.TargetTty degrades through its other
+        //    rules, so one session still works, and "exactly one session waiting on you" still
+        //    works. With several idle sessions the user presses a session key first — which is the
+        //    explicit, already-supported way to aim the keypad. Pinning is exact on Windows even
+        //    though frontmost-tracking is not.
+        //
+        // 2. FocusSession raises the terminal WINDOW but cannot select the tab. Same root cause.
+        //    Injection is unaffected — it addresses the console directly — so pressing a session
+        //    key still aims every subsequent key at that session correctly. Only the "and show it
+        //    to me" half is approximate.
         // ------------------------------------------------------------------------------------------
 
-        public String QueryFrontmostSession() => null;   // Phase 3
+        /// <summary>Runs a terminal command. Injectable so navigation is testable without Windows.</summary>
+        internal Func<String, List<String>, Boolean> TerminalRunner { get; set; }
 
-        public void FocusSession(String sessionKey) => NotYet(nameof(FocusSession));
+        public String QueryFrontmostSession() => null;   // see gap 1 above
 
-        public void Navigate(TerminalAction action) => NotYet(nameof(Navigate));
-
-        public void LaunchClaudeInProject(String projectDir) => NotYet(nameof(LaunchClaudeInProject));
-
-        public void Alert() { /* Phase 3 */ }
-
-        private static InjectionOutcome NotYet(String what)
+        public void Navigate(TerminalAction action)
         {
-            PluginLog.Info($"WindowsPlatformBridge: {what} is not implemented yet (Phase 2/3)");
-            return InjectionOutcome.Unsupported;
+            var args = WindowsTerminalCli.ArgsFor(action);
+            if (args == null)
+            {
+                // Cycling windows is an OS gesture wt.exe can't express. Better to say so than to
+                // send something that does the wrong thing.
+                PluginLog.Info($"WindowsPlatformBridge: {action} is not available on Windows Terminal");
+                return;
+            }
+
+            this.RunTerminal(args);
+        }
+
+        public void LaunchClaudeInProject(String projectDir)
+        {
+            var args = WindowsTerminalCli.LaunchClaudeArgs(projectDir);
+            if (args == null)
+            {
+                return;
+            }
+
+            this.RunTerminal(args);
+        }
+
+        public void FocusSession(String sessionKey)
+        {
+            // Best effort: bring the terminal window forward. The tab is not selectable (gap 2).
+            if (WindowsInjection.TryParseSessionKey(sessionKey, out _, out _))
+            {
+                this.RunTerminal(WindowsTerminalCli.ArgsFor(TerminalAction.Activate));
+            }
+        }
+
+        public void Alert()
+        {
+            var exe = this.HelperPath;
+            if (exe != null)
+            {
+                BoundedProcess.RunForExitCode(exe, new List<String> { "beep" }, 5000);
+            }
+        }
+
+        private void RunTerminal(List<String> args)
+        {
+            var runner = this.TerminalRunner;
+            if (runner != null)
+            {
+                runner(WindowsTerminalCli.Exe, args);
+                return;
+            }
+
+            // wt.exe is absent on stock Windows 10 (R9). A failure here is a logged no-op — the
+            // keypad's typing keys are unaffected, only navigation is.
+            if (BoundedProcess.RunForExitCode(WindowsTerminalCli.Exe, args, 10000) == null)
+            {
+                PluginLog.Warning("WindowsPlatformBridge: wt.exe unavailable — Windows Terminal is required for the navigation keys");
+            }
         }
     }
 }

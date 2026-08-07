@@ -211,7 +211,44 @@ Original scope, for reference:
   one target console.
 - Error 5 (elevated target) → typed failure the UI can surface (see R6).
 
-### Phase 3 — Windows terminal control (the hard phase, R1)
+### Phase 3 — Windows terminal control — ✅ CODE DONE 2026-08-07, ⚠️ UNVERIFIED ON HARDWARE
+`WindowsTerminalCli` (pure `wt.exe` command construction) wired into the bridge. 315 C# tests
+green (+21). **R1 resolved — as a scoped, documented gap rather than a fix.**
+
+**The R1 verdict.** Windows Terminal has no automation API, so nothing supported maps a terminal
+TAB to the process running inside it. Two consequences, both deliberately visible rather than
+faked:
+
+1. **`QueryFrontmostSession` returns null — "I don't know."** We cannot say which session the user
+   is looking at. Crucially this is not a silent failure: `BridgeManager.TargetTty` degrades
+   through its remaining rules, so **one session works with no pin at all** (the common case, and
+   there's a test for it), and "exactly one session waiting on you" still works. With several idle
+   sessions the user presses a session key first — the explicit aiming mechanism that already
+   exists. **Pinning is exact on Windows even though frontmost-tracking is not.**
+2. **`FocusSession` raises the terminal window but cannot select the tab.** Injection is
+   unaffected (it addresses the console directly), so pressing a session key still aims every
+   subsequent keypress correctly. Only the "and show it to me" half is approximate.
+
+So the parity statement for the release is precise: **every key does the right thing to the right
+session on Windows; what Windows can't do is follow your eyes between tabs.** That is a real but
+narrow gap, and it should be in the README rather than discovered by a user.
+
+Two more things refused rather than approximated:
+- **Next/Previous WINDOW** — an OS-level gesture `wt.exe` can't express. The keys log and no-op.
+  Sending an approximation would teach the user the key lies. (Consider hiding them from the
+  Windows profile in Phase 6.)
+- **Reusing an idle tab when opening a project** — macOS asks Terminal whether the front tab is
+  `busy`; Windows Terminal exposes no such signal, and guessing wrong would type `cd … && claude`
+  into a LIVE session. Always a fresh tab: a spare tab is the cheap mistake.
+
+`-w 0` (act on the current window) is on every tab command — without it each press spawns a new
+window, which is the easiest way to get this wrong; a test pins it.
+
+**Hardware verification:** run each nav key against a real Windows Terminal and confirm the tab
+commands act on the current window; confirm `wt.exe` is on PATH (absent on stock Win10 → R9,
+navigation degrades, typing unaffected).
+
+Original scope, for reference:
 - Nav via `wt.exe`: `new-tab`, `new-window`, `focus-tab --next/--previous`, `-w <id>` window
   targeting. New Claude / Go-to-Project: `wt new-tab -d <dir> claude`.
 - **Precise focus** (session slot → bring that tab on screen): maintain a `TabLocator` mapping

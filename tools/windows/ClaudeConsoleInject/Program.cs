@@ -45,6 +45,7 @@ internal static class Program
                 "key" => InjectKey(opts),
                 "tabenter" => InjectTabThenEnter(opts),
                 "selftest" => SelfTest(),
+                "beep" => Beep(),
                 _ => Usage(),
             };
         }
@@ -63,6 +64,7 @@ internal static class Program
               text     --pid N --start-ticks T --submit true|false --text "..."
               key      --pid N --start-ticks T --key <Name> [--mods Control,Shift]
               tabenter --pid N --start-ticks T
+              beep
               selftest
 
             Key names: Escape Return Tab ArrowUp ArrowDown ArrowLeft ArrowRight PageUp PageDown
@@ -196,6 +198,18 @@ internal static class Program
         Console.WriteLine("and Claude Desktop's processes are distinguishable by their command line.");
         return ExitOk;
     }
+
+    // The plugin's only out-of-band signal (e.g. voice heard nothing). LogiPluginService is a
+    // background host with no console, so Console.Beep is unreliable; MessageBeep is not.
+    [SupportedOSPlatform("windows")]
+    private static Int32 Beep()
+    {
+        MessageBeep(0xFFFFFFFF);   // MB_OK — the default system sound
+        return ExitOk;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern Boolean MessageBeep(UInt32 type);
 
     private static String Trim(String s, Int32 max) => s.Length <= max ? s : s[..max] + "…";
 
