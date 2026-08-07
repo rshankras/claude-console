@@ -177,7 +177,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         next[tty] = new GridSession
                         {
-                            Tty = tty,
+                            SessionKey = tty,
                             Project = "Claude",
                             State = "ready",
                             IsProvisional = true,
@@ -222,9 +222,9 @@ namespace Loupedeck.ClaudeConsolePlugin
             // 2. Newcomers fill the lowest free slots, oldest first, so key order reflects the order
             //    sessions were started rather than whichever file happened to be written last.
             var newcomers = _sessions.Values
-                .Where(s => !taken.Contains(s.Tty))
+                .Where(s => !taken.Contains(s.SessionKey))
                 .OrderBy(s => s.UpdatedAt)
-                .ThenBy(s => s.Tty, StringComparer.Ordinal)
+                .ThenBy(s => s.SessionKey, StringComparer.Ordinal)
                 .ToList();
 
             foreach (var session in newcomers)
@@ -234,7 +234,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     break;   // more than SlotCount sessions — the extras stay unslotted
                 }
-                _slots[free] = session.Tty;
+                _slots[free] = session.SessionKey;
             }
 
             var slotsChanged = !before.SequenceEqual(_slots, StringComparer.Ordinal);
@@ -273,7 +273,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var projectDir = state.Workspace?.ProjectDir ?? state.Workspace?.CurrentDir;
                 var session = new GridSession
                 {
-                    Tty = tty,
+                    SessionKey = tty,
                     Project = ProjectName(projectDir),
                     ProjectDir = projectDir,
                     SessionId = state.SessionId,
@@ -322,7 +322,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            var pending = ReadPendingApproval(this.PendingFor(session.Tty));
+            var pending = ReadPendingApproval(this.PendingFor(session.SessionKey));
             if (pending == null)
             {
                 // Waiting, but we don't know what for — an older Claude Code with no

@@ -137,7 +137,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return KeyImage.RenderSessionSlot(imageSize, null, null, selected: false);
             }
 
-            var selected = session.Tty == _bridge.TargetTty();
+            var selected = session.SessionKey == _bridge.TargetTty();
             // Null CtxPercent (no context used yet) draws nothing — a blank beats a misleading "0%".
             return KeyImage.RenderSessionSlot(
                 imageSize, IconFor(session.State), session.CtxPercent, selected, session.Risk);

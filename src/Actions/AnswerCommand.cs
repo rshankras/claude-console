@@ -2,6 +2,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 {
     using System;
 
+    using Loupedeck.ClaudeConsolePlugin.Platform;
+
     /// <summary>
     /// Answer keys (group "Answer") — for responding when Claude Code prompts a question.
     /// One auto-discovered command, one SDK action per response via AddParameter.
@@ -59,13 +61,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     bridge.InjectText("no", pressEnter: true);
                     break;
                 case Up:
-                    bridge.InjectKeystroke("key code 126"); // key code 126 = Up arrow
+                    bridge.InjectKey(KeyStroke.ArrowUp);
                     break;
                 case Down:
-                    bridge.InjectKeystroke("key code 125"); // key code 125 = Down arrow
+                    bridge.InjectKey(KeyStroke.ArrowDown);
                     break;
                 case Enter:
-                    bridge.InjectKeystroke("key code 36"); // key code 36 = Return
+                    bridge.InjectKey(KeyStroke.Return);
                     break;
             }
 

@@ -3,6 +3,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System;
     using System.Collections.Generic;
 
+    using Loupedeck.ClaudeConsolePlugin.Platform;
+
     using Xunit;
 
     /// <summary>
@@ -60,7 +62,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             switch (kind)
             {
                 case "text": bridge.InjectText("hello", pressEnter: false); break;
-                case "keystroke": bridge.InjectKeystroke("key code 53"); break;
+                case "keystroke": bridge.InjectKey(KeyStroke.Escape); break;
                 case "tabenter": bridge.InjectTabThenEnter(); break;
             }
 
@@ -81,7 +83,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var capture = new Capture();
 
-            capture.Bridge("ttys007").InjectKeystroke("key code 36");
+            capture.Bridge("ttys007").InjectKey(KeyStroke.Return);
 
             Assert.Equal("/dev/ttys007", capture.ScriptArgv[0]);
         }
@@ -93,7 +95,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // tab), never "whatever app happens to be frontmost".
             var capture = new Capture();
 
-            capture.Bridge(activeTty: null).InjectKeystroke("key code 36");
+            capture.Bridge(activeTty: null).InjectKey(KeyStroke.Return);
 
             Assert.Equal("", capture.ScriptArgv[0]);
             Assert.Contains("tell application \"Terminal\"", capture.Script);
@@ -172,20 +174,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         // Key chords used by the action classes
         // ---------------------------------------------------------------------------------------
 
+        // The neutral key vocabulary the action classes use, and the macOS key code each must
+        // produce. These codes are load-bearing: a wrong one silently sends the wrong key.
         [Theory]
-        [InlineData("key code 53")]                          // Esc          — ControlCommand
-        [InlineData("key code 48 using {shift down}")]       // Mode         — ControlCommand
-        [InlineData("key code 126")]                         // Arrow Up     — AnswerCommand
-        [InlineData("key code 125")]                         // Arrow Down   — AnswerCommand
-        [InlineData("key code 116")]                         // Page Up      — ScrollCommand
-        [InlineData("key code 121")]                         // Page Down    — ScrollCommand
-        public void Keystroke_specs_reach_the_script_verbatim(String spec)
+        [InlineData(TerminalKey.Escape, KeyModifiers.None, "key code 53")]              // ControlCommand
+        [InlineData(TerminalKey.Tab, KeyModifiers.Shift, "key code 48 using {shift down}")] // Mode
+        [InlineData(TerminalKey.ArrowUp, KeyModifiers.None, "key code 126")]            // AnswerCommand
+        [InlineData(TerminalKey.ArrowDown, KeyModifiers.None, "key code 125")]          // AnswerCommand
+        [InlineData(TerminalKey.Return, KeyModifiers.None, "key code 36")]              // AnswerCommand
+        [InlineData(TerminalKey.PageUp, KeyModifiers.None, "key code 116")]             // ScrollCommand
+        [InlineData(TerminalKey.PageDown, KeyModifiers.None, "key code 121")]           // ScrollCommand
+        public void Neutral_keys_map_to_the_expected_macOS_key_codes(
+            TerminalKey key, KeyModifiers mods, String expectedSpec)
         {
             var capture = new Capture();
 
-            capture.Bridge("ttys002").InjectKeystroke(spec);
+            capture.Bridge("ttys002").InjectKey(new KeyStroke(key, mods));
 
-            Assert.Contains($"tell application \"System Events\" to {spec}", capture.Script);
+            Assert.Contains($"tell application \"System Events\" to {expectedSpec}", capture.Script);
         }
 
         [Fact]

@@ -2,6 +2,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 {
     using System;
 
+    using Loupedeck.ClaudeConsolePlugin.Platform;
+
     /// <summary>
     /// Scroll keys (group "Scroll") — read back through the Claude Code conversation from the
     /// keypad. One auto-discovered command, one SDK action per direction via AddParameter.
@@ -38,10 +40,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             switch (actionParameter)
             {
                 case Up:
-                    bridge.InjectKeystroke("key code 116"); // key code 116 = Page Up
+                    bridge.InjectKey(KeyStroke.PageUp);
                     break;
                 case Down:
-                    bridge.InjectKeystroke("key code 121"); // key code 121 = Page Down
+                    bridge.InjectKey(KeyStroke.PageDown);
                     break;
             }
 

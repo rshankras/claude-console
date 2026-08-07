@@ -2,6 +2,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 {
     using System;
 
+    using Loupedeck.ClaudeConsolePlugin.Platform;
+
     /// <summary>
     /// Session control keys (group "Core"): Esc, Mode, Tab, Compact, Clear, Exit. One auto-discovered
     /// command, one SDK action per control via AddParameter.
@@ -48,10 +50,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             switch (actionParameter)
             {
                 case Esc:
-                    bridge.InjectKeystroke("key code 53"); // key code 53 = Escape
+                    bridge.InjectKey(KeyStroke.Escape);
                     break;
                 case Mode:
-                    bridge.InjectKeystroke("key code 48 using {shift down}"); // Shift+Tab — cycle input modes
+                    bridge.InjectKey(KeyStroke.ShiftTab); // cycle input modes
                     break;
                 case Tab:
                     bridge.InjectTabThenEnter(); // Tab (accept autocomplete) + Return (submit), one press

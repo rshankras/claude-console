@@ -14,6 +14,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.Threading.Tasks;
 
     using Loupedeck.ClaudeConsolePlugin.Models;
+    using Loupedeck.ClaudeConsolePlugin.Platform;
 
     /// <summary>
     /// Bridge Manager — Connects the Logitech Actions SDK plugin to Claude Code
@@ -73,9 +74,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         private Timer _pollTimer;
         private ClaudeState _currentState;
         private ActivityState _activity;
-        private String _activeTty;   // normalized TTY (e.g. "ttys003") of the frontmost Terminal tab; null until known
+        private String _activeTty;   // opaque id of the frontmost session (macOS: "ttys003"); null until known
         private String _pinnedTty;   // session PINNED by a session-key press; outranks _activeTty (see TargetTty)
         private Int32 _pollTick;     // drives the ~1s cadence of the frontmost-tab check
+
+        // Everything OS-specific lives behind this seam: session discovery, injection, focus, nav.
+        // See IPlatformBridge — above it, neither AppleScript nor TTYs nor consoles are visible.
+        private readonly IPlatformBridge _platform;
 
         public event Action<ClaudeState> OnStateChanged;
         public event Action<ActivityState> OnActivityChanged;
@@ -91,6 +96,34 @@ namespace Loupedeck.ClaudeConsolePlugin
         // osascript to discover the frontmost one. Assigning ActiveTty is exactly what the
         // frontmost-tab probe does, so it is also how the tests simulate a poll.
         internal String ActiveTty { get => _activeTty; set => _activeTty = value; }
+
+        /// <summary>The active OS backend. Internal so tests can substitute a fake.</summary>
+        internal IPlatformBridge Platform => _platform;
+
+        // Test seams for the macOS backend, forwarded so the existing mac tests can keep driving
+        // the manager directly. No-ops when the backend isn't the mac one.
+        internal Func<List<String>, Int32, Boolean, String> OsascriptRunner
+        {
+            get => (_platform as MacPlatformBridge)?.OsascriptRunner;
+            set { if (_platform is MacPlatformBridge m) { m.OsascriptRunner = value; } }
+        }
+
+        internal Func<String> PsRunner
+        {
+            get => (_platform as MacPlatformBridge)?.PsRunner;
+            set { if (_platform is MacPlatformBridge m) { m.PsRunner = value; } }
+        }
+
+        /// <summary>Kept as a forwarder so the TTY-normalization tests keep their entry point.</summary>
+        internal static String NormalizeTty(String raw) => MacPlatformBridge.NormalizeTty(raw);
+
+        public BridgeManager()
+            : this(PlatformBridgeFactory.Create())
+        {
+        }
+
+        /// <summary>Test/DI constructor — inject a fake or a specific platform backend.</summary>
+        internal BridgeManager(IPlatformBridge platform) => _platform = platform ?? new UnsupportedPlatformBridge();
 
         // Test seam: the pinned session, so a test can assert the pin was set/released without
         // reaching through TargetTty's fallbacks.
@@ -155,7 +188,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // poll) to keep that comparatively expensive call off the hot path.
                 if (_pollTick++ % 4 == 0)
                 {
-                    var tty = QueryFrontmostTerminalTty();
+                    var tty = _platform.QueryFrontmostSession();
                     if (!String.IsNullOrEmpty(tty))
                     {
                         _activeTty = tty;
@@ -165,7 +198,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // Refresh the session grid. The `ps` scan runs on a DIFFERENT tick from the osascript
                 // frontmost probe above (2 vs 0) so the two subprocess calls never share a poll —
                 // stacking expensive calls on one tick is how the 1.3.1 thread leak began.
-                var liveTtys = _pollTick % 4 == 2 ? ScanClaudeTtys() : null;
+                var liveTtys = _pollTick % 4 == 2 ? _platform.DiscoverSessions() : null;
                 Grid.Refresh(liveTtys);
 
                 var newState = ReadJsonWithRetry<ClaudeState>(ActiveStateFile());
@@ -310,21 +343,6 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // ------------------------------------------------------------------------------------------
-        // Which Terminal tabs are running Claude right now. Bounded and killed on hang, exactly like
-        // the osascript calls — a wedged `ps` must never be able to pile up poll threads.
-        // ------------------------------------------------------------------------------------------
-        private HashSet<String> ScanClaudeTtys()
-        {
-            if (!OperatingSystem.IsMacOS())
-            {
-                return null;
-            }
-
-            var output = RunCapture("/bin/ps", new List<String> { "-axo", "pid=,ppid=,tty=,command=" }, 5000);
-            return output == null ? null : ClaudeProcessWatcher.TtysFrom(output);
-        }
-
-        // ------------------------------------------------------------------------------------------
         // Targeting — which session the typing keys act on.
         //
         // Pressing a session key PINS that session (see SelectSlot); with nothing pinned the keys
@@ -343,7 +361,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             var pinned = _pinnedTty;
             if (!String.IsNullOrEmpty(pinned))
             {
-                if (live.Any(s => s.Tty == pinned))
+                if (live.Any(s => s.SessionKey == pinned))
                 {
                     return pinned;
                 }
@@ -352,7 +370,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             // 1. The tracked tab, when it is a session we know about.
             var active = _activeTty;
-            if (!String.IsNullOrEmpty(active) && live.Any(s => s.Tty == active))
+            if (!String.IsNullOrEmpty(active) && live.Any(s => s.SessionKey == active))
             {
                 return active;
             }
@@ -361,13 +379,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             var waiting = live.Where(s => s.State == "waiting").ToList();
             if (waiting.Count == 1)
             {
-                return waiting[0].Tty;
+                return waiting[0].SessionKey;
             }
 
             // 3. Exactly one session at all.
             if (live.Count == 1)
             {
-                return live[0].Tty;
+                return live[0].SessionKey;
             }
 
             // 4. Ambiguous (or nothing running): fall back to the tracked tab, which may be null —
@@ -389,11 +407,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            _pinnedTty = session.Tty;
-            Grid.FocusedSession = session.Tty;   // survives a plugin reload, like the slot assignments
-            _activeTty = session.Tty;            // so a later un-pin falls back somewhere sensible
-            FocusTab(session.Tty);
-            PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.Tty} ({session.Project})");
+            _pinnedTty = session.SessionKey;
+            Grid.FocusedSession = session.SessionKey;   // survives a plugin reload, like the slot assignments
+            _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
+            _platform.FocusSession(session.SessionKey);
+            PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.SessionKey} ({session.Project})");
         }
 
         // Drop the pin and go back to following the frontmost tab. Called when the pinned session
@@ -408,59 +426,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             PluginLog.Info($"BridgeManager: released the pin on {_pinnedTty} — keys follow the frontmost tab again");
             _pinnedTty = null;
             Grid.FocusedSession = null;
-        }
-
-        // Bring a specific Terminal tab to the front. Same tab-by-TTY script the injection guard
-        // uses, minus the typing.
-        private void FocusTab(String tty)
-        {
-            if (!OperatingSystem.IsMacOS())
-            {
-                return;
-            }
-
-            RunOsascriptCore(
-                new List<String> { "-e", FocusGuardScript + "return \"ok\"\n" + "end run", "/dev/" + tty },
-                15000,
-                wantOutput: true);
-        }
-
-        // The TTY (e.g. "ttys003") of the frontmost Terminal tab, or null if Terminal isn't the
-        // frontmost app / isn't running. Matches the key the bash scripts derive from `ps -o tty`.
-        private String QueryFrontmostTerminalTty()
-        {
-            if (!OperatingSystem.IsMacOS())
-            {
-                return null;
-            }
-
-            // "... is running" avoids auto-LAUNCHING Terminal just to query it.
-            var script =
-                "if application \"Terminal\" is running then\n" +
-                "  tell application \"Terminal\"\n" +
-                "    try\n" +
-                "      if frontmost then return tty of selected tab of front window\n" +
-                "    end try\n" +
-                "  end tell\n" +
-                "end if\n" +
-                "return \"\"";
-            return NormalizeTty(RunOsascriptCapture(new List<String> { "-e", script }));
-        }
-
-        // "/dev/ttys003" (osascript) -> "ttys003"; "ttys003" (ps) stays "ttys003".
-        internal static String NormalizeTty(String raw)
-        {
-            if (String.IsNullOrWhiteSpace(raw))
-            {
-                return null;
-            }
-            var s = raw.Trim();
-            var slash = s.LastIndexOf('/');
-            if (slash >= 0)
-            {
-                s = s.Substring(slash + 1);
-            }
-            return s.Length > 0 && s != "??" ? s : null;
         }
 
         /// <summary>
@@ -510,264 +475,33 @@ namespace Loupedeck.ClaudeConsolePlugin
         public void SendPrompt(String prompt) => InjectText(prompt, pressEnter: true);
 
         // ------------------------------------------------------------------------------------------
-        // Guarded keystroke injection — every injection FIRST focuses the tracked Claude tab in
-        // Terminal.app (verified by TTY), then types, all in ONE osascript run so no app switch can
-        // slip in between. If Terminal isn't running or the tracked tab is gone, the script beeps
-        // and types NOTHING — a key press can never land in Slack or a browser. Strict Terminal.app
-        // by design (the profile is Terminal-bound). Ported from Vizhi's focusTerminal.
+        // Guarded keystroke injection. The guarantee — focus the tracked session and type in ONE
+        // indivisible operation, or type nothing at all — is the backend's to keep; see
+        // IPlatformBridge. What lives here is only the platform-neutral half: resolve WHICH session
+        // the keys act on (TargetTty), then hand the request across the seam.
         // ------------------------------------------------------------------------------------------
-        // argv item 1 = target tty ("/dev/ttysNNN"), or "" to use Terminal's front tab.
-        private const String FocusGuardScript =
-            "on run argv\n" +
-            "set targetTty to item 1 of argv\n" +
-            "if application \"Terminal\" is not running then\n" +  // never auto-launch Terminal
-            "  beep\n" +
-            "  return \"no-terminal\"\n" +
-            "end if\n" +
-            "tell application \"Terminal\"\n" +
-            "  activate\n" +
-            "  if targetTty is not \"\" then\n" +
-            "    set found to false\n" +
-            "    repeat with terminalWindow in windows\n" +
-            // Not every Terminal window has tabs — a settings/inspector window raises
-            // "Can't get every tab of item N of every window" (-1728), which aborted the whole
-            // script and left the plugin unable to focus OR type. Skip such windows instead.
-            "      try\n" +
-            "        repeat with terminalTab in tabs of terminalWindow\n" +
-            "          if (tty of terminalTab as text) is targetTty then\n" +
-            "            set selected tab of terminalWindow to terminalTab\n" +
-            "            set index of terminalWindow to 1\n" +
-            "            set found to true\n" +
-            "            exit repeat\n" +
-            "          end if\n" +
-            "        end repeat\n" +
-            "      end try\n" +
-            "      if found then exit repeat\n" +
-            "    end repeat\n" +
-            "    if not found then\n" +
-            "      beep\n" +
-            "      return \"tab-missing\"\n" +
-            "    end if\n" +
-            "  end if\n" +
-            "end tell\n" +
-            "delay 0.05\n";  // let activation settle before System Events types
 
         /// <summary>
-        /// Type text into the tracked Claude tab and optionally press Return. macOS-only, via
-        /// osascript + System Events; requires the Logi Plugin Service to have Accessibility
-        /// permission (granted once on first use). The text travels as an osascript argument —
-        /// no AppleScript string escaping. Newlines are flattened to spaces so a multi-line
-        /// voice transcript doesn't submit early.
+        /// Type text into the tracked Claude session and optionally press Return.
         /// </summary>
-        public void InjectText(String text, Boolean pressEnter)
-        {
-            if (String.IsNullOrEmpty(text))
-            {
-                return;
-            }
-
-            if (!OperatingSystem.IsMacOS())
-            {
-                PluginLog.Info("BridgeManager.InjectText: non-macOS — text injection not implemented yet");
-                return;
-            }
-
-            var flattened = text.Replace("\r", " ").Replace("\n", " ");
-            var body = "tell application \"System Events\" to keystroke (item 2 of argv)\n";
-            if (pressEnter)
-            {
-                // A leading "/" opens Claude Code's slash-command autocomplete. Pressing Return
-                // before it finishes filtering to the typed command selects whatever is highlighted
-                // (often a recent command like /copy), so pause to let the menu settle first. Harmless
-                // for plain text (Git/Prompts/voice) where no menu is shown.
-                body += "delay 0.35\n" +
-                        "tell application \"System Events\" to key code 36\n"; // Return
-            }
-
-            RunGuardedInjection(body, flattened);
-        }
+        public void InjectText(String text, Boolean pressEnter) =>
+            _platform.InjectText(TargetTty(), text, pressEnter);
 
         /// <summary>
-        /// Send a single key chord to the tracked Claude tab, e.g. Shift+Tab to toggle plan mode.
-        /// <paramref name="appleScriptKeySpec"/> is the body of a System Events key statement,
-        /// for example: <c>key code 48 using {shift down}</c> (key code 48 = Tab).
+        /// Send a single key chord to the tracked Claude session, e.g. Shift+Tab to cycle modes.
         /// </summary>
-        public void InjectKeystroke(String appleScriptKeySpec)
-        {
-            if (!OperatingSystem.IsMacOS())
-            {
-                PluginLog.Info("BridgeManager.InjectKeystroke: non-macOS — keystroke injection not implemented yet");
-                return;
-            }
-
-            RunGuardedInjection($"tell application \"System Events\" to {appleScriptKeySpec}\n");
-        }
+        public void InjectKey(KeyStroke key) => _platform.InjectKey(TargetTty(), key);
 
         /// <summary>
-        /// Accept the highlighted autocomplete AND submit it in one press: Tab, then Return after a
-        /// short delay so the completion registers before Enter fires. macOS only.
+        /// Accept the highlighted autocomplete AND submit it in one press.
         /// </summary>
-        public void InjectTabThenEnter()
-        {
-            if (!OperatingSystem.IsMacOS())
-            {
-                PluginLog.Info("BridgeManager.InjectTabThenEnter: non-macOS — not implemented");
-                return;
-            }
+        public void InjectTabThenEnter() => _platform.InjectTabThenEnter(TargetTty());
 
-            RunGuardedInjection(
-                "tell application \"System Events\" to key code 48\n" + // Tab — accept the suggestion
-                "delay 0.3\n" +                                          // let the completion register
-                "tell application \"System Events\" to key code 36\n"); // Return — submit
-        }
-
-        // Compose focus guard + injection body into one script and run it. textArg (when non-null)
-        // becomes argv item 2 — passing text as an argument sidesteps AppleScript escaping entirely.
-        private void RunGuardedInjection(String injectionBody, String textArg = null)
-        {
-            var script = FocusGuardScript + injectionBody + "return \"ok\"\n" + "end run";
-            var tty = TargetTty();
-            var args = new List<String>
-            {
-                "-e", script,
-                String.IsNullOrEmpty(tty) ? "" : "/dev/" + tty,
-            };
-            if (textArg != null)
-            {
-                args.Add(textArg);
-            }
-
-            var result = RunOsascriptCore(args, 15000, wantOutput: true);
-            if (result != "ok")
-            {
-                PluginLog.Warning($"BridgeManager: injection skipped ({result ?? "osascript failed"}) — Claude's Terminal tab is unavailable");
-            }
-        }
-
-        /// <summary>
-        /// Run an arbitrary multi-line AppleScript via osascript (macOS only) — for automation
-        /// richer than a single keystroke, e.g. clicking a menu item. Needs Accessibility.
-        /// </summary>
-        public void RunAppleScript(String script)
-        {
-            if (!OperatingSystem.IsMacOS())
-            {
-                PluginLog.Info("BridgeManager.RunAppleScript: non-macOS — skipped");
-                return;
-            }
-
-            RunOsascript(new List<String> { "-e", script });
-        }
+        /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
+        public void Navigate(TerminalAction action) => _platform.Navigate(action);
 
         // State/activity files are a few KB — refuse to slurp anything huge (corrupt or hostile).
         private const Int64 MaxIpcFileBytes = 1 << 20;
-
-        // Run osascript with a HARD timeout. Reads both pipes on background tasks (a synchronous
-        // ReadToEnd() blocks with NO timeout — the WaitForExit(ms) after it is unreachable, which is
-        // exactly what leaked threads) and KILLS the process if it doesn't exit in time, so a hung
-        // osascript (locked screen, busy window server, an Accessibility prompt) can never wedge a
-        // poll thread. Returns stdout (trimmed) when wantOutput, else null.
-        // Test seam: when set, replaces the real osascript invocation so the unit tests can assert
-        // on the exact script + arguments a key press would send without driving the window server.
-        // Null in production — nothing but the tests ever assigns it.
-        internal Func<List<String>, Int32, Boolean, String> OsascriptRunner { get; set; }
-
-        private String RunOsascriptCore(List<String> args, Int32 timeoutMs, Boolean wantOutput)
-        {
-            var runner = this.OsascriptRunner;
-            if (runner != null)
-            {
-                return runner(args, timeoutMs, wantOutput);
-            }
-
-            return RunBounded("osascript", args, timeoutMs, wantOutput);
-        }
-
-        // Test seam for the process scan: lets the tests feed captured `ps` output.
-        internal Func<String> PsRunner { get; set; }
-
-        // Run a plain capture-only subprocess (the `ps` session scan) under the same hard-timeout
-        // discipline as osascript.
-        private String RunCapture(String file, List<String> args, Int32 timeoutMs)
-        {
-            var runner = this.PsRunner;
-            if (runner != null)
-            {
-                return runner();
-            }
-
-            return RunBounded(file, args, timeoutMs, wantOutput: true);
-        }
-
-        private static String RunBounded(String file, List<String> args, Int32 timeoutMs, Boolean wantOutput)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = file,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardError = true,
-                    RedirectStandardOutput = true
-                };
-                foreach (var a in args)
-                {
-                    psi.ArgumentList.Add(a);
-                }
-
-                using var proc = Process.Start(psi);
-                if (proc == null)
-                {
-                    return null;
-                }
-
-                // Drain both pipes asynchronously so a full output buffer can't deadlock us; then
-                // bound the wait and kill on timeout.
-                var outTask = proc.StandardOutput.ReadToEndAsync();
-                var errTask = proc.StandardError.ReadToEndAsync();
-
-                if (!proc.WaitForExit(timeoutMs))
-                {
-                    PluginLog.Warning($"{file} exceeded {timeoutMs}ms — killing (hung window server / locked screen / a11y prompt?)");
-                    try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
-                    return null;
-                }
-
-                var outp = SafeAwait(outTask);
-                var err = SafeAwait(errTask);
-                if (!wantOutput && !String.IsNullOrWhiteSpace(outp))
-                {
-                    PluginLog.Warning($"{file} out: {outp.Trim()}");
-                }
-                if (!String.IsNullOrWhiteSpace(err))
-                {
-                    PluginLog.Warning($"{file} error: {err.Trim()}");
-                }
-                return wantOutput ? outp?.Trim() : null;
-            }
-            catch (Exception ex)
-            {
-                PluginLog.Warning(ex, "BridgeManager.RunOsascriptCore: failed (is Accessibility permission granted?)");
-                return null;
-            }
-        }
-
-        // Fire-and-forget osascript (keystrokes / AppleScript actions). Generous timeout because a
-        // long voice-transcript keystroke can legitimately take several seconds; still bounded so a
-        // real hang can't leak a thread. User-triggered — never runs on the poll timer.
-        private void RunOsascript(List<String> args) => RunOsascriptCore(args, 15000, wantOutput: false);
-
-        // Like RunOsascript but returns stdout (trimmed) — for querying state (e.g. the frontmost
-        // Terminal tab's TTY) on the poll timer, so it uses a short, snappy timeout.
-        private String RunOsascriptCapture(List<String> args) => RunOsascriptCore(args, 2000, wantOutput: true);
-
-        // Await a pipe-read task that has already reached EOF (the process exited). Never throws.
-        private static String SafeAwait(Task<String> t)
-        {
-            try { return t.GetAwaiter().GetResult(); }
-            catch { return null; }
-        }
 
         // ------------------------------------------------------------------------------------------
         // Voice capture — offline dictation via the bundled ClaudeVoiceHelper.app (whisper.cpp).
@@ -806,7 +540,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (!EnsureVoiceModel())
             {
                 PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
-                RunAppleScript("beep");
+                _platform.Alert();
                 return;
             }
 
@@ -1293,7 +1027,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (match == null)
             {
                 PluginLog.Warning($"NavigateToProjectByVoice: no project matched \"{transcript}\"");
-                RunAppleScript("beep"); // audible "didn't catch a project" feedback
+                _platform.Alert(); // audible "didn't catch a project" feedback
                 return;
             }
             PluginLog.Info($"NavigateToProjectByVoice: \"{transcript}\" -> {match}");
@@ -1384,46 +1118,17 @@ namespace Loupedeck.ClaudeConsolePlugin
             return best;
         }
 
-        // cd into the project and run claude. Smart about where:
-        //   • no Terminal window open      → open one and run there
-        //   • front tab is an IDLE shell   → reuse it (this is the "empty terminal" case)
-        //   • front tab is BUSY (claude/cmd running) → open a NEW tab, so we never type into a
-        //     live session
-        // Terminal's `busy` is false only at an idle shell prompt, which is exactly the signal we want.
-        private void LaunchClaudeInProject(String path)
+        // Open the project in a terminal and start claude there. Where exactly (reuse an idle tab
+        // vs open a new one) is the backend's call — it needs terminal-specific knowledge of what
+        // "idle" means. What is platform-neutral, and stays here, is the pin bookkeeping.
+        internal void LaunchClaudeInProject(String path)
         {
-            if (!OperatingSystem.IsMacOS())
-            {
-                return;
-            }
-
             // Opening a project is an explicit "I'm working here now", and it starts a session in a
             // tab that has no key yet. Holding a pin from before would quietly send Yes / Clear /
             // voice to the OLD session while you type in the new one.
             this.ClearPin();
 
-            // Single-quote the path for the shell so spaces are safe (project paths have no quotes).
-            var cmd = "cd '" + path + "' && claude";
-            var script =
-                "tell application \"Terminal\"\n" +
-                "  activate\n" +
-                "  if (count of windows) is 0 then\n" +
-                "    do script \"" + cmd + "\"\n" +
-                "  else\n" +
-                "    set isIdle to false\n" +
-                "    try\n" +
-                "      set isIdle to (busy of selected tab of front window is false)\n" +
-                "    end try\n" +
-                "    if isIdle then\n" +
-                "      do script \"" + cmd + "\" in front window\n" +   // reuses the idle tab (NOT 'selected tab of' — that form no-ops)
-                "    else\n" +
-                "      tell application \"System Events\" to keystroke \"t\" using command down\n" +
-                "      delay 0.5\n" +
-                "      do script \"" + cmd + "\" in front window\n" +
-                "    end if\n" +
-                "  end if\n" +
-                "end tell";
-            RunAppleScript(script);
+            _platform.LaunchClaudeInProject(path);
         }
 
         private static void TryDelete(String path)

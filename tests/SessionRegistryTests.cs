@@ -95,7 +95,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Equal("claude-console", session.Project);
             Assert.Equal(35, session.CtxPercent);
-            Assert.Equal("sid-ttys001", session.SessionId);
+            Assert.Equal("sid-ttys001", session.SessionId);   // Claude's own id, not the grid key
             Assert.False(session.IsProvisional);
         }
 
@@ -295,7 +295,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             registry.Refresh(null);
 
             Assert.NotNull(registry.SlotSession(1));
-            Assert.Equal("ttys004", registry.SlotSession(1).Tty);
+            Assert.Equal("ttys004", registry.SlotSession(1).SessionKey);
         }
 
         [Fact]
