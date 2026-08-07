@@ -6,6 +6,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System.Text.Json;
 
     using Loupedeck.ClaudeConsolePlugin.Actions;
+    using Loupedeck.ClaudeConsolePlugin.Platform;
 
     using Xunit;
 
@@ -59,7 +60,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json"));
             grid.Refresh(new HashSet<String>(liveTtys, StringComparer.Ordinal));
-            return new BridgeManager { Grid = grid };
+            return new BridgeManager(new MacPlatformBridge()) { Grid = grid };
         }
 
         [Fact]
@@ -212,7 +213,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             WriteSession("ttys002", "beta");
             var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json"));
             grid.Refresh(new HashSet<String>(new[] { "ttys001", "ttys002" }, StringComparer.Ordinal));
-            var bridge = new BridgeManager { Grid = grid };
+            var bridge = new BridgeManager(new MacPlatformBridge()) { Grid = grid };
             bridge.OsascriptRunner = (args, timeout, wantOutput) => "ok";
 
             bridge.SelectSlot(2);
@@ -235,7 +236,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             var grid = new SessionRegistry(_sessionsDir, _activityDir, registryFile);
             grid.Refresh(new HashSet<String>(new[] { "ttys001", "ttys002" }, StringComparer.Ordinal));
-            var bridge = new BridgeManager { Grid = grid };
+            var bridge = new BridgeManager(new MacPlatformBridge()) { Grid = grid };
             bridge.OsascriptRunner = (args, timeout, wantOutput) => "ok";
             bridge.SelectSlot(2);
 

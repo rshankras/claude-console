@@ -282,6 +282,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Assert.IsType<MacPlatformBridge>(platform);
                 Assert.True(platform.IsSupported);
             }
+            else if (OperatingSystem.IsWindows())
+            {
+                // This arm was missing until 2026-08-07 — the test predates the Windows backend
+                // and expected UnsupportedPlatformBridge on everything that isn't a Mac.
+                Assert.IsType<WindowsPlatformBridge>(platform);
+                Assert.True(platform.IsSupported);
+            }
             else
             {
                 Assert.IsType<UnsupportedPlatformBridge>(platform);

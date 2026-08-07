@@ -126,11 +126,18 @@ written by the PLUGIN, so its presence proves both sides agree on the root.
 ## Rules
 
 - **Keep the tests green**: `dotnet test tests\ClaudeConsolePlugin.Tests.csproj`.
-  **Reality check from this machine: 27 of the 338 never passed on Windows** — they exercise
-  macOS-only behavior with no platform guard (Unix file modes in PrivateFiles/SessionRegistry
-  tests, AppleScript key-code specs, the factory test, macOS injection paths). Baseline at the
-  handoff commit: 311/338 on Windows. After the fixes: 321/348, same 27 failures, all 10 new
-  tests green. Guarding those 27 is an open follow-up — nothing here touched them.
+  **The suite is now FULLY GREEN on Windows AND macOS** (2026-08-07). The 27 tests that never
+  passed on Windows were fixed, not skipped, where possible: the AppleScript-pipeline tests
+  (InjectionGuard/DraftMode/SessionTargeting) now construct `new BridgeManager(new
+  MacPlatformBridge())` explicitly — with an injected OsascriptRunner the mac backend is pure
+  argument construction and those tests run on any OS (the parameterless ctor let the factory
+  pick the Windows backend, turning the runner seam into a silent no-op). The factory test
+  gained its missing Windows arm. Only the five Unix-file-mode assertions self-skip on Windows,
+  matching PrivateFiles itself, which relies on per-user %TEMP% ACLs there by design.
+- **Tests run on every commit**: `.githooks/pre-commit` runs the full suite and blocks a red
+  commit. Enable once per clone — ON THE MAC TOO — with:
+  `git config core.hooksPath .githooks`
+  (Bypass in an emergency with `git commit --no-verify`.)
 - **When you fix something, add a test that would have caught it.** Both bugs found remotely got
   through because fixtures encoded an assumption instead of testing the real path. Prefer driving
   `WindowsPlatformBridge` over calling the pure helpers directly.

@@ -256,6 +256,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Registry_file_is_written_owner_only()
         {
+            // Unix modes don't exist on Windows — there the registry's privacy comes from the
+            // per-user ACLs on %LOCALAPPDATA%\Temp, which PrivateFiles relies on by design.
+            if (OperatingSystem.IsWindows()) { return; }
             WriteSession("ttys001", "/Users/x/alpha", 1);
             RefreshedWith("ttys001");
 

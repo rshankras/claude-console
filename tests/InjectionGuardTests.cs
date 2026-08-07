@@ -32,7 +32,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             public BridgeManager Bridge(String activeTty = null)
             {
-                var bridge = new BridgeManager { ActiveTty = activeTty };
+                // The mac backend EXPLICITLY, not via the factory: on Windows the factory picks
+                // WindowsPlatformBridge, the OsascriptRunner forwarder no-ops, and every capture
+                // stays null. MacPlatformBridge with an injected runner runs on any OS.
+                var bridge = new BridgeManager(new MacPlatformBridge()) { ActiveTty = activeTty };
                 bridge.OsascriptRunner = (args, timeout, wantOutput) =>
                 {
                     this.Args = args;

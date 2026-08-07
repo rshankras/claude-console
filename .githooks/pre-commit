@@ -1,0 +1,17 @@
+#!/bin/sh
+# Runs the full test suite before every commit; a red suite blocks the commit.
+#
+# Enable once per clone (Windows laptop AND the Mac):
+#   git config core.hooksPath .githooks
+#
+# Bypass for a genuine emergency only:  git commit --no-verify
+# The suite is green on macOS and Windows as of 2026-08-07 — platform-specific
+# tests guard themselves, so a red run means the commit broke something real.
+
+echo "pre-commit: running tests..."
+dotnet test tests/ClaudeConsolePlugin.Tests.csproj --nologo -v q || {
+    echo ""
+    echo "pre-commit: TESTS FAILED — commit blocked."
+    echo "pre-commit: fix the failures, or bypass once with: git commit --no-verify"
+    exit 1
+}
