@@ -352,15 +352,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void Navigation_is_still_unimplemented_and_says_so()
+        public void The_frontmost_probe_reports_unknown_and_gestures_route_through_the_runner()
         {
-            // Phase 3. Until then a nav key must be a logged no-op, and the frontmost probe must
-            // report "unknown" rather than guessing a session.
-            var bridge = new WindowsPlatformBridge();
+            // The frontmost probe must say "I don't know" rather than guess a session; the
+            // gestures must go through the injected runner. The runner is NOT optional here:
+            // without it this test drove the REAL wt.exe on Windows — every `dotnet test` run
+            // opened a stray terminal tab plus a "Could not access starting directory
+            // C:\dev\proj" error tab on the developer's screen (seen on hardware 2026-08-07).
+            // Tests must never reach the live terminal.
+            var runs = new List<List<String>>();
+            var bridge = new WindowsPlatformBridge
+            {
+                TerminalRunner = (exe, args) => { runs.Add(args); return true; },
+            };
 
             Assert.Null(bridge.QueryFrontmostSession());
-            bridge.Navigate(TerminalAction.NewTab);       // no-op, must not throw
+            bridge.Navigate(TerminalAction.NewTab);
             bridge.LaunchClaudeInProject(@"C:\dev\proj");
+
+            Assert.Equal(2, runs.Count);
         }
 
         // --- the REAL command-line resolver (Windows only — no-ops elsewhere) ---------------------
