@@ -208,18 +208,100 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         }
 
         // ------------------------------------------------------------------------------------------
-        // Not yet implemented — Phases 2 (injection), 3 (navigation).
-        // These return/act exactly as UnsupportedPlatformBridge does, so a key press on a Phase 1
-        // build is a logged no-op, never a keystroke sent somewhere unintended.
+        // Injection (Phase 2) — one short-lived helper process per keypress.
+        //
+        // The guarantee IPlatformBridge demands (focus the target and type, or type nothing) holds
+        // differently here than on macOS, and more strongly: WriteConsoleInput addresses a CONSOLE
+        // HANDLE, not the foreground window. There is no "focus" step that another app could win a
+        // race against — the keystrokes are delivered to the attached console or not at all, which
+        // is why the 2026-08-07 spike could type into a hidden tab while Notepad held the
+        // foreground and see nothing leak.
+        // ------------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Runs claude-console-inject.exe. Injectable so the argument construction and outcome
+        /// mapping are testable without Windows; returns the helper's exit code (null if it could
+        /// not be run at all).
+        /// </summary>
+        internal Func<List<String>, Int32?> InjectRunner { get; set; }
+
+        public InjectionOutcome InjectText(String sessionKey, String text, Boolean pressEnter)
+        {
+            if (String.IsNullOrEmpty(text))
+            {
+                return InjectionOutcome.Skipped;
+            }
+
+            return this.RunInject(WindowsInjection.TextArgs(sessionKey, text, pressEnter));
+        }
+
+        public InjectionOutcome InjectKey(String sessionKey, KeyStroke key) =>
+            this.RunInject(WindowsInjection.KeyArgs(sessionKey, key));
+
+        public InjectionOutcome InjectTabThenEnter(String sessionKey) =>
+            this.RunInject(WindowsInjection.TabThenEnterArgs(sessionKey));
+
+        private InjectionOutcome RunInject(List<String> args)
+        {
+            // Null args means the session key didn't name a process we can reach — treat it as a
+            // missing session rather than launching the helper with nothing to aim at.
+            if (args == null)
+            {
+                PluginLog.Warning("WindowsPlatformBridge: no usable target session — nothing typed");
+                return InjectionOutcome.SessionMissing;
+            }
+
+            var runner = this.InjectRunner ?? this.RunHelper;
+            var outcome = WindowsInjection.OutcomeFor(runner(args));
+
+            if (outcome != InjectionOutcome.Ok)
+            {
+                PluginLog.Warning($"WindowsPlatformBridge: injection skipped — {WindowsInjection.Explain(outcome)}");
+            }
+            return outcome;
+        }
+
+        private Int32? RunHelper(List<String> args)
+        {
+            var exe = this.HelperPath;
+            if (exe == null)
+            {
+                PluginLog.Warning("WindowsPlatformBridge: claude-console-inject.exe not found in the plugin package");
+                return null;
+            }
+
+            return BoundedProcess.RunForExitCode(exe, args, 15000);
+        }
+
+        /// <summary>
+        /// Where the inject helper lives — beside the plugin DLL in the package's bin folder.
+        /// Settable for tests.
+        /// </summary>
+        internal String HelperPath { get; set; } = FindHelper();
+
+        private static String FindHelper()
+        {
+            try
+            {
+                var dir = AppContext.BaseDirectory;
+                if (String.IsNullOrEmpty(dir))
+                {
+                    return null;
+                }
+                var candidate = System.IO.Path.Combine(dir, "claude-console-inject.exe");
+                return System.IO.File.Exists(candidate) ? candidate : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Not yet implemented — Phase 3 (navigation).
         // ------------------------------------------------------------------------------------------
 
         public String QueryFrontmostSession() => null;   // Phase 3
-
-        public InjectionOutcome InjectText(String sessionKey, String text, Boolean pressEnter) => NotYet(nameof(InjectText));
-
-        public InjectionOutcome InjectKey(String sessionKey, KeyStroke key) => NotYet(nameof(InjectKey));
-
-        public InjectionOutcome InjectTabThenEnter(String sessionKey) => NotYet(nameof(InjectTabThenEnter));
 
         public void FocusSession(String sessionKey) => NotYet(nameof(FocusSession));
 

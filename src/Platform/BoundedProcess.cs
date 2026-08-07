@@ -70,6 +70,60 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
         }
 
+        /// <summary>
+        /// Run a helper for its EXIT CODE rather than its output, under the same kill-on-timeout
+        /// discipline. Returns null when the process couldn't be started or overran its budget —
+        /// which callers must not treat as success.
+        /// </summary>
+        internal static Int32? RunForExitCode(String file, List<String> args, Int32 timeoutMs)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = file,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                };
+                foreach (var a in args)
+                {
+                    psi.ArgumentList.Add(a);
+                }
+
+                using var proc = Process.Start(psi);
+                if (proc == null)
+                {
+                    return null;
+                }
+
+                var outTask = proc.StandardOutput.ReadToEndAsync();
+                var errTask = proc.StandardError.ReadToEndAsync();
+
+                if (!proc.WaitForExit(timeoutMs))
+                {
+                    PluginLog.Warning($"{file} exceeded {timeoutMs}ms — killing");
+                    try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                    return null;
+                }
+
+                var err = SafeAwait(errTask);
+                if (!String.IsNullOrWhiteSpace(err))
+                {
+                    PluginLog.Warning($"{file}: {err.Trim()}");
+                }
+                _ = SafeAwait(outTask);
+
+                return proc.ExitCode;
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, $"BoundedProcess.RunForExitCode({file}) failed");
+                return null;
+            }
+        }
+
         // Await a pipe-read task that has already reached EOF (the process exited). Never throws.
         private static String SafeAwait(Task<String> t)
         {

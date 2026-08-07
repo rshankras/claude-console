@@ -250,16 +250,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void A_phase1_windows_bridge_reports_itself_unsupported_for_injection()
+        public void Navigation_is_still_unimplemented_and_says_so()
         {
-            // Discovery works; typing does not. A key press must be a logged no-op, never a
-            // keystroke sent somewhere unintended.
+            // Phase 3. Until then a nav key must be a logged no-op, and the frontmost probe must
+            // report "unknown" rather than guessing a session.
             var bridge = new WindowsPlatformBridge();
 
-            Assert.False(bridge.IsSupported);
-            Assert.Equal(InjectionOutcome.Unsupported, bridge.InjectText("pid-1-2", "hi", true));
-            Assert.Equal(InjectionOutcome.Unsupported, bridge.InjectKey("pid-1-2", KeyStroke.Return));
-            Assert.Equal(InjectionOutcome.Unsupported, bridge.InjectTabThenEnter("pid-1-2"));
+            Assert.Null(bridge.QueryFrontmostSession());
+            bridge.Navigate(TerminalAction.NewTab);       // no-op, must not throw
+            bridge.LaunchClaudeInProject(@"C:\dev\proj");
         }
     }
 }

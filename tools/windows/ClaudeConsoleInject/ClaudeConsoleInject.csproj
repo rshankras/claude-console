@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      A console app, deliberately: the spike proved FreeConsole() + AttachConsole(target) works
+      from one, and the plugin launches it with CreateNoWindow so no window ever appears. A WinExe
+      would make `selftest` unable to print, which is the one mode a human runs by hand.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>claude-console-inject</AssemblyName>
+    <RootNamespace>ClaudeConsoleInject</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Ships inside the plugin package; publish self-contained so it needs no .NET on the box. -->
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+</Project>

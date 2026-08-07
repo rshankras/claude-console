@@ -158,7 +158,46 @@ Original scope, for reference:
 - Tests: `WindowsProcessWatcherTests` with captured process-table fixtures; slot-stability
   and PID-reuse tests.
 
-### Phase 2 — Windows injection (productionize the spike)
+### Phase 2 — Windows injection — ✅ CODE DONE 2026-08-07, ⚠️ UNVERIFIED ON HARDWARE
+`tools/windows/ClaudeConsoleInject/` (the helper exe, compiles clean for `win-x64` cross-built
+from macOS) + `src/Platform/WindowsInjection.cs` (pure: argument construction, session-key
+parsing, exit-code mapping). 294 C# tests green (+31 for injection).
+
+Split so the untestable part is as small as possible: the plugin decides WHAT to ask for and how
+to read the answer (all pure, covered here); the helper does the Win32 work (needs hardware).
+
+- **Exit codes are the contract**: `0` ok · `2` session missing · `3` failed · `5` elevated.
+  `5` deliberately echoes ERROR_ACCESS_DENIED, and surfaces as its own `InjectionOutcome` so the
+  keypad can say "that session is elevated" instead of looking broken (R6).
+- **PID reuse is guarded at both ends.** The plugin sends `--start-ticks` on every command and the
+  helper re-verifies it *before* `AttachConsole`. Without this, a stale session key could attach
+  to whatever unrelated process inherited the number — and type into it. There are tests asserting
+  the flag is always sent and that the helper checks it before attaching.
+- **Text travels as its own argv element**, never concatenated into a command string — the same
+  rule the macOS backend follows with osascript argv item 2.
+- **Three cross-boundary contract tests** read the helper's source and diff it against the plugin:
+  every `TerminalKey` has a mapping, the exit codes agree, and the start-time check precedes the
+  attach. The compiler can't check a separate executable; these do.
+- `claude-console-inject selftest` enumerates candidate processes and prints the session key,
+  start time and command line for each — **this is the tool that retires Phase 1's four unknowns**.
+
+**Hardware verification checklist (run on the Windows laptop, in order):**
+1. `claude-console-inject selftest` with Claude running → confirms discovery, `StartTime`
+   readability, command-line resolution, and that Claude Desktop is distinguishable. (Phase 1's
+   open questions, all four, in one command.)
+2. `claude-console-inject text --pid N --start-ticks T --submit false --text "hello"` → types
+   into that session with the terminal **unfocused**; nothing leaks elsewhere.
+3. Same with `--submit true`, then `key --key ArrowDown`, then `tabenter`.
+4. Deliberately pass a wrong `--start-ticks` → must exit `2` and type nothing.
+5. An elevated Claude session → must exit `5`.
+
+Once 1–5 pass, flip `WindowsPlatformBridge.IsSupported` to true.
+
+Build: `dotnet publish tools/windows/ClaudeConsoleInject -r win-x64 -c Release`
+(also `-r win-arm64`); the output `claude-console-inject.exe` ships beside the plugin DLL, which
+is where `WindowsPlatformBridge.FindHelper` looks for it.
+
+Original scope, for reference:
 - `claude-console-inject.exe` — **GUI-subsystem** child (no console of its own) so
   `AttachConsole(claudePid)` is clean; open `CONIN$`; one `WriteConsoleInput` of the full
   `INPUT_RECORD[]`; exit. Fallback: retry via the session's parent shell PID (spike-proven
