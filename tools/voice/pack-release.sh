@@ -32,8 +32,18 @@ fi
 echo ">>> voice payload OK (helper notarized + stapled)"
 
 # --- build the plugin (Release) ------------------------------------------------------------------
+# SkipPluginLink is NOT optional here. Without it the csproj PostBuild target drops a dev
+# ClaudeConsolePlugin.link next to the INSTALLED package, so the service registers the plugin
+# twice ("already loaded") and it fails to load — which looks like "the plugin installed but the
+# profile didn't import", because the app registration never runs. A release build must never
+# touch the live plugin directory.
 echo ">>> building plugin (Release)"
-( cd "$ROOT/src" && dotnet build -c Release >/dev/null )
+( cd "$ROOT/src" && dotnet build -c Release -p:SkipPluginLink=true >/dev/null )
+
+# Belt and braces: if a .link is already lying around from an earlier dev build, it will collide
+# with the package we are about to install. Clear it now rather than debugging it later.
+LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/ClaudeConsolePlugin.link"
+[ -f "$LINK" ] && { rm -f "$LINK"; echo ">>> removed a stale dev .link (would have collided with the package)"; }
 
 # --- embed the notarized voice payload next to the plugin DLL (bin/voice/) ------------------------
 PKG_VOICE="$ROOT/bin/Release/bin/voice"
