@@ -83,10 +83,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void A_new_claude_window_asks_for_a_new_window()
         {
-            var args = WindowsTerminalCli.ArgsFor(TerminalAction.NewClaudeWindow);
+            var previous = WindowsTerminalCli.FileExists;
+            try
+            {
+                WindowsTerminalCli.FileExists = _ => false;   // no native install → bare "claude"
+                var args = WindowsTerminalCli.ArgsFor(TerminalAction.NewClaudeWindow);
 
-            Assert.Equal(new[] { "-w", "new" }, args.Take(2));
-            Assert.Contains("claude", args);
+                Assert.Equal(new[] { "-w", "new" }, args.Take(2));
+                Assert.Contains("claude", args);
+            }
+            finally
+            {
+                WindowsTerminalCli.FileExists = previous;
+            }
         }
 
         [Fact]
@@ -102,10 +111,67 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Starting_a_session_asks_for_claude_by_name()
         {
-            var args = WindowsTerminalCli.ArgsFor(TerminalAction.NewClaudeTab);
+            var previous = WindowsTerminalCli.FileExists;
+            try
+            {
+                WindowsTerminalCli.FileExists = _ => false;   // no native install → bare "claude"
+                var args = WindowsTerminalCli.ArgsFor(TerminalAction.NewClaudeTab);
 
-            Assert.Contains("new-tab", args);
-            Assert.Contains("claude", args);
+                Assert.Contains("new-tab", args);
+                Assert.Contains("claude", args);
+            }
+            finally
+            {
+                WindowsTerminalCli.FileExists = previous;
+            }
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // Which "claude" a new tab runs
+        // ---------------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_new_tab_runs_the_native_exe_by_full_path_when_it_is_installed()
+        {
+            // THE BUG THAT SHIPPED: the tab command was the bare word "claude", which wt resolves
+            // against the PATH it inherited — from LogiPluginService, whose PATH lacks the
+            // installer's %USERPROFILE%\.local\bin entry. Every launch key produced
+            // `[error 2147942402 (0x80070002) when launching `claude']` in the new tab.
+            var native = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".local", "bin", "claude.exe");
+
+            var previous = WindowsTerminalCli.FileExists;
+            try
+            {
+                WindowsTerminalCli.FileExists = path => path == native;
+
+                Assert.Contains(native, WindowsTerminalCli.ArgsFor(TerminalAction.NewClaudeTab));
+                Assert.Contains(native, WindowsTerminalCli.ArgsFor(TerminalAction.NewClaudeWindow));
+                Assert.Contains(native, WindowsTerminalCli.LaunchClaudeArgs(@"C:\dev\proj"));
+            }
+            finally
+            {
+                WindowsTerminalCli.FileExists = previous;
+            }
+        }
+
+        [Fact]
+        public void Without_a_native_install_the_tab_falls_back_to_PATH()
+        {
+            // An npm-managed setup has no .local\bin\claude.exe; the bare name is the best we
+            // can do there, and it is what the pre-fix behavior was for everyone.
+            var previous = WindowsTerminalCli.FileExists;
+            try
+            {
+                WindowsTerminalCli.FileExists = _ => false;
+
+                Assert.Contains("claude", WindowsTerminalCli.LaunchClaudeArgs(@"C:\dev\proj"));
+            }
+            finally
+            {
+                WindowsTerminalCli.FileExists = previous;
+            }
         }
 
         // ---------------------------------------------------------------------------------------
