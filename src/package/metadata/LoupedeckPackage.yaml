@@ -18,7 +18,7 @@ description: Physical hardware controls for Claude Code on the MX Creative Keypa
 pluginFileName: ClaudeConsolePlugin.dll
 
 # Plugin version.
-version: 1.8.5
+version: 1.8.6
 
 # Author of the plugin. The author can be a company or an individual developer.
 author: ravishankar
@@ -33,7 +33,12 @@ copyright: Copyright © 2026 ravishankar. All rights reserved.
 
 # Location of plugin files on Windows (relative to the plugin base directory).
 # This parameter is required to support Windows.
-pluginFolderWin: bin
+# MUST NOT be the same directory as pluginFolderMac. When both keys named "bin", a macOS install
+# registered no application at all — no "Claude Console" entry in Options+ and therefore no
+# auto-imported keypad layout — while the plugin itself still loaded and its actions still
+# appeared, so nothing looked wrong. Registration happens at INSTALL time, which is why only a
+# clean install surfaced it. The Windows payload therefore lives in its own folder.
+pluginFolderWin: winbin
 
 # Location of plugin files on macOS (relative to the plugin base directory).
 # This parameter is required to support Mac.

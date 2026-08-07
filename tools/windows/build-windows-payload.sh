@@ -15,7 +15,9 @@ set -euo pipefail
 CONFIG="${1:-Release}"
 RID="${2:-win-x64}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DEST="$ROOT/bin/$CONFIG/bin"
+# The Windows payload gets its OWN folder. pluginFolderWin and pluginFolderMac must not name the
+# same directory — see the comment in LoupedeckPackage.yaml; sharing one broke macOS registration.
+DEST="$ROOT/bin/$CONFIG/winbin"
 
 echo ">>> building Windows helpers ($CONFIG, $RID)"
 mkdir -p "$DEST"
@@ -45,6 +47,13 @@ for proj in ClaudeConsoleInject ClaudeConsoleHook ClaudeConsoleVoice ClaudeConso
     exit 1
   fi
   find "$ROOT/tools/windows/$proj/publish-$RID" -maxdepth 1 -name "*.exe" -exec cp {} "$DEST/" \;
+done
+
+# Windows needs the plugin assembly and its SDK dependencies too — its folder is a complete
+# payload, not just the helpers.
+echo ">>> copying plugin assemblies into the Windows payload"
+for f in "$ROOT/bin/$CONFIG/bin"/*.dll "$ROOT/bin/$CONFIG/bin"/*.json; do
+  [ -e "$f" ] && cp "$f" "$DEST/"
 done
 
 echo ">>> staged into $DEST:"
