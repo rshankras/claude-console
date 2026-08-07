@@ -12,13 +12,20 @@
 # silently skips the import. That is the "plugin installed but no profile" symptom.
 #
 # So: same layout, same keys, same GUID-stamped action ids — only the application binding and the
-# profile GUID change. A fresh profile GUID keeps the two from deduping against each other
-# (auto-import dedupes by GUID).
+# profile GUID change. A fresh profile GUID keeps the two from deduping against each other.
+#
+# THIS IS A MANUAL-IMPORT ARTIFACT, NOT AN AUTO-IMPORTED ONE. The service finds the packaged
+# profile by a FIXED filename — PluginApi.dll has FindDefaultProfileFilePath /
+# DefaultProfileFileName / ProfilesDirectoryName and no filename format literal, i.e. the name
+# "DefaultProfile<deviceType>.lp5" is built at runtime. So a package can carry exactly ONE
+# auto-imported profile per device type, and on a cross-platform package that one file can only
+# carry one platform's application binding. macOS keeps auto-import; Windows imports this by hand
+# (Options+ -> profile menu -> import), which is the same path the plugin used before 1.7.1.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC="$ROOT/src/package/profiles/DefaultProfile70.lp5"
-OUT="$ROOT/src/package/profiles/DefaultProfile70Win.lp5"
+OUT="$ROOT/profiles/ClaudeConsole-Windows.lp5"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
