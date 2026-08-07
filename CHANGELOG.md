@@ -3,6 +3,17 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.8.5] — 2026-08-07
+
+### Fixed
+- **A fresh macOS install registered no application, so the keypad layout never imported.**
+  `ClaudeConsoleApplication.GetProcessName()` was hardcoded to `"WindowsTerminal"` in 1.8.0 — but
+  that class runs on both platforms, so on macOS it named a process that does not exist and the
+  service silently registered nothing. The plugin still loaded and its actions still appeared;
+  only the application row was empty, with nothing in any log. Existing installs were unaffected
+  because their registration was already on disk, which is why it took a clean install to find.
+  The name is now chosen at runtime.
+
 ## [1.8.4] — 2026-08-07
 
 ### Added
