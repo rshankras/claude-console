@@ -20,12 +20,28 @@ iterate.
 
 ## What does NOT work — the live bugs
 
-1. **No key injects anything.** As of 1.8.2 the log said
-   `claude-console-inject.exe not found in the plugin package`. 1.8.3 was supposed to fix that
-   (see `PluginPaths`) but the user reports keys still do nothing. **Unconfirmed whether 1.8.3
-   was actually installed when they retested** — check the loaded version first.
-2. **The context / live keys show nothing.** Almost certainly the Phase 4 hook was never wired
-   into `~/.claude/settings.json`. Never confirmed either way — check it.
+**BOTH FIXED ON-MACHINE 2026-08-07 (1.8.4). Kept for the record; root causes below.**
+
+1. **No key injects anything.** 1.8.3 WAS installed and the helper WAS found — the log had moved
+   on to `AttachConsole(<pid>) failed: 6` (ERROR_INVALID_HANDLE: target has no console). The pids
+   were Claude DESKTOP processes: `ResolveCommandLines` built its PowerShell with
+   `ForEach-Object {{ … }}` — doubled braces, written as if that string segment were interpolated
+   when it is a plain literal — so PowerShell emitted the scriptblock's TEXT instead of pid+TAB+
+   command line. Nothing parsed, every command line stayed null, the Desktop markers had nothing
+   to match, and all ten Desktop processes were sessions again (the 1.8.3 marker fix was correct
+   but starved of input; its tests injected `CommandLineResolver` and never ran the real query).
+   Fixed to single braces; two Windows-only tests now drive the real powershell.exe round trip.
+   Verified: `registry.json` slots only `.local\bin` pids; helper `text`/`key` against a live CLI
+   session exit 0.
+2. **The context / live keys show nothing.** Two stacked causes, plus a latent third:
+   `EnsureBridgeAutoWired` bailed with `if (!OperatingSystem.IsMacOS()) return;` — the Phase 4
+   wiring below it was unreachable; and `HookExePath` was a field initialiser reading
+   `AppContext.BaseDirectory` (the same bug PluginPaths exists to kill, in its second home), so
+   even an opened gate would have found no shim. Also `EnsureHook`'s idempotence check matched
+   only `activity-hook.sh` — a substring no Windows command contains — so every plugin load would
+   have appended five duplicate hooks. All three fixed; wiring verified in `settings.json`, the
+   hook writes `sessions/` + `activity/` state for live sessions, and a service-triggered reload
+   logs "already wired — no changes".
 
 ## Fixed already (don't re-fix)
 
@@ -85,10 +101,28 @@ started AFTER it lands.
 `%LOCALAPPDATA%\Temp\claude-console\sessions\pid-*.json`. `registry.json` in that directory is
 written by the PLUGIN, so its presence proves both sides agree on the root.
 
+## Current machine state (2026-08-07, after the fixes)
+
+- The INSTALLED package (`%LOCALAPPDATA%\Logi\LogiPluginService\Plugins\ClaudeConsole\bin`) has a
+  hand-patched 1.8.4 `ClaudeConsolePlugin.dll` copied over the 1.8.3 package — its metadata yaml
+  and `PackageHash.bin` no longer match the DLL. It loads and works, but the Mac session should
+  pack a real 1.8.4 `.lplug4` and reinstall to make it clean. The helper exes were not touched
+  (both bugs were plugin-side).
+- At service start the log shows one cosmetic
+  `Cannot load plugin … because plugin 'ClaudeConsole' is already loaded` pair (the service scans
+  the package twice). If keys are ever dead after a restart, `start loupedeck:plugin/ClaudeConsole/reload`
+  brings it up; a successful load logs `ClaudeConsolePlugin: Loaded`.
+- The wiring landed in `~/.claude/settings.json`; live keys need a Claude session started AFTER
+  that (existing sessions' statuslines already flow).
+
 ## Rules
 
-- **Keep the tests green**: `dotnet test tests\ClaudeConsolePlugin.Tests.csproj` — 338 should pass.
-  They run on Windows too.
+- **Keep the tests green**: `dotnet test tests\ClaudeConsolePlugin.Tests.csproj`.
+  **Reality check from this machine: 27 of the 338 never passed on Windows** — they exercise
+  macOS-only behavior with no platform guard (Unix file modes in PrivateFiles/SessionRegistry
+  tests, AppleScript key-code specs, the factory test, macOS injection paths). Baseline at the
+  handoff commit: 311/338 on Windows. After the fixes: 321/348, same 27 failures, all 10 new
+  tests green. Guarding those 27 is an open follow-up — nothing here touched them.
 - **When you fix something, add a test that would have caught it.** Both bugs found remotely got
   through because fixtures encoded an assumption instead of testing the real path. Prefer driving
   `WindowsPlatformBridge` over calling the pure helpers directly.
