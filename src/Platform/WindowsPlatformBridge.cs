@@ -155,7 +155,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                         rows.Add(new WindowsProcessInfo
                         {
                             Pid = proc.Id,
-                            ParentPid = 0,               // filled by the resolver path when available
+                            // KNOWN GAP: not populated. Process.GetProcessesByName gives no parent,
+                            // and fetching one per process would add a CIM query to every scan for a
+                            // case that barely occurs. Consequence: SessionsFrom's "drop a candidate
+                            // whose parent is also a candidate" rule never fires on Windows, so a
+                            // session that spawns a NESTED claude would take two keys instead of one.
+                            // The real-hardware capture (2026-08-07, 4 sessions) showed no nesting.
+                            // Revisit if it turns up; a cheap parent lookup exists via NtQuery.
+                            ParentPid = 0,
                             Name = name + ".exe",
                             StartTime = proc.StartTime,
                             CommandLine = null,          // resolved lazily, only when ambiguous

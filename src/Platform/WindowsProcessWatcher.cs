@@ -69,12 +69,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             "/claude",          // forward slashes appear in npm-generated shims
         };
 
-        // Claude Desktop is Electron. Its renderer/GPU/utility children carry --type=; the main
-        // process doesn't, so the install directory is checked too.
+        // Claude Desktop is Electron AND its executable is also called claude.exe, so the name alone
+        // cannot tell the two apart. Its renderer/GPU/utility children carry --type=, but the MAIN
+        // process carries no switch at all — only its install location distinguishes it. Both known
+        // install shapes are matched:
+        //
+        //   Microsoft Store (MSIX):  C:\Program Files\WindowsApps\Claude_1.26832.0.0_x64__…\app\Claude.exe
+        //   Direct download:         %LOCALAPPDATA%\AnthropicClaude\app-x.y.z\claude.exe
+        //
+        // The Store form was found on real hardware 2026-08-07 — the original list only had the
+        // direct-download path, so the Desktop main process was being taken for a CLI session and
+        // would have put a phantom key on the grid that no keystroke could reach.
         private static readonly String[] DesktopMarkers =
         {
-            "--type=",
-            "anthropicclaude",     // %LOCALAPPDATA%\AnthropicClaude\app-x.y.z\claude.exe
+            "--type=",             // any Electron child (renderer, gpu, utility, crashpad)
+            "windowsapps",         // Store install — the CLI is never installed here
+            "anthropicclaude",     // direct-download install dir
             "claude desktop",
             "squirrel",            // the Electron updater that shares the install dir
         };

@@ -112,6 +112,77 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Empty(WindowsProcessWatcher.SessionsFrom(new[] { Proc(3333, "node.exe", cmd: null) }));
         }
 
+        // --- real hardware capture, 2026-08-07 --------------------------------------------------
+
+        /// <summary>
+        /// The actual process table from a Windows 11 machine running 4 Claude Code sessions
+        /// alongside Claude Desktop. Captured by `claude-console-inject selftest`.
+        ///
+        /// This is here because the invented fixtures above MISSED a real bug: Claude Desktop was
+        /// installed from the Microsoft Store, so it lives under Program Files\WindowsApps — not
+        /// the %LOCALAPPDATA%\AnthropicClaude path the exclusion list assumed. Its Electron
+        /// children were excluded (they carry --type=) but the MAIN process carries no switch at
+        /// all, so it was being counted as a Claude Code session.
+        /// </summary>
+        private static IEnumerable<WindowsProcessInfo> RealCapture()
+        {
+            const String store = @"""C:\Program Files\WindowsApps\Claude_1.26832.0.0_x64__pzs8sxrjxfjjc\app\Claude.exe""";
+            return new[]
+            {
+                // Claude Desktop — the MAIN process. No --type= switch: only the path betrays it.
+                Proc(35208, "claude.exe", store),
+                // …and its Electron children, which do carry --type=.
+                Proc(31564, "claude.exe", store + " --type=crashpad-handler --user-data-"),
+                Proc(5308,  "claude.exe", store + " --type=gpu-process --user-data-dir="),
+                Proc(35096, "claude.exe", store + " --type=utility --utility-sub-type=ne"),
+                Proc(35000, "claude.exe", store + " --type=renderer --user-data-dir="),
+                Proc(18964, "claude.exe", store + " --type=renderer --user-data-dir="),
+                Proc(21020, "claude.exe", store + " --type=utility --utility-sub-type=vi"),
+                Proc(15028, "claude.exe", store + " --type=utility --utility-sub-type=au"),
+                Proc(29724, "claude.exe", store + " --type=utility --utility-sub-type=no"),
+                Proc(38496, "claude.exe", store + " --type=renderer --user-data-dir="),
+
+                // The four REAL Claude Code CLI sessions.
+                Proc(27904, "claude.exe", @"""C:\Users\sahan\.local\bin\claude.exe"""),
+                Proc(20748, "claude.exe", @"""C:\Users\sahan\.local\bin\claude.exe"""),
+                Proc(36636, "claude.exe", @"""C:\Users\sahan\.local\bin\claude.exe"""),
+                Proc(15988, "claude.exe", "claude  --resume 4160c9c8-1896-430d-a56c-b313e3a56e33"),
+            };
+        }
+
+        [Fact]
+        public void The_real_capture_yields_exactly_the_four_cli_sessions()
+        {
+            var sessions = WindowsProcessWatcher.SessionsFrom(RealCapture());
+
+            Assert.Equal(4, sessions.Count);
+            foreach (var pid in new[] { 27904, 20748, 36636, 15988 })
+            {
+                Assert.Contains(sessions, s => s.StartsWith($"pid-{pid}-", StringComparison.Ordinal));
+            }
+        }
+
+        [Fact]
+        public void A_store_installed_claude_desktop_is_not_a_session()
+        {
+            // The regression. Its executable is ALSO named claude.exe and the main process carries
+            // no --type= switch, so only the WindowsApps path distinguishes it. Getting this wrong
+            // puts a key on the grid that no keystroke can ever reach.
+            var desktopMain = Proc(35208,
+                "claude.exe",
+                @"""C:\Program Files\WindowsApps\Claude_1.26832.0.0_x64__pzs8sxrjxfjjc\app\Claude.exe""");
+
+            Assert.False(WindowsProcessWatcher.IsClaudeSession(desktopMain));
+        }
+
+        [Fact]
+        public void A_bare_claude_invocation_is_still_a_session()
+        {
+            // `claude --resume <id>` has no path at all — it must not be excluded by accident.
+            Assert.True(WindowsProcessWatcher.IsClaudeSession(
+                Proc(15988, "claude.exe", "claude  --resume 4160c9c8-1896-430d-a56c-b313e3a56e33")));
+        }
+
         // --- one key per session ----------------------------------------------------------------
 
         [Fact]
