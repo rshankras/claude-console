@@ -83,6 +83,17 @@ Automation — closing Phase 3's "cannot select the tab" gap. It alone targets `
 and not an inject verb — if the Desktop runtime is missing only focus degrades to raising the
 window. **The Mac pack flow must add this exe to the package payload.**
 
+**Runtime prerequisites on user machines (resolved 2026-08-07):** LogiPluginService carries its
+own PRIVATE .NET runtime (coreclr.dll in its install dir), so a machine running Options+ does
+NOT necessarily have machine-wide .NET. The inject/hook/voice helpers therefore publish
+self-contained + trimmed (~12 MB each, settings in their csproj — the publish commands above
+are unchanged) and run with no .NET installed at all. The hook's one reflection-JSON call was
+replaced with a hand-built payload to make trimming safe. The EXCEPTION is
+`claude-console-focus.exe`: WPF's UIA client cannot be trimmed, so it stays framework-dependent
+— on a machine without the .NET Desktop runtime, tab-focus degrades to raising the terminal
+window and everything else is unaffected. (NativeAOT would shrink the three helpers to ~3 MB
+but needs the MSVC C++ workload at build time, which this laptop lacks.)
+
 ## Diagnosing, in order
 
 **Is the helper found?** Log line `claude-console-inject.exe not found in the plugin package`

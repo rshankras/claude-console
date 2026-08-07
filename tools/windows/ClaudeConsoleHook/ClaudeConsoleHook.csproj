@@ -18,7 +18,12 @@
       .NET (the Plugin Service itself is built on 10), and RollForward=LatestMajor lets this
       net8.0 build run on it.
     -->
-    <SelfContained>false</SelfContained>
+    <!-- Self-contained + trimmed for the same reason as the inject helper: the Plugin Service
+         ships a PRIVATE runtime, so no machine-wide .NET can be assumed. This exe also runs on
+         EVERY statusline render — the trimmed single file starts faster than a framework-
+         dependent one resolving a shared runtime. -->
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>true</PublishTrimmed>
     <PublishSingleFile>true</PublishSingleFile>
   </PropertyGroup>
 

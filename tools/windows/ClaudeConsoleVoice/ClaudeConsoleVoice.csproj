@@ -18,7 +18,11 @@
 
     <!-- Ships inside the plugin package, beside the plugin DLL. -->
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
-    <SelfContained>false</SelfContained>
+    <!-- Self-contained + trimmed like inject/hook: no machine-wide .NET can be assumed (the
+         Plugin Service ships a private runtime). Also shaves the helper's startup — which is
+         user-audible here: recording starts sooner after the keypress. -->
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>true</PublishTrimmed>
     <PublishSingleFile>true</PublishSingleFile>
   </PropertyGroup>
 

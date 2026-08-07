@@ -21,7 +21,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Versioning;
-using System.Text.Json;
 
 internal static class Program
 {
@@ -102,7 +101,10 @@ internal static class Program
         Directory.CreateDirectory(ActivityDir);
 
         var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var payload = JsonSerializer.Serialize(new { state, ts });
+        // Built by hand, not JsonSerializer: reflection serialization is the one thing in this
+        // exe that publish-trimming can break, and the payload is two fields. Escaping still
+        // matters — state arrives via argv and lands in a file the plugin parses as JSON.
+        var payload = $"{{\"state\":\"{JsonEscape(state)}\",\"ts\":{ts}}}";
 
         if (key != null)
         {
@@ -269,6 +271,25 @@ internal static class Program
         {
             return null;
         }
+    }
+
+    // Minimal JSON string escaping for the one hand-built payload above.
+    private static String JsonEscape(String s)
+    {
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var ch in s)
+        {
+            switch (ch)
+            {
+                case '"': sb.Append("\\\""); break;
+                case '\\': sb.Append("\\\\"); break;
+                default:
+                    if (ch < 0x20) { sb.Append("\\u").Append(((Int32)ch).ToString("x4")); }
+                    else { sb.Append(ch); }
+                    break;
+            }
+        }
+        return sb.ToString();
     }
 
     // ---- io ----------------------------------------------------------------
