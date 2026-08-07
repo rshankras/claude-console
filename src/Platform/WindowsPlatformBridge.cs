@@ -75,12 +75,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             return WindowsProcessWatcher.SessionsFrom(rows);
         }
 
-        // Command lines are only needed to tell `node.exe running the Claude CLI` from any other
-        // node process. Resolve them lazily, once per process, and never for the native install.
+        // Every candidate needs its command line (see NeedsCommandLine), so the cost matters: a
+        // machine with Claude Desktop open has a dozen claude.exe processes. Results are cached per
+        // session key and only UNSEEN pids are looked up, so a steady state costs nothing; when
+        // there are new pids they are fetched in ONE batched query rather than one process each.
         private void FillCommandLines(List<WindowsProcessInfo> rows)
         {
-            var resolver = this.CommandLineResolver ?? ResolveCommandLine;
-
             // Drop cache entries for processes that are gone, so a long-running plugin doesn't grow.
             var liveKeys = new HashSet<String>(rows.Select(WindowsProcessWatcher.SessionKeyFor), StringComparer.Ordinal);
             foreach (var stale in _cmdCache.Keys.Where(k => !liveKeys.Contains(k)).ToList())
@@ -88,37 +88,58 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 _cmdCache.Remove(stale);
             }
 
+            var pending = rows
+                .Where(r => r.CommandLine == null && NeedsCommandLine(r) &&
+                            !_cmdCache.ContainsKey(WindowsProcessWatcher.SessionKeyFor(r)))
+                .ToList();
+
+            if (pending.Count > 0)
+            {
+                var perPid = this.CommandLineResolver != null
+                    ? pending.ToDictionary(r => r.Pid, r => SafeResolve(this.CommandLineResolver, r.Pid))
+                    : ResolveCommandLines(pending.Select(r => r.Pid));
+
+                foreach (var row in pending)
+                {
+                    perPid.TryGetValue(row.Pid, out var cmd);
+                    _cmdCache[WindowsProcessWatcher.SessionKeyFor(row)] = cmd;
+                }
+            }
+
             foreach (var row in rows)
             {
-                if (row.CommandLine != null || !NeedsCommandLine(row))
+                if (row.CommandLine == null &&
+                    _cmdCache.TryGetValue(WindowsProcessWatcher.SessionKeyFor(row), out var cached))
                 {
-                    continue;
+                    row.CommandLine = cached;
                 }
-
-                var key = WindowsProcessWatcher.SessionKeyFor(row);
-                if (!_cmdCache.TryGetValue(key, out var cmd))
-                {
-                    try
-                    {
-                        cmd = resolver(row.Pid);
-                    }
-                    catch (Exception ex)
-                    {
-                        PluginLog.Verbose(ex, $"WindowsPlatformBridge: could not read command line for pid {row.Pid}");
-                        cmd = null;
-                    }
-                    _cmdCache[key] = cmd;
-                }
-
-                row.CommandLine = cmd;
             }
         }
 
-        // Only interpreters are ambiguous. claude.exe is a session on its name alone.
-        internal static Boolean NeedsCommandLine(WindowsProcessInfo p) =>
-            p?.Name != null &&
-            !p.Name.Equals("claude.exe", StringComparison.OrdinalIgnoreCase) &&
-            !p.Name.Equals("claude", StringComparison.OrdinalIgnoreCase);
+        private static String SafeResolve(Func<Int32, String> resolver, Int32 pid)
+        {
+            try
+            {
+                return resolver(pid);
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, $"WindowsPlatformBridge: could not read command line for pid {pid}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// EVERY candidate needs its command line — including claude.exe.
+        ///
+        /// This used to skip claude.exe as an "optimisation", on the theory that the native CLI is
+        /// identifiable by name alone. It isn't: Claude DESKTOP's executable is also called
+        /// claude.exe, and the only thing separating them is the install path in the command line.
+        /// Skipping the lookup meant the Desktop markers had nothing to match, so all ten of
+        /// Desktop's processes were counted as Claude Code sessions (seen on real hardware
+        /// 2026-08-07 — slots pinned to a crashpad handler and a GPU process).
+        /// </summary>
+        internal static Boolean NeedsCommandLine(WindowsProcessInfo p) => p?.Name != null;
 
         // ------------------------------------------------------------------------------------------
         // Windows-only plumbing below. Compiles everywhere; only ever CALLED on Windows.
@@ -190,34 +211,56 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         }
 
         /// <summary>
-        /// Default command-line resolver.
+        /// Fetch command lines for many pids in ONE query.
         ///
-        /// UNVERIFIED ON HARDWARE — written against the documented API, but this class has never
-        /// run on Windows (the plugin is built on macOS). Confirm before Phase 2 lands, and prefer
-        /// swapping this one method over reshaping the class: everything above it is covered by
-        /// tests that pass on any OS.
+        /// Batched deliberately: every claude.exe needs its command line to tell the CLI from
+        /// Claude Desktop, and a machine with Desktop open has a dozen of them. One PowerShell
+        /// spawn per scan-with-new-pids is fine; a dozen would not be.
         /// </summary>
-        private static String ResolveCommandLine(Int32 pid)
+        private static Dictionary<Int32, String> ResolveCommandLines(IEnumerable<Int32> pids)
         {
-            if (!OperatingSystem.IsWindows())
+            var result = new Dictionary<Int32, String>();
+            var list = pids?.Distinct().ToList() ?? new List<Int32>();
+            if (list.Count == 0 || !OperatingSystem.IsWindows())
             {
-                return null;
+                return result;
             }
 
             // Deliberately NOT a System.Management dependency: that would add a NuGet assembly to
-            // the shipped package for one string lookup. Shell out under the same hard timeout
-            // discipline every backend uses instead (BoundedProcess).
+            // the shipped package. Shell out under the same hard timeout discipline every backend
+            // uses (BoundedProcess). Tab-separated so a command line containing commas is safe.
+            var filter = String.Join(" or ", list.Select(p => $"ProcessId={p}"));
             var output = BoundedProcess.Run(
                 "powershell.exe",
                 new List<String>
                 {
                     "-NoProfile", "-NonInteractive", "-Command",
-                    $"(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine",
+                    $"Get-CimInstance Win32_Process -Filter \"{filter}\" | " +
+                    "ForEach-Object {{ \"$($_.ProcessId)`t$($_.CommandLine)\" }}",
                 },
-                5000,
+                8000,
                 wantOutput: true);
 
-            return String.IsNullOrWhiteSpace(output) ? null : output.Trim();
+            if (String.IsNullOrWhiteSpace(output))
+            {
+                return result;
+            }
+
+            foreach (var line in output.Split('\n'))
+            {
+                var trimmed = line.TrimEnd('\r');
+                var tab = trimmed.IndexOf('\t');
+                if (tab <= 0)
+                {
+                    continue;
+                }
+                if (Int32.TryParse(trimmed.Substring(0, tab), out var pid))
+                {
+                    result[pid] = trimmed.Substring(tab + 1);
+                }
+            }
+
+            return result;
         }
 
         // ------------------------------------------------------------------------------------------
@@ -286,28 +329,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             return BoundedProcess.RunForExitCode(exe, args, 15000);
         }
 
-        /// <summary>
-        /// Where the inject helper lives — beside the plugin DLL in the package's bin folder.
-        /// Settable for tests.
-        /// </summary>
-        internal String HelperPath { get; set; } = FindHelper();
+        // Resolved LAZILY on every use, not cached at construction: the SDK hands us the plugin
+        // path in Plugin.AssemblyFilePath AFTER the bridge is created, so anything captured in a
+        // field initialiser is null forever. Settable for tests.
+        private String _helperPath;
 
-        private static String FindHelper()
+        /// <summary>Where the inject helper lives — beside the plugin DLL. See PluginPaths.</summary>
+        internal String HelperPath
         {
-            try
-            {
-                var dir = AppContext.BaseDirectory;
-                if (String.IsNullOrEmpty(dir))
-                {
-                    return null;
-                }
-                var candidate = System.IO.Path.Combine(dir, "claude-console-inject.exe");
-                return System.IO.File.Exists(candidate) ? candidate : null;
-            }
-            catch
-            {
-                return null;
-            }
+            get => _helperPath ?? PluginPaths.PackagedFile("claude-console-inject.exe");
+            set => _helperPath = value;
         }
 
         // ------------------------------------------------------------------------------------------

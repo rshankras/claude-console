@@ -183,6 +183,58 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Proc(15988, "claude.exe", "claude  --resume 4160c9c8-1896-430d-a56c-b313e3a56e33")));
         }
 
+        [Fact]
+        public void Desktop_is_excluded_when_command_lines_arrive_the_way_the_real_scan_supplies_them()
+        {
+            // THE REGRESSION THAT SHIPPED. The fixtures above hand SessionsFrom a fully-populated
+            // command line, but the real enumerator returns rows with CommandLine = null and
+            // resolves them separately. An "optimisation" skipped that lookup for claude.exe on the
+            // theory it was identifiable by name — so the Desktop markers had nothing to match and
+            // all ten Desktop processes became sessions. The unit tests passed the whole time
+            // because they never went through the resolve step.
+            //
+            // So: drive the BRIDGE, with null command lines, exactly as EnumerateProcesses does.
+            var real = RealCapture().ToList();
+            var cmdlines = real.ToDictionary(r => r.Pid, r => r.CommandLine);
+
+            var bridge = new WindowsPlatformBridge
+            {
+                ProcessEnumerator = () => real.Select(r => Proc(r.Pid, r.Name, cmd: null, start: r.StartTime)),
+                CommandLineResolver = pid => cmdlines.TryGetValue(pid, out var c) ? c : null,
+            };
+
+            var sessions = bridge.DiscoverSessions();
+
+            Assert.Equal(4, sessions.Count);
+            foreach (var pid in new[] { 27904, 20748, 36636, 15988 })
+            {
+                Assert.Contains(sessions, s => s.StartsWith($"pid-{pid}-", StringComparison.Ordinal));
+            }
+            // The specific processes that were pinned to slots on real hardware.
+            foreach (var desktopPid in new[] { 35208, 31564, 5308 })
+            {
+                Assert.DoesNotContain(sessions, s => s.StartsWith($"pid-{desktopPid}-", StringComparison.Ordinal));
+            }
+        }
+
+        [Fact]
+        public void Every_candidate_gets_its_command_line_resolved()
+        {
+            // claude.exe must NOT be skipped: its command line is the only thing separating the
+            // CLI from Claude Desktop.
+            var asked = new List<Int32>();
+            var bridge = new WindowsPlatformBridge
+            {
+                ProcessEnumerator = () => new[] { Proc(1234, "claude.exe"), Proc(3333, "node.exe") },
+                CommandLineResolver = pid => { asked.Add(pid); return null; },
+            };
+
+            bridge.DiscoverSessions();
+
+            Assert.Contains(1234, asked);
+            Assert.Contains(3333, asked);
+        }
+
         // --- one key per session ----------------------------------------------------------------
 
         [Fact]
@@ -254,27 +306,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             };
 
             Assert.Null(bridge.DiscoverSessions());
-        }
-
-        [Fact]
-        public void Discovery_resolves_command_lines_only_for_ambiguous_processes()
-        {
-            // The native install is identifiable by name alone. Resolving a command line costs a
-            // subprocess, so the common case must not pay for it on a 2-second timer.
-            var asked = new List<Int32>();
-            var bridge = new WindowsPlatformBridge
-            {
-                ProcessEnumerator = () => new[]
-                {
-                    Proc(1234, "claude.exe"),   // unambiguous
-                    Proc(3333, "node.exe"),     // ambiguous — needs the command line
-                },
-                CommandLineResolver = pid => { asked.Add(pid); return null; },
-            };
-
-            bridge.DiscoverSessions();
-
-            Assert.Equal(new[] { 3333 }, asked);
         }
 
         [Fact]

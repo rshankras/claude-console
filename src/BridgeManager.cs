@@ -69,7 +69,16 @@ namespace Loupedeck.ClaudeConsolePlugin
         // On-disk path of the plugin DLL — set by ClaudeConsolePlugin.Load from the SDK's
         // Plugin.AssemblyFilePath. Assembly.Location is EMPTY in the SDK's load context, so this is
         // how EnsureVoiceRuntimeInstalled locates the in-package voice payload (bin/voice/).
-        public String PluginAssemblyFilePath { get; set; }
+        /// <summary>
+        /// Mirrored into PluginPaths on assignment so every "where am I installed" lookup — the
+        /// voice payload AND the Windows helper executables — resolves from one place. See
+        /// PluginPaths for why AppContext.BaseDirectory cannot be used here.
+        /// </summary>
+        public String PluginAssemblyFilePath
+        {
+            get => PluginPaths.PluginAssemblyFilePath;
+            set => PluginPaths.PluginAssemblyFilePath = value;
+        }
 
         private Timer _pollTimer;
         private ClaudeState _currentState;

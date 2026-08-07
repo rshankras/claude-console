@@ -288,5 +288,59 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Equal(InjectionOutcome.Failed, bridge.InjectKey(Key, KeyStroke.Return));
         }
+
+        [Fact]
+        public void The_helper_is_located_relative_to_the_plugin_dll_not_the_host_process()
+        {
+            // THE BUG THAT SHIPPED: AppContext.BaseDirectory points at the SERVICE's directory when
+            // the SDK loads a plugin, so the lookup logged "claude-console-inject.exe not found in
+            // the plugin package" while the exe sat right beside the DLL. The SDK-provided
+            // Plugin.AssemblyFilePath is the only reliable anchor — see PluginPaths.
+            var dir = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "cc-helper-" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(dir);
+            var exe = System.IO.Path.Combine(dir, "claude-console-inject.exe");
+            System.IO.File.WriteAllText(exe, "");
+
+            var previous = PluginPaths.PluginAssemblyFilePath;
+            try
+            {
+                PluginPaths.PluginAssemblyFilePath = System.IO.Path.Combine(dir, "ClaudeConsolePlugin.dll");
+
+                Assert.Equal(exe, new WindowsPlatformBridge().HelperPath);
+            }
+            finally
+            {
+                PluginPaths.PluginAssemblyFilePath = previous;
+                try { System.IO.Directory.Delete(dir, recursive: true); } catch { }
+            }
+        }
+
+        [Fact]
+        public void The_helper_path_is_resolved_lazily_not_captured_at_construction()
+        {
+            // The SDK hands over Plugin.AssemblyFilePath AFTER the bridge is constructed, so a
+            // path captured in a field initialiser is null forever.
+            var previous = PluginPaths.PluginAssemblyFilePath;
+            try
+            {
+                PluginPaths.PluginAssemblyFilePath = null;
+                var bridge = new WindowsPlatformBridge();
+                Assert.Null(bridge.HelperPath);
+
+                var dir = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(), "cc-late-" + Guid.NewGuid().ToString("N"));
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "claude-console-inject.exe"), "");
+                PluginPaths.PluginAssemblyFilePath = System.IO.Path.Combine(dir, "ClaudeConsolePlugin.dll");
+
+                Assert.NotNull(bridge.HelperPath);   // same instance, now resolvable
+                try { System.IO.Directory.Delete(dir, recursive: true); } catch { }
+            }
+            finally
+            {
+                PluginPaths.PluginAssemblyFilePath = previous;
+            }
+        }
     }
 }
