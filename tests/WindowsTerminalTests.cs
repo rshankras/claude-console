@@ -258,26 +258,153 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }
         }
 
+        // ---------------------------------------------------------------------------------------
+        // Focusing a session's tab — the focus helper, and the wt window-raise it degrades to
+        // ---------------------------------------------------------------------------------------
+
+        private const String FocusKey = "pid-1234-638900000000000000";
+
         [Fact]
-        public void Focusing_a_session_raises_the_window_and_admits_it_cannot_pick_the_tab()
+        public void Focus_args_carry_the_pid_and_start_ticks_guard()
         {
-            // Gap 2. Pinning is still EXACT — injection addresses the console directly — so the
-            // functional half of a session key press is unaffected by this approximation.
+            // Same contract as injection: a recycled PID must never yank an unrelated window to
+            // the foreground, so the helper re-verifies the pair before touching anything.
+            Assert.Equal(
+                new[] { "tab", "--pid", "1234", "--start-ticks", "638900000000000000" },
+                WindowsInjection.FocusArgs(FocusKey));
+
+            Assert.Null(WindowsInjection.FocusArgs("not-a-session-key"));
+        }
+
+        [Fact]
+        public void A_selected_tab_needs_no_wt_fallback()
+        {
             var (bridge, runs) = Rig();
+            List<String> focusArgs = null;
+            bridge.FocusRunner = args => { focusArgs = args; return 0; };
 
-            bridge.FocusSession("pid-1234-638900000000000000");
+            bridge.FocusSession(FocusKey);
 
-            Assert.Single(runs);
+            Assert.NotNull(focusArgs);
+            Assert.Empty(runs);   // the helper did the whole job
+        }
+
+        [Fact]
+        public void A_raised_but_unidentified_tab_needs_no_wt_fallback_either()
+        {
+            // Exit 4 = the helper already raised the terminal window; running wt on top would
+            // add nothing and can flick focus twice.
+            var (bridge, runs) = Rig();
+            bridge.FocusRunner = _ => 4;
+
+            bridge.FocusSession(FocusKey);
+
+            Assert.Empty(runs);
+        }
+
+        [Theory]
+        [InlineData(2)]      // session gone
+        [InlineData(5)]      // elevated
+        [InlineData(null)]   // helper crashed, or its Desktop runtime is missing
+        public void A_failed_focus_helper_falls_back_to_raising_the_window(Object exitCode)
+        {
+            var (bridge, runs) = Rig();
+            bridge.FocusRunner = _ => (Int32?)exitCode;
+
+            bridge.FocusSession(FocusKey);
+
+            var args = Assert.Single(runs);
+            Assert.Contains("focus-tab", args);
+        }
+
+        [Fact]
+        public void A_missing_focus_helper_degrades_to_the_pre_helper_behavior()
+        {
+            // No helper in the package and no injected runner: raise the window via wt, exactly
+            // what every 1.8.x before the helper did.
+            var (bridge, runs) = Rig();
+            bridge.FocusHelperPath = null;
+
+            bridge.FocusSession(FocusKey);
+
+            var args = Assert.Single(runs);
+            Assert.Contains("focus-tab", args);
         }
 
         [Fact]
         public void Focusing_an_unparseable_session_does_nothing()
         {
             var (bridge, runs) = Rig();
+            var helperRan = false;
+            bridge.FocusRunner = _ => { helperRan = true; return 0; };
 
             bridge.FocusSession("ttys003");   // a macOS key
 
+            Assert.False(helperRan);
             Assert.Empty(runs);
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // Contract with the focus helper (a separate executable; the compiler can't check this)
+        // ---------------------------------------------------------------------------------------
+
+        [Fact]
+        public void The_focus_helper_verifies_the_session_before_touching_any_window()
+        {
+            Assert.Contains("VerifyStartTime", ReadFocusSource());
+        }
+
+        [Fact]
+        public void The_focus_helper_matches_tabs_by_the_sessions_console_title()
+        {
+            // The whole mechanism: the tab's label IS the console title. If either half drifts
+            // (title read, UIA tab match), focus silently degrades to window-raising.
+            var source = ReadFocusSource();
+
+            Assert.Contains("GetConsoleTitleW", source);
+            Assert.Contains("CASCADIA_HOSTING_WINDOW_CLASS", source);
+            Assert.Contains("SelectionItemPattern", source);
+        }
+
+        [Fact]
+        public void The_focus_helper_survives_claudes_animated_title()
+        {
+            // A busy Claude repaints the title's leading glyph (✳ · ✢ …), so the console read and
+            // the UIA walk can straddle a repaint. Seen on hardware 2026-08-07: the idle session's
+            // tab matched, the busy one's didn't. The helper must retry with a FRESH read and
+            // compare glyph-stripped cores, or focus works only for idle sessions.
+            var source = ReadFocusSource();
+
+            Assert.Contains("TitleCore", source);
+            Assert.Contains("ConsoleTitleOf(pid).title", source);   // re-read inside the retry loop
+        }
+
+        [Fact]
+        public void The_focus_helpers_exit_codes_match_what_the_bridge_expects()
+        {
+            // 0 = tab selected, 4 = raised only — the two codes FocusSession treats as "done".
+            var source = ReadFocusSource();
+
+            Assert.Contains("ExitOk = 0", source);
+            Assert.Contains("ExitRaisedOnly = 4", source);
+            Assert.Contains("ExitSessionMissing = 2", source);
+            Assert.Contains("ExitSessionElevated = 5", source);
+        }
+
+        private static String ReadFocusSource()
+        {
+            var dir = AppContext.BaseDirectory;
+            for (var i = 0; i < 8 && dir != null; i++)
+            {
+                var candidate = System.IO.Path.Combine(dir, "tools", "windows", "ClaudeConsoleFocus", "Program.cs");
+                if (System.IO.File.Exists(candidate))
+                {
+                    return System.IO.File.ReadAllText(candidate);
+                }
+                dir = System.IO.Path.GetDirectoryName(dir);
+            }
+
+            throw new InvalidOperationException("could not locate the focus helper source");
         }
     }
 }

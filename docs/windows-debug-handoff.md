@@ -71,9 +71,17 @@ Helper executables (they ship in the package but you can build them directly):
 ```
 dotnet publish tools\windows\ClaudeConsoleInject -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 dotnet publish tools\windows\ClaudeConsoleHook   -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
+dotnet publish tools\windows\ClaudeConsoleFocus  -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true
 ```
 
-Copy the two `.exe`s next to `ClaudeConsolePlugin.dll` in whatever bin the service is loading.
+Copy the `.exe`s next to `ClaudeConsolePlugin.dll` in whatever bin the service is loading.
+
+`claude-console-focus.exe` (added 2026-08-07) is the tab-focus helper: it reads the session's
+console title via AttachConsole and selects the Windows Terminal tab carrying it via UI
+Automation — closing Phase 3's "cannot select the tab" gap. It alone targets `net8.0-windows`
+(needs the Windows Desktop runtime for System.Windows.Automation); that is why it is a third exe
+and not an inject verb — if the Desktop runtime is missing only focus degrades to raising the
+window. **The Mac pack flow must add this exe to the package payload.**
 
 ## Diagnosing, in order
 

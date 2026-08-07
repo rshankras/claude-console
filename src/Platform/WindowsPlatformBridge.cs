@@ -360,10 +360,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         //    explicit, already-supported way to aim the keypad. Pinning is exact on Windows even
         //    though frontmost-tracking is not.
         //
-        // 2. FocusSession raises the terminal WINDOW but cannot select the tab. Same root cause.
-        //    Injection is unaffected — it addresses the console directly — so pressing a session
-        //    key still aims every subsequent key at that session correctly. Only the "and show it
-        //    to me" half is approximate.
+        // 2. FocusSession — SOLVED, one level below wt: the tab's label IS the session's console
+        //    title, readable via AttachConsole, and UI Automation can select the TabItem carrying
+        //    it. claude-console-focus.exe does exactly that (it alone needs the Windows Desktop
+        //    runtime, which is why it is a third exe and not an inject verb). When the helper is
+        //    missing or can't identify the tab, we degrade to raising the terminal window — the
+        //    pre-helper behavior.
         // ------------------------------------------------------------------------------------------
 
         /// <summary>Runs a terminal command. Injectable so navigation is testable without Windows.</summary>
@@ -396,13 +398,56 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             this.RunTerminal(args);
         }
 
+        /// <summary>Runs claude-console-focus.exe. Injectable for tests; returns its exit code.</summary>
+        internal Func<List<String>, Int32?> FocusRunner { get; set; }
+
+        // Lazy for the same reason as HelperPath: the SDK provides the plugin path after
+        // construction. Settable for tests.
+        private String _focusHelperPath;
+
+        /// <summary>Where the tab-focus helper lives — beside the plugin DLL. See PluginPaths.</summary>
+        internal String FocusHelperPath
+        {
+            get => _focusHelperPath ?? PluginPaths.PackagedFile("claude-console-focus.exe");
+            set => _focusHelperPath = value;
+        }
+
+        // The focus helper's exit contract (see tools/windows/ClaudeConsoleFocus/Program.cs):
+        // 0 = tab selected + window raised; 4 = window raised, tab not identified; anything else
+        // (2 gone, 5 elevated, null crashed/missing runtime) = nothing happened on screen.
+        private const Int32 FocusExitOk = 0;
+        private const Int32 FocusExitRaisedOnly = 4;
+
         public void FocusSession(String sessionKey)
         {
-            // Best effort: bring the terminal window forward. The tab is not selectable (gap 2).
-            if (WindowsInjection.TryParseSessionKey(sessionKey, out _, out _))
+            if (!WindowsInjection.TryParseSessionKey(sessionKey, out _, out _))
             {
-                this.RunTerminal(WindowsTerminalCli.ArgsFor(TerminalAction.Activate));
+                return;
             }
+
+            var exe = this.FocusHelperPath;
+            var runner = this.FocusRunner ?? (exe != null
+                ? args => BoundedProcess.RunForExitCode(exe, args, 10000)
+                : (Func<List<String>, Int32?>)null);
+
+            if (runner != null)
+            {
+                var code = runner(WindowsInjection.FocusArgs(sessionKey));
+                if (code == FocusExitOk)
+                {
+                    return;
+                }
+                if (code == FocusExitRaisedOnly)
+                {
+                    PluginLog.Verbose("WindowsPlatformBridge: focus helper raised the window but couldn't identify the tab");
+                    return;   // the helper already raised the window; wt would add nothing
+                }
+                PluginLog.Info($"WindowsPlatformBridge: focus helper exit {(code.HasValue ? code.ToString() : "null")} — raising the terminal window instead");
+            }
+
+            // Degraded mode: bring the terminal window forward without selecting the tab — the
+            // behavior all of Phase 3 had before the focus helper existed.
+            this.RunTerminal(WindowsTerminalCli.ArgsFor(TerminalAction.Activate));
         }
 
         public void Alert()

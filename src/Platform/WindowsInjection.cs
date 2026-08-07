@@ -93,6 +93,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Arguments for Tab-then-Return as ONE helper run (never two key runs).</summary>
         internal static List<String> TabThenEnterArgs(String sessionKey) => BaseArgs("tabenter", sessionKey);
 
+        /// <summary>
+        /// Arguments for claude-console-focus.exe — the tab-focus helper carries the same
+        /// pid + start-ticks pair as injection, and re-verifies it for the same reason: a recycled
+        /// PID must not yank some unrelated window to the foreground.
+        /// </summary>
+        internal static List<String> FocusArgs(String sessionKey) => BaseArgs("tab", sessionKey);
+
         // Every command carries the process AND its start time. The start time is not decoration:
         // Windows recycles PIDs, so without it a stale session key could attach to an unrelated
         // process that happens to have inherited the number — and type into it. The helper
