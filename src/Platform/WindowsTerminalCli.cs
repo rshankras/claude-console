@@ -19,17 +19,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         internal static Func<String, Boolean> FileExists { get; set; } = System.IO.File.Exists;
 
         /// <summary>
+        /// The claude.exe a LIVE session was seen running, captured by discovery from its command
+        /// line. The strongest answer to "where is Claude installed" — it follows any install
+        /// location on any drive, because it is not a guess at all.
+        /// </summary>
+        internal static String ObservedClaudeExe { get; set; }
+
+        /// <summary>
         /// What to tell Windows Terminal to run for a Claude tab.
         ///
         /// NOT the bare word "claude": wt resolves its command against the environment it
         /// inherited, and we spawn wt from LogiPluginService — whose PATH predates (or simply
         /// lacks) the installer's %USERPROFILE%\.local\bin entry. The tab then dies with
         /// `[error 2147942402 (0x80070002) when launching `claude']` (seen on real hardware
-        /// 2026-08-07). The native install location is fixed, so resolve it ourselves and only
-        /// fall back to PATH for exotic setups.
+        /// 2026-08-07).
+        ///
+        /// Resolution, most- to least-authoritative:
+        ///   1. the exe a running session was observed using (any install dir, any drive),
+        ///   2. the native installer's default under the user profile (profile drive, not C:),
+        ///   3. the bare name via PATH — the pre-fix behavior, kept for setups we can't see.
         /// </summary>
         internal static String ClaudeCommand()
         {
+            var observed = ObservedClaudeExe;
+            if (observed != null && FileExists(observed))
+            {
+                return observed;
+            }
+
             var native = System.IO.Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".local", "bin", "claude.exe");

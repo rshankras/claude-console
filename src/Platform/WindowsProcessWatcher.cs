@@ -114,6 +114,44 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             return new HashSet<String>(keep.Select(SessionKeyFor), StringComparer.Ordinal);
         }
 
+        /// <summary>
+        /// The executable a command line runs — as a rooted path to claude.exe, or null.
+        ///
+        /// Used to learn where Claude is actually installed from a LIVE session, so the launch
+        /// keys follow any install directory on any drive instead of assuming the native
+        /// installer's default. Only rooted paths qualify: a bare `claude --resume …` command
+        /// line names no directory, and guessing one would defeat the point.
+        /// </summary>
+        internal static String ExeFromCommandLine(String cmd)
+        {
+            if (String.IsNullOrWhiteSpace(cmd))
+            {
+                return null;
+            }
+
+            var t = cmd.TrimStart();
+            String exe;
+            if (t[0] == '"')
+            {
+                var end = t.IndexOf('"', 1);
+                if (end <= 1)
+                {
+                    return null;
+                }
+                exe = t.Substring(1, end - 1);
+            }
+            else
+            {
+                var end = t.IndexOf(' ');
+                exe = end < 0 ? t : t.Substring(0, end);
+            }
+
+            return exe.EndsWith("claude.exe", StringComparison.OrdinalIgnoreCase)
+                   && System.IO.Path.IsPathRooted(exe)
+                ? exe
+                : null;
+        }
+
         internal static Boolean IsClaudeSession(WindowsProcessInfo p)
         {
             if (p == null || String.IsNullOrWhiteSpace(p.Name))

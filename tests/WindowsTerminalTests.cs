@@ -157,6 +157,49 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void A_live_sessions_exe_outranks_the_native_installers_default()
+        {
+            // The observed exe is not a guess — it is where Claude PROVABLY runs from, on
+            // whatever drive and directory it was installed to.
+            var observed = @"D:\tools\claude\claude.exe";
+            var prevExists = WindowsTerminalCli.FileExists;
+            var prevObserved = WindowsTerminalCli.ObservedClaudeExe;
+            try
+            {
+                WindowsTerminalCli.ObservedClaudeExe = observed;
+                WindowsTerminalCli.FileExists = path => path == observed;
+
+                Assert.Contains(observed, WindowsTerminalCli.LaunchClaudeArgs(@"C:\dev\proj"));
+            }
+            finally
+            {
+                WindowsTerminalCli.FileExists = prevExists;
+                WindowsTerminalCli.ObservedClaudeExe = prevObserved;
+            }
+        }
+
+        [Fact]
+        public void A_stale_observed_exe_is_ignored()
+        {
+            // The observed install can be uninstalled out from under us; a path that no longer
+            // exists must fall through to the remaining rules, not break the launch keys.
+            var prevExists = WindowsTerminalCli.FileExists;
+            var prevObserved = WindowsTerminalCli.ObservedClaudeExe;
+            try
+            {
+                WindowsTerminalCli.ObservedClaudeExe = @"D:\gone\claude.exe";
+                WindowsTerminalCli.FileExists = _ => false;
+
+                Assert.Contains("claude", WindowsTerminalCli.LaunchClaudeArgs(@"C:\dev\proj"));
+            }
+            finally
+            {
+                WindowsTerminalCli.FileExists = prevExists;
+                WindowsTerminalCli.ObservedClaudeExe = prevObserved;
+            }
+        }
+
+        [Fact]
         public void Without_a_native_install_the_tab_falls_back_to_PATH()
         {
             // An npm-managed setup has no .local\bin\claude.exe; the bare name is the best we

@@ -72,6 +72,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
 
             this.FillCommandLines(rows);
+
+            // Remember where a live CLI session actually runs from, so the launch keys follow
+            // the real install location (any directory, any drive) rather than assuming the
+            // native installer's default. IsClaudeSession has already excluded Claude Desktop —
+            // its exe is also claude.exe, and capturing IT would launch the desktop app.
+            foreach (var row in rows)
+            {
+                if (WindowsProcessWatcher.IsClaudeSession(row))
+                {
+                    var exe = WindowsProcessWatcher.ExeFromCommandLine(row.CommandLine);
+                    if (exe != null)
+                    {
+                        WindowsTerminalCli.ObservedClaudeExe = exe;
+                        break;
+                    }
+                }
+            }
+
             return WindowsProcessWatcher.SessionsFrom(rows);
         }
 

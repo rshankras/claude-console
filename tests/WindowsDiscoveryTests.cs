@@ -373,6 +373,76 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(2, runs.Count);
         }
 
+        // --- learning the install location from a live session ------------------------------------
+
+        [Theory]
+        [InlineData("\"D:\\tools\\claude\\claude.exe\" --resume abc", "D:\\tools\\claude\\claude.exe")]
+        [InlineData("D:\\tools\\claude\\claude.exe --resume abc", "D:\\tools\\claude\\claude.exe")]
+        [InlineData("\"C:\\Users\\me\\.local\\bin\\claude.exe\"", "C:\\Users\\me\\.local\\bin\\claude.exe")]
+        [InlineData("claude --resume abc", null)]                    // no directory to learn
+        [InlineData("\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\npm\\@anthropic-ai\\claude-code\\cli.js\"", null)]
+        [InlineData("", null)]
+        [InlineData(null, null)]
+        public void The_exe_is_learned_only_from_a_rooted_claude_command_line(String cmd, String expected) =>
+            Assert.Equal(expected, WindowsProcessWatcher.ExeFromCommandLine(cmd));
+
+        [Fact]
+        public void Discovery_learns_the_install_location_from_a_live_session_on_any_drive()
+        {
+            // Nothing may assume Claude lives on C: — the launch keys use whatever exe a REAL
+            // session is running, wherever it is installed.
+            var previous = WindowsTerminalCli.ObservedClaudeExe;
+            try
+            {
+                WindowsTerminalCli.ObservedClaudeExe = null;
+                var bridge = new WindowsPlatformBridge
+                {
+                    ProcessEnumerator = () => new[]
+                    {
+                        Proc(1234, "claude.exe", @"""D:\tools\claude\claude.exe"" --resume abc"),
+                    },
+                    CommandLineResolver = _ => null,
+                };
+
+                bridge.DiscoverSessions();
+
+                Assert.Equal(@"D:\tools\claude\claude.exe", WindowsTerminalCli.ObservedClaudeExe);
+            }
+            finally
+            {
+                WindowsTerminalCli.ObservedClaudeExe = previous;
+            }
+        }
+
+        [Fact]
+        public void Claude_desktops_exe_is_never_learned_as_the_install_location()
+        {
+            // Desktop's binary is ALSO claude.exe. Learning it would make the launch keys open
+            // the desktop app instead of a terminal session.
+            var previous = WindowsTerminalCli.ObservedClaudeExe;
+            try
+            {
+                WindowsTerminalCli.ObservedClaudeExe = null;
+                var bridge = new WindowsPlatformBridge
+                {
+                    ProcessEnumerator = () => new[]
+                    {
+                        Proc(900, "claude.exe",
+                            @"""C:\Program Files\WindowsApps\Claude_1.26832.0.0_x64__pzs8sxrjxfjjc\app\Claude.exe"""),
+                    },
+                    CommandLineResolver = _ => null,
+                };
+
+                bridge.DiscoverSessions();
+
+                Assert.Null(WindowsTerminalCli.ObservedClaudeExe);
+            }
+            finally
+            {
+                WindowsTerminalCli.ObservedClaudeExe = previous;
+            }
+        }
+
         // --- the REAL command-line resolver (Windows only — no-ops elsewhere) ---------------------
         //
         // The second regression in this area shipped one layer below the last one: the test above
