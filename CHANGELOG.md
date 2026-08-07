@@ -3,6 +3,39 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.8.4] — 2026-08-07
+
+### Added
+- **Windows support.** One package now serves macOS and Windows. Every key group works on both:
+  prompts, git, answer/menu keys, control keys, live context/cost/model/activity, session slots
+  with pinning and the approval badge, terminal navigation, scroll, and offline voice.
+- **Platform seam.** Everything OS-specific moved behind `IPlatformBridge`; `BridgeManager` keeps
+  the platform-neutral half (poll loop, targeting, slot assignment, project matching, auto-wire
+  policy). The action classes used to pass raw AppleScript through the bridge — they now name
+  intents (`InjectKey(KeyStroke.ArrowUp)`), which is what made a second backend additive rather
+  than invasive. macOS behaviour is unchanged.
+- Four Windows helper executables ship in the package: `claude-console-inject` (types into a
+  session's console), `claude-console-hook` (statusline + activity), `claude-console-focus`
+  (selects the Windows Terminal tab), `claude-console-voice` (microphone + whisper).
+
+### How Windows differs
+- **Typing addresses the console handle, not the focused window** — a keypress reaches the intended
+  Claude session or nothing at all, and cannot leak into another application even in principle.
+- **Sessions are keyed by process + start time**, never by window title: every Claude tab reports
+  the identical title and rewrites it to a conversation summary once chatting starts. The start
+  time is what stops a recycled PID inheriting a dead session's slot and pin.
+- **The keypad layout is imported by hand** — a package can carry only one auto-imported profile
+  per device type, and that one declares the macOS binding. See the README.
+- **No frontmost-tab tracking.** One session works with no pin; beyond that, press a session key
+  first. Pinning is exact.
+- **Next/Previous Window is unavailable** (`wt.exe` cannot express it) and opening a project always
+  takes a fresh tab rather than guessing whether the current one is busy.
+
+### Fixed
+- macOS: `pack-release.sh` built without `SkipPluginLink`, dropping a dev `.link` beside the
+  installed package — the service then rejected both with "already loaded" and the plugin failed
+  to load. It now passes the flag and clears any stale link before packing.
+
 ## [1.7.1] — 2026-08-06
 
 ### Added

@@ -37,6 +37,12 @@ echo ">>> voice payload OK (helper notarized + stapled)"
 # twice ("already loaded") and it fails to load — which looks like "the plugin installed but the
 # profile didn't import", because the app registration never runs. A release build must never
 # touch the live plugin directory.
+# Wipe the output tree first. CopyPackage copies package/** in but never removes what has been
+# deleted since, so a file dropped from the repo lingers in bin/Release and ships anyway — a
+# retired profile rode along into 1.8.4 exactly this way.
+echo ">>> clearing stale build output"
+rm -rf "$ROOT/bin/Release"
+
 echo ">>> building plugin (Release)"
 ( cd "$ROOT/src" && dotnet build -c Release -p:SkipPluginLink=true >/dev/null )
 

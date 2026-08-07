@@ -1,6 +1,6 @@
 # Claude Console
 
-**Physical hardware controls for [Claude Code](https://claude.com/claude-code) on the Logitech MX Creative Keypad.**
+**Physical hardware controls for [Claude Code](https://claude.com/claude-code) on the Logitech MX Creative Keypad. macOS and Windows.**
 
 > Press a button. Ship code.
 
@@ -23,15 +23,40 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 - **Accept autocomplete** — **Tab** completes a slash‑command / `@file` suggestion and runs it in one press.
 - **Types where it should** — every key finds Claude's own Terminal tab and types there, so a press can't land in Slack or a browser because you glanced away. Can't find it? It beeps and types nothing.
 
-See [PRIVACY.md](PRIVACY.md) — everything runs on your Mac.
+See [PRIVACY.md](PRIVACY.md) — everything runs on your own machine.
 
 ## Requirements
 
-- **macOS on Apple Silicon** (whisper.cpp uses Metal).
+**Both platforms**
+
 - **Logitech MX Creative Keypad** + **Logi Options+ 6.4 or newer** (installs the *Logi Plugin Service*). 1.4.0 onwards is built for the .NET 10 runtime that ships with Plugin Service 6.4 — on an older Options+ the plugin will not load, so let Options+ update itself first. (Staying on an older Options+? Use [1.3.4](https://github.com/rshankras/claude-console/releases).)
-- **[Claude Code](https://claude.com/claude-code)** CLI.
-- To build from source: **.NET 10 SDK** and the **Logi Plugin Tool** (`dotnet tool install --global LogiPluginTool`).
-- For voice: **whisper.cpp** (`brew install whisper-cpp`) — needed only to *build* the bundled, self-contained `whisper-cli`. The speech model downloads automatically on first use.
+- **[Claude Code](https://claude.com/claude-code)** CLI, installed **natively** (WSL sessions are not visible to the plugin — see [Windows notes](#windows-notes)).
+
+**macOS**
+
+- **Apple Silicon** (whisper.cpp uses Metal).
+- Terminal.app. Every typing key targets Claude's own Terminal tab.
+- To build from source: **.NET 10 SDK**, the **Logi Plugin Tool** (`dotnet tool install --global LogiPluginTool`), and for voice **whisper.cpp** (`brew install whisper-cpp`) — needed only to *build* the bundled `whisper-cli`. The speech model downloads automatically on first use.
+
+**Windows**
+
+- **Windows 10/11**, x64 or arm64.
+- **Windows Terminal** for the tab/window navigation keys. Typing works in Windows Terminal, classic conhost **and** VS Code's integrated terminal — injection addresses the console directly, not the focused window — but the nav keys drive `wt.exe`, so they need Windows Terminal.
+- The keypad layout is **imported by hand**, not auto-installed — see [Windows notes](#windows-notes).
+
+## Windows notes
+
+The Windows build reaches Claude a different way than macOS does, and two differences are worth knowing before you install.
+
+**Typing is if anything safer than on macOS.** macOS focuses Claude's Terminal tab and types into it in one atomic AppleScript run. Windows writes key events straight to the target session's *console handle*, which has no relationship to the focused window at all — a keypress reaches the intended Claude session or nothing whatsoever, and it cannot leak into another application even in principle.
+
+**Import the layout by hand.** A plugin package can carry exactly one auto-imported default profile per device type, and that file has to declare a single application binding — which on this cross-platform package is the macOS one. So on Windows: Options+ → your keypad → profile menu (`⋯`) → **Import** → pick [`profiles/ClaudeConsole-Windows.lp5`](profiles/ClaudeConsole-Windows.lp5), and choose **windowsterminal** as the application. (You can also just drag Claude Console's actions onto keys yourself; nothing depends on the profile.)
+
+**The keypad can't follow your eyes between tabs.** Windows Terminal exposes no supported way to ask which tab is in front, so with several idle sessions open the plugin can't tell which one you're looking at. One session needs no pin and just works; so does "exactly one session is waiting on you". Beyond that, **press a session key first** — pinning is exact, and every subsequent key goes to that session until you pin another. Pressing a session key also brings its tab to the front.
+
+**Not available on Windows:** Next/Previous *Window* (an OS-level gesture `wt.exe` cannot express — those keys log and do nothing). Opening a project always uses a fresh tab rather than reusing an idle one, because Windows Terminal offers no way to tell a busy tab from an idle one and guessing wrong would type into a live session.
+
+**Elevated sessions are unreachable.** Options+ runs unelevated, and Windows blocks the console attach across integrity levels. Run Claude unelevated.
 
 ## Install (released plugin)
 
