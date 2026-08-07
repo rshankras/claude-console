@@ -116,7 +116,36 @@ Original scope, for reference:
   serves both OSes; only the helper executables are per-platform. (The voice entry points are
   already gated `OperatingSystem.IsMacOS()` today — those gates dissolve into the seam.)
 
-### Phase 1 — Windows session discovery
+### Phase 1 — Windows session discovery — ✅ CODE DONE 2026-08-07, ⚠️ UNVERIFIED ON HARDWARE
+`WindowsProcessWatcher` (pure decision layer) + `WindowsPlatformBridge` (Phase 1 = discovery only;
+`IsSupported` stays **false**, injection/nav return `Unsupported`, so a key press on this build is
+a logged no-op, never a stray keystroke). Factory now selects it on Windows. 263 C# tests green
+(+18 for discovery), all runnable on macOS.
+
+Deliberate split so this was testable without a Windows machine: everything that DECIDES what
+counts as a session is pure and fixture-driven (native `claude.exe`, npm `node.exe cli.js`, and a
+Claude Desktop Electron tree that must never match); the only Windows-only code is one thin
+`EnumerateProcesses` + one `ResolveCommandLine`, both injectable.
+
+Design points that firmed up while building:
+- **Command lines are resolved lazily and cached.** The native install is identifiable by process
+  name alone; only an interpreter (`node/bun/deno/npx`) is ambiguous. So the common case costs no
+  subprocess on the ~2 s scan, and the cache is pruned to live processes each pass.
+- **Bias on unreadable command lines is asymmetric, on purpose.** A `claude.exe` we can't inspect
+  still counts (losing a real session is bad); a bare `node.exe` we can't inspect does not (a
+  phantom key that no keystroke can reach is worse).
+- **`BoundedProcess` extracted** — the kill-on-timeout subprocess discipline (the fix for the
+  4096-thread leak) is now shared by both backends instead of living in the mac one.
+
+**Needs hardware verification before Phase 2 ships** (nothing here has run on Windows):
+1. `Process.GetProcessesByName` + `StartTime` on a real Claude session — confirm `StartTime` is
+   readable without elevation (it is the other half of the session key).
+2. `ResolveCommandLine`'s PowerShell `Get-CimInstance` call — confirm output shape and latency;
+   swap the mechanism if it's slow, the class is structured so only that one method changes.
+3. The Claude Desktop exclusion markers against a real install (`--type=`, `AnthropicClaude`).
+4. Whether the native installer's process is actually named `claude.exe` (vs a `node.exe` shim).
+
+Original scope, for reference:
 - `WindowsProcessWatcher` (parallels `ClaudeProcessWatcher`): enumerate `node/claude/bun/deno`
   processes whose command line matches the claude CLI; key = PID + start time. Exclude Claude
   Desktop by executable name/path (the Electron `Claude.exe`) — the Windows analogue of the mac

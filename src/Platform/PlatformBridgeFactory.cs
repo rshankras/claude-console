@@ -17,7 +17,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return new MacPlatformBridge();
             }
 
-            // Windows lands here until the Windows backend ships (see docs/windows-port-2.0-plan.md).
+            if (OperatingSystem.IsWindows())
+            {
+                // Phase 1: discovery only — the grid populates, but injection is still a logged
+                // no-op (IsSupported stays false until Phase 2). See docs/windows-port-2.0-plan.md.
+                return new WindowsPlatformBridge();
+            }
+
             // Deliberately a working object rather than null: every key press then degrades to a
             // logged no-op instead of throwing inside an SDK callback.
             return new UnsupportedPlatformBridge();

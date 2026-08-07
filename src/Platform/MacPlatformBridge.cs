@@ -2,8 +2,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 {
     using System;
     using System.Collections.Generic;
-    using System.Diagnostics;
-    using System.Threading.Tasks;
 
     /// <summary>
     /// The macOS backend: drives Terminal.app through osascript, discovers sessions with `ps`,
@@ -402,7 +400,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return runner(args, timeoutMs, wantOutput);
             }
 
-            return RunBounded("osascript", args, timeoutMs, wantOutput);
+            return BoundedProcess.Run("osascript", args, timeoutMs, wantOutput);
         }
 
         // Like a fire-and-forget osascript but returns stdout (trimmed) — for querying state (e.g.
@@ -419,73 +417,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return runner();
             }
 
-            return RunBounded(file, args, timeoutMs, wantOutput: true);
-        }
-
-        // Run a subprocess with a HARD timeout. Reads both pipes on background tasks (a synchronous
-        // ReadToEnd() blocks with NO timeout — the WaitForExit(ms) after it is unreachable, which is
-        // exactly what leaked threads) and KILLS the process if it doesn't exit in time, so a hung
-        // osascript (locked screen, busy window server, an Accessibility prompt) can never wedge a
-        // poll thread. Returns stdout (trimmed) when wantOutput, else null.
-        internal static String RunBounded(String file, List<String> args, Int32 timeoutMs, Boolean wantOutput)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = file,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardError = true,
-                    RedirectStandardOutput = true
-                };
-                foreach (var a in args)
-                {
-                    psi.ArgumentList.Add(a);
-                }
-
-                using var proc = Process.Start(psi);
-                if (proc == null)
-                {
-                    return null;
-                }
-
-                // Drain both pipes asynchronously so a full output buffer can't deadlock us; then
-                // bound the wait and kill on timeout.
-                var outTask = proc.StandardOutput.ReadToEndAsync();
-                var errTask = proc.StandardError.ReadToEndAsync();
-
-                if (!proc.WaitForExit(timeoutMs))
-                {
-                    PluginLog.Warning($"{file} exceeded {timeoutMs}ms — killing (hung window server / locked screen / a11y prompt?)");
-                    try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
-                    return null;
-                }
-
-                var outp = SafeAwait(outTask);
-                var err = SafeAwait(errTask);
-                if (!wantOutput && !String.IsNullOrWhiteSpace(outp))
-                {
-                    PluginLog.Warning($"{file} out: {outp.Trim()}");
-                }
-                if (!String.IsNullOrWhiteSpace(err))
-                {
-                    PluginLog.Warning($"{file} error: {err.Trim()}");
-                }
-                return wantOutput ? outp?.Trim() : null;
-            }
-            catch (Exception ex)
-            {
-                PluginLog.Warning(ex, "MacPlatformBridge.RunBounded: failed (is Accessibility permission granted?)");
-                return null;
-            }
-        }
-
-        // Await a pipe-read task that has already reached EOF (the process exited). Never throws.
-        private static String SafeAwait(Task<String> t)
-        {
-            try { return t.GetAwaiter().GetResult(); }
-            catch { return null; }
+            return BoundedProcess.Run(file, args, timeoutMs, wantOutput: true);
         }
     }
 }
