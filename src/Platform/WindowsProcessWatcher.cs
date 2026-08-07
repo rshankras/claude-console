@@ -146,11 +146,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 exe = end < 0 ? t : t.Substring(0, end);
             }
 
-            return exe.EndsWith("claude.exe", StringComparison.OrdinalIgnoreCase)
-                   && System.IO.Path.IsPathRooted(exe)
+            return exe.EndsWith("claude.exe", StringComparison.OrdinalIgnoreCase) && IsWindowsRooted(exe)
                 ? exe
                 : null;
         }
+
+        /// <summary>
+        /// Is this a rooted WINDOWS path — "C:\…" or a "\\server\share" UNC?
+        ///
+        /// Deliberately not Path.IsPathRooted: that applies the rules of whatever OS the code is
+        /// RUNNING on, and this function parses a Windows command line as DATA. On macOS
+        /// Path.IsPathRooted(@"C:\Users\…") is false, so the whole install-location lookup returned
+        /// null and four tests failed there while passing on Windows.
+        /// </summary>
+        internal static Boolean IsWindowsRooted(String path) =>
+            !String.IsNullOrEmpty(path) &&
+            ((path.Length >= 3 &&
+              Char.IsLetter(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/')) ||
+             path.StartsWith(@"\\", StringComparison.Ordinal));
 
         internal static Boolean IsClaudeSession(WindowsProcessInfo p)
         {
