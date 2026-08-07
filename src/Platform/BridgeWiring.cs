@@ -19,6 +19,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         internal const String MacMarker = "statusline-handler.sh";
         internal const String WindowsMarker = "claude-console-hook";
 
+        /// <summary>Substring that identifies OUR activity hook command on macOS.</summary>
+        internal const String MacActivityMarker = "activity-hook.sh";
+
         /// <summary>
         /// The command Claude Code should run to render the status line.
         /// </summary>
@@ -40,6 +43,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         internal static Boolean IsOurs(String command) =>
             command != null &&
             (command.Contains(MacMarker, StringComparison.OrdinalIgnoreCase) ||
+             command.Contains(WindowsMarker, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// Is this hook entry's command ours? The idempotence check for the activity hooks —
+        /// it must recognise BOTH platforms' commands, or re-wiring on the unrecognised platform
+        /// appends a duplicate hook entry on every plugin load. (The Windows command contains no
+        /// "activity-hook.sh": the shim is one exe dispatched by verb.)
+        /// </summary>
+        internal static Boolean IsOurHook(String command) =>
+            command != null &&
+            (command.Contains(MacActivityMarker, StringComparison.OrdinalIgnoreCase) ||
              command.Contains(WindowsMarker, StringComparison.OrdinalIgnoreCase));
 
         // Windows paths routinely contain spaces (the plugin lives under %LOCALAPPDATA%), and

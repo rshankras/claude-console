@@ -160,6 +160,98 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("return 1;", source);   // fails quietly rather than throwing
         }
 
+        // ---------------------------------------------------------------------------------------
+        // Auto-wiring reaches Windows at all (the 1.8.x bug: a macOS-only early return meant
+        // settings.json was never touched, so the live keys showed defaults with nothing logged)
+        // ---------------------------------------------------------------------------------------
+
+        [Fact]
+        public void Auto_wiring_is_supported_on_this_platform()
+        {
+            // Runs on macOS AND Windows. On Windows this is the test that was missing: the gate
+            // read `if (!OperatingSystem.IsMacOS()) return;` while every wiring test below it
+            // exercised only the pure string helpers that gate never let run.
+            Assert.True(BridgeManager.AutoWireSupported);
+        }
+
+        [Fact]
+        public void The_hook_shim_is_located_relative_to_the_plugin_dll_not_the_host_process()
+        {
+            // Same bug as the inject helper, second copy: FindHookExe still used
+            // AppContext.BaseDirectory — the SERVICE's directory under the SDK's load context —
+            // and it ran in a field initialiser, before Plugin.Load supplies the real path.
+            var dir = Path.Combine(Path.GetTempPath(), "cc-hook-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            var exe = Path.Combine(dir, "claude-console-hook.exe");
+            File.WriteAllText(exe, "");
+
+            var previous = PluginPaths.PluginAssemblyFilePath;
+            try
+            {
+                // Constructed BEFORE the SDK path lands, exactly like the real load order.
+                var manager = new BridgeManager();
+                PluginPaths.PluginAssemblyFilePath = Path.Combine(dir, "ClaudeConsolePlugin.dll");
+
+                Assert.Equal(exe, manager.HookExePath);
+            }
+            finally
+            {
+                PluginPaths.PluginAssemblyFilePath = previous;
+                try { Directory.Delete(dir, recursive: true); } catch { }
+            }
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // Re-wiring is idempotent on BOTH platforms. The check used to match "activity-hook.sh"
+        // only — the macOS script name, which no Windows command contains — so every plugin load
+        // on Windows would have appended five more hook entries to settings.json.
+        // ---------------------------------------------------------------------------------------
+
+        [Theory]
+        [InlineData("bash /home/me/.claude/claude-console/scripts/activity-hook.sh busy", true)]
+        [InlineData("\"C:\\x\\claude-console-hook.exe\" activity busy", true)]
+        [InlineData("starship prompt", false)]
+        [InlineData(null, false)]
+        public void Our_own_activity_hook_is_recognised_on_both_platforms(String command, Boolean expected) =>
+            Assert.Equal(expected, BridgeWiring.IsOurHook(command));
+
+        [Fact]
+        public void Rewiring_on_windows_does_not_duplicate_hooks()
+        {
+            var command = BridgeWiring.ActivityCommand(true, Exe, "busy");
+            var hooks = new System.Text.Json.Nodes.JsonObject();
+
+            Assert.True(BridgeManager.EnsureHook(hooks, "Stop", null, command));    // first wire: added
+            Assert.False(BridgeManager.EnsureHook(hooks, "Stop", null, command));   // reload: no-op
+
+            Assert.Single((System.Text.Json.Nodes.JsonArray)hooks["Stop"]);
+        }
+
+        [Fact]
+        public void A_users_own_hook_is_kept_and_ours_is_appended_beside_it()
+        {
+            var hooks = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Stop"] = new System.Text.Json.Nodes.JsonArray
+                {
+                    new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["hooks"] = new System.Text.Json.Nodes.JsonArray
+                        {
+                            new System.Text.Json.Nodes.JsonObject
+                            {
+                                ["type"] = "command",
+                                ["command"] = "notify-send done",
+                            },
+                        },
+                    },
+                },
+            };
+
+            Assert.True(BridgeManager.EnsureHook(hooks, "Stop", null, BridgeWiring.ActivityCommand(true, Exe, "done")));
+            Assert.Equal(2, ((System.Text.Json.Nodes.JsonArray)hooks["Stop"]).Count);
+        }
+
         private static String ReadShimSource()
         {
             var dir = AppContext.BaseDirectory;

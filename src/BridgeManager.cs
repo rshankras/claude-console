@@ -654,9 +654,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         // ==========================================================================================
         public void EnsureBridgeAutoWired()
         {
-            if (!OperatingSystem.IsMacOS())
+            if (!AutoWireSupported)
             {
-                return; // bridge is bash + /tmp; macOS only for now
+                return;
             }
 
             // Never block or break plugin load — run on a background thread and swallow failures.
@@ -704,25 +704,27 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal String BridgeHandlerPath(String state) =>
             OperatingSystem.IsWindows() ? HookExePath : (state == null ? StatuslineScript : ActivityScript);
 
-        /// <summary>Where the Windows hook shim lives — beside the plugin DLL. Settable for tests.</summary>
-        internal String HookExePath { get; set; } = FindHookExe();
+        /// <summary>
+        /// The platforms auto-wiring knows how to serve: bash scripts on macOS, the compiled shim
+        /// on Windows. Testable so "Windows silently skips wiring" can never come back — that
+        /// exact early-return shipped in 1.8.x and the live keys showed defaults with nothing in
+        /// the log to say why.
+        /// </summary>
+        internal static Boolean AutoWireSupported =>
+            OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
 
-        private static String FindHookExe()
+        // Resolved LAZILY, never in a field initialiser: the SDK hands us the plugin path AFTER
+        // construction (see PluginPaths), so anything captured at construction is null forever.
+        // Same discipline as WindowsPlatformBridge.HelperPath — and the same fix, second time
+        // around: this one still used AppContext.BaseDirectory, which points at the SERVICE's
+        // directory under the SDK's load context, not the plugin's.
+        private String _hookExePath;
+
+        /// <summary>Where the Windows hook shim lives — beside the plugin DLL. Settable for tests.</summary>
+        internal String HookExePath
         {
-            try
-            {
-                var dir = AppContext.BaseDirectory;
-                if (String.IsNullOrEmpty(dir))
-                {
-                    return null;
-                }
-                var candidate = Path.Combine(dir, "claude-console-hook.exe");
-                return File.Exists(candidate) ? candidate : null;
-            }
-            catch
-            {
-                return null;
-            }
+            get => _hookExePath ?? PluginPaths.PackagedFile("claude-console-hook.exe");
+            set => _hookExePath = value;
         }
 
         private static void ExtractEmbeddedScript(String resourceName, String destPath)
@@ -872,9 +874,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             PluginLog.Info("Bridge auto-wire: wired live-status bridge into settings.json — start a NEW Claude Code session to activate Cost/Context/Activity");
         }
 
-        // Ensure a hook event's array contains an entry pointing at activity-hook.sh; append if missing.
-        // Returns true when it added one. Matches by command substring so a re-run is a no-op.
-        private static Boolean EnsureHook(JsonObject hooks, String eventName, String matcher, String command)
+        // Ensure a hook event's array contains an entry pointing at our activity handler; append if
+        // missing. Returns true when it added one. Matches by command substring so a re-run is a
+        // no-op — on either platform (see BridgeWiring.IsOurHook). Internal for the idempotence test.
+        internal static Boolean EnsureHook(JsonObject hooks, String eventName, String matcher, String command)
         {
             if (hooks[eventName] is not JsonArray arr)
             {
@@ -891,7 +894,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 foreach (var h in inner)
                 {
                     var c = h?["command"]?.GetValue<String>();
-                    if (!String.IsNullOrEmpty(c) && c.Contains("activity-hook.sh"))
+                    if (BridgeWiring.IsOurHook(c))
                     {
                         return false; // ours (or an equivalent) already present
                     }
