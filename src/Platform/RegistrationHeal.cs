@@ -127,12 +127,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// macOS restart: launchd respawns both the service and the Options+ agent, but the agent
         /// comes back WINDOWLESS (--launchd), so the final `open` brings the window back for the
         /// user, who was in it installing when we took it down.
+        ///
+        /// The 20 s settle between the two kills is sized for a FIRST-RUN service (the clean-
+        /// account self-registration path): a fresh account's service builds its application list
+        /// and icon caches from scratch, and with the warm-restart 6 s the reopened window
+        /// reconnected before that finished and showed a stale list with no Claude Console icon —
+        /// the field failure was "icon only appears after manually quitting and reopening
+        /// Options+". A warm reinstall heal just blinks a little longer.
         /// </summary>
         internal static ProcessStartInfo MacRestart() => new ProcessStartInfo
         {
             FileName = "/bin/bash",
-            Arguments = "-c \"sleep 10; /usr/bin/killall LogiPluginService; sleep 6; " +
-                        "/usr/bin/killall logioptionsplus_agent 2>/dev/null; sleep 5; " +
+            Arguments = "-c \"sleep 10; /usr/bin/killall LogiPluginService; sleep 20; " +
+                        "/usr/bin/killall logioptionsplus_agent 2>/dev/null; sleep 6; " +
                         "/usr/bin/open '/Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app' 2>/dev/null; exit 0\"",
             UseShellExecute = false,
         };
@@ -158,7 +165,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 "taskkill /F /IM LogiPluginService.exe >nul 2>&1\r\n" +
                 "timeout /t 3 /nobreak >nul\r\n" +
                 $"start \"\" \"{serviceExe}\"\r\n" +
-                "timeout /t 8 /nobreak >nul\r\n" +
+                "timeout /t 20 /nobreak >nul\r\n" +
                 "taskkill /F /IM logioptionsplus.exe >nul 2>&1\r\n" +
                 "timeout /t 3 /nobreak >nul\r\n" +
                 "if exist \"%ProgramFiles%\\LogiOptionsPlus\\logioptionsplus.exe\" start \"\" \"%ProgramFiles%\\LogiOptionsPlus\\logioptionsplus.exe\"\r\n");

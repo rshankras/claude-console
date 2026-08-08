@@ -81,10 +81,13 @@ structurally (the trigger is "dir missing"; the pass creates it). 7 tests in
 `tests/SelfRegistrationTests.cs`. This also makes Windows post-uninstall reinstalls rebuild
 the default layout unaided.
 
-**Re-test procedure (unchanged):** full logout → `testuser` → install the rebuilt
-`/Users/Shared/ClaudeConsole_2.0.0.lplug4` → within ~15 s Options+ blinks (the self-
-registration restart) → PASS = Claude Console icon in the strip, 9-key layout with
-Session 1/2/3, sidebar opens on Claude Console actions, zero manual steps.
+**Re-test procedure:** full logout → `testuser` → install the rebuilt
+`/Users/Shared/ClaudeConsole_2.0.0.lplug4` → Options+ blinks and comes back within ~40 s
+(the self-registration restart; first run of round two showed the files land and the service
+adopt them, but the 6 s warm-restart settle reopened the window before a FIRST-RUN service
+finished initializing — stale list, icon only after a manual relaunch; settle now 20 s) →
+PASS = Claude Console icon in the strip, 9-key layout with Session 1/2/3, sidebar opens on
+Claude Console actions, zero manual steps.
 
 ### 3. ~~CHANGELOG is stale~~ DONE 2026-08-08
 1.8.6/1.8.7 folded into one honest zero-net entry (payload split + revert), and 1.8.8 added
