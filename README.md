@@ -274,7 +274,15 @@ File‑based IPC under a private `/tmp/claude-console/` root (0700 dirs / 0600 f
 
 **Keys show only an exclamation mark / plain text right after building from source.** If you've *both* installed the released `.lplug4` *and* run `dotnet build` (which writes a dev `.link`), the plugin is registered twice and the service refuses the duplicate — the plugin log shows `Cannot load plugin … because plugin 'ClaudeConsole' is already loaded` and the keys don't resolve. Keep **one** source: uninstall the packaged plugin in Logi Options+ to develop against the `.link`, or remove the dev `.link` (`scripts/uninstall.sh` does this) to run the installed package.
 
-The plugin's own log — handy for either case — is at `~/Library/Application Support/Logi/LogiPluginService/Logs/plugin_logs/ClaudeConsole.log`.
+**The Claude Console icon vanishes from Options+ after an uninstall → reinstall, and the keypad drops to the default layout — yet the plugin shows as installed and its log shows a clean load.** Uninstalling removes the application registration from the running service's *memory* but leaves it on *disk* (that's how your profiles survive reinstalls); the reinstall then sees the on-disk entry and silently skips re-registering it. Nothing is actually broken. Restart the service — it rebuilds the registration from disk at startup — then the Options+ UI:
+
+```bash
+killall LogiPluginService && sleep 5 && killall logioptionsplus_agent
+```
+
+(A reboot does the same.) If the plugin log then shows `Cannot load plugin … because plugin 'ClaudeConsole' is already loaded` at service start *without* a dev `.link` in play, that duplicate is benign — the first load, via the application path, succeeded; working keys confirm it.
+
+The plugin's own log — handy for any of these — is at `~/Library/Application Support/Logi/LogiPluginService/Logs/plugin_logs/ClaudeConsole.log`.
 
 ## Tests
 
