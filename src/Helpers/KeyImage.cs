@@ -22,7 +22,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         public static readonly BitmapColor Slate  = new BitmapColor(0x94, 0xA3, 0xB8);
         public static readonly BitmapColor Dark   = new BitmapColor(0x0D, 0x11, 0x17);
 
-        private static readonly BitmapColor Background = new BitmapColor(0x0D, 0x11, 0x17);
+        // Pure black: matches the profile's stored icon tiles, the Options+ editor background,
+        // and the hardware bezel as closely as a backlit LCD allows. The previous #0D1117
+        // (GitHub-dark) read as a mismatched box next to those pure-black surfaces.
+        private static readonly BitmapColor Background = new BitmapColor(0x00, 0x00, 0x00);
         private static readonly BitmapColor White = new BitmapColor(0xFF, 0xFF, 0xFF);
 
         /// <summary>Corner-bracket colour marking the session key the typing keys are aimed at.</summary>

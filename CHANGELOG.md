@@ -3,6 +3,14 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.8.14] — 2026-08-08
+
+### Changed
+- **Key backgrounds are now pure black.** Runtime-painted keys used `#0D1117` (a dark
+  blue-grey) while the profile's stored icon tiles and the Options+ editor background are pure
+  `#000000`, so the two read as mismatched blacks side by side. Everything now agrees on
+  `#000000`, which also blends into the hardware bezel as closely as a backlit LCD allows.
+
 ## [1.8.13] — 2026-08-08
 
 ### Fixed
