@@ -5,7 +5,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     using System.IO;
 
     /// <summary>
-    /// Heals the reinstall registration desync (macOS).
+    /// Heals the reinstall registration desync (macOS and Windows — confirmed identical on both,
+    /// 2026-08-08).
     ///
     /// Uninstalling removes the application registration from the running service's MEMORY but
     /// keeps the @_claudeconsole directory on disk; ANY reinstall — explicit uninstall first or
@@ -78,7 +79,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         {
             try
             {
-                if (!OperatingSystem.IsMacOS())
+                if (!OperatingSystem.IsMacOS() && !OperatingSystem.IsWindows())
                 {
                     return;
                 }
@@ -109,23 +110,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                     "RegistrationHeal: reinstall detected (registration predates the installed payload) — " +
                     "restarting Logi Plugin Service in 10s so it re-adopts the application registration");
 
-                // Detached: children survive the killall that takes down our host process. The
-                // sequence mirrors scripts/repair-registration.sh, proven by hand repeatedly.
-                // 10s before the kill lets Options+ finish its install flow and settle, so the
-                // restart reads as a blink rather than an install error. launchd respawns the
-                // agent WINDOWLESS (--launchd), so the final `open` brings the Options+ window
-                // back for the user, who was in it installing when we took it down.
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "/bin/bash",
-                    Arguments = "-c \"sleep 10; /usr/bin/killall LogiPluginService; sleep 6; " +
-                                "/usr/bin/killall logioptionsplus_agent 2>/dev/null; sleep 5; " +
-                                "/usr/bin/open '/Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app' 2>/dev/null; exit 0\"",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = false,
-                    RedirectStandardError = false,
-                };
-                Process.Start(psi);
+                // Detached: children survive the kill that takes down our host process (neither
+                // killall nor taskkill-without-/T touches child processes). The sequence mirrors
+                // scripts/repair-registration.sh, proven by hand repeatedly. 10s before the kill
+                // lets Options+ finish its install flow and settle, so the restart reads as a
+                // blink rather than an install error.
+                Process.Start(OperatingSystem.IsWindows() ? WindowsRestart() : MacRestart());
             }
             catch (Exception ex)
             {
@@ -133,12 +123,64 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
         }
 
+        /// <summary>
+        /// macOS restart: launchd respawns both the service and the Options+ agent, but the agent
+        /// comes back WINDOWLESS (--launchd), so the final `open` brings the window back for the
+        /// user, who was in it installing when we took it down.
+        /// </summary>
+        private static ProcessStartInfo MacRestart() => new ProcessStartInfo
+        {
+            FileName = "/bin/bash",
+            Arguments = "-c \"sleep 10; /usr/bin/killall LogiPluginService; sleep 6; " +
+                        "/usr/bin/killall logioptionsplus_agent 2>/dev/null; sleep 5; " +
+                        "/usr/bin/open '/Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app' 2>/dev/null; exit 0\"",
+            UseShellExecute = false,
+        };
+
+        /// <summary>
+        /// Windows restart: LogiPluginService.exe is a PLAIN PROCESS, not an SCM service (verified
+        /// 2026-08-08 — only the LampArray service and the Options+ updater are SCM-managed), and
+        /// NOTHING respawns it after a kill, so the script must relaunch it explicitly. Our own
+        /// process IS the service, so its exe path comes from MainModule rather than a hardcoded
+        /// install location. The Options+ window is then bounced the same way as on macOS.
+        /// Written to a .cmd file because nesting `start "" "path"` quoting inside a cmd.exe /c
+        /// argument string is an error factory.
+        /// </summary>
+        private static ProcessStartInfo WindowsRestart()
+        {
+            var serviceExe = Process.GetCurrentProcess().MainModule?.FileName
+                             ?? @"C:\Program Files\Logi\LogiPluginService\LogiPluginService.exe";
+            var script = Path.Combine(IpcPaths.Root, "registration-heal.cmd");
+            Directory.CreateDirectory(Path.GetDirectoryName(script));
+            File.WriteAllText(script,
+                "@echo off\r\n" +
+                "timeout /t 10 /nobreak >nul\r\n" +
+                "taskkill /F /IM LogiPluginService.exe >nul 2>&1\r\n" +
+                "timeout /t 3 /nobreak >nul\r\n" +
+                $"start \"\" \"{serviceExe}\"\r\n" +
+                "timeout /t 8 /nobreak >nul\r\n" +
+                "taskkill /F /IM logioptionsplus.exe >nul 2>&1\r\n" +
+                "timeout /t 3 /nobreak >nul\r\n" +
+                "if exist \"%ProgramFiles%\\LogiOptionsPlus\\logioptionsplus.exe\" start \"\" \"%ProgramFiles%\\LogiOptionsPlus\\logioptionsplus.exe\"\r\n");
+            return new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = $"/c \"{script}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+        }
+
         /// <summary>Newest ApplicationInfo.json across device types, or null when unregistered.</summary>
         private static DateTime? NewestRegistrationWriteUtc()
         {
-            var appsRoot = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                "Library", "Application Support", "Logi", "LogiPluginService", "Applications");
+            var appsRoot = OperatingSystem.IsWindows()
+                ? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Logi", "LogiPluginService", "Applications")
+                : Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "Library", "Application Support", "Logi", "LogiPluginService", "Applications");
             if (!Directory.Exists(appsRoot))
             {
                 return null;

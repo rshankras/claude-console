@@ -3,6 +3,16 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.8.13] — 2026-08-08
+
+### Fixed
+- **The reinstall self-heal now works on Windows too.** Field-testing on the laptop confirmed
+  Windows loses the application registration on reinstall exactly like macOS. The detection is
+  shared; the restart is not: Windows' `LogiPluginService.exe` is a plain process, not a system
+  service — nothing respawns it after a kill — so the heal relaunches it explicitly (finding
+  the exe from its own process, since the plugin runs inside it) and then bounces the Options+
+  window, mirroring the macOS flow.
+
 ## [1.8.12] — 2026-08-08
 
 ### Changed
