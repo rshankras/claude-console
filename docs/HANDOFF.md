@@ -75,8 +75,17 @@ Only after 1–3. `.lplug4` files are gitignored; releases go to GitHub Releases
 ### ~~Post-release candidate: auto-heal the reinstall registration desync~~ SHIPPED in 1.8.9
 `src/Platform/RegistrationHeal.cs`, wired at the end of `ClaudeConsolePlugin.Load`, exactly per
 the three-signal design (install-event load + registration older than payload + one-shot
-marker; the cold-start gate alone makes a loop impossible). Six unit tests in
+marker; the cold-start gate alone makes a loop impossible). Seven unit tests in
 `tests/RegistrationHealTests.cs`. macOS only — Windows reinstall behaviour unverified.
+Refined through field testing to 1.8.11: the gate is payload-newer-than-service-start (so
+back-to-back reinstalls each heal), a 10 s settle delay before the restart, and an explicit
+reopen of the Options+ window (launchd respawns the agent windowless).
+
+**Windows follow-up**: on the laptop, install 1.8.11 over the existing install and see whether
+the application entry survives Windows Options+. If it desyncs the same way, port the heal —
+detection is already platform-neutral; only the service-restart command needs a Windows
+implementation (kill `LogiPluginService.exe`, verify it respawns). Plugin log:
+`%LOCALAPPDATA%\Logi\LogiPluginService\Logs\plugin_logs\ClaudeConsole.log`.
 
 **Corrected root-cause model** (settled 2026-08-08 after four failed package-shape fixes): a
 reinstall of an already-known package is a pure payload swap — the service consults NOTHING in
