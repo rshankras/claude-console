@@ -20,9 +20,13 @@ into. This rolls up the 1.8.x internal builds below; the detailed entries stay f
   Marketplace installs get that step; every dev machine had been coasting on entries created
   before packaging. The plugin now writes the registration itself at load when it's missing —
   ApplicationInfo, icon, and the packaged layout, the exact files the service adopts at
-  startup — then restarts the service once. This also upgrades the Windows reinstall story:
-  its uninstall deletes the entry outright, which used to mean a manual `.lp5` re-import; now
-  the default layout rebuilds unaided.
+  startup — then restarts the service once. **What you'll see on a first install: Options+
+  blinks once (closes and reopens by itself) within about a minute — that's the registration
+  landing, not an error; don't relaunch Options+ mid-blink.** The restart exists because the
+  service only reads registrations at startup; an install from the Logitech Marketplace
+  registers natively, and on those the plugin finds the entry and skips the restart entirely.
+  This also upgrades the Windows reinstall story: its uninstall deletes the entry outright,
+  which used to mean a manual `.lp5` re-import; now the default layout rebuilds unaided.
 - **Reinstalls and upgrades self-heal** (see [1.8.9]–[1.8.13]): the service silently drops the
   application registration on every reinstall on both platforms; the plugin now detects the
   install and restarts the service once so the Claude Console entry survives. Options+ blinks
