@@ -3,6 +3,25 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0] — 2026-08-08
+
+**The Windows release.** One package now serves macOS and Windows — same keys, same live
+displays, same offline voice, on the same MX Creative Keypad, whichever machine it's plugged
+into. This rolls up the 1.8.x internal builds below; the detailed entries stay for the record.
+
+### Highlights
+- **Windows support** (see [1.8.4]): every key group works on both platforms, with typing that
+  addresses the console handle — a keypress reaches the intended Claude session or nothing at
+  all. Windows Terminal is the supported host; the layout imports via
+  `ClaudeConsole-Windows.lp5`.
+- **Reinstalls and upgrades self-heal** (see [1.8.9]–[1.8.13]): the service silently drops the
+  application registration on every reinstall on both platforms; the plugin now detects the
+  install and restarts the service once so the Claude Console entry survives. Options+ blinks
+  once — that's the heal.
+- **Profile polish** (see [1.8.8], [1.8.12]): session keys on the top row everywhere including
+  the preview, the actions sidebar opens on Claude Console's actions, the profile carries a
+  proper package identity, and the author reads S.Ravi Shankar.
+
 ## [1.8.14] — 2026-08-08
 
 ### Changed
