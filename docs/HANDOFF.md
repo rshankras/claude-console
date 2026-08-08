@@ -41,8 +41,20 @@ description, image) into `src/package/profiles/DefaultProfile70.lp5`, and
 (SessionSlotCommand 1/2/3), bindings and GUIDs unchanged (`com.apple.Terminal`/…0B58,
 `WindowsTerminal`/…0B59).
 
-Still open from this item: **confirm on the hardware** that the installed profile renders live
-session keys on the top row. That was asked and not yet answered.
+~~Still open from this item: confirm on the hardware that the installed profile renders live
+session keys on the top row.~~ **Confirmed 2026-08-08**: Options+ device view shows slot 1
+live-painting a real session (context %, project name) with slots 2/3 idle — SessionSlotCommand
+repaints as designed.
+
+Related, ~~still open~~ **fixed 2026-08-08**: with the Claude Console profile selected, the
+Options+ actions sidebar defaulted to System Actions instead of the plugin's actions. Cause: the
+profile's `ProfileInfo.json` had `nativePluginName: null` / `hasNativePlugin: false`
+(ClaudeConsole only in `additionalNativePluginNames`) — an artifact of the profile's origin as a
+com.apple.terminal export; working plugins (Vizhi, Figma) stamp their own plugin as the
+profile's native plugin. Stamped `nativePluginName: ClaudeConsole` / `hasNativePlugin: true`
+(ClaudeConsole removed from additional) in the packaged profile, the installed profile
+(pre-edit backup: `~/Desktop/ProfileInfo-before-nativeplugin.json`), and the regenerated
+Windows profile; `ClaudeConsole_1.8.8.lplug4` repacked with the fix.
 
 ### 2. Clean-install verification for 1.8.x — the real release gate
 Does a **first-ever** install create the `@_claudeconsole` application entry and auto-import the
