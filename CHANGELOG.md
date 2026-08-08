@@ -3,6 +3,29 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.8.9] — 2026-08-08
+
+### Fixed
+- **Reinstalling no longer loses the Claude Console application in Options+.** Any reinstall —
+  upgrade, install-over, or uninstall-then-install — runs an uninstall step that drops the
+  application registration from the running service's memory while leaving it on disk, and the
+  install step never re-registers over an existing directory: the icon vanished from Options+
+  and the keypad fell back to the default profile until the service restarted. Nothing in the
+  package can prevent it (the installer consults neither the packaged profile nor the
+  registration on a reinstall — verified against four package variations), so the plugin now
+  heals it: when a load is the install itself (service up for minutes, payload written seconds
+  ago) and the on-disk registration predates the payload, it schedules one service restart,
+  which rebuilds the application list from disk. A clean first install never triggers it, a
+  cold start can never loop it, and a marker caps it at one restart per installed payload.
+  Options+ will blink once a few seconds after a reinstall — that's the heal.
+
+### Changed
+- The packaged profile now carries its own package identity the way healthy plugin profiles do
+  (a distinct package GUID, `packageName` self-reference, and the `@_claudeconsole` application
+  binding instead of the legacy Terminal-export binding), and its embedded version finally
+  tracks the plugin version. Hygiene alignment with the Vizhi profile shape; the reinstall fix
+  above is the self-heal, not this.
+
 ## [1.8.8] — 2026-08-08
 
 ### Fixed
