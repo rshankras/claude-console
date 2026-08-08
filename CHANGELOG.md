@@ -14,6 +14,15 @@ into. This rolls up the 1.8.x internal builds below; the detailed entries stay f
   addresses the console handle — a keypress reaches the intended Claude session or nothing at
   all. Windows Terminal is the supported host; the layout imports via
   `ClaudeConsole-Windows.lp5`.
+- **First installs work on a clean machine — the plugin registers itself.** The release gate
+  (a fresh macOS account) caught that a sideloaded `.lplug4` install never creates the
+  application entry at all: no Claude Console icon in Options+, no keypad layout. Only
+  Marketplace installs get that step; every dev machine had been coasting on entries created
+  before packaging. The plugin now writes the registration itself at load when it's missing —
+  ApplicationInfo, icon, and the packaged layout, the exact files the service adopts at
+  startup — then restarts the service once. This also upgrades the Windows reinstall story:
+  its uninstall deletes the entry outright, which used to mean a manual `.lp5` re-import; now
+  the default layout rebuilds unaided.
 - **Reinstalls and upgrades self-heal** (see [1.8.9]–[1.8.13]): the service silently drops the
   application registration on every reinstall on both platforms; the plugin now detects the
   install and restarts the service once so the Claude Console entry survives. Options+ blinks

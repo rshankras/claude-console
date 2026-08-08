@@ -128,7 +128,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// comes back WINDOWLESS (--launchd), so the final `open` brings the window back for the
         /// user, who was in it installing when we took it down.
         /// </summary>
-        private static ProcessStartInfo MacRestart() => new ProcessStartInfo
+        internal static ProcessStartInfo MacRestart() => new ProcessStartInfo
         {
             FileName = "/bin/bash",
             Arguments = "-c \"sleep 10; /usr/bin/killall LogiPluginService; sleep 6; " +
@@ -146,7 +146,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// Written to a .cmd file because nesting `start "" "path"` quoting inside a cmd.exe /c
         /// argument string is an error factory.
         /// </summary>
-        private static ProcessStartInfo WindowsRestart()
+        internal static ProcessStartInfo WindowsRestart()
         {
             var serviceExe = Process.GetCurrentProcess().MainModule?.FileName
                              ?? @"C:\Program Files\Logi\LogiPluginService\LogiPluginService.exe";
@@ -171,16 +171,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             };
         }
 
-        /// <summary>Newest ApplicationInfo.json across device types, or null when unregistered.</summary>
-        private static DateTime? NewestRegistrationWriteUtc()
-        {
-            var appsRoot = OperatingSystem.IsWindows()
+        /// <summary>The service's per-user Applications directory (registration dirs live under it).</summary>
+        internal static String ApplicationsRoot() =>
+            OperatingSystem.IsWindows()
                 ? Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "Logi", "LogiPluginService", "Applications")
                 : Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                     "Library", "Application Support", "Logi", "LogiPluginService", "Applications");
+
+        /// <summary>Newest ApplicationInfo.json across device types, or null when unregistered.</summary>
+        private static DateTime? NewestRegistrationWriteUtc()
+        {
+            var appsRoot = ApplicationsRoot();
             if (!Directory.Exists(appsRoot))
             {
                 return null;

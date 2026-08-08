@@ -1,9 +1,9 @@
 # Handoff — Windows port, as of 2026-08-08
 
 Everything lives on **`feat/windows-port-phase0`** (all pushed to origin).
-`main` is untouched at 1.7.1. Current version on the branch: **1.8.13** — installed and
-verified on BOTH machines (macOS + the Windows laptop) on 2026-08-08.
-Suite: **389 C# + 20 bash, green** — `bash tests/run-all.sh`.
+`main` is untouched at 1.7.1. Current version on the branch: **2.0.0** (rebuilt with
+self-registration after the clean-account gate failed — see item 2). 1.8.13 verified on both
+machines on 2026-08-08. Suite: **396 C# + 20 bash, green** — `bash tests/run-all.sh`.
 
 Design doc: `docs/windows-port-2.0-plan.md`. Windows-machine notes:
 `docs/windows-debug-handoff.md`.
@@ -57,13 +57,34 @@ profile's native plugin. Stamped `nativePluginName: ClaudeConsole` / `hasNativeP
 (pre-edit backup: `~/Desktop/ProfileInfo-before-nativeplugin.json`), and the regenerated
 Windows profile; `ClaudeConsole_1.8.8.lplug4` repacked with the fix.
 
-### 2. Clean-install verification for 1.8.x — the real release gate
-Does a **first-ever** install create the `@_claudeconsole` application entry and auto-import the
-layout? Unknown for 1.8.x. 1.7.1 demonstrably did this on 2026-08-06.
+### 2. Clean-install verification — the real release gate. RAN 2026-08-08: **FAILED**, root
+### cause found, fix shipped (SelfRegistration), re-test pending
+The gate ran properly (full logout into a fresh `testuser` account, no fast switching, reboots
+between sessions) against the 2.0.0 artifact: **no icon, no layout.** Evidence pulled from the
+test account settled the mechanism — see the re-corrected root-cause model below. In short: a
+sideloaded `.lplug4` install **never** creates the application registration, on any platform;
+only Marketplace installs do. Every machine that ever "worked" was coasting on an entry created
+by dev-era service activity (`@_claudeconsole` born 2026-08-06 18:53 during phase-0 dev — which
+is also what the old "1.7.1 demonstrably did this" claim actually was; `@_vizhi` born Jul 18,
+a month before Vizhi's first package install). A 90-second observation with the entry moved
+aside confirmed nothing recreates it: not service restart, not plugin load, not activating
+Terminal, not opening Options+.
 
-This Mac can no longer answer it: its Logi state was disturbed (below). Needs a different Mac or a
-fresh user account — note Options+ does not tolerate fast user switching, so it means a full
-logout into a clean account. Five minutes there settles it.
+**The fix — `src/Platform/SelfRegistration.cs` (in the rebuilt 2.0.0):** at load, when no
+`@_claudeconsole` exists under any device type, the plugin writes the registration itself —
+the packaged `DefaultProfile70.lp5` already carries the complete document (its
+`ApplicationInfo.json`, `defaultProfileName` matching its inner profile) — icon from the
+payload, profile extracted to `Profiles/<GUID>/`, then one service restart via the
+RegistrationHeal machinery. Windows patches `processOrBundleName` to `WindowsTerminal`. The
+layout is exactly what the validated Windows manual recovery wrote by hand. Loop-proof
+structurally (the trigger is "dir missing"; the pass creates it). 7 tests in
+`tests/SelfRegistrationTests.cs`. This also makes Windows post-uninstall reinstalls rebuild
+the default layout unaided.
+
+**Re-test procedure (unchanged):** full logout → `testuser` → install the rebuilt
+`/Users/Shared/ClaudeConsole_2.0.0.lplug4` → within ~15 s Options+ blinks (the self-
+registration restart) → PASS = Claude Console icon in the strip, 9-key layout with
+Session 1/2/3, sidebar opens on Claude Console actions, zero manual steps.
 
 ### 3. ~~CHANGELOG is stale~~ DONE 2026-08-08
 1.8.6/1.8.7 folded into one honest zero-net entry (payload split + revert), and 1.8.8 added
@@ -100,18 +121,22 @@ service, write `@_claudeconsole/ApplicationInfo.json` by hand (Mac/Vizhi schema;
 profile instance under it, rebind its `applicationName`, delete the bogus app dir, restart
 the service — it adopts the entry from the disk scan. Working icon + live keys confirmed.
 
-Possible future work (now DE-RISKED by the validated manual procedure above): Windows
-self-registration — at load, when no application data exists, the plugin writes those same
-registration files itself and restarts the service to adopt them.
+~~Possible future work: Windows self-registration~~ **SHIPPED for BOTH platforms in the
+rebuilt 2.0.0** (`SelfRegistration.cs`, item 2): when no application data exists, the plugin
+writes the registration files itself and restarts the service to adopt them.
 
-**Corrected root-cause model** (settled 2026-08-08 after four failed package-shape fixes): a
+**Root-cause model, re-corrected 2026-08-08 (evening — supersedes the morning version):** a
 reinstall of an already-known package is a pure payload swap — the service consults NOTHING in
-the package (not the profile, not ApplicationInfo; `@_claudeconsole` timestamps stay untouched
-through every reinstall). Only a first-ever install of a package name runs the full
-registration+import path. Vizhi never looked affected only because its 08:13 install WAS its
-first package install (it ran as a dev build before) — and Vizhi lives on the dialpad
-(Loupedeck71/72), not the keypad strip we were watching. No package shape can fix the desync;
-the self-heal restart is the fix.
+the package (`@_claudeconsole` timestamps stay untouched through every reinstall). The morning
+version's remaining error: "a first-ever install runs registration+import" is FALSE for
+sideloaded packages — **no sideloaded install ever runs it; only Marketplace installs do**
+(marketplace plugins' `@_` dirs are born in the same minute as their payload; ClaudeConsole's
+and Vizhi's were born during dev-era service activity, weeks before their first package
+installs). Also settled: the `already loaded` ERROR pair in the plugin log at service start is
+universal boot noise for every sideloaded plugin (the service loads each twice — internal
+record, then folder scan; the second logs the refusal) — it does not indicate a failed load
+unless a dev `.link` is in play. No package shape can fix any of this; the plugin owns its
+registration now: SelfRegistration creates it, RegistrationHeal re-adopts it.
 
 ---
 
