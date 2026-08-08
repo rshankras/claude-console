@@ -323,6 +323,12 @@ It removes `~/.claude/claude-console/` (voice helper, whisper, the speech model,
 
 For a **clean reinstall**, do 1–3, then reinstall from [Releases](https://github.com/rshankras/claude-console/releases) and re‑import the profile.
 
+## Feedback
+
+Found a bug, missing a key you'd use daily, or running a terminal this doesn't support yet?
+[Open an issue](https://github.com/rshankras/claude-console/issues) — feature requests and
+"this confused me" reports are equally welcome, and issues double as the roadmap.
+
 ## License
 
 [MIT](LICENSE). Bundled third‑party components (whisper.cpp, the Whisper model) are MIT‑licensed. See [EULA.md](EULA.md).
