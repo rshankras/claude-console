@@ -91,9 +91,17 @@ a reinstall of a known package never re-runs registration. **Windows recovery = 
 `profiles/ClaudeConsole-Windows.lp5`** (one step: recreates the application entry + layout),
 which is already the documented Windows install path. Plugin log:
 `%LOCALAPPDATA%\Logi\LogiPluginService\Logs\plugin_logs\ClaudeConsole.log`.
-Possible future work: Windows self-registration — at load, when no application data exists,
-the plugin writes the registration + profile files itself (schema known from macOS/Vizhi) and
-restarts the service to adopt them. Not attempted yet.
+Trap found during recovery: **importing the .lp5 while no Claude Console application is
+registered makes Options+ bind the profile to an application it invents from context** (it
+landed under `powershell_ise`). Recovery, validated end-to-end on 2026-08-08: stop the
+service, write `@_claudeconsole/ApplicationInfo.json` by hand (Mac/Vizhi schema;
+`processOrBundleName: WindowsTerminal`, `nativePluginName: ClaudeConsole`), move the imported
+profile instance under it, rebind its `applicationName`, delete the bogus app dir, restart
+the service — it adopts the entry from the disk scan. Working icon + live keys confirmed.
+
+Possible future work (now DE-RISKED by the validated manual procedure above): Windows
+self-registration — at load, when no application data exists, the plugin writes those same
+registration files itself and restarts the service to adopt them.
 
 **Corrected root-cause model** (settled 2026-08-08 after four failed package-shape fixes): a
 reinstall of an already-known package is a pure payload swap — the service consults NOTHING in
