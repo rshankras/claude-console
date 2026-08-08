@@ -72,6 +72,25 @@ and accurate.
 ### 4. Merge to main and release
 Only after 1–3. `.lplug4` files are gitignored; releases go to GitHub Releases.
 
+### Post-release candidate: auto-heal the reinstall registration desync
+Today users who uninstall→reinstall lose the Options+ icon until they run
+`scripts/repair-registration.sh` (or reboot). The plugin could heal this itself at load time —
+the desync is precisely detectable with three signals, all proven on 2026-08-08:
+
+1. **This load is an install-event load**, not a service cold start: the service process has
+   been up for minutes (compare the current process start time to now) while the
+   `Plugins/ClaudeConsole` payload was written seconds ago.
+2. **The registration predates the install**: `@_claudeconsole/ApplicationInfo.json` mtime is
+   older than the payload — a fresh-account install stamps it new; a skipped re-registration
+   leaves it old.
+3. **A one-shot guard marker** (keyed by package hash) has not been consumed, so a restart
+   can never loop.
+
+When all three hold, spawn a detached `sleep 2 && killall LogiPluginService` — the service
+respawns, rebuilds the application list from disk, and the reinstall Just Works after a ~5 s
+blip. Not done pre-1.8.8 on purpose: it adds self-restart logic to the load path right before
+the release gate.
+
 ---
 
 ## Build, test, release
