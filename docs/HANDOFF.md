@@ -1,8 +1,9 @@
 # Handoff — Windows port, as of 2026-08-08
 
-Everything lives on **`feat/windows-port-phase0`** (28 commits, all pushed to origin).
-`main` is untouched at 1.7.1. Current version on the branch: **1.8.7**.
-Suite: **382 C# + 20 bash, green** — `bash tests/run-all.sh`.
+Everything lives on **`feat/windows-port-phase0`** (all pushed to origin).
+`main` is untouched at 1.7.1. Current version on the branch: **1.8.13** — installed and
+verified on BOTH machines (macOS + the Windows laptop) on 2026-08-08.
+Suite: **389 C# + 20 bash, green** — `bash tests/run-all.sh`.
 
 Design doc: `docs/windows-port-2.0-plan.md`. Windows-machine notes:
 `docs/windows-debug-handoff.md`.
