@@ -2,8 +2,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 {
     using System;
 
+    using Loupedeck.ClaudeConsolePlugin.Platform;
+
     /// <summary>
-    /// App / session navigation keys (group "Terminal"), all targeting Terminal.app via AppleScript:
+    /// App / session navigation keys (group "Terminal"). The gestures are named here; how each
+    /// one is performed is the platform backend's business (see IPlatformBridge.Navigate):
     ///   Terminal   → bring Terminal to the front (replaces Cmd+Tab → Terminal)
     ///   New Tab    → open a new Terminal tab — a fresh shell (Cmd+T)
     ///   New Claude → open a new Terminal tab AND run `claude` in it (one press = new session)
@@ -13,9 +16,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     ///   Next Window → cycle to the next Terminal window (Cmd+`)
     ///   Prev Window → cycle to the previous Terminal window (Cmd+Shift+`)
     ///
-    /// Tab/window keys activate Terminal first (so they work from any app) then send Terminal's own
-    /// shortcut. Windows are for people who prefer separate windows over tabs. Terminal-specific for
-    /// now; tell me if you switch terminals.
+    /// Tab/window keys activate the terminal first (so they work from any app) then send its own
+    /// shortcut. Windows are for people who prefer separate windows over tabs.
     /// </summary>
     public class NavCommand : PluginDynamicCommand
     {
@@ -27,29 +29,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private const String NewClaudeWindow = "new_claude_window";
         private const String NextWindow = "next_window";
         private const String PrevWindow = "prev_window";
-
-        // Bring Terminal to the front, then send a key chord to it.
-        private const String ActivateThen =
-            "tell application \"Terminal\" to activate\n" +
-            "delay 0.05\n" +
-            "tell application \"System Events\" to ";
-
-        // Open a new tab, then run `claude` in it via `do script` (reliable command send — no
-        // per-character keystroke timing). delay lets the new tab become front first.
-        private const String NewClaudeScript =
-            "tell application \"Terminal\"\n" +
-            "  activate\n" +
-            "  tell application \"System Events\" to keystroke \"t\" using command down\n" +
-            "  delay 0.5\n" +
-            "  do script \"claude\" in front window\n" +
-            "end tell";
-
-        // New WINDOW running `claude`: `do script` with no "in" target opens a fresh window.
-        private const String NewClaudeWindowScript =
-            "tell application \"Terminal\"\n" +
-            "  activate\n" +
-            "  do script \"claude\"\n" + // no target → new window
-            "end tell";
 
         public NavCommand()
             : base()
@@ -78,28 +57,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             switch (actionParameter)
             {
                 case Terminal:
-                    bridge.RunAppleScript("tell application \"Terminal\" to activate");
+                    bridge.Navigate(TerminalAction.Activate);
                     break;
                 case NewTab:
-                    bridge.RunAppleScript(ActivateThen + "keystroke \"t\" using {command down}"); // Cmd+T
+                    bridge.Navigate(TerminalAction.NewTab);
                     break;
                 case NewClaude:
-                    bridge.RunAppleScript(NewClaudeScript);
+                    bridge.Navigate(TerminalAction.NewClaudeTab);
                     break;
                 case NextTab:
-                    bridge.RunAppleScript(ActivateThen + "key code 48 using {control down}"); // Ctrl+Tab
+                    bridge.Navigate(TerminalAction.NextTab);
                     break;
                 case PrevTab:
-                    bridge.RunAppleScript(ActivateThen + "key code 48 using {control down, shift down}"); // Ctrl+Shift+Tab
+                    bridge.Navigate(TerminalAction.PreviousTab);
                     break;
                 case NewClaudeWindow:
-                    bridge.RunAppleScript(NewClaudeWindowScript);
+                    bridge.Navigate(TerminalAction.NewClaudeWindow);
                     break;
                 case NextWindow:
-                    bridge.RunAppleScript(ActivateThen + "key code 50 using {command down}"); // Cmd+` — cycle windows
+                    bridge.Navigate(TerminalAction.NextWindow);
                     break;
                 case PrevWindow:
-                    bridge.RunAppleScript(ActivateThen + "key code 50 using {command down, shift down}"); // Cmd+Shift+`
+                    bridge.Navigate(TerminalAction.PreviousWindow);
                     break;
             }
 

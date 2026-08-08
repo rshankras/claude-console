@@ -42,6 +42,16 @@ namespace Loupedeck.ClaudeConsolePlugin
             // on a background thread, and takes effect on the user's next Claude Code session.
             BridgeManager.Instance.EnsureBridgeAutoWired();
 
+            // The application registration (icon in Options+, auto-imported layout) is ours to
+            // manage: a sideloaded install never CREATES it (clean machine: nothing appears), and
+            // a reinstall drops an existing one from the service's live list while disk stays
+            // correct. Create it from the packaged profile when it's missing entirely, otherwise
+            // heal the reinstall desync — either path schedules one service restart.
+            if (!Platform.SelfRegistration.RegisterIfMissing())
+            {
+                Platform.RegistrationHeal.HealIfNeeded();
+            }
+
             PluginLog.Info("ClaudeConsolePlugin: Loaded — actions auto-discovered; bridge polling started");
         }
 

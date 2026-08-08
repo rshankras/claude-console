@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      A console app like the inject helper, and for the same reason: it attaches to the target
+      session's console to read its title, and a human can run it by hand to debug a focus miss.
+    -->
+    <OutputType>Exe</OutputType>
+    <!--
+      net8.0-windows + UseWPF, UNLIKE the other two helpers, because tab selection needs the
+      managed UI Automation client (System.Windows.Automation lives in the Windows Desktop
+      runtime). This is exactly why focus is a THIRD executable rather than a verb on
+      claude-console-inject: if a machine somehow lacks the Desktop runtime, this exe fails to
+      start and the plugin degrades to raising the terminal window — typing is untouched.
+      (Any machine running Logi Options+ has the Desktop runtime; Options+ itself needs it.)
+    -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RollForward>LatestMajor</RollForward>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>claude-console-focus</AssemblyName>
+    <RootNamespace>ClaudeConsoleFocus</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Ships inside the plugin package, beside the plugin DLL. -->
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+  </PropertyGroup>
+
+</Project>

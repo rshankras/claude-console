@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      A console app like the other helpers: `selftest` prints, and a human runs it by hand to
+      debug a silent mic. Recording uses WinMM (waveIn*) via P/Invoke — zero dependencies, and
+      the wave mapper resamples any mic to the 16 kHz mono PCM whisper requires, so no audio
+      library needs to ship.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>claude-console-voice</AssemblyName>
+    <RootNamespace>ClaudeConsoleVoice</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Ships inside the plugin package, beside the plugin DLL. -->
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <!-- Self-contained + trimmed like inject/hook: no machine-wide .NET can be assumed (the
+         Plugin Service ships a private runtime). Also shaves the helper's startup — which is
+         user-audible here: recording starts sooner after the keypress. -->
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>true</PublishTrimmed>
+    <PublishSingleFile>true</PublishSingleFile>
+  </PropertyGroup>
+
+</Project>

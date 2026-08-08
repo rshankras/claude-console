@@ -5,9 +5,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
     /// <summary>
     /// One Claude Code session as the keypad sees it — the row behind a single session key.
     ///
-    /// Identity is the <see cref="Tty"/>, not the session id: the bash scripts already key their
-    /// state files by terminal tab, `ps` reports a tab, and focusing a tab needs one. The session
-    /// id rides along so an explicit selection can survive a session id change on the same tab.
+    /// Identity is the <see cref="SessionKey"/> minted by the platform backend, NOT Claude's own
+    /// session id: the state files, the process scan and the focus call must all agree on one key,
+    /// and only the OS can supply it (macOS: the tab's TTY; Windows: the Claude process). Claude's
+    /// session id rides along so an explicit selection survives a conversation change in the tab.
+    /// Treat the value as opaque — see IPlatformBridge.
     ///
     /// Rows come from two sources merged in SessionRegistry:
     ///   • the per-tab statusline/activity files — rich, but only refreshed when Claude renders
@@ -17,8 +19,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
     /// </summary>
     public class GridSession
     {
-        /// <summary>Bare tab name, e.g. "ttys003". The grid's identity.</summary>
-        public String Tty { get; set; }
+        /// <summary>
+        /// The grid's identity — an opaque, filename-safe token from the platform backend
+        /// (macOS: "ttys003"; Windows: "pid-1234-638…"). Never parse it. Distinct from
+        /// <see cref="SessionId"/>, which is Claude's own id for the conversation.
+        /// </summary>
+        public String SessionKey { get; set; }
 
         /// <summary>Basename of the workspace project dir; "Claude" until the session reports one.</summary>
         public String Project { get; set; } = "Claude";
@@ -29,6 +35,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         /// <summary>Context-window usage, or null when not yet known (provisional sessions).</summary>
         public Int32? CtxPercent { get; set; }
 
+        /// <summary>Claude Code's own id for the conversation in this tab (not the grid key).</summary>
         public String SessionId { get; set; }
 
         /// <summary>Claude Code's session name, for the key tooltip.</summary>
@@ -56,6 +63,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         /// Fields that change what the key LOOKS like. Compared to decide whether to repaint, so a
         /// heartbeat-only update (UpdatedAt moving) doesn't churn the LCD every poll.
         /// </summary>
-        public String VisualKey => $"{this.Tty}|{this.Project}|{this.State}|{this.CtxPercent}|{this.Risk}";
+        public String VisualKey => $"{this.SessionKey}|{this.Project}|{this.State}|{this.CtxPercent}|{this.Risk}";
     }
 }

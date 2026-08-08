@@ -4,6 +4,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System.Collections.Generic;
     using System.Text.Json;
 
+    using Loupedeck.ClaudeConsolePlugin.Platform;
+
     using Xunit;
 
     /// <summary>
@@ -22,7 +24,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             public BridgeManager Bridge(String activeTty = "ttys001")
             {
-                var bridge = new BridgeManager { ActiveTty = activeTty };
+                // The mac backend EXPLICITLY — the parameterless ctor lets the factory pick the
+                // platform backend, which on Windows made OsascriptRunner a silent no-op and
+                // failed every assertion here. With the runner injected, MacPlatformBridge is
+                // pure argument construction and these tests run on any OS.
+                var bridge = new BridgeManager(new MacPlatformBridge()) { ActiveTty = activeTty };
                 bridge.OsascriptRunner = (args, timeout, wantOutput) =>
                 {
                     this.Args = args;

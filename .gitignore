@@ -413,3 +413,6 @@ tools/voice/ClaudeVoiceHelper.app/
 *.p12
 *.mobileprovision
 AuthKey_*
+# Windows inject helper build output
+tools/windows/**/bin/
+tools/windows/**/obj/

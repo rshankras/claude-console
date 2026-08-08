@@ -3,6 +3,172 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.0] — 2026-08-08
+
+**The Windows release.** One package now serves macOS and Windows — same keys, same live
+displays, same offline voice, on the same MX Creative Keypad, whichever machine it's plugged
+into. This rolls up the 1.8.x internal builds below; the detailed entries stay for the record.
+
+### Highlights
+- **Windows support** (see [1.8.4]): every key group works on both platforms, with typing that
+  addresses the console handle — a keypress reaches the intended Claude session or nothing at
+  all. Windows Terminal is the supported host; the layout imports via
+  `ClaudeConsole-Windows.lp5`.
+- **First installs work on a clean machine — the plugin registers itself.** The release gate
+  (a fresh macOS account) caught that a sideloaded `.lplug4` install never creates the
+  application entry at all: no Claude Console icon in Options+, no keypad layout. Only
+  Marketplace installs get that step; every dev machine had been coasting on entries created
+  before packaging. The plugin now writes the registration itself at load when it's missing —
+  ApplicationInfo, icon, and the packaged layout, the exact files the service adopts at
+  startup — then restarts the service once. **What you'll see on a first install: Options+
+  blinks once (closes and reopens by itself) within about a minute — that's the registration
+  landing, not an error; don't relaunch Options+ mid-blink.** The restart exists because the
+  service only reads registrations at startup; an install from the Logitech Marketplace
+  registers natively, and on those the plugin finds the entry and skips the restart entirely.
+  This also upgrades the Windows reinstall story: its uninstall deletes the entry outright,
+  which used to mean a manual `.lp5` re-import; now the default layout rebuilds unaided.
+- **Reinstalls and upgrades self-heal** (see [1.8.9]–[1.8.13]): the service silently drops the
+  application registration on every reinstall on both platforms; the plugin now detects the
+  install and restarts the service once so the Claude Console entry survives. Options+ blinks
+  once — that's the heal.
+- **Profile polish** (see [1.8.8], [1.8.12]): session keys on the top row everywhere including
+  the preview, the actions sidebar opens on Claude Console's actions, the profile carries a
+  proper package identity, and the author reads S.Ravi Shankar.
+
+## [1.8.14] — 2026-08-08
+
+### Changed
+- **Key backgrounds are now pure black.** Runtime-painted keys used `#0D1117` (a dark
+  blue-grey) while the profile's stored icon tiles and the Options+ editor background are pure
+  `#000000`, so the two read as mismatched blacks side by side. Everything now agrees on
+  `#000000`, which also blends into the hardware bezel as closely as a backlit LCD allows.
+
+## [1.8.13] — 2026-08-08
+
+### Fixed
+- **The reinstall self-heal now works on Windows too.** Field-testing on the laptop confirmed
+  Windows loses the application registration on reinstall exactly like macOS. The detection is
+  shared; the restart is not: Windows' `LogiPluginService.exe` is a plain process, not a system
+  service — nothing respawns it after a kill — so the heal relaunches it explicitly (finding
+  the exe from its own process, since the plugin runs inside it) and then bounces the Options+
+  window, mirroring the macOS flow.
+
+## [1.8.12] — 2026-08-08
+
+### Changed
+- Plugin author now reads **S.Ravi Shankar** in Options+ (package author + copyright metadata).
+
+## [1.8.11] — 2026-08-08
+
+### Fixed
+- **The Options+ window comes back on its own after a heal.** The self-heal restarts the
+  Options+ background agent, and launchd respawns it windowless — so the window the user was
+  installing from stayed closed until they reopened it by hand. The heal (and
+  `scripts/repair-registration.sh`) now explicitly reopens Options+ once the service is back.
+
+## [1.8.10] — 2026-08-08
+
+### Fixed
+- **Back-to-back reinstalls each heal.** 1.8.9's self-heal keyed its install-event check on
+  service uptime, which also suppressed a legitimate reinstall arriving within minutes of the
+  previous heal's restart (found in the field within minutes of shipping). The gate is now
+  "payload written after the current service started" — true for every real install, false by
+  construction for the reload that follows our own restart, so consecutive reinstalls all heal
+  and a restart loop remains impossible.
+- The heal now waits 10 s before restarting the service so Options+ finishes its install flow
+  first — the restart reads as a blink rather than an install error.
+
+## [1.8.9] — 2026-08-08
+
+### Fixed
+- **Reinstalling no longer loses the Claude Console application in Options+.** Any reinstall —
+  upgrade, install-over, or uninstall-then-install — runs an uninstall step that drops the
+  application registration from the running service's memory while leaving it on disk, and the
+  install step never re-registers over an existing directory: the icon vanished from Options+
+  and the keypad fell back to the default profile until the service restarted. Nothing in the
+  package can prevent it (the installer consults neither the packaged profile nor the
+  registration on a reinstall — verified against four package variations), so the plugin now
+  heals it: when a load is the install itself (service up for minutes, payload written seconds
+  ago) and the on-disk registration predates the payload, it schedules one service restart,
+  which rebuilds the application list from disk. A clean first install never triggers it, a
+  cold start can never loop it, and a marker caps it at one restart per installed payload.
+  Options+ will blink once a few seconds after a reinstall — that's the heal.
+
+### Changed
+- The packaged profile now carries its own package identity the way healthy plugin profiles do
+  (a distinct package GUID, `packageName` self-reference, and the `@_claudeconsole` application
+  binding instead of the legacy Terminal-export binding), and its embedded version finally
+  tracks the plugin version. Hygiene alignment with the Vizhi profile shape; the reinstall fix
+  above is the self-heal, not this.
+
+## [1.8.8] — 2026-08-08
+
+### Fixed
+- **The packaged layout's preview finally admits it has session keys.** The profile that installs
+  the 9-key layout imported the correct top row all along (Session 1/2/3 — each slot repaints live
+  with context %, project and activity), but its Options+ preview strip still showed the retired
+  Context / Working / Mode row from an older export. The preview now matches the layout,
+  thumbnails included, on both the macOS and Windows profiles.
+- **The Options+ actions sidebar opens on Claude Console's actions instead of System Actions.**
+  The profile carried `nativePluginName: null` — an artifact of its origin as a plain Terminal.app
+  profile export, from before the plugin owned an application entry — so Options+ had no plugin to
+  scope the sidebar to and fell back to System Actions. The profile now names ClaudeConsole as its
+  native plugin, the same stamp every healthy plugin profile carries. The plugin's actions were
+  always available via All Actions; only the default view was wrong.
+
+## [1.8.6]–[1.8.7] — 2026-08-07
+
+Net change against 1.8.5: none. 1.8.6 split the Windows helper payload into its own package
+folder on the theory that sharing one `bin/` with macOS broke application registration on a clean
+install; the theory was wrong — the identical, known-good 1.7.1 package failed the same way on
+the same machine, so the package was never the variable (the machine's disturbed Logi state was)
+— and the split tripled the package to ~35 MB. 1.8.7 reverted it. One `bin/` serves both
+platforms again (~26 MB), and Windows was verified working on hardware with the shared layout.
+
+## [1.8.5] — 2026-08-07
+
+### Fixed
+- **A fresh macOS install registered no application, so the keypad layout never imported.**
+  `ClaudeConsoleApplication.GetProcessName()` was hardcoded to `"WindowsTerminal"` in 1.8.0 — but
+  that class runs on both platforms, so on macOS it named a process that does not exist and the
+  service silently registered nothing. The plugin still loaded and its actions still appeared;
+  only the application row was empty, with nothing in any log. Existing installs were unaffected
+  because their registration was already on disk, which is why it took a clean install to find.
+  The name is now chosen at runtime.
+
+## [1.8.4] — 2026-08-07
+
+### Added
+- **Windows support.** One package now serves macOS and Windows. Every key group works on both:
+  prompts, git, answer/menu keys, control keys, live context/cost/model/activity, session slots
+  with pinning and the approval badge, terminal navigation, scroll, and offline voice.
+- **Platform seam.** Everything OS-specific moved behind `IPlatformBridge`; `BridgeManager` keeps
+  the platform-neutral half (poll loop, targeting, slot assignment, project matching, auto-wire
+  policy). The action classes used to pass raw AppleScript through the bridge — they now name
+  intents (`InjectKey(KeyStroke.ArrowUp)`), which is what made a second backend additive rather
+  than invasive. macOS behaviour is unchanged.
+- Four Windows helper executables ship in the package: `claude-console-inject` (types into a
+  session's console), `claude-console-hook` (statusline + activity), `claude-console-focus`
+  (selects the Windows Terminal tab), `claude-console-voice` (microphone + whisper).
+
+### How Windows differs
+- **Typing addresses the console handle, not the focused window** — a keypress reaches the intended
+  Claude session or nothing at all, and cannot leak into another application even in principle.
+- **Sessions are keyed by process + start time**, never by window title: every Claude tab reports
+  the identical title and rewrites it to a conversation summary once chatting starts. The start
+  time is what stops a recycled PID inheriting a dead session's slot and pin.
+- **The keypad layout is imported by hand** — a package can carry only one auto-imported profile
+  per device type, and that one declares the macOS binding. See the README.
+- **No frontmost-tab tracking.** One session works with no pin; beyond that, press a session key
+  first. Pinning is exact.
+- **Next/Previous Window is unavailable** (`wt.exe` cannot express it) and opening a project always
+  takes a fresh tab rather than guessing whether the current one is busy.
+
+### Fixed
+- macOS: `pack-release.sh` built without `SkipPluginLink`, dropping a dev `.link` beside the
+  installed package — the service then rejected both with "already loaded" and the plugin failed
+  to load. It now passes the flag and clears any stale link before packing.
+
 ## [1.7.1] — 2026-08-06
 
 ### Added

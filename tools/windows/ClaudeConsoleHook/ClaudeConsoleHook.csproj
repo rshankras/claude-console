@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>claude-console-hook</AssemblyName>
+    <RootNamespace>ClaudeConsoleHook</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Runs on EVERY status line render, so startup cost is user-visible. -->
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <!--
+      Framework-dependent, NOT self-contained: self-contained put 137 MB of runtime into the
+      plugin package for two tiny helpers. Any machine running Logi Options+ 6.4 already has
+      .NET (the Plugin Service itself is built on 10), and RollForward=LatestMajor lets this
+      net8.0 build run on it.
+    -->
+    <!-- Self-contained + trimmed for the same reason as the inject helper: the Plugin Service
+         ships a PRIVATE runtime, so no machine-wide .NET can be assumed. This exe also runs on
+         EVERY statusline render — the trimmed single file starts faster than a framework-
+         dependent one resolving a shared runtime. -->
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>true</PublishTrimmed>
+    <PublishSingleFile>true</PublishSingleFile>
+  </PropertyGroup>
+
+</Project>

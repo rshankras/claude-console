@@ -24,9 +24,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         private String Path_(String name) => Path.Combine(_root, name);
 
+        // Unix file modes don't exist on Windows, BY DESIGN in the code under test too:
+        // PrivateFiles skips chmod there because %LOCALAPPDATA%\Temp is already per-user via
+        // ACLs. The symlink-refusal tests below have no such platform split and always run.
+        private static Boolean HasUnixModes => !OperatingSystem.IsWindows();
+
         [Fact]
         public void EnsurePrivateDirectory_creates_the_directory_owner_only()
         {
+            if (!HasUnixModes) { return; }
             var dir = Path_("sessions");
 
             PrivateFiles.EnsurePrivateDirectory(dir);
@@ -41,6 +47,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void EnsurePrivateDirectory_tightens_an_existing_world_readable_directory()
         {
             // A root left behind by an older build (or a lax umask) must get locked down, not adopted.
+            if (!HasUnixModes) { return; }
             var dir = Path_("loose");
             Directory.CreateDirectory(dir);
             File.SetUnixFileMode(dir, (UnixFileMode)Convert.ToInt32("755", 8));
@@ -53,6 +60,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void EnsurePrivateDirectory_is_idempotent()
         {
+            if (!HasUnixModes) { return; }
             var dir = Path_("twice");
 
             PrivateFiles.EnsurePrivateDirectory(dir);
@@ -76,6 +84,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void EnsurePrivateFile_forces_owner_only_permissions()
         {
+            if (!HasUnixModes) { return; }
             var file = Path_("transcript.txt");
             File.WriteAllText(file, "spoken words");
             File.SetUnixFileMode(file, (UnixFileMode)Convert.ToInt32("644", 8));

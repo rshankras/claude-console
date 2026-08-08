@@ -18,13 +18,13 @@ description: Physical hardware controls for Claude Code on the MX Creative Keypa
 pluginFileName: ClaudeConsolePlugin.dll
 
 # Plugin version.
-version: 1.7.1
+version: 2.0.0
 
 # Author of the plugin. The author can be a company or an individual developer.
-author: ravishankar
+author: S.Ravi Shankar
 
 # Copyright information.
-copyright: Copyright © 2026 ravishankar. All rights reserved.
+copyright: Copyright © 2026 S.Ravi Shankar. All rights reserved.
 
 
 # ==================================================================================================
@@ -33,7 +33,14 @@ copyright: Copyright © 2026 ravishankar. All rights reserved.
 
 # Location of plugin files on Windows (relative to the plugin base directory).
 # This parameter is required to support Windows.
-#pluginFolderWin: bin
+# Deliberately the SAME folder as pluginFolderMac: one bin/ holds the plugin assembly plus both
+# platforms' payloads, and each OS ignores the other's (the .exe helpers are inert on macOS, the
+# voice/ bundle inert on Windows). 1.8.6 briefly split these into separate folders on a theory
+# that sharing broke macOS application registration — that theory was wrong (the identical 1.7.1
+# package failed the same way on the same machine, so the package was never the variable), and
+# splitting tripled the package to 35 MB. Windows was verified working on hardware with this
+# shared layout.
+pluginFolderWin: bin
 
 # Location of plugin files on macOS (relative to the plugin base directory).
 # This parameter is required to support Mac.

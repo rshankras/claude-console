@@ -95,7 +95,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Equal("claude-console", session.Project);
             Assert.Equal(35, session.CtxPercent);
-            Assert.Equal("sid-ttys001", session.SessionId);
+            Assert.Equal("sid-ttys001", session.SessionId);   // Claude's own id, not the grid key
             Assert.False(session.IsProvisional);
         }
 
@@ -256,6 +256,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Registry_file_is_written_owner_only()
         {
+            // Unix modes don't exist on Windows — there the registry's privacy comes from the
+            // per-user ACLs on %LOCALAPPDATA%\Temp, which PrivateFiles relies on by design.
+            if (OperatingSystem.IsWindows()) { return; }
             WriteSession("ttys001", "/Users/x/alpha", 1);
             RefreshedWith("ttys001");
 
@@ -295,7 +298,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             registry.Refresh(null);
 
             Assert.NotNull(registry.SlotSession(1));
-            Assert.Equal("ttys004", registry.SlotSession(1).Tty);
+            Assert.Equal("ttys004", registry.SlotSession(1).SessionKey);
         }
 
         [Fact]

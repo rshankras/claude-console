@@ -32,8 +32,31 @@ fi
 echo ">>> voice payload OK (helper notarized + stapled)"
 
 # --- build the plugin (Release) ------------------------------------------------------------------
+# SkipPluginLink is NOT optional here. Without it the csproj PostBuild target drops a dev
+# ClaudeConsolePlugin.link next to the INSTALLED package, so the service registers the plugin
+# twice ("already loaded") and it fails to load — which looks like "the plugin installed but the
+# profile didn't import", because the app registration never runs. A release build must never
+# touch the live plugin directory.
+# Wipe the output tree first. CopyPackage copies package/** in but never removes what has been
+# deleted since, so a file dropped from the repo lingers in bin/Release and ships anyway — a
+# retired profile rode along into 1.8.4 exactly this way.
+echo ">>> clearing stale build output"
+rm -rf "$ROOT/bin/Release"
+
 echo ">>> building plugin (Release)"
-( cd "$ROOT/src" && dotnet build -c Release >/dev/null )
+( cd "$ROOT/src" && dotnet build -c Release -p:SkipPluginLink=true >/dev/null )
+
+# Belt and braces: if a .link is already lying around from an earlier dev build, it will collide
+# with the package we are about to install. Clear it now rather than debugging it later.
+LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/ClaudeConsolePlugin.link"
+[ -f "$LINK" ] && { rm -f "$LINK"; echo ">>> removed a stale dev .link (would have collided with the package)"; }
+
+# --- build the Windows helpers into the same bin/ (cross-compiled from macOS) ---------------------
+# One .lplug4 serves both platforms: LoupedeckPackage.yaml points pluginFolderMac AND
+# pluginFolderWin at bin/, so these two exes ride along beside the plugin DLL and are simply
+# never launched on macOS.
+echo ">>> building Windows helper payload"
+bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64
 
 # --- embed the notarized voice payload next to the plugin DLL (bin/voice/) ------------------------
 PKG_VOICE="$ROOT/bin/Release/bin/voice"
