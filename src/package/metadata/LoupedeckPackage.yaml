@@ -18,13 +18,13 @@ description: Physical hardware controls for Claude Code on the MX Creative Keypa
 pluginFileName: ClaudeConsolePlugin.dll
 
 # Plugin version.
-version: 1.8.11
+version: 1.8.12
 
 # Author of the plugin. The author can be a company or an individual developer.
-author: ravishankar
+author: S.Ravi Shankar
 
 # Copyright information.
-copyright: Copyright © 2026 ravishankar. All rights reserved.
+copyright: Copyright © 2026 S.Ravi Shankar. All rights reserved.
 
 
 # ==================================================================================================

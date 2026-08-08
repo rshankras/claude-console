@@ -3,6 +3,11 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.8.12] — 2026-08-08
+
+### Changed
+- Plugin author now reads **S.Ravi Shankar** in Options+ (package author + copyright metadata).
+
 ## [1.8.11] — 2026-08-08
 
 ### Fixed
