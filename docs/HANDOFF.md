@@ -106,6 +106,14 @@ would silently die there. NativeAOT would cut it to ~3 MB each but needs the MSV
 
 ## Traps that cost real time
 
+- **Uninstall→reinstall makes the app icon vanish from Options+ — nothing is broken on disk.**
+  Uninstall drops `@_claudeconsole` from the service's in-memory application list but keeps the
+  directory (profiles survive); the reinstall sees the directory and silently skips
+  re-registration. The plugin still loads; only the registration is gone from the live list.
+  Recovery (proven 2026-08-08): `killall LogiPluginService` — it rebuilds the list from disk at
+  startup — then `killall logioptionsplus_agent` so the UI reconnects. Restarting only Options+
+  does nothing. Corollary: a reinstall on a machine with prior registration proves nothing about
+  install-time registration — only a clean account exercises that path.
 - **Never `rm` an `@_<app>` directory under `Applications/Loupedeck70/`.** It desyncs the service
   so that subsequent installs *silently* skip registration and profile import — including
   known-good packages. This was already in the notes; doing it anyway burned an evening and made
