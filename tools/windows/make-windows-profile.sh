@@ -33,10 +33,12 @@ trap 'rm -rf "$WORK"' EXIT
 
 unzip -q "$SRC" -d "$WORK"
 
-# A stable, distinct GUID for the Windows profile — derived, not random, so rebuilding this file
+# A stable, distinct GUID for the Windows profile — fixed, not random, so rebuilding this file
 # doesn't mint a new profile on every release (which would pile up duplicates for the user).
-WIN_GUID="FFDD8BE1282D4688846AFD8A1F62 0B59"
-WIN_GUID="${WIN_GUID// /}"
+# Rotated once on 2026-08-08 when the profile got its own package identity (Vizhi shape): the
+# old value (…0B59) doubled as the imported instance GUID on the Windows laptop, and a package
+# should not share its identity with an installed instance.
+WIN_GUID="9556D49413DC49B1968CA44D3C3C3303"
 
 python3 - "$WORK" "$WIN_GUID" <<'PY'
 import json, os, sys
@@ -54,6 +56,12 @@ prof_path = os.path.join(work, "ProfileInfo.json")
 prof = json.load(open(prof_path))
 prof["applicationName"] = "windowsterminal"   # the service lowercases the matcher on macOS too
 prof["name"] = win_guid
+# Self-owning package stamp (Vizhi shape): a profile whose packageName names its own package
+# GUID is treated as package-owned, so installs refresh the registration instead of skipping
+# it. The mac source stamps its own GUID; restamp to the Windows GUID so ownership follows
+# the derived profile, not the mac original.
+if prof.get("packageName"):
+    prof["packageName"] = win_guid
 json.dump(prof, open(prof_path, "w"), indent=2)
 
 print(f"  app  processOrBundleName -> {app['processOrBundleName']}")
