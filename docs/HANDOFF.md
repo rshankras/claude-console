@@ -30,27 +30,19 @@ session's console), `-hook` (statusline + activity), `-focus` (selects the Windo
 
 ## Outstanding, in order
 
-### 1. The packaged profile ships the wrong top row
-`src/package/profiles/DefaultProfile70.lp5` has **Context / Working / Mode** on the top row.
-The CHANGELOG and README both describe **three session keys** there, and that is the correct
-layout — session keys are arguably the plugin's best feature and the default deck currently omits
-them.
+### 1. ~~The packaged profile ships the wrong top row~~ FIXED 2026-08-08
+Turned out to be preview-only: the packaged `.lp5`'s **`ProfileInfo.json` (the layout that
+actually imports) already had Session 1/2/3** on the top row — only `metadata/ProfilePreview.json`
+(the Options+ thumbnail strip) still showed Context / Working / Mode. The three preview entries
+were copied verbatim from the hand-edited installed profile (displayName, actionName,
+description, image) into `src/package/profiles/DefaultProfile70.lp5`, and
+`profiles/ClaudeConsole-Windows.lp5` was regenerated from it via
+`tools/windows/make-windows-profile.sh`. Both verified: preview and layout top rows agree
+(SessionSlotCommand 1/2/3), bindings and GUIDs unchanged (`com.apple.Terminal`/…0B58,
+`WindowsTerminal`/…0B59).
 
-The user's *installed* profile was corrected by hand (see "Machine state"); the packaged one was
-not. The fix is mechanical — in the `.lp5`'s `metadata/ProfilePreview.json`, set `controlId` 0/1/2
-to:
-
-```
-actionName:  $ClaudeConsole___Loupedeck.ClaudeConsolePlugin.Actions.SessionSlotCommand___<1|2|3>
-displayName: Session <n>
-```
-
-The stored `image` is only the Options+ thumbnail — `SessionSlotCommand` repaints live on the
-deck, so a placeholder bitmap is cosmetically imperfect in the UI and functionally fine. Ideally,
-regenerate the profile by exporting from Options+ instead, then restamp the GUID.
-
-**Confirm first** that the hand-edited installed profile actually renders live session keys on the
-hardware. That was asked and not yet answered.
+Still open from this item: **confirm on the hardware** that the installed profile renders live
+session keys on the top row. That was asked and not yet answered.
 
 ### 2. Clean-install verification for 1.8.x — the real release gate
 Does a **first-ever** install create the `@_claudeconsole` application entry and auto-import the
