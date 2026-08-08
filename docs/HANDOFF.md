@@ -81,11 +81,19 @@ Refined through field testing to 1.8.11: the gate is payload-newer-than-service-
 back-to-back reinstalls each heal), a 10 s settle delay before the restart, and an explicit
 reopen of the Options+ window (launchd respawns the agent windowless).
 
-**Windows follow-up**: on the laptop, install 1.8.11 over the existing install and see whether
-the application entry survives Windows Options+. If it desyncs the same way, port the heal —
-detection is already platform-neutral; only the service-restart command needs a Windows
-implementation (kill `LogiPluginService.exe`, verify it respawns). Plugin log:
+**Windows: a DIFFERENT failure with the same symptom (settled 2026-08-08 on the laptop).**
+The heal was ported in 1.8.13 (plain-process restart via a .cmd — `LogiPluginService.exe` is
+NOT an SCM service and nothing respawns it after a kill), but it correctly never fires there,
+because Windows' uninstall **deletes the application data outright** — after a reinstall the
+machine had only `@_defaultwin`: no `@_claudeconsole`, no Windows Terminal entry, no Claude
+Console profile anywhere. Nothing on disk to re-adopt, so no restart can help. Same as macOS,
+a reinstall of a known package never re-runs registration. **Windows recovery = re-import
+`profiles/ClaudeConsole-Windows.lp5`** (one step: recreates the application entry + layout),
+which is already the documented Windows install path. Plugin log:
 `%LOCALAPPDATA%\Logi\LogiPluginService\Logs\plugin_logs\ClaudeConsole.log`.
+Possible future work: Windows self-registration — at load, when no application data exists,
+the plugin writes the registration + profile files itself (schema known from macOS/Vizhi) and
+restarts the service to adopt them. Not attempted yet.
 
 **Corrected root-cause model** (settled 2026-08-08 after four failed package-shape fixes): a
 reinstall of an already-known package is a pure payload swap — the service consults NOTHING in

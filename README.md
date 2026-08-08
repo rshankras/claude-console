@@ -280,7 +280,9 @@ File‑based IPC under a private `/tmp/claude-console/` root (0700 dirs / 0600 f
 killall LogiPluginService && sleep 5 && killall logioptionsplus_agent
 ```
 
-(A reboot does the same, and `bash scripts/repair-registration.sh` runs the whole recovery for you, with a sanity check first. **1.8.9 and later heal this automatically** — Options+ blinks once a few seconds after a reinstall as the plugin restarts the service; the manual recovery only matters for older versions.) If the plugin log then shows `Cannot load plugin … because plugin 'ClaudeConsole' is already loaded` at service start *without* a dev `.link` in play, that duplicate is benign — the first load, via the application path, succeeded; working keys confirm it.
+(A reboot does the same, and `bash scripts/repair-registration.sh` runs the whole recovery for you, with a sanity check first. **1.8.9 and later heal this automatically** — Options+ blinks once a few seconds after a reinstall as the plugin restarts the service; the manual recovery only matters for older versions.)
+
+**On Windows, a reinstall loses the layout differently — and a restart won't bring it back.** Windows' uninstall deletes the plugin's application data outright (the Claude Console entry *and* the imported keypad layout), and the reinstall doesn't recreate them. Recovery is the same one step as the original Windows setup: re-import `ClaudeConsole-Windows.lp5` (profile menu → Import). That recreates the application entry and the full layout. If the plugin log then shows `Cannot load plugin … because plugin 'ClaudeConsole' is already loaded` at service start *without* a dev `.link` in play, that duplicate is benign — the first load, via the application path, succeeded; working keys confirm it.
 
 The plugin's own log — handy for any of these — is at `~/Library/Application Support/Logi/LogiPluginService/Logs/plugin_logs/ClaudeConsole.log`.
 
