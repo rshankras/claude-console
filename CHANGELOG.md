@@ -3,6 +3,14 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.8.11] — 2026-08-08
+
+### Fixed
+- **The Options+ window comes back on its own after a heal.** The self-heal restarts the
+  Options+ background agent, and launchd respawns it windowless — so the window the user was
+  installing from stayed closed until they reopened it by hand. The heal (and
+  `scripts/repair-registration.sh`) now explicitly reopens Options+ once the service is back.
+
 ## [1.8.10] — 2026-08-08
 
 ### Fixed

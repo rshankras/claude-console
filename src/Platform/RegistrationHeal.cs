@@ -112,11 +112,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 // Detached: children survive the killall that takes down our host process. The
                 // sequence mirrors scripts/repair-registration.sh, proven by hand repeatedly.
                 // 10s before the kill lets Options+ finish its install flow and settle, so the
-                // restart reads as a blink rather than an install error.
+                // restart reads as a blink rather than an install error. launchd respawns the
+                // agent WINDOWLESS (--launchd), so the final `open` brings the Options+ window
+                // back for the user, who was in it installing when we took it down.
                 var psi = new ProcessStartInfo
                 {
                     FileName = "/bin/bash",
-                    Arguments = "-c \"sleep 10; /usr/bin/killall LogiPluginService; sleep 6; /usr/bin/killall logioptionsplus_agent 2>/dev/null; exit 0\"",
+                    Arguments = "-c \"sleep 10; /usr/bin/killall LogiPluginService; sleep 6; " +
+                                "/usr/bin/killall logioptionsplus_agent 2>/dev/null; sleep 5; " +
+                                "/usr/bin/open '/Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app' 2>/dev/null; exit 0\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = false,
                     RedirectStandardError = false,

@@ -28,5 +28,7 @@ fi
 
 echo ">>> restarting the Options+ UI so it reconnects to the healed service"
 killall logioptionsplus_agent 2>/dev/null || echo "    (Options+ UI was not running)"
+sleep 5
+open "/Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app" 2>/dev/null || true
 
-echo "done — open Logi Options+; the Claude Console icon should be back in the top strip."
+echo "done — the Claude Console icon should be back in the Options+ top strip."
