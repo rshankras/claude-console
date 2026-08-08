@@ -1,9 +1,8 @@
 # Handoff — Windows port, as of 2026-08-08
 
-Everything lives on **`feat/windows-port-phase0`** (all pushed to origin).
-`main` is untouched at 1.7.1. Current version on the branch: **2.0.0** (rebuilt with
-self-registration after the clean-account gate failed — see item 2). 1.8.13 verified on both
-machines on 2026-08-08. Suite: **396 C# + 20 bash, green** — `bash tests/run-all.sh`.
+**2.0.0 SHIPPED 2026-08-08**: clean-install gate passed on a fresh account (item 2),
+`feat/windows-port-phase0` merged to `main`, tagged `v2.0.0`, released on GitHub.
+Suite: **396 C# + 20 bash, green** — `bash tests/run-all.sh`.
 
 Design doc: `docs/windows-port-2.0-plan.md`. Windows-machine notes:
 `docs/windows-debug-handoff.md`.
@@ -57,8 +56,9 @@ profile's native plugin. Stamped `nativePluginName: ClaudeConsole` / `hasNativeP
 (pre-edit backup: `~/Desktop/ProfileInfo-before-nativeplugin.json`), and the regenerated
 Windows profile; `ClaudeConsole_1.8.8.lplug4` repacked with the fix.
 
-### 2. Clean-install verification — the real release gate. RAN 2026-08-08: **FAILED**, root
-### cause found, fix shipped (SelfRegistration), re-test pending
+### 2. Clean-install verification — the real release gate. **PASSED 2026-08-08** (fresh
+### `testuser3`, full logout, hands off: icon + layout appeared on their own in 30–40 s)
+History of the three rounds, kept for the record:
 The gate ran properly (full logout into a fresh `testuser` account, no fast switching, reboots
 between sessions) against the 2.0.0 artifact: **no icon, no layout.** Evidence pulled from the
 test account settled the mechanism — see the re-corrected root-cause model below. In short: a
