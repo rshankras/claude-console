@@ -64,9 +64,10 @@ This Mac can no longer answer it: its Logi state was disturbed (below). Needs a 
 fresh user account — note Options+ does not tolerate fast user switching, so it means a full
 logout into a clean account. Five minutes there settles it.
 
-### 3. CHANGELOG is stale
-Entries stop at `[1.8.5]`. Nothing for 1.8.6 (payload split, since reverted) or 1.8.7 (the
-revert). Fold them into one honest entry. README's Windows section is complete and accurate.
+### 3. ~~CHANGELOG is stale~~ DONE 2026-08-08
+1.8.6/1.8.7 folded into one honest zero-net entry (payload split + revert), and 1.8.8 added
+(session-keys preview fix + native-plugin stamp). README's Windows section was already complete
+and accurate.
 
 ### 4. Merge to main and release
 Only after 1–3. `.lplug4` files are gitignored; releases go to GitHub Releases.

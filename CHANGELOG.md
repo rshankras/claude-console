@@ -3,6 +3,30 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.8.8] — 2026-08-08
+
+### Fixed
+- **The packaged layout's preview finally admits it has session keys.** The profile that installs
+  the 9-key layout imported the correct top row all along (Session 1/2/3 — each slot repaints live
+  with context %, project and activity), but its Options+ preview strip still showed the retired
+  Context / Working / Mode row from an older export. The preview now matches the layout,
+  thumbnails included, on both the macOS and Windows profiles.
+- **The Options+ actions sidebar opens on Claude Console's actions instead of System Actions.**
+  The profile carried `nativePluginName: null` — an artifact of its origin as a plain Terminal.app
+  profile export, from before the plugin owned an application entry — so Options+ had no plugin to
+  scope the sidebar to and fell back to System Actions. The profile now names ClaudeConsole as its
+  native plugin, the same stamp every healthy plugin profile carries. The plugin's actions were
+  always available via All Actions; only the default view was wrong.
+
+## [1.8.6]–[1.8.7] — 2026-08-07
+
+Net change against 1.8.5: none. 1.8.6 split the Windows helper payload into its own package
+folder on the theory that sharing one `bin/` with macOS broke application registration on a clean
+install; the theory was wrong — the identical, known-good 1.7.1 package failed the same way on
+the same machine, so the package was never the variable (the machine's disturbed Logi state was)
+— and the split tripled the package to ~35 MB. 1.8.7 reverted it. One `bin/` serves both
+platforms again (~26 MB), and Windows was verified working on hardware with the shared layout.
+
 ## [1.8.5] — 2026-08-07
 
 ### Fixed
