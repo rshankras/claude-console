@@ -3,6 +3,18 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [1.8.10] — 2026-08-08
+
+### Fixed
+- **Back-to-back reinstalls each heal.** 1.8.9's self-heal keyed its install-event check on
+  service uptime, which also suppressed a legitimate reinstall arriving within minutes of the
+  previous heal's restart (found in the field within minutes of shipping). The gate is now
+  "payload written after the current service started" — true for every real install, false by
+  construction for the reload that follows our own restart, so consecutive reinstalls all heal
+  and a restart loop remains impossible.
+- The heal now waits 10 s before restarting the service so Options+ finishes its install flow
+  first — the restart reads as a blink rather than an install error.
+
 ## [1.8.9] — 2026-08-08
 
 ### Fixed

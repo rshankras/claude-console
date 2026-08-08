@@ -27,18 +27,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     /// </summary>
     internal static class RegistrationHeal
     {
-        private static readonly TimeSpan MinServiceUptime = TimeSpan.FromMinutes(2);
-        private static readonly TimeSpan MaxPayloadAge = TimeSpan.FromMinutes(10);
-
         /// <summary>
         /// The decision, kept pure so tests exercise the real logic on values — fixtures that
         /// hand the wiring pre-cooked data would prove nothing (see the Windows fixture trap).
+        ///
+        /// The install-event signal is "the payload was written AFTER this service process
+        /// started": a real (re)install always happens inside a running service session, while
+        /// the reload that follows our own restart always sees a payload OLDER than its fresh
+        /// service start — so a loop is impossible by construction, and back-to-back reinstalls
+        /// each heal (an earlier uptime-based gate suppressed a reinstall that came within
+        /// minutes of the previous heal's restart). Dev builds are covered the same way: the
+        /// PostBuild link reload restarts the service, putting the build before the start.
         /// </summary>
         internal static Boolean ShouldHeal(
-            TimeSpan serviceUptime,
+            DateTime serviceStartUtc,
             DateTime payloadWrittenUtc,
             DateTime? registrationWrittenUtc,
-            DateTime nowUtc,
             Boolean alreadyHealedThisPayload)
         {
             if (alreadyHealedThisPayload)
@@ -46,17 +50,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return false;
             }
 
-            // Cold start: the service just (re)started and rebuilt its list from disk — either we
-            // caused this restart (the heal worked) or nothing is stale. Also excludes every dev
-            // build, because the PostBuild link reload restarts the service.
-            if (serviceUptime < MinServiceUptime)
-            {
-                return false;
-            }
-
-            // Not an install-event load: the payload has been on disk too long for this load to
-            // be the install itself (e.g. Options+ re-enabling the plugin).
-            if (nowUtc - payloadWrittenUtc > MaxPayloadAge)
+            // Payload predates this service session: not an install-event load. This is every
+            // cold start (including the one our own killall causes) and every plugin re-enable.
+            if (payloadWrittenUtc <= serviceStartUtc)
             {
                 return false;
             }
@@ -100,8 +96,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 var markerValue = payloadWritten.Ticks.ToString();
                 var alreadyHealed = File.Exists(marker) && File.ReadAllText(marker).Trim() == markerValue;
 
-                var uptime = DateTime.UtcNow - Process.GetCurrentProcess().StartTime.ToUniversalTime();
-                if (!ShouldHeal(uptime, payloadWritten, registrationWritten, DateTime.UtcNow, alreadyHealed))
+                var serviceStart = Process.GetCurrentProcess().StartTime.ToUniversalTime();
+                if (!ShouldHeal(serviceStart, payloadWritten, registrationWritten, alreadyHealed))
                 {
                     return;
                 }
@@ -111,14 +107,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
                 PluginLog.Info(
                     "RegistrationHeal: reinstall detected (registration predates the installed payload) — " +
-                    "restarting Logi Plugin Service in 3s so it re-adopts the application registration");
+                    "restarting Logi Plugin Service in 10s so it re-adopts the application registration");
 
                 // Detached: children survive the killall that takes down our host process. The
                 // sequence mirrors scripts/repair-registration.sh, proven by hand repeatedly.
+                // 10s before the kill lets Options+ finish its install flow and settle, so the
+                // restart reads as a blink rather than an install error.
                 var psi = new ProcessStartInfo
                 {
                     FileName = "/bin/bash",
-                    Arguments = "-c \"sleep 3; /usr/bin/killall LogiPluginService; sleep 6; /usr/bin/killall logioptionsplus_agent 2>/dev/null; exit 0\"",
+                    Arguments = "-c \"sleep 10; /usr/bin/killall LogiPluginService; sleep 6; /usr/bin/killall logioptionsplus_agent 2>/dev/null; exit 0\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = false,
                     RedirectStandardError = false,
