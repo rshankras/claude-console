@@ -201,3 +201,18 @@ The one genuine platform gap: Windows Terminal exposes no supported way to ask w
 front, so with several idle sessions the plugin cannot tell which you are looking at. One session
 works with no pin; beyond that, press a session key first. Pinning is exact. This is documented in
 the README's Windows notes.
+
+## Future: other terminals (assessed 2026-08-08)
+
+**iTerm2 is the one worth doing** (next version, not this release): its AppleScript dictionary
+addresses sessions by `tty` and types via `write text`, so the exact-targeting guarantee ("a
+keystroke reaches the intended session or nothing") carries over intact. Shape: a terminal seam
+inside the Mac bridge (the same move IPlatformBridge made for the OS — the action layer already
+speaks intents; only the seven Terminal.app AppleScript blocks in MacPlatformBridge are
+terminal-specific), plus an iTerm-bound application/profile entry, same pattern as the Windows
+.lp5. Everything TTY-keyed (sessions, statusline, hooks, voice, registry) already works in any
+terminal unchanged.
+
+**Ghostty / Warp / Alacritty / Kitty: no, until they grow scriptable per-tab addressing.** The
+only way in would be blind keystrokes into the frontmost window — the exact unsafety this plugin
+refuses (and the README already promises it won't type into them).
