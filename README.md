@@ -289,6 +289,15 @@ killall LogiPluginService && sleep 5 && killall logioptionsplus_agent
 
 **The log says `Cannot load plugin … because plugin 'ClaudeConsole' is already loaded` at service start.** On its own this is benign boot noise, not a failure: the service loads every sideloaded plugin twice at startup (once from its internal plugin record, once from the folder scan) and the second attempt logs this while refusing the duplicate — every sideloaded plugin on the machine shows the same pair. It only signals a real problem when paired with a dev `.link` (see above).
 
+**The session keys are stuck — only one session ever shows, the context % never moves, and the Yes/No badge never lights, but everything still *works* when pressed.** A key you have opened in the **Logi Options+ icon editor** stops being live. The editor saves a `.ict` next to the profile — a *snapshot* of that key, a baked image plus the literal text that was on it at that moment ("Session 2") — and from then on the service draws the snapshot and never asks the plugin for an image. The giveaway is that pressing the key does the right thing (the plugin knows about the session) while the picture never changes; a profile created fresh renders live, because it has no `.ict` files. Restore live rendering with:
+
+```bash
+bash scripts/unfreeze-keys.sh          # lists what's frozen
+bash scripts/unfreeze-keys.sh --apply  # backs them up to your Desktop, then removes them
+```
+
+Deliberate icon customizations on those keys are lost — that's the trade. **Avoid customizing the live keys** (the session slots, Yes/No, and the Model / Cost / Context / Activity displays); the static keys are safe to restyle.
+
 The plugin's own log — handy for any of these — is at `~/Library/Application Support/Logi/LogiPluginService/Logs/plugin_logs/ClaudeConsole.log`.
 
 ## Tests
