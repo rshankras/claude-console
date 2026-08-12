@@ -416,3 +416,6 @@ AuthKey_*
 # Windows inject helper build output
 tools/windows/**/bin/
 tools/windows/**/obj/
+
+# Local feasibility spikes / throwaway tests — personal, never committed
+spikes/

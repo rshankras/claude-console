@@ -2,20 +2,22 @@
 
 Path to a submittable `.lplug4` for the [Logitech Marketplace](https://marketplace.logitech.com/contribute), per the [Actions SDK approval guidelines](https://logitech.github.io/actions-sdk-docs/marketplace-approval-guidelines/).
 
+**Status:** `ClaudeConsole_2.0.0.lplug4` submitted to the Marketplace on 2026‑08‑12 (first submission; review takes ≈10 working days).
+
 ## Pre‑submission checklist
 
 - [x] `LoupedeckPackage.yaml` present in `src/package/metadata/` with a plugin icon (`Icon256x256.png`).
 - [x] License is MIT (GPL is **not** allowed). whisper.cpp and the Whisper model are both MIT.
 - [x] [PRIVACY.md](PRIVACY.md) (on‑device, no data leaves the machine) and a draft [EULA.md](EULA.md).
-- [ ] **Fill `LoupedeckPackage.yaml`**: uncomment and set `supportPageUrl` and `homePageUrl` (e.g. the GitHub repo / issues page); consider a fuller `author`.
+- [x] **Fill `LoupedeckPackage.yaml`**: `supportPageUrl` (GitHub issues), `homePageUrl` (GitHub repo), and `author` (S.Ravi Shankar) are all set.
 - [x] **Bundle whisper.cpp** (see below) — `tools/voice/bundle-whisper.sh` vendors Homebrew's `whisper-cli` + its dylib closure into a self‑contained `~/.claude/claude-console/whisper-bin/`, **Developer‑ID signed + hardened‑runtime + notarized** via `tools/voice/sign-and-notarize.sh`, and **shipped inside the `.lplug4`** by `tools/voice/pack-release.sh` (installed to the runtime home on first use, quarantine stripped, by `BridgeManager.EnsureVoiceRuntimeInstalled`).
 - [x] **Fetch the model** (~142 MB) — the plugin downloads `ggml-base.en.bin` on first use and verifies its sha256 (`BridgeManager.EnsureVoiceModel` / `DownloadVoiceModel`). No manual step, no package bloat.
 - [x] **Sign + notarize `ClaudeVoiceHelper.app`** — done via `tools/voice/sign-and-notarize.sh` (Developer ID + hardened runtime + mic entitlement; notarized & **stapled**; `spctl` → *accepted, source = Notarized Developer ID*).
-- [ ] Do **not** bundle ffmpeg/sox (GPL/LGPL). The runtime uses AVFoundation; they're dev‑only. ✅
-- [ ] Finalize EULA with counsel; confirm privacy policy is reachable via a valid URL.
-- [ ] Test on the supported hardware (MX Creative Keypad) and on a **clean Mac** (no dev tools) to validate the bundled binaries and permission prompts.
-- [ ] Accept the Logitech Marketplace Developer Agreement.
-- [ ] Package as `ClaudeConsole_1_0.lplug4` and submit at marketplace.logitech.com/contribute (≈10 working days for review).
+- [x] Do **not** bundle ffmpeg/sox (GPL/LGPL). The runtime uses AVFoundation; they're dev‑only.
+- [x] Privacy policy and EULA publicly reachable — [PRIVACY.md](PRIVACY.md) / [EULA.md](EULA.md) in the GitHub repo. (Formal legal review of the EULA remains open.)
+- [x] Test on the supported hardware (MX Creative Keypad) and on a **clean Mac** (no dev tools) — the 2.0.0 release gate ran on a fresh macOS account (see [docs/clean-install-test.md](docs/clean-install-test.md)); it caught that sideloaded installs never self-register, fixed in 2.0.0.
+- [x] Accept the Logitech Marketplace Developer Agreement (part of the first submission at marketplace.logitech.com/contribute).
+- [x] Package as `ClaudeConsole_<ver>.lplug4` (`bash tools/voice/pack-release.sh <ver>`) and submit at marketplace.logitech.com/contribute — first submitted 2026‑08‑12 as 2.0.0.
 
 ## Bundle whisper.cpp
 
@@ -68,8 +70,8 @@ A stable Developer‑ID identity also keeps the Microphone TCC grant from resett
 
 ```bash
 bash tools/voice/sign-and-notarize.sh          # Developer-ID sign + notarize helper + whisper
-bash tools/voice/pack-release.sh 1_1           # build, embed voice, pack ClaudeConsole_1_1.lplug4
-logiplugintool install ./ClaudeConsole_1_1.lplug4   # local test before submitting
+bash tools/voice/pack-release.sh 2.0.0         # build, embed voice, pack ClaudeConsole_2.0.0.lplug4
+logiplugintool install ./ClaudeConsole_2.0.0.lplug4   # local test before submitting
 ```
 
 `pack-release.sh` embeds the notarized voice payload (`bin/voice/`) so voice works from a
