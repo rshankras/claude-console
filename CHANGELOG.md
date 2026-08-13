@@ -3,6 +3,15 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.0.1] — 2026-08-13
+
+### Changed
+- **`PluginApi.dll` is no longer bundled in the package** (−15 MB). Logitech Marketplace QA
+  flagged it: the assembly belongs to the Logi Plugin Service runtime and is provided by the
+  host at load time, so shipping a copy risks a version conflict. The project reference now
+  sets `<Private>false</Private>`; behavior is unchanged (the plugin always loaded the host's
+  copy — the bundled one was dead weight).
+
 ## [2.0.0] — 2026-08-08
 
 **The Windows release.** One package now serves macOS and Windows — same keys, same live

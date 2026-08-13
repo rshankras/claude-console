@@ -2,7 +2,7 @@
 
 Path to a submittable `.lplug4` for the [Logitech Marketplace](https://marketplace.logitech.com/contribute), per the [Actions SDK approval guidelines](https://logitech.github.io/actions-sdk-docs/marketplace-approval-guidelines/).
 
-**Status:** `ClaudeConsole_2.0.0.lplug4` submitted to the Marketplace on 2026‑08‑12 (first submission; review takes ≈10 working days).
+**Status:** `ClaudeConsole_2.0.0.lplug4` submitted 2026‑08‑12; QA flagged the bundled `PluginApi.dll` (host-provided assembly, must not ship). Resubmitted as `ClaudeConsole_2.0.1.lplug4` on 2026‑08‑13 with `<Private>false</Private>` on the reference (review takes ≈10 working days). The exact listing copy entered in the form (teaser, description, release notes) is kept for reuse in [docs/marketplace-listing.md](docs/marketplace-listing.md).
 
 ## Pre‑submission checklist
 
@@ -14,6 +14,7 @@ Path to a submittable `.lplug4` for the [Logitech Marketplace](https://marketpla
 - [x] **Fetch the model** (~142 MB) — the plugin downloads `ggml-base.en.bin` on first use and verifies its sha256 (`BridgeManager.EnsureVoiceModel` / `DownloadVoiceModel`). No manual step, no package bloat.
 - [x] **Sign + notarize `ClaudeVoiceHelper.app`** — done via `tools/voice/sign-and-notarize.sh` (Developer ID + hardened runtime + mic entitlement; notarized & **stapled**; `spctl` → *accepted, source = Notarized Developer ID*).
 - [x] Do **not** bundle ffmpeg/sox (GPL/LGPL). The runtime uses AVFoundation; they're dev‑only.
+- [x] Do **not** bundle `PluginApi.dll` or its dependency closure (ExCSS, Svg.\*, Newtonsoft.Json, YamlDotNet, …) — the host provides them at load time, and Marketplace QA rejects packages that ship them. Enforced by `<Private>false</Private>` on the `PluginApi` reference in the csproj (QA feedback, 2.0.0 submission).
 - [x] Privacy policy and EULA publicly reachable — [PRIVACY.md](PRIVACY.md) / [EULA.md](EULA.md) in the GitHub repo. (Formal legal review of the EULA remains open.)
 - [x] Test on the supported hardware (MX Creative Keypad) and on a **clean Mac** (no dev tools) — the 2.0.0 release gate ran on a fresh macOS account (see [docs/clean-install-test.md](docs/clean-install-test.md)); it caught that sideloaded installs never self-register, fixed in 2.0.0.
 - [x] Accept the Logitech Marketplace Developer Agreement (part of the first submission at marketplace.logitech.com/contribute).
