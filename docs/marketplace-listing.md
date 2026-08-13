@@ -19,11 +19,13 @@ These are read out of the uploaded `.lplug4` — the form fills them itself. To 
 
 ## Teaser card description — limit 120 characters
 
-Used 113:
+Used 108 (verified against the live form at the 2.0.1 resubmission):
 
 ```
-Control Claude Code in Apple Terminal or Windows Terminal from the MX Creative Keypad. Press a button. Ship code.
+Physical hardware controls for Claude Code in Apple Terminal or Windows Terminal, on the MX Creative Keypad.
 ```
+
+Runner-up kept for reference (113): `Control Claude Code in Apple Terminal or Windows Terminal from the MX Creative Keypad. Press a button. Ship code.`
 
 ## Detail page description — limit 500 characters
 
