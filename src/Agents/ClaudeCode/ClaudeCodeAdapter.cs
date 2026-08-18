@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Agents
 {
     using System;
+    using System.Text.Json;
 
     /// <summary>
     /// Claude Code. The reference adapter: it describes the agent this plugin was built around,
@@ -39,6 +40,46 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             MultiConsumerHooks = false,  // the statusline is single-slot; wiring must chain
             HooksNeedTrust = false,      // settings.json edits take effect with no trust prompt
         };
+
+        /// <summary>
+        /// Claude Code's statusline document. Activity and the pending approval live in SEPARATE
+        /// files, so both are left null here and SessionRegistry keeps reading them as it always
+        /// has — this adapter changes how the file is parsed, not where Claude Code puts things.
+        /// </summary>
+        public AgentSessionState ParseSessionState(String json)
+        {
+            if (String.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            try
+            {
+                var state = JsonSerializer.Deserialize<Models.ClaudeState>(json);
+                if (state == null)
+                {
+                    return null;
+                }
+
+                return new AgentSessionState
+                {
+                    ProjectDir = state.Workspace?.ProjectDir ?? state.Workspace?.CurrentDir,
+                    SessionId = state.SessionId,
+                    SessionName = state.SessionName,
+                    CtxPercent = ContextPercent(state),
+                };
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
+        // Delegates to the engine's existing rule rather than restating it. Restating it lost a
+        // subtlety: a fresh session reports 0, and "0%" is a misleading answer where "unknown" is
+        // the honest one — the same reasoning as the Cost key.
+        private static Int32? ContextPercent(Models.ClaudeState state) =>
+            SessionRegistry.ContextPercent(state);
 
         public String SlashCommand(AgentVerb verb) =>
             verb switch

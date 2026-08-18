@@ -142,6 +142,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                     this._platform = PlatformBridgeFactory.Create(
                         this._agent.ProcessMatcher, this._agent.CliCommand);
                 }
+
+                // The grid reads state files through the agent too. Setting one without the other
+                // is the same wiring gap in a second place: discovery would find the right tabs and
+                // then fail to understand a word they said.
+                this.Grid.Agent = this._agent;
             }
         }
 

@@ -34,6 +34,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         // Reports nothing, because nothing is known. Every capability-gated key hides.
         public AgentCapabilities Capabilities => default;
 
+        /// <summary>No agent, no format to read.</summary>
+        public AgentSessionState ParseSessionState(String json) => null;
+
         // No vocabulary at all: a key that somehow exists types nothing rather than guessing.
         public String SlashCommand(AgentVerb verb) => null;
     }

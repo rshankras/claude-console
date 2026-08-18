@@ -61,6 +61,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         AgentCapabilities Capabilities { get; }
 
         /// <summary>
+        /// Read ONE session state file, in whatever format this agent writes, into the neutral
+        /// shape the grid renders. Null when the document is unusable. The grid must never parse an
+        /// agent's format itself: doing so is why Codex sessions sat at "ready" forever, their
+        /// hook envelopes silently deserialising as Claude's statusline with every field null.
+        /// </summary>
+        AgentSessionState ParseSessionState(String json);
+
+        /// <summary>
         /// The agent's own word for a verb, e.g. "/compact", or null when it has no equivalent —
         /// in which case the key hides rather than typing something the agent will reject.
         /// </summary>

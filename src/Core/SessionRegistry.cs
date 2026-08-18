@@ -42,6 +42,13 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// </summary>
     public class SessionRegistry
     {
+        /// <summary>
+        /// Whose state files these are. The registry never parses an agent's format itself; it asks.
+        /// Defaults to NoAgentAdapter so an unconfigured registry reads nothing rather than
+        /// misreading another agent's documents.
+        /// </summary>
+        internal Agents.IAgentAdapter Agent { get; set; } = new Agents.NoAgentAdapter();
+
         public const Int32 SlotCount = 6;
 
         // A busy session that hasn't been heard from in this long is treated as finished: the Stop
@@ -267,25 +274,50 @@ namespace Loupedeck.ClaudeConsolePlugin
                     continue;   // the fallback file is a duplicate of some tab, not a tab of its own
                 }
 
-                var state = ReadJson<ClaudeState>(file);
+                // The AGENT owns its format. Parsing here is what made a Codex hook envelope
+                // deserialise as Claude's statusline with every field null: no error, no missing
+                // file, just a session stuck on "ready" wearing a project name it never reported.
+                String raw;
+                try
+                {
+                    raw = File.ReadAllText(file);
+                }
+                catch (IOException)
+                {
+                    continue;
+                }
+
+                var state = this.Agent.ParseSessionState(raw);
                 if (state == null)
                 {
                     continue;
                 }
 
-                var projectDir = state.Workspace?.ProjectDir ?? state.Workspace?.CurrentDir;
                 var session = new GridSession
                 {
                     SessionKey = tty,
-                    Project = ProjectName(projectDir),
-                    ProjectDir = projectDir,
+                    Project = ProjectName(state.ProjectDir),
+                    ProjectDir = state.ProjectDir,
                     SessionId = state.SessionId,
                     SessionName = state.SessionName,
-                    CtxPercent = ContextPercent(state),
-                    State = ReadActivityState(tty),
+                    CtxPercent = state.CtxPercent,
+                    // An agent that reports activity in the same document wins; one that keeps it
+                    // in a separate activity file (Claude Code) leaves this null and we look there.
+                    State = state.Activity ?? ReadActivityState(tty),
                     UpdatedAt = LastWrite(file),
                 };
-                this.ApplyPendingApproval(session);
+
+                if (state.ReportsApproval)
+                {
+                    session.PendingTool = state.PendingTool;
+                    session.PendingCommand = state.PendingCommand;
+                    session.Risk = state.Risk;
+                }
+                else
+                {
+                    this.ApplyPendingApproval(session);
+                }
+
                 sessions[tty] = session;
             }
 

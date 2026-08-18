@@ -172,6 +172,54 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Null(s.SessionId);
         }
 
+        /// <summary>
+        /// The gap that survived every unit test: CodexStateReader was correct and NOTHING CALLED
+        /// IT. The grid deserialised every state file as Claude Code's statusline, which a Codex
+        /// envelope satisfies with all fields null — so its sessions sat at "ready" forever wearing
+        /// a project name they never reported, with no error anywhere. This drives the adapter the
+        /// grid actually uses.
+        /// </summary>
+        [Fact]
+        public void The_adapter_the_grid_uses_reads_a_codex_envelope()
+        {
+            var state = new CodexCliAdapter().ParseSessionState(Envelope("PermissionRequest", RealPermissionRequest));
+
+            Assert.NotNull(state);
+            Assert.Equal("/Users/dev/project", state.ProjectDir);
+            Assert.Equal("waiting", state.Activity);
+            Assert.Equal("apply_patch", state.PendingTool);
+            Assert.Equal(ApprovalRisk.High, state.Risk);
+            Assert.True(state.ReportsApproval);
+        }
+
+        /// <summary>Busy and idle must reach the grid too, not just the approval case.</summary>
+        [Theory]
+        [InlineData("UserPromptSubmit", "busy")]
+        [InlineData("PreToolUse", "busy")]
+        [InlineData("Stop", "done")]
+        public void Activity_reaches_the_grid_through_the_adapter(String evt, String expected)
+        {
+            var state = new CodexCliAdapter().ParseSessionState(Envelope(evt, RealStop));
+
+            Assert.Equal(expected, state.Activity);
+        }
+
+        /// <summary>
+        /// The mirror image: Claude Code's adapter must not be fooled by a Codex envelope, and
+        /// vice versa. Both are JSON objects, so a lenient parse "succeeds" on either.
+        /// </summary>
+        [Fact]
+        public void Neither_adapter_silently_accepts_the_others_document()
+        {
+            var codexDoc = Envelope("Stop", RealStop);
+            var fromClaude = new ClaudeCodeAdapter().ParseSessionState(codexDoc);
+
+            // It parses (it is valid JSON) but yields nothing usable — which is exactly why the
+            // grid must ask the right adapter rather than assume one format.
+            Assert.True(fromClaude == null || fromClaude.ProjectDir == null,
+                "Claude's parser must not invent a project from a Codex envelope");
+        }
+
         /// <summary>A Bash approval grades by command, exactly as Claude Code's does.</summary>
         [Fact]
         public void A_bash_approval_still_grades_as_a_command()

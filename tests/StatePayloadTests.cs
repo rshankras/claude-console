@@ -120,7 +120,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 File.WriteAllText(Path.Combine(sessions, "ttys002.json"), FreshSessionPayload);
 
-                var grid = new SessionRegistry(sessions, activity, Path.Combine(root, "registry.json"));
+                var grid = new SessionRegistry(sessions, activity, Path.Combine(root, "registry.json")) { Agent = new Agents.ClaudeCodeAdapter() };
                 grid.Refresh(new HashSet<String> { "ttys002" });
                 var session = grid.SlotSession(1);
 

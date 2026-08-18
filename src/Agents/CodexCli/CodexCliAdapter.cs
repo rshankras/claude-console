@@ -90,6 +90,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             return reader.ReadToEnd();
         }
 
+        /// <summary>
+        /// Codex has no statusline: every fact arrives on a lifecycle event, so one file carries
+        /// the project, the activity AND the pending approval — already graded by CodexStateReader.
+        /// </summary>
+        public AgentSessionState ParseSessionState(String json)
+        {
+            var snap = CodexStateReader.Parse(json);
+            if (snap == null)
+            {
+                return null;
+            }
+
+            return new AgentSessionState
+            {
+                ProjectDir = snap.ProjectDir,
+                SessionId = snap.SessionId,
+                Activity = snap.Activity,
+                PendingTool = snap.PendingTool,
+                PendingCommand = snap.PendingCommand,
+                Risk = snap.Risk,
+                ReportsApproval = true,
+                CtxPercent = null,   // best-effort transcript read is not implemented yet
+            };
+        }
+
         public String SlashCommand(AgentVerb verb) =>
             verb switch
             {

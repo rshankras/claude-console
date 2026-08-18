@@ -33,7 +33,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var activity = Path.Combine(_root, "activity");
             Directory.CreateDirectory(sessions);
             Directory.CreateDirectory(activity);
-            return new SessionRegistry(sessions, activity, Path.Combine(_root, "registry.json"));
+            return new SessionRegistry(sessions, activity, Path.Combine(_root, "registry.json")) { Agent = new Agents.ClaudeCodeAdapter() };
         }
 
         // A backend that performs nothing and records everything.

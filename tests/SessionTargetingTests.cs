@@ -58,7 +58,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         // A bridge whose grid is rooted in this test's temp dir, populated from the given live TTYs.
         private BridgeManager BridgeWith(params String[] liveTtys)
         {
-            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json"));
+            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json")) { Agent = new Agents.ClaudeCodeAdapter() };
             grid.Refresh(new HashSet<String>(liveTtys, StringComparer.Ordinal));
             return new BridgeManager(new MacPlatformBridge()) { Grid = grid };
         }
@@ -211,7 +211,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // every press with no way back short of pressing another session key.
             WriteSession("ttys001", "alpha");
             WriteSession("ttys002", "beta");
-            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json"));
+            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json")) { Agent = new Agents.ClaudeCodeAdapter() };
             grid.Refresh(new HashSet<String>(new[] { "ttys001", "ttys002" }, StringComparer.Ordinal));
             var bridge = new BridgeManager(new MacPlatformBridge()) { Grid = grid };
             bridge.OsascriptRunner = (args, timeout, wantOutput) => "ok";
@@ -234,13 +234,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             WriteSession("ttys001", "alpha");
             WriteSession("ttys002", "beta");
 
-            var grid = new SessionRegistry(_sessionsDir, _activityDir, registryFile);
+            var grid = new SessionRegistry(_sessionsDir, _activityDir, registryFile) { Agent = new Agents.ClaudeCodeAdapter() };
             grid.Refresh(new HashSet<String>(new[] { "ttys001", "ttys002" }, StringComparer.Ordinal));
             var bridge = new BridgeManager(new MacPlatformBridge()) { Grid = grid };
             bridge.OsascriptRunner = (args, timeout, wantOutput) => "ok";
             bridge.SelectSlot(2);
 
-            var reloaded = new SessionRegistry(_sessionsDir, _activityDir, registryFile);
+            var reloaded = new SessionRegistry(_sessionsDir, _activityDir, registryFile) { Agent = new Agents.ClaudeCodeAdapter() };
             reloaded.LoadPersisted();
 
             Assert.Equal("ttys002", reloaded.FocusedSession);

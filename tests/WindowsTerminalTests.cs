@@ -288,7 +288,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             try
             {
-                bridge.Grid = new SessionRegistry(sessions, activity, System.IO.Path.Combine(root, "registry.json"));
+                bridge.Grid = new SessionRegistry(sessions, activity, System.IO.Path.Combine(root, "registry.json")) { Agent = new Agents.ClaudeCodeAdapter() };
                 bridge.Grid.Refresh(new HashSet<String> { "pid-1234-638900000000000000" });
 
                 bridge.SendPrompt("hello");

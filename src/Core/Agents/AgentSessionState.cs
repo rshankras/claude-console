@@ -1,0 +1,45 @@
+namespace Loupedeck.ClaudeConsolePlugin.Agents
+{
+    using System;
+
+    /// <summary>
+    /// One session, as the grid needs it, after the agent's own format has been read.
+    ///
+    /// Each agent writes a different document — Claude Code a statusline snapshot, Codex a hook
+    /// envelope — and the grid must not know either shape. Before this existed, SessionRegistry
+    /// deserialised EVERY state file as Claude's format; a Codex file parsed "successfully" with
+    /// every field null, so its sessions sat at "ready" forever and borrowed a project name they
+    /// never reported. Nothing failed, which is what made it survive so long.
+    ///
+    /// Fields left null mean "this agent doesn't report it here", not "empty" — the caller keeps
+    /// its existing source in that case rather than overwriting a good value with nothing.
+    /// </summary>
+    internal sealed class AgentSessionState
+    {
+        public String ProjectDir { get; init; }
+
+        public String SessionId { get; init; }
+
+        public String SessionName { get; init; }
+
+        /// <summary>Context used, as a percentage, where the agent reports one.</summary>
+        public Int32? CtxPercent { get; init; }
+
+        /// <summary>
+        /// busy | waiting | done — or null when the agent reports activity somewhere else and the
+        /// caller should keep looking (Claude Code writes it to a separate activity file).
+        /// </summary>
+        public String Activity { get; init; }
+
+        /// <summary>Set only while an approval is pending; null means "not reported here".</summary>
+        public String PendingTool { get; init; }
+
+        public String PendingCommand { get; init; }
+
+        public ApprovalRisk Risk { get; init; } = ApprovalRisk.None;
+
+        /// <summary>True when this agent reported the pending approval itself, so the caller must
+        /// not also consult its own pending-approval file and overwrite what's here.</summary>
+        public Boolean ReportsApproval { get; init; }
+    }
+}

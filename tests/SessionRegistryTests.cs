@@ -46,7 +46,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
         }
 
-        private SessionRegistry NewRegistry() => new SessionRegistry(_sessionsDir, _activityDir, _registryFile);
+        private SessionRegistry NewRegistry() => new SessionRegistry(_sessionsDir, _activityDir, _registryFile) { Agent = new Agents.ClaudeCodeAdapter() };
 
         private String StateFor(String tty) => Path.Combine(_sessionsDir, tty + ".json");
         private String ActivityFor(String tty) => Path.Combine(_activityDir, tty + ".json");
