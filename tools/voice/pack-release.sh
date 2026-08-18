@@ -25,14 +25,25 @@ HOME_DIR="$HOME/.claude/claude-console"
 APP="$HOME_DIR/ClaudeVoiceHelper.app"
 WBIN="$HOME_DIR/whisper-bin"
 
+# Which products ship offline voice. Codex has no voice path yet, and demanding a notarized
+# helper for a package that would never launch it only blocks the build.
+case "$PRODUCT" in
+  ClaudeConsole) SHIPS_VOICE=1 ;;
+  *)             SHIPS_VOICE=0 ;;
+esac
+
 # --- preflight: the voice payload must exist and be notarized ------------------------------------
-[ -d "$APP" ]  || { echo "error: helper missing ($APP) — run sign-and-notarize.sh first." >&2; exit 1; }
-[ -d "$WBIN" ] || { echo "error: whisper bundle missing ($WBIN) — run sign-and-notarize.sh first." >&2; exit 1; }
-if ! xcrun stapler validate "$APP" >/dev/null 2>&1; then
-  echo "error: $APP is not stapled/notarized — run tools/voice/sign-and-notarize.sh first." >&2
-  exit 1
+if [ "$SHIPS_VOICE" = "1" ]; then
+  [ -d "$APP" ]  || { echo "error: helper missing ($APP) — run sign-and-notarize.sh first." >&2; exit 1; }
+  [ -d "$WBIN" ] || { echo "error: whisper bundle missing ($WBIN) — run sign-and-notarize.sh first." >&2; exit 1; }
+  if ! xcrun stapler validate "$APP" >/dev/null 2>&1; then
+    echo "error: $APP is not stapled/notarized — run tools/voice/sign-and-notarize.sh first." >&2
+    exit 1
+  fi
+  echo ">>> voice payload OK (helper notarized + stapled)"
+else
+  echo ">>> $PRODUCT ships no voice payload — skipping the notarization preflight"
 fi
-echo ">>> voice payload OK (helper notarized + stapled)"
 
 # --- build the plugin (Release) ------------------------------------------------------------------
 # SkipPluginLink is NOT optional here. Without it the csproj PostBuild target drops a dev
@@ -59,15 +70,19 @@ LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/ClaudeCon
 # pluginFolderWin at bin/, so these two exes ride along beside the plugin DLL and are simply
 # never launched on macOS.
 echo ">>> building Windows helper payload"
-bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64
+bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64 "$PRODUCT"
 
 # --- embed the notarized voice payload next to the plugin DLL (bin/voice/) ------------------------
 PKG_VOICE="$BUILD_DIR/bin/voice"
-echo ">>> embedding voice payload -> $PKG_VOICE"
-rm -rf "$PKG_VOICE"
-mkdir -p "$PKG_VOICE"
-ditto "$APP"  "$PKG_VOICE/ClaudeVoiceHelper.app"   # ditto preserves signature + exec bits
-ditto "$WBIN" "$PKG_VOICE/whisper-bin"
+if [ "$SHIPS_VOICE" = "1" ]; then
+  echo ">>> embedding voice payload -> $PKG_VOICE"
+  rm -rf "$PKG_VOICE"
+  mkdir -p "$PKG_VOICE"
+  ditto "$APP"  "$PKG_VOICE/ClaudeVoiceHelper.app"   # ditto preserves signature + exec bits
+  ditto "$WBIN" "$PKG_VOICE/whisper-bin"
+else
+  rm -rf "$PKG_VOICE"
+fi
 
 # --- pack ----------------------------------------------------------------------------------------
 echo ">>> packing $OUT"
@@ -77,7 +92,13 @@ logiplugintool pack "$BUILD_DIR" "$OUT"
 echo
 echo "✅ $OUT"
 echo "   size: $(du -h "$OUT" | cut -f1)"
-echo "   voice payload in package:"
-unzip -l "$OUT" | grep -iE "voice/.*(ClaudeVoiceHelper|whisper-cli)" | sed 's/^/     /'
+if [ "$SHIPS_VOICE" = "1" ]; then
+  echo "   voice payload in package:"
+  unzip -l "$OUT" | grep -iE "voice/.*(ClaudeVoiceHelper|whisper-cli)" | sed 's/^/     /'
+fi
 echo
-echo "Test on a clean Mac (no dev tools): install, press Voice, allow Microphone, dictate."
+if [ "$SHIPS_VOICE" = "1" ]; then
+  echo "Test on a clean Mac (no dev tools): install, press Voice, allow Microphone, dictate."
+else
+  echo "Test on a clean Mac (no dev tools): install, let the layout import, then start a session."
+fi

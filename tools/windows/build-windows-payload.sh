@@ -9,14 +9,18 @@
 #   claude-console-focus.exe    selects the Windows Terminal tab for a session (Phase 3)
 #   claude-console-voice.exe    microphone capture + whisper transcription (Phase 5)
 #
-# Usage: tools/windows/build-windows-payload.sh [Release|Debug] [win-x64|win-arm64]
+# Usage: tools/windows/build-windows-payload.sh [Release|Debug] [win-x64|win-arm64] [product]
 set -euo pipefail
 
 CONFIG="${1:-Release}"
 RID="${2:-win-x64}"
+PRODUCT="${3:-ClaudeConsole}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Same bin/ as the macOS payload — see LoupedeckPackage.yaml for why sharing is fine.
-DEST="$ROOT/bin/$CONFIG/bin"
+# Per PRODUCT since the repo builds a package per agent: staging into a shared bin/ (which this
+# did before the split) silently drops the helpers from every package, and Windows support is
+# exactly what depends on them.
+DEST="$ROOT/bin/$PRODUCT/$CONFIG/bin"
 
 echo ">>> building Windows helpers ($CONFIG, $RID)"
 mkdir -p "$DEST"
