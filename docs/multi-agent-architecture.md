@@ -3,11 +3,17 @@
 How Claude Console, a Codex CLI console, and a future agent-agnostic plugin share one engine.
 Written 2026-08-18.
 
-**Decisions taken.** Shared core repo (layout A below): a neutral repo holds the engine *and all
-adapters*; each product repo stays thin and consumes it. The Codex product lists as **"Vizhi for
-Codex"** — vendor-qualified, per the standing naming rule — which keeps the hackathon IP answer on
-the critical path to *listing*, not to building. The engine itself ships under a neutral name until
-that resolves.
+**Decisions taken.** **One repo builds every product** (layout B below). The Codex product lists as
+**"Vizhi for Codex"** — vendor-qualified, per the standing naming rule — which keeps the hackathon
+IP answer on the critical path to *listing*, not to building.
+
+*Revised from the initial shared-core-repo recommendation.* That recommendation rested on one
+objection — an OpenAI product whose listing points at a repo named for Claude — and a repo rename
+answers it, since GitHub permanently redirects the old web and git URLs. Everything else that
+argued for splitting was friction without benefit for a single maintainer: submodules cost detached
+HEADs and two-step commits, release cadence isn't actually coupled (each package tags and builds
+independently from one repo), and nothing consumes the engine as a standalone library, so
+versioning it separately buys nothing.
 
 **Landed so far.** `src/Agents/` — `IAgentAdapter`, `AgentCapabilities`, and both adapters, with
 `tests/AgentSeamTests.cs` pinning the honesty invariants. 403 tests green.
@@ -125,26 +131,39 @@ package name, crash-marker assembly version, `~/.<product>/` runtime home.
 
 ## Repo layout
 
-Three viable shapes:
+**Chosen: B — one repo, N packages.** This repo, renamed once 2.0.1 clears Marketplace review
+(the submitted package carries GitHub URLs; redirects would cover it, but there's no reason to give
+QA a second look). Rejected: A, a shared core repo consumed by thin product repos via submodule —
+correct for a team, pure friction for one maintainer; and C, forking now and converging later,
+which pays a duplication tax until a merge that historically never happens.
 
-- **A — shared core repo (recommended).** New neutral repo holds the engine *and all adapters*;
-  each product repo stays thin (branding, package metadata, profiles, icons, ~50-line plugin
-  class) and consumes core as a submodule. The agent-agnostic plugin then costs almost nothing:
-  it's a fourth thin repo that instantiates core with every adapter. Product repos keep their
-  names, URLs, issues, and release cadence.
-- **B — monorepo.** One repo builds N packages. Least ceremony day to day; couples release cadence
-  and puts an OpenAI product under a repo named for Claude unless everything is renamed at once.
-- **C — fork now, converge later.** Fastest to a shipping Codex package, zero risk to the plugin
-  currently in Marketplace review; pays the duplication tax until the merge, which historically
-  doesn't happen.
+```
+vizhi/                    (renamed from claude-console; old URLs redirect)
+  src/
+    Core/                 the engine — platform bridges, session grid, IPC bus,
+                          targeting, voice, self-registration + heal, rendering
+    Agents/
+      ClaudeCode/         adapter, its own project
+      CodexCli/           adapter, its own project
+    Products/
+      ClaudeConsole/      thin: branding, package metadata, profiles, icons → .lplug4
+      VizhiCodex/         thin: same, for Codex                            → .lplug4
+  tests/                  one suite, one run
+```
 
-Recommended sequence for A:
+**Each adapter is its own project, not a folder inside Core.** A product references only the
+adapter it ships, so the Claude package cannot carry Codex code — which is exactly the packaging
+hygiene Marketplace QA already enforced once. The agent-agnostic plugin later is a third entry
+under `Products/` that references both.
 
-1. Extract `Core` + `IAgentAdapter` **inside claude-console**, behind the 396-test suite; Claude
-   Code becomes the first adapter. Nothing ships from this step.
-2. Split `Core` (+ both adapters) into the new repo; claude-console consumes it. Its next release
-   is a no-op refactor release — the safest possible proof the extraction held.
-3. Write the Codex adapter fresh, ship the second package.
+Sequence:
+
+1. Define `IAgentAdapter` in place, behind the existing suite, with both adapters proving the
+   contract generalises. Nothing ships. **(done — `src/Agents/`, 403 tests)**
+2. Reorganise into the layout above and split the adapters into their own projects. Claude
+   Console's next release is a no-op refactor — the safest possible proof the move held.
+3. Build the Codex state bridge against verified payloads; ship the second package.
+4. Rename the repo (post-approval), update `homePageUrl` / `supportPageUrl` in both packages.
 
 ## Verified against codex-cli 0.145.0 (2026-08-18)
 
