@@ -119,16 +119,36 @@ by agent id, writing the same file layout under a per-agent IPC root.
 a third reader exist (the companion app is already planned against it). A `"schema": 1` field in
 every state file, and a documented contract in `docs/ipc-schema.md`.
 
-## Coexistence: two plugins, one keypad
+## Coexistence: two plugins, one keypad — ANSWERED ON HARDWARE (2026-08-18)
 
-Both plugins bind their Options+ application to the terminal (`com.apple.Terminal` /
-`WindowsTerminal`). Registrations are already namespaced — `@_claudeconsole` and `@_vizhi` have
-coexisted on this machine — but **which profile activates when Terminal comes forward, with both
-installed, is unverified.** That must be tested on hardware before the second listing goes live.
-It is also the strongest argument for the eventual single agent-agnostic plugin: one application
-binding, one profile, a mixed grid of Claude and Codex sessions.
+Both plugins bind their Options+ application to the terminal, and **two applications claiming the
+same bundle cannot both activate**. With Claude Console and Vizhi for Codex installed together, one
+wins whenever Terminal is frontmost and the other is unreachable — selecting the loser in Options+
+does not survive switching to Terminal. The registration document has no priority or ordering field
+(`name`, `displayName`, `deviceType`, `nativePluginName`, `processOrBundleName`, `modes`,
+`defaultProfileName`, `isEnabled` — nothing else), so there is no hook for "Terminal, but running
+Codex".
 
-Everything else must be namespaced per product: IPC root, `@_` registration, profile GUIDs,
+Registration itself is fine: `@_claudeconsole` and `@_codexconsole` coexist on disk, each with its
+own profile, and neither disturbs the other. It is *activation* that is exclusive.
+
+**This does not overturn shipping two products.** The constraint only affects someone running both
+agents, which is a minority; for a single-agent user the other plugin isn't installed and nothing
+is lost. Two focused packages remain the better product for most people.
+
+**It does create a support obligation.** A user who installs both sees one plugin silently stop
+working, with no error and no clue why — the worst kind of failure. Each product's README and
+listing must say plainly: install one. And the `isEnabled` flag in `ApplicationInfo.json` is the
+only lever for switching, which needs a service restart and is not a real answer.
+
+**The unified plugin is the answer for dual-agent users, and it is ADDITIVE.** A third entry under
+`src/Products/` referencing both adapters: one application binding, one profile, and a grid holding
+Claude and Codex sessions together, each key asking its own session's adapter. The engine is close —
+discovery already takes a matcher (so it takes two), state parsing already dispatches per adapter,
+and the hook already stamps `agent` into every file. What is missing is a per-session agent on
+`GridSession` and a merged read across both IPC roots.
+
+Everything else must still be namespaced per product: IPC root, `@_` registration, profile GUIDs,
 package name, crash-marker assembly version, `~/.<product>/` runtime home.
 
 ## Repo layout
