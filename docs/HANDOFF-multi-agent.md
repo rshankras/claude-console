@@ -10,7 +10,7 @@ today, not just in tests.
 
 | | |
 |---|---|
-| Branch | `feat/multi-agent`, **30 commits, unpushed** |
+| Branch | `feat/multi-agent`, **unpushed** (`git log --oneline origin/main..HEAD`) |
 | `main` | untouched at `0472f03` — the shipped 2.0.1 |
 | Claude Console | **2.1.0** (was 2.0.1) |
 | Vizhi for Codex | **1.4.0** (new product) |
@@ -24,11 +24,15 @@ approvals, model, and context percentage. Prompts, git and navigation keys all f
 
 ## What is on this machine right now
 
-- **Vizhi for Codex is installed. Claude Console is not.** Both were uninstalled during testing;
-  Codex was reinstalled.
-- No orphaned registrations, no leftover `~/.codex/hooks.json`, no IPC roots. `~/.codex/config.toml`
-  is untouched — the 12 Vizhi hook lines from July 2026 are still there and are not ours.
-- Installing 1.4.0 will re-create `~/.codex/hooks.json`, which then needs `/hooks` → trust in Codex.
+Checked 2026-08-18, after the hardware session:
+
+- **Vizhi for Codex 1.4.0 is installed; Claude Console is not.** Both were uninstalled during
+  testing and only Codex was put back.
+- Its registration `@_codexconsole` and `~/.codex/hooks.json` are present and correct — written by
+  the plugin, not leftovers. A reinstall recreates the hooks file, which then needs `/hooks` → trust
+  inside Codex before any key shows live state.
+- No orphaned registrations. `~/.codex/config.toml` is untouched: the 12 Vizhi hook lines from July
+  2026 are still there and are not ours.
 
 ## The finding that shapes the product
 
