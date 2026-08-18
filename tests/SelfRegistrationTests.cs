@@ -124,6 +124,68 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.False(SelfRegistration.RegistrationExists(appsRoot, "@_codexconsole"));
         }
 
+        /// <summary>
+        /// The Codex package must be a COMPLETE registration in its own right, and must not collide
+        /// with Claude Console's. Identity, profile GUID and the plugin the keys bind to all differ;
+        /// a shared GUID in particular would have the service dedupe one profile away.
+        /// </summary>
+        [Fact]
+        public void The_codex_package_registers_as_its_own_application()
+        {
+            var lp5 = CodexProfilePath();
+            var claude = PackagedProfilePath();
+
+            using var zip = System.IO.Compression.ZipFile.OpenRead(lp5);
+            var appInfo = ReadJsonEntry(zip, "ApplicationInfo.json");
+            var profileInfo = ReadJsonEntry(zip, "ProfileInfo.json");
+
+            Assert.Equal("@_codexconsole", (String)appInfo["name"]);
+            Assert.Equal("@_codexconsole", (String)profileInfo["applicationName"]);
+            Assert.Equal((String)profileInfo["name"], (String)appInfo["defaultProfileName"]);
+
+            Assert.NotEqual(SelfRegistration.ReadApplicationName(claude),
+                            SelfRegistration.ReadApplicationName(lp5));
+
+            using var claudeZip = System.IO.Compression.ZipFile.OpenRead(claude);
+            Assert.NotEqual((String)ReadJsonEntry(claudeZip, "ProfileInfo.json")["name"],
+                            (String)profileInfo["name"]);
+        }
+
+        /// <summary>
+        /// Key bindings name the plugin that owns them ("<PluginShortName>___<Type>___<param>"), so
+        /// a profile copied from another product binds every key to a plugin this package does not
+        /// contain — the layout would import and do nothing at all.
+        /// </summary>
+        [Fact]
+        public void Every_key_in_the_codex_profile_binds_to_the_codex_plugin()
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(CodexProfilePath());
+            using var entry = zip.GetEntry("ProfileInfo.json").Open();
+            using var reader = new System.IO.StreamReader(entry);
+            var body = reader.ReadToEnd();
+
+            Assert.DoesNotContain("ClaudeConsole___", body);
+            Assert.Contains("VizhiCodex___", body);
+        }
+
+        private static String CodexProfilePath()
+        {
+            var dir = AppContext.BaseDirectory;
+            for (var i = 0; i < 8 && dir != null; i++)
+            {
+                var candidate = Path.Combine(
+                    dir, "src", "Products", "VizhiCodex", "package", "profiles", "DefaultProfile70.lp5");
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+
+                dir = Path.GetDirectoryName(dir);
+            }
+
+            throw new InvalidOperationException("could not locate the Codex profile");
+        }
+
         /// <summary>The name is read from the package, never assumed.</summary>
         [Fact]
         public void The_application_name_comes_from_the_packaged_profile()
