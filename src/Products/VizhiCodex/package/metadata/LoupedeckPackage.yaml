@@ -18,7 +18,7 @@ description: Physical hardware controls for OpenAI Codex CLI on the MX Creative 
 pluginFileName: VizhiCodexPlugin.dll
 
 # Plugin version.
-version: 1.3.0
+version: 1.4.0
 
 # Author of the plugin. The author can be a company or an individual developer.
 author: S.Ravi Shankar

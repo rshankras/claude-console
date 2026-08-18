@@ -168,6 +168,39 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("VizhiCodex___", body);
         }
 
+        /// <summary>
+        /// The profile and the product must agree. Gating an action in code while the profile still
+        /// binds it does not remove the key — it turns it into an unresolvable binding, a key that
+        /// looks live and cannot fire. These are the four Codex genuinely does not have.
+        /// </summary>
+        [Fact]
+        public void The_codex_profile_binds_nothing_the_product_cannot_do()
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(CodexProfilePath());
+            using var entry = zip.GetEntry("ProfileInfo.json").Open();
+            using var reader = new System.IO.StreamReader(entry);
+            var body = reader.ReadToEnd();
+
+            Assert.DoesNotContain("ControlCommand___tab", body);      // no completion to accept
+            Assert.DoesNotContain("CostDisplayCommand", body);        // reports no spend
+            Assert.DoesNotContain("VoiceCommand", body);              // ships no voice payload
+            Assert.DoesNotContain("ProjectVoiceCommand", body);
+        }
+
+        /// <summary>Claude Console keeps all four — this is a per-product difference, not a removal.</summary>
+        [Fact]
+        public void The_claude_profile_still_binds_them()
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(PackagedProfilePath());
+            using var entry = zip.GetEntry("ProfileInfo.json").Open();
+            using var reader = new System.IO.StreamReader(entry);
+            var body = reader.ReadToEnd();
+
+            Assert.Contains("ControlCommand___tab", body);
+            Assert.Contains("CostDisplayCommand", body);
+            Assert.Contains("VoiceCommand", body);
+        }
+
         private static String CodexProfilePath()
         {
             var dir = AppContext.BaseDirectory;

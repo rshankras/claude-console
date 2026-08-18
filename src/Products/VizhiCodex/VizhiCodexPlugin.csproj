@@ -11,7 +11,7 @@
          crash-disable marker (Logs/plugin_crashes/) by assembly version; if this stays
          1.0.0.0 forever, any one load-crash disables the plugin permanently. Bumping it
          per release lets a new build dodge a stale marker. -->
-    <Version>1.3.0</Version>
+    <Version>1.4.0</Version>
 
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -37,6 +37,14 @@
          rather than by remembering. -->
     <Compile Include="..\..\Core\**\*.cs" />
     <Compile Include="..\..\Agents\CodexCli\**\*.cs" />
+
+    <!-- This product ships no voice payload (no notarized helper, no whisper binary), so the voice
+         actions must not exist in it at all. A registered action whose press cannot work is worse
+         than an absent one: the key looks live and does nothing. Excluding the SOURCE is the same
+         mechanism that keeps the other agent's adapter out — the compiler enforces it. -->
+    <Compile Remove="..\..\Core\Actions\VoiceCommand.cs" />
+    <Compile Remove="..\..\Core\Actions\VoiceDraftCommand.cs" />
+    <Compile Remove="..\..\Core\Actions\ProjectVoiceCommand.cs" />
   </ItemGroup>
 
   <ItemGroup>
