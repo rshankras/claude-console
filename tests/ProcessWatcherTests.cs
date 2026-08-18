@@ -29,7 +29,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Finds_the_cli_session()
         {
-            var ttys = ClaudeProcessWatcher.TtysFrom(RealPsOutput);
+            var ttys = AgentProcessWatcher.TtysFrom(RealPsOutput);
 
             Assert.Equal(new[] { "ttys000" }, ttys.OrderBy(t => t).ToArray());
         }
@@ -39,7 +39,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             // The desktop app runs a dozen processes whose paths contain "Claude". They have no
             // controlling terminal, so they can never be a session the keypad types into.
-            var ttys = ClaudeProcessWatcher.TtysFrom(RealPsOutput);
+            var ttys = AgentProcessWatcher.TtysFrom(RealPsOutput);
 
             Assert.DoesNotContain("??", ttys);
             Assert.Single(ttys);
@@ -50,7 +50,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             // Belt and braces: if the desktop app were ever launched from a terminal it would have a
             // TTY. Its binary is "Claude" (capital C) and the match is case-sensitive.
-            var ttys = ClaudeProcessWatcher.TtysFrom(
+            var ttys = AgentProcessWatcher.TtysFrom(
                 "500 1 ttys009  /Applications/Claude.app/Contents/MacOS/Claude\n");
 
             Assert.Empty(ttys);
@@ -66,7 +66,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("bun /Users/x/.claude/local/claude")]
         public void Recognises_the_ways_claude_code_is_launched(String command)
         {
-            Assert.True(ClaudeProcessWatcher.IsClaudeCommand(command), command);
+            Assert.True(AgentProcessWatcher.IsAgentCommand(command), command);
         }
 
         [Theory]
@@ -78,7 +78,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("grep claude")]
         public void Ignores_everything_else(String command)
         {
-            Assert.False(ClaudeProcessWatcher.IsClaudeCommand(command), command);
+            Assert.False(AgentProcessWatcher.IsAgentCommand(command), command);
         }
 
         [Fact]
@@ -87,7 +87,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // Only the top-level session should own the tab's key.
             var ps = "100 1 ttys003  claude\n200 100 ttys003  claude --print\n";
 
-            var rows = ClaudeProcessWatcher.Parse(ps);
+            var rows = AgentProcessWatcher.Parse(ps);
 
             Assert.Single(rows);
             Assert.Equal("100", rows[0].Pid);
@@ -99,14 +99,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var ps = "100 1 ttys000  claude\n300 1 ttys004  claude\n500 1 ttys007  -zsh\n";
 
             Assert.Equal(new[] { "ttys000", "ttys004" },
-                ClaudeProcessWatcher.TtysFrom(ps).OrderBy(t => t).ToArray());
+                AgentProcessWatcher.TtysFrom(ps).OrderBy(t => t).ToArray());
         }
 
         [Fact]
         public void Normalises_a_full_device_path()
         {
             Assert.Equal(new[] { "ttys002" },
-                ClaudeProcessWatcher.TtysFrom("100 1 /dev/ttys002  claude\n").ToArray());
+                AgentProcessWatcher.TtysFrom("100 1 /dev/ttys002  claude\n").ToArray());
         }
 
         [Theory]
@@ -115,7 +115,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("garbage that is not ps output\n\n")]
         public void Survives_unusable_input(String ps)
         {
-            Assert.Empty(ClaudeProcessWatcher.TtysFrom(ps));
+            Assert.Empty(AgentProcessWatcher.TtysFrom(ps));
         }
     }
 }

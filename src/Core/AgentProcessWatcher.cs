@@ -6,7 +6,11 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.Text.RegularExpressions;
 
     /// <summary>
-    /// Finds the Terminal tabs currently running a Claude Code session, by scanning `ps`.
+    /// Finds the Terminal tabs currently running a coding-agent session, by scanning `ps`.
+    ///
+    /// WHAT it looks for comes from an <see cref="AgentProcessMatcher"/>, so the same scan serves
+    /// Claude Code and Codex; the rules below are about how `ps` output behaves, which is the same
+    /// for any agent.
     ///
     /// This is what makes a closed session's key clear promptly and correctly. Before this, a tab's
     /// state file could only be aged out on a timer, so a finished session lingered and a quiet one
@@ -15,15 +19,15 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// Parsing rules, derived from real `ps -axo pid=,ppid=,tty=,command=` output on macOS:
     ///   • Rows with tty "??" are dropped. This is what excludes the Claude DESKTOP app, which runs
     ///     a dozen Electron helper processes with no controlling terminal.
-    ///   • The executable is matched CASE-SENSITIVELY against "claude". The desktop app's binary is
+    ///   • The executable is matched CASE-SENSITIVELY. Claude's desktop app binary is
     ///     "…/Contents/MacOS/Claude" (capital C), so were it ever launched from a terminal it would
     ///     still not be mistaken for a CLI session.
-    ///   • Claude Code also appears as `node …/claude` or `bun …/claude` depending on how it was
-    ///     installed, so those forms are matched on the script argument.
+    ///   • An agent may also appear as `node …/cli.js` or `bun …` depending on how it was
+    ///     installed, so those forms are matched on the script argument via the matcher's hints.
     ///   • A candidate whose parent is also a candidate is dropped, keeping one row per tab even
     ///     when a session spawns a nested claude process.
     /// </summary>
-    internal static class ClaudeProcessWatcher
+    internal static class AgentProcessWatcher
     {
         // pid, ppid, tty, command — the four columns requested from `ps`, whitespace separated.
         private static readonly Regex Row = new Regex(@"^(\d+)\s+(\d+)\s+(\S+)\s+(.+)$", RegexOptions.Compiled);
@@ -42,8 +46,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// Parse `ps -axo pid=,ppid=,tty=,command=` output into the TTYs running Claude Code.
         /// Pure and allocation-light so it can be unit-tested against captured output.
         /// </summary>
-        internal static IReadOnlyList<Row4> Parse(String psOutput)
+        internal static IReadOnlyList<Row4> Parse(String psOutput, AgentProcessMatcher matcher = null)
         {
+            matcher ??= AgentProcessMatcher.ClaudeCode;
+
             var candidates = new List<Row4>();
             if (String.IsNullOrEmpty(psOutput))
             {
@@ -64,7 +70,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     continue;   // no controlling terminal — not a session we can focus or type into
                 }
 
-                if (!IsClaudeCommand(m.Groups[4].Value))
+                if (!IsAgentCommand(m.Groups[4].Value, matcher))
                 {
                     continue;
                 }
@@ -83,12 +89,14 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>The distinct TTYs running Claude Code, e.g. { "ttys000", "ttys003" }.</summary>
-        internal static HashSet<String> TtysFrom(String psOutput) =>
-            new HashSet<String>(Parse(psOutput).Select(r => r.Tty), StringComparer.Ordinal);
+        internal static HashSet<String> TtysFrom(String psOutput, AgentProcessMatcher matcher = null) =>
+            new HashSet<String>(Parse(psOutput, matcher).Select(r => r.Tty), StringComparer.Ordinal);
 
-        // True for `claude …`, `/usr/local/bin/claude …`, `node …/claude …`, `bun …/claude …`.
-        internal static Boolean IsClaudeCommand(String command)
+        // True for `codex …`, `/usr/local/bin/claude …`, `node …/claude-code/cli.js`, and friends.
+        internal static Boolean IsAgentCommand(String command, AgentProcessMatcher matcher = null)
         {
+            matcher ??= AgentProcessMatcher.ClaudeCode;
+
             var argv = SplitArgs(command);
             if (argv.Count == 0)
             {
@@ -96,9 +104,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             var exe = BaseName(argv[0]);
-            if (exe == "claude")
+            foreach (var name in matcher.ExeNames)
             {
-                return true;
+                if (exe == name)
+                {
+                    return true;
+                }
             }
 
             // `node /opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js` and friends:
@@ -111,10 +122,26 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         continue;
                     }
+
                     var name = BaseName(arg);
-                    return name == "claude"
-                        || arg.Contains("/claude-code/")
-                        || arg.Contains("/.claude/");
+                    foreach (var wanted in matcher.ExeNames)
+                    {
+                        if (name == wanted)
+                        {
+                            return true;
+                        }
+                    }
+
+                    foreach (var hint in matcher.ScriptHints)
+                    {
+                        if (arg.Contains(hint, StringComparison.Ordinal))
+                        {
+                            return true;
+                        }
+                    }
+
+                    // Only the FIRST non-flag argument is the script; anything after is its own args.
+                    return false;
                 }
             }
 

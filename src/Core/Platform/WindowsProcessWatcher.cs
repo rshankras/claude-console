@@ -24,7 +24,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     }
 
     /// <summary>
-    /// Finds the Claude Code sessions running on Windows — the counterpart to ClaudeProcessWatcher,
+    /// Finds the Claude Code sessions running on Windows — the counterpart to AgentProcessWatcher,
     /// and deliberately the same shape: a PURE decision function over process rows, so it can be
     /// unit-tested against captured tables on any OS, with the actual enumeration kept thin and
     /// injectable (see WindowsPlatformBridge).

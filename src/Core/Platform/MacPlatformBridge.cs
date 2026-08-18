@@ -18,6 +18,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
         public Boolean IsSupported => OperatingSystem.IsMacOS();
 
+        // WHAT counts as a session, supplied at construction. The bridge never learns which agent
+        // this describes — that is the whole point of keeping the two seams orthogonal. Defaults to
+        // Claude Code so existing callers and tests are unaffected.
+        private readonly AgentProcessMatcher _matcher;
+
+        public MacPlatformBridge(AgentProcessMatcher matcher = null) =>
+            this._matcher = matcher ?? AgentProcessMatcher.ClaudeCode;
+
         // ------------------------------------------------------------------------------------------
         // Guarded keystroke injection — every injection FIRST focuses the tracked Claude tab in
         // Terminal.app (verified by TTY), then types, all in ONE osascript run so no app switch can
@@ -108,7 +116,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
 
             var output = this.RunCapture("/bin/ps", new List<String> { "-axo", "pid=,ppid=,tty=,command=" }, 5000);
-            return output == null ? null : ClaudeProcessWatcher.TtysFrom(output);
+            return output == null ? null : AgentProcessWatcher.TtysFrom(output, this._matcher);
         }
 
         /// <summary>

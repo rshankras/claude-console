@@ -21,7 +21,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         public String CliCommand => "claude";
 
         // Matched case-sensitively against the executable basename: the desktop app's binary
-        // differs in case, and must not be mistaken for a CLI session (see ClaudeProcessWatcher).
+        // differs in case, and must not be mistaken for a CLI session (see AgentProcessWatcher).
         public String[] ProcessNames => new[] { "claude" };
 
         public String ProductSlug => "claude-console";
