@@ -52,7 +52,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         {
             Cost = false,                // subscription pricing — no spend is reported at all
             ContextPercent = false,      // no documented interface
-            BestEffortContext = true,    // rollout JSONL tail, explicitly unstable
+            BestEffortContext = true,    // rollout JSONL tail, explicitly unstable — implemented
+                                         // by CodexContextReader, null on any surprise
             Model = true,                // present on every hook payload
             InputModes = false,          // approval policy is a flag/picker, not a cycle chord
             ApprovalSignal = true,       // PermissionRequest, with a structured decision protocol
@@ -111,7 +112,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 PendingCommand = snap.PendingCommand,
                 Risk = snap.Risk,
                 ReportsApproval = true,
-                CtxPercent = null,   // best-effort transcript read is not implemented yet
+                // Best-effort, and the only reader of an unstable format in the plugin — it
+                // returns null rather than a guess whenever the transcript surprises it.
+                CtxPercent = CodexContextReader.PercentFrom(snap.TranscriptPath),
             };
         }
 
