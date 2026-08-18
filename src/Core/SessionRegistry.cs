@@ -402,14 +402,21 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>Basename of the project dir, or "Claude" when unknown.</summary>
+        /// <summary>
+        /// The project label: the working directory's own name. Null when there isn't one — the key
+        /// then falls back to the running agent's name (SessionSlotCommand). The engine must not
+        /// name an agent here; these two fallbacks used to read "Claude", which is how a Codex grid
+        /// borrowed Claude's name for any session that had not reported a directory yet.
+        /// </summary>
         internal static String ProjectName(String projectDir)
         {
             if (String.IsNullOrWhiteSpace(projectDir))
             {
-                return "Claude";
+                return null;
             }
+
             var name = Path.GetFileName(projectDir.TrimEnd('/'));
-            return String.IsNullOrEmpty(name) ? "Claude" : name;
+            return String.IsNullOrEmpty(name) ? null : name;
         }
 
         private void ReapFiles(String tty)

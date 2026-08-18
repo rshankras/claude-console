@@ -356,9 +356,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Theory]
         [InlineData("/Users/x/Work/MyApps/claude-console", "claude-console")]
         [InlineData("/Users/x/Work/MyApps/claude-console/", "claude-console")]
-        [InlineData("/", "Claude")]
-        [InlineData("", "Claude")]
-        [InlineData(null, "Claude")]
+        [InlineData("/", null)]
+        [InlineData("", null)]
+        [InlineData(null, null)]
         public void Project_name_is_the_directory_basename(String dir, String expected)
         {
             Assert.Equal(expected, SessionRegistry.ProjectName(dir));
