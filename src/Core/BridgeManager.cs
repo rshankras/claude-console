@@ -168,15 +168,24 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal static String NormalizeTty(String raw) => MacPlatformBridge.NormalizeTty(raw);
 
         public BridgeManager()
-            : this(PlatformBridgeFactory.Create())
+            : this(PlatformBridgeFactory.Create(), injected: false)
         {
         }
 
         /// <summary>Test/DI constructor — inject a fake or a specific platform backend.</summary>
         internal BridgeManager(IPlatformBridge platform)
+            : this(platform, injected: true)
+        {
+        }
+
+        // `injected` says whether the CALLER chose this bridge. The public constructor builds a
+        // default one before any agent is known, and that must be replaceable — chaining the two
+        // constructors without this distinction marked every bridge as injected and silently
+        // disabled the rebuild, which is exactly how a Codex keypad kept showing Claude sessions.
+        private BridgeManager(IPlatformBridge platform, Boolean injected)
         {
             this._platform = platform ?? new UnsupportedPlatformBridge();
-            this._platformInjected = true;
+            this._platformInjected = injected;
         }
 
         // Test seam: the pinned session, so a test can assert the pin was set/released without

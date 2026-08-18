@@ -120,16 +120,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         /// <summary>
-        /// Callers that predate the seam pass no matcher at all; they must keep getting Claude Code
-        /// behaviour exactly, since that is what the shipped plugin relies on.
+        /// No matcher means NO agent, never a default one. Defaulting to Claude Code is what let an
+        /// undeclared product adopt Claude's sessions — the engine must name no agent anywhere.
         /// </summary>
         [Fact]
-        public void The_default_matcher_is_still_claude_code()
+        public void The_default_matcher_matches_nothing()
         {
-            Assert.True(AgentProcessWatcher.IsAgentCommand("claude"));
+            Assert.False(AgentProcessWatcher.IsAgentCommand("claude"));
             Assert.False(AgentProcessWatcher.IsAgentCommand("codex"));
-            Assert.Equal(AgentProcessWatcher.TtysFrom(Ps, AgentProcessMatcher.ClaudeCode),
-                         AgentProcessWatcher.TtysFrom(Ps));
+            Assert.Empty(AgentProcessWatcher.TtysFrom(Ps));
         }
     }
 }

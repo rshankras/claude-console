@@ -20,7 +20,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
         // WHAT counts as a session, supplied at construction. The bridge never learns which agent
         // this describes — that is the whole point of keeping the two seams orthogonal. Defaults to
-        // Claude Code so existing callers and tests are unaffected.
+        // matching NOTHING: a bridge built before its product declares an agent must find no
+        // sessions rather than another agent's.
         private readonly AgentProcessMatcher _matcher;
 
         // The CLI a new session runs. Data, not knowledge of an agent: the bridge opens a terminal
@@ -29,7 +30,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
         public MacPlatformBridge(AgentProcessMatcher matcher = null, String cliCommand = null)
         {
-            this._matcher = matcher ?? AgentProcessMatcher.ClaudeCode;
+            this._matcher = matcher ?? AgentProcessMatcher.None;
             this._cliCommand = String.IsNullOrWhiteSpace(cliCommand) ? "claude" : cliCommand;
         }
 

@@ -11,8 +11,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     internal static class PlatformBridgeFactory
     {
         /// <param name="matcher">
-        /// What an agent's process looks like in a process listing. Null means Claude Code, so a
-        /// caller that predates the agent seam keeps working unchanged.
+        /// What an agent's process looks like in a process listing. Null matches nothing — Core
+        /// names no agent, so an undeclared product finds no sessions rather than someone else's.
         /// </param>
         public static IPlatformBridge Create(AgentProcessMatcher matcher = null, String cliCommand = null)
         {

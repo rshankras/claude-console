@@ -48,7 +48,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         internal static IReadOnlyList<Row4> Parse(String psOutput, AgentProcessMatcher matcher = null)
         {
-            matcher ??= AgentProcessMatcher.ClaudeCode;
+            matcher ??= AgentProcessMatcher.None;
 
             var candidates = new List<Row4>();
             if (String.IsNullOrEmpty(psOutput))
@@ -95,7 +95,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // True for `codex …`, `/usr/local/bin/claude …`, `node …/claude-code/cli.js`, and friends.
         internal static Boolean IsAgentCommand(String command, AgentProcessMatcher matcher = null)
         {
-            matcher ??= AgentProcessMatcher.ClaudeCode;
+            matcher ??= AgentProcessMatcher.None;
 
             var argv = SplitArgs(command);
             if (argv.Count == 0)

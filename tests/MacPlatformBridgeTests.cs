@@ -133,7 +133,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Session_discovery_parses_the_ps_table()
         {
-            var mac = new MacPlatformBridge
+            // Names its agent explicitly: the bridge no longer assumes one, so a test that wants
+            // Claude's sessions has to say so — the same way a product does.
+            var mac = new MacPlatformBridge(AgentProcessMatcher.ClaudeCode)
             {
                 PsRunner = () =>
                     "  501   500 ttys003  /opt/homebrew/bin/node /opt/homebrew/bin/claude\n" +

@@ -121,7 +121,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.NotNull(session);
             Assert.True(session.IsProvisional);
-            Assert.Equal("Claude", session.Project);
+            // No agent name on a provisional session: the key falls back to whichever
+            // agent is running, so the engine must not pick one.
+            Assert.Null(session.Project);
             Assert.Null(session.CtxPercent);
         }
 

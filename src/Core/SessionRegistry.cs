@@ -178,7 +178,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                         next[tty] = new GridSession
                         {
                             SessionKey = tty,
-                            Project = "Claude",
+                            // No project yet, and no agent name either — the key falls back to
+                            // whichever agent is running (SessionSlotCommand). Naming one here is
+                            // how a Codex grid ended up labelled "Claude".
+                            Project = null,
                             State = "ready",
                             IsProvisional = true,
                             UpdatedAt = DateTime.UtcNow,
