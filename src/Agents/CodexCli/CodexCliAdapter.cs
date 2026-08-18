@@ -46,6 +46,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         public String ProductSlug => "codex-console";
 
+        public AgentProcessMatcher ProcessMatcher => AgentProcessMatcher.CodexCli;
+
         public AgentCapabilities Capabilities => new AgentCapabilities
         {
             Cost = false,                // subscription pricing — no spend is reported at all

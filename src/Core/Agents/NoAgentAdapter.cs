@@ -28,6 +28,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         public String ProductSlug => "agent-console";
 
+        /// <summary>Matches nothing: an undeclared agent has no sessions to find.</summary>
+        public AgentProcessMatcher ProcessMatcher => new AgentProcessMatcher();
+
         // Reports nothing, because nothing is known. Every capability-gated key hides.
         public AgentCapabilities Capabilities => default;
 

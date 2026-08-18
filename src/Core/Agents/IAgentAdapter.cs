@@ -50,6 +50,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// </summary>
         String ProductSlug { get; }
 
+        /// <summary>
+        /// How this agent's sessions look in a process listing. The platform bridge is built from
+        /// this, so discovery finds THIS agent's sessions and no one else's — without the bridge
+        /// ever learning which agent it is.
+        /// </summary>
+        AgentProcessMatcher ProcessMatcher { get; }
+
         /// <summary>What this agent can honestly report. Drives key visibility, never a fake value.</summary>
         AgentCapabilities Capabilities { get; }
 

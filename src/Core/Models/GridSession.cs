@@ -27,7 +27,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         public String SessionKey { get; set; }
 
         /// <summary>Basename of the workspace project dir; "Claude" until the session reports one.</summary>
-        public String Project { get; set; } = "Claude";
+        // No default agent name here: the engine serves several, and a Codex grid labelled
+        // "Claude" is the same class of lie as a Cost key showing $0.00. The key falls back to the
+        // running agent's own name when a session has not reported a project yet.
+        public String Project { get; set; }
 
         /// <summary>"busy" | "waiting" | "ready" — from the activity hooks.</summary>
         public String State { get; set; } = "ready";

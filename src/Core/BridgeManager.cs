@@ -92,7 +92,9 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         // Everything OS-specific lives behind this seam: session discovery, injection, focus, nav.
         // See IPlatformBridge — above it, neither AppleScript nor TTYs nor consoles are visible.
-        private readonly IPlatformBridge _platform;
+        // Not readonly: declaring the agent rebuilds it, because the product declares itself after
+        // this singleton already exists. See the Agent setter.
+        private IPlatformBridge _platform;
 
         public event Action<ClaudeState> OnStateChanged;
         public event Action<ActivityState> OnActivityChanged;
@@ -123,7 +125,30 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// assigns its own in its plugin CONSTRUCTOR — the SDK builds actions before Load(), and an
         /// action decides then which keys to add.
         /// </summary>
-        internal IAgentAdapter Agent { get; set; } = new NoAgentAdapter();
+        internal IAgentAdapter Agent
+        {
+            get => this._agent;
+            set
+            {
+                this._agent = value ?? new NoAgentAdapter();
+
+                // REBUILD the platform bridge. It is constructed before the product declares its
+                // agent — the SDK builds this singleton on first touch — so a bridge made at
+                // construction time carries the DEFAULT matcher, and a Codex console would happily
+                // discover `claude` processes and show them on its grid. Found on hardware, not in
+                // a unit test: every piece was correct in isolation and never wired together.
+                if (!this._platformInjected)
+                {
+                    this._platform = PlatformBridgeFactory.Create(
+                        this._agent.ProcessMatcher, this._agent.CliCommand);
+                }
+            }
+        }
+
+        private IAgentAdapter _agent = new NoAgentAdapter();
+
+        // True when a test supplied its own bridge; declaring an agent must not replace it.
+        private Boolean _platformInjected;
 
         // Test seams for the macOS backend, forwarded so the existing mac tests can keep driving
         // the manager directly. No-ops when the backend isn't the mac one.
@@ -148,7 +173,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>Test/DI constructor — inject a fake or a specific platform backend.</summary>
-        internal BridgeManager(IPlatformBridge platform) => _platform = platform ?? new UnsupportedPlatformBridge();
+        internal BridgeManager(IPlatformBridge platform)
+        {
+            this._platform = platform ?? new UnsupportedPlatformBridge();
+            this._platformInjected = true;
+        }
 
         // Test seam: the pinned session, so a test can assert the pin was set/released without
         // reaching through TargetTty's fallbacks.

@@ -121,7 +121,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // The project name, SINGLE line — the service renders a one-line label in the same
             // large crisp font as every other key's ("Clear", "Draft"); a second line makes it
             // shrink both (and is what clipped in 1.6.1). The context % lives in the bitmap.
-            return Truncate(session.Project, 12);
+            // Until a session reports its project, show the agent's name rather than nothing —
+            // and never another agent's.
+            var label = String.IsNullOrWhiteSpace(session.Project)
+                ? BridgeManager.Instance.Agent.DisplayName
+                : session.Project;
+
+            return Truncate(label, 12);
         }
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)

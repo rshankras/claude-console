@@ -26,6 +26,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         public String ProductSlug => "claude-console";
 
+        public AgentProcessMatcher ProcessMatcher => AgentProcessMatcher.ClaudeCode;
+
         public AgentCapabilities Capabilities => new AgentCapabilities
         {
             Cost = true,                 // statusline cost.total_cost_usd
