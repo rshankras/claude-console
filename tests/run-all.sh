@@ -37,6 +37,12 @@ if ! bash "$REPO/tests/scripts/test-bridge-scripts.sh"; then
 fi
 
 echo
+echo "▶ codex hook tests"
+if ! bash "$REPO/tests/scripts/test-codex-hook.sh"; then
+  STATUS=1
+fi
+
+echo
 echo "▶ live IPC root not wiped"
 if [ "$CANARY_PLACED" -eq 0 ]; then
   echo "  skip no live IPC root on this machine — nothing a test could destroy"

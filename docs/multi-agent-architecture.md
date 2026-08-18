@@ -15,8 +15,10 @@ HEADs and two-step commits, release cadence isn't actually coupled (each package
 independently from one repo), and nothing consumes the engine as a standalone library, so
 versioning it separately buys nothing.
 
-**Landed so far.** `src/Agents/` — `IAgentAdapter`, `AgentCapabilities`, and both adapters, with
-`tests/AgentSeamTests.cs` pinning the honesty invariants. 403 tests green.
+**Landed so far** (branch `feat/multi-agent`): the `IAgentAdapter` seam and both adapters; the
+`src/Core` + `src/Agents/<agent>` layout; `tool_name`-aware risk grading so a patch is never graded
+as a shell command; and `scripts/codex-hook.sh`, the Codex state-bridge writer. 420 C# tests plus
+47 shell tests, green.
 
 ## The finding
 
