@@ -35,6 +35,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             ContextPercent = true,       // statusline context_window.used_percentage
             BestEffortContext = false,   // no need — the documented number is available
             Model = true,
+            TabCompletion = true,        // Tab accepts a slash-command / @file suggestion
             InputModes = true,           // Shift+Tab cycles normal → auto-accept → plan
             ApprovalSignal = true,       // PermissionRequest hook carries tool_name + tool_input
             MultiConsumerHooks = false,  // the statusline is single-slot; wiring must chain

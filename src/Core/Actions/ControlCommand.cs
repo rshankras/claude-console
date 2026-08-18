@@ -38,11 +38,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         {
             var agent = BridgeManager.Instance.Agent;
 
-            // Escape and Tab are keystrokes, not vocabulary — every terminal agent understands them.
+            // Escape is universal: every terminal agent treats it as interrupt/dismiss.
             this.AddParameter(Esc, "Esc", "Core")
                 .SetDescription($"Interrupt {agent.DisplayName}, exit a mode, or dismiss a menu (Escape)");
-            this.AddParameter(Tab, "Tab", "Core")
-                .SetDescription("Accept the highlighted autocomplete and submit it (Tab, then Return)");
+
+            // Tab is NOT universal. It only earns a key where the agent has a completion to accept;
+            // elsewhere the press does nothing and the key reads as broken.
+            if (agent.Capabilities.TabCompletion)
+            {
+                this.AddParameter(Tab, "Tab", "Core")
+                    .SetDescription("Accept the highlighted autocomplete and submit it (Tab, then Return)");
+            }
 
             if (agent.Capabilities.InputModes)
             {

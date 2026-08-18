@@ -39,6 +39,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         public Boolean InputModes { get; init; }
 
         /// <summary>
+        /// Tab accepts a highlighted completion, so a key can send Tab-then-Return to complete and
+        /// submit in one press. Not universal: where the agent does nothing with Tab, the key looks
+        /// broken to anyone who presses it.
+        /// </summary>
+        public Boolean TabCompletion { get; init; }
+
+        /// <summary>
         /// Signals that a specific tool call is waiting on the user, with enough payload to grade
         /// its risk. Both agents do this through a PermissionRequest hook — it is what lights the
         /// approval key amber, and red when RiskClassifier flags the pending command.

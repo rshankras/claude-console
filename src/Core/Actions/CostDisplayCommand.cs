@@ -8,9 +8,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     ///
     /// Not every agent does. Codex bills a subscription and reports no spend at all, so this key
     /// must not render "$0.00" — a zero is indistinguishable from a genuinely free session, and the
-    /// whole value of the hardware is that a glance tells the truth. On such an agent the key falls
-    /// back to what IS known (the model), and pressing it types nothing rather than a command the
-    /// agent would reject.
+    /// whole value of the hardware is that a glance tells the truth. On such an agent the key shows
+    /// a dash and a press types nothing.
+    ///
+    /// It briefly showed the MODEL instead, which was worse: the profile already has a Model key, so
+    /// the keypad carried two keys displaying the same thing and neither said what it was. A key
+    /// with nothing to report should look empty, not borrow another key's job.
     /// </summary>
     public class CostDisplayCommand : PluginDynamicCommand
     {
@@ -57,15 +60,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
             this.ReportsCost
                 ? $"${_cost:F2}{Environment.NewLine}{TokenText(_tokens)}"
-                : (String.IsNullOrEmpty(_model) ? "—" : _model);
+                : "—";
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             // Face shows the $ icon; the live cost/tokens go in the LABEL (GetCommandDisplayName)
             // so the value isn't drawn twice. Falls back to the value text if the icon is missing.
-            var text = this.ReportsCost
-                ? $"${_cost:F2}\n{TokenText(_tokens)}"
-                : (String.IsNullOrEmpty(_model) ? "—" : _model);
+            var text = this.ReportsCost ? $"${_cost:F2}\n{TokenText(_tokens)}" : "—";
 
             return KeyImage.Render(imageSize, text, KeyImage.Dark, this.ReportsCost ? "cost" : "brain");
         }

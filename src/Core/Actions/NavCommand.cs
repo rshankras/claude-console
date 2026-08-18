@@ -33,17 +33,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public NavCommand()
             : base()
         {
+            // The action IDS stay as they are — existing profiles bind to them — but the LABELS
+            // name whichever agent is running. A Codex keypad reading "New Claude" is the same
+            // class of mistake as a grid labelled with the wrong agent.
+            var agentName = BridgeManager.Instance.Agent.DisplayName;
+
             this.AddParameter(Terminal, "Terminal", "Terminal")
                 .SetDescription("Bring Terminal.app to the front");
             this.AddParameter(NewTab, "New Tab", "Terminal")
                 .SetDescription("Open a new Terminal tab (a fresh shell)");
-            this.AddParameter(NewClaude, "New Claude", "Terminal")
+            this.AddParameter(NewClaude, $"New {agentName}", "Terminal")
                 .SetDescription("Open a new Terminal tab and start a claude session");
             this.AddParameter(NextTab, "Next Tab", "Terminal")
                 .SetDescription("Switch to the next Terminal tab");
             this.AddParameter(PrevTab, "Prev Tab", "Terminal")
                 .SetDescription("Switch to the previous Terminal tab");
-            this.AddParameter(NewClaudeWindow, "New Claude (Window)", "Terminal")
+            this.AddParameter(NewClaudeWindow, $"New {agentName} (Window)", "Terminal")
                 .SetDescription("Open a new Terminal window and start a claude session");
             this.AddParameter(NextWindow, "Next Window", "Terminal")
                 .SetDescription("Switch to the next Terminal window (Cmd+`)");

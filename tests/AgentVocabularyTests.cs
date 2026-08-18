@@ -71,6 +71,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         /// <summary>
+        /// Clear means "start over", and the two agents spell it differently — this is the mapping
+        /// a user asked about, pinned so it cannot drift: Claude /clear, Codex /new.
+        /// </summary>
+        [Fact]
+        public void Clear_is_slash_clear_on_claude_and_slash_new_on_codex()
+        {
+            Assert.Equal("/clear", Claude.SlashCommand(AgentVerb.Clear));
+            Assert.Equal("/new", Codex.SlashCommand(AgentVerb.Clear));
+        }
+
+        /// <summary>
+        /// Tab only earns a key where there is a completion to accept. Codex has none, and a key
+        /// whose press does nothing reads as broken — verified on hardware.
+        /// </summary>
+        [Fact]
+        public void The_tab_key_exists_only_where_completion_can_be_accepted()
+        {
+            Assert.True(Claude.Capabilities.TabCompletion);
+            Assert.False(Codex.Capabilities.TabCompletion);
+        }
+
+        /// <summary>
         /// Every word an agent does return must be a well-formed slash command. An empty string
         /// would be typed as a bare Return, which submits whatever the user had half-written.
         /// </summary>

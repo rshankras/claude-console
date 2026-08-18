@@ -55,6 +55,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             BestEffortContext = true,    // rollout JSONL tail, explicitly unstable — implemented
                                          // by CodexContextReader, null on any surprise
             Model = true,                // present on every hook payload
+            TabCompletion = false,       // no completion to accept — verified on hardware
             InputModes = false,          // approval policy is a flag/picker, not a cycle chord
             ApprovalSignal = true,       // PermissionRequest, with a structured decision protocol
             MultiConsumerHooks = true,   // matcher groups; concurrent handlers per event
