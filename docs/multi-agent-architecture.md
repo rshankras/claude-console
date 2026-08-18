@@ -183,6 +183,12 @@ Empirical, not from docs:
 - Rollout transcripts confirm the context source: `event_msg`/`token_count` →
   `total_token_usage`, alongside `task_started` / `task_complete` / `turn_aborted`.
 
+**Install via a separate `~/.codex/hooks.json`, not by editing `config.toml`.** Codex reads
+hooks from either, and the standalone file touches nothing the user already configured —
+uninstall is deleting one file rather than surgically removing a marker block from a config
+that may have changed underneath us. Vizhi edited `config.toml`; the separate file is strictly
+cleaner, and on this machine no `hooks.json` existed to collide with.
+
 Still unverified: the exact payload **field names** on each hook event. Vizhi guessed them with
 nested fallback chains and never confirmed them — its single largest fragility. Confirming them
 needs user-level hooks plus an interactive trust grant, i.e. a change to a live `~/.codex/config.toml`.
