@@ -23,20 +23,40 @@ namespace Loupedeck.ClaudeConsolePlugin
         public static readonly String TempDir =
             Environment.OSVersion.Platform == PlatformID.Win32NT ? Path.GetTempPath() : "/tmp";
 
-        public static readonly String Root = Path.Combine(TempDir, "claude-console");
-        public static readonly String SessionsDir = Path.Combine(Root, "sessions");
-        public static readonly String ActivityDir = Path.Combine(Root, "activity");
-        public static readonly String VoiceDir = Path.Combine(Root, "voice");
+        /// <summary>
+        /// The product that owns this root. Two consoles can be installed on one keypad, and each
+        /// must have its own tree — sharing one would have each plugin reading the other's sessions
+        /// and reaping them as dead.
+        ///
+        /// Set ONCE, by the product's plugin class, before anything reads a path. Everything below
+        /// is computed rather than captured at type-init precisely so that assignment is honoured;
+        /// a `static readonly` alias elsewhere would freeze the default before the product ever ran.
+        /// </summary>
+        public static String ProductSlug { get; private set; } = "claude-console";
+
+        /// <summary>Declare which product this process is. Idempotent; ignores a blank slug.</summary>
+        public static void UseProduct(String slug)
+        {
+            if (!String.IsNullOrWhiteSpace(slug))
+            {
+                ProductSlug = slug;
+            }
+        }
+
+        public static String Root => Path.Combine(TempDir, ProductSlug);
+        public static String SessionsDir => Path.Combine(Root, "sessions");
+        public static String ActivityDir => Path.Combine(Root, "activity");
+        public static String VoiceDir => Path.Combine(Root, "voice");
 
         /// <summary>Fallback (last-writer-wins) state, used when no per-tab file matches.</summary>
-        public static readonly String SharedStateFile = Path.Combine(SessionsDir, "shared.json");
-        public static readonly String SharedActivityFile = Path.Combine(ActivityDir, "shared.json");
+        public static String SharedStateFile => Path.Combine(SessionsDir, "shared.json");
+        public static String SharedActivityFile => Path.Combine(ActivityDir, "shared.json");
 
-        public static readonly String RegistryFile = Path.Combine(Root, "registry.json");
+        public static String RegistryFile => Path.Combine(Root, "registry.json");
 
-        public static readonly String VoiceStopFile = Path.Combine(VoiceDir, "stop");
-        public static readonly String VoiceTranscriptFile = Path.Combine(VoiceDir, "transcript.txt");
-        public static readonly String VoiceWavFile = Path.Combine(VoiceDir, "capture.wav");
+        public static String VoiceStopFile => Path.Combine(VoiceDir, "stop");
+        public static String VoiceTranscriptFile => Path.Combine(VoiceDir, "transcript.txt");
+        public static String VoiceWavFile => Path.Combine(VoiceDir, "capture.wav");
 
         /// <summary>Per-tab state file, e.g. sessions/ttys003.json. The bash scripts write these.</summary>
         public static String StateFor(String tty) => Path.Combine(SessionsDir, tty + ".json");

@@ -28,19 +28,21 @@ namespace Loupedeck.ClaudeConsolePlugin
     public class BridgeManager
     {
         // The private IPC layout lives in IpcPaths (shared with SessionRegistry). Local aliases keep
-        // the rest of this file readable.
-        private static readonly String TempDir = IpcPaths.TempDir;
-        private static readonly String SessionsDir = IpcPaths.SessionsDir;
-        private static readonly String ActivityDir = IpcPaths.ActivityDir;
-        private static readonly String VoiceDir = IpcPaths.VoiceDir;
-        private static readonly String StateFile = IpcPaths.SharedStateFile;
-        private static readonly String ActivityFile = IpcPaths.SharedActivityFile;
+        // the rest of this file readable. They are PROPERTIES, not static readonly fields: the root
+        // is per-product and a product declares itself at load, so capturing a path at type-init
+        // would freeze the default and quietly point a second console at the first one's tree.
+        private static String TempDir => IpcPaths.TempDir;
+        private static String SessionsDir => IpcPaths.SessionsDir;
+        private static String ActivityDir => IpcPaths.ActivityDir;
+        private static String VoiceDir => IpcPaths.VoiceDir;
+        private static String StateFile => IpcPaths.SharedStateFile;
+        private static String ActivityFile => IpcPaths.SharedActivityFile;
 
         // Voice capture IPC. Every path is passed to ClaudeVoiceHelper explicitly, so moving them
         // needs no helper rebuild (re-signing the helper would silently reset its Microphone grant).
-        private static readonly String VoiceStopFile = IpcPaths.VoiceStopFile;
-        private static readonly String VoiceTranscriptFile = IpcPaths.VoiceTranscriptFile;
-        private static readonly String VoiceWavFile = IpcPaths.VoiceWavFile;
+        private static String VoiceStopFile => IpcPaths.VoiceStopFile;
+        private static String VoiceTranscriptFile => IpcPaths.VoiceTranscriptFile;
+        private static String VoiceWavFile => IpcPaths.VoiceWavFile;
 
         // Runtime home shared with the voice helper: ~/.claude/claude-console/
         private static readonly String ClaudeConsoleHome = Path.Combine(
