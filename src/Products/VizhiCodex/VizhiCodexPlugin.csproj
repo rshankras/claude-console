@@ -5,12 +5,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <RootNamespace>Loupedeck.ClaudeConsolePlugin</RootNamespace>
+    <AssemblyName>VizhiCodexPlugin</AssemblyName>
 
     <!-- Track releases in the assembly version too. The Logi Plugin Service keys its
          crash-disable marker (Logs/plugin_crashes/) by assembly version; if this stays
          1.0.0.0 forever, any one load-crash disables the plugin permanently. Bumping it
          per release lets a new build dodge a stale marker. -->
-    <Version>2.0.1</Version>
+    <Version>1.0.0</Version>
 
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -24,11 +25,19 @@
     <PluginDir Condition="$(OS) == 'Windows_NT'">$(LocalAppData)\Logi\LogiPluginService\Plugins\</PluginDir>
     <PluginDir Condition="$(OS) != 'Windows_NT'">~/Library/Application\ Support/Logi/LogiPluginService/Plugins/</PluginDir>
 
-    <BaseOutputPath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\bin\'))</BaseOutputPath>
+    <BaseOutputPath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\bin\VizhiCodex\'))</BaseOutputPath>
     <OutputPath>$(BaseOutputPath)$(Configuration)\bin\</OutputPath>
 
-    <PluginShortName>ClaudeConsole</PluginShortName>
+    <PluginShortName>VizhiCodex</PluginShortName>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The engine and this product's agent. The other agent's sources are not compiled in at all,
+         so the package cannot carry code for an agent it doesn't ship — enforced by the compiler
+         rather than by remembering. -->
+    <Compile Include="..\..\Core\**\*.cs" />
+    <Compile Include="..\..\Agents\CodexCli\**\*.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="PluginApi">
@@ -47,25 +56,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Core\Resources\**\*.png" />
+    <EmbeddedResource Include="..\..\Core\Resources\**\*.png">
+      <Link>Resources\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Live-status bridge scripts embedded in the DLL so the plugin can self-install them to
-         ~/.claude/claude-console/scripts/ and auto-wire settings.json on first run
-         (BridgeManager.EnsureBridgeAutoWired). Embedding keeps ONE copy (the repo scripts/) as the
-         source of truth and works for both dev and release builds with no packaging step.
-         LogicalName is what Assembly.GetManifestResourceStream() looks up. -->
-    <EmbeddedResource Include="..\scripts\statusline-handler.sh">
-      <LogicalName>ClaudeConsole.statusline-handler.sh</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="..\scripts\activity-hook.sh">
-      <LogicalName>ClaudeConsole.activity-hook.sh</LogicalName>
-    </EmbeddedResource>
-    <!-- The Codex launcher. Embedded for the same reason: one copy in scripts/ is the source of
-         truth. Its CONTENT is part of Codex's hook-trust hash, so changing this file re-prompts
-         every user — keep it a stable launcher (see CodexStateBridge). -->
-    <EmbeddedResource Include="..\scripts\codex-hook.sh">
+    <!-- The Codex launcher, embedded so scripts/ stays the single source of truth. Its CONTENT is
+         part of Codex's hook-trust hash: changing this file asks every user to re-approve, so keep
+         it a stable launcher and put churn in the C# (see CodexStateBridge). -->
+    <EmbeddedResource Include="..\..\..\scripts\codex-hook.sh">
       <LogicalName>CodexConsole.codex-hook.sh</LogicalName>
     </EmbeddedResource>
   </ItemGroup>

@@ -419,3 +419,6 @@ tools/windows/**/obj/
 
 # Local feasibility spikes / throwaway tests — personal, never committed
 spikes/
+
+# Per-project build intermediates (Directory.Build.props points each project at its own obj/)
+src/**/obj/

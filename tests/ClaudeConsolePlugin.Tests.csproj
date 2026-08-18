@@ -38,11 +38,28 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- SkipPluginLink stops the plugin's PostBuild target from writing the dev .link into the
-         LIVE Logi plugin directory and hot-reloading LogiPluginService. Without it, running the
-         tests would mutate the user's installed plugin as a side effect. -->
-    <ProjectReference Include="..\src\ClaudeConsolePlugin.csproj"
-                      AdditionalProperties="SkipPluginLink=true" />
+    <!-- The tests COMPILE the engine and BOTH agents rather than referencing a product.
+         Each product assembly contains the engine plus only its own agent, so referencing two of
+         them would mean two copies of every engine type and an ambiguity error on the first line
+         that used one. Compiling the sources keeps one suite covering both agents.
+         It also means no ProjectReference to a plugin project, so running the tests can no longer
+         write the dev .link into the LIVE Logi plugin directory as a side effect — which the
+         SkipPluginLink dance existed to prevent. -->
+    <Compile Include="..\src\Core\**\*.cs" />
+    <Compile Include="..\src\Agents\**\*.cs" />
+    <!-- Each product's application binding. Not the Plugin classes — those need a live SDK host —
+         but the binding is exactly what broke clean installs in 1.8.0-1.8.4 by naming a process
+         that doesn't exist on the running OS, so every product's belongs under test. -->
+    <Compile Include="..\src\Products\*\*Application.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The Codex launcher, so CodexCliAdapter.HookScriptContents() resolves here too. NOTE: this
+         proves the READER works, not that the shipped package embedded it — that is a packaging
+         property, checked by tools/verify-package.sh at pack time. -->
+    <EmbeddedResource Include="..\scripts\codex-hook.sh">
+      <LogicalName>CodexConsole.codex-hook.sh</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

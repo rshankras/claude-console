@@ -149,8 +149,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var dir = AppContext.BaseDirectory;
             for (var i = 0; i < 8 && dir != null; i++)
             {
+                // Each product owns its own package tree; this suite is about Claude Console's.
                 var candidate = Path.Combine(
-                    dir, "src", "package", "profiles", "DefaultProfile70.lp5");
+                    dir, "src", "Products", "ClaudeConsole", "package", "profiles", "DefaultProfile70.lp5");
                 if (File.Exists(candidate))
                 {
                     return candidate;

@@ -10,13 +10,16 @@
 # Developer-ID signed + notarized (the helper stapled). This script refuses to package an
 # un-notarized helper.
 #
-# Usage: bash tools/voice/pack-release.sh [version]     (version defaults to 1_1)
+# Usage: bash tools/voice/pack-release.sh [version] [product]
+#        product = ClaudeConsole (default) | VizhiCodex — one repo, one package per run.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
 VER="${1:-1_1}"
-OUT="$ROOT/ClaudeConsole_${VER}.lplug4"
+PRODUCT="${2:-ClaudeConsole}"
+OUT="$ROOT/${PRODUCT}_${VER}.lplug4"
+BUILD_DIR="$ROOT/bin/$PRODUCT/Release"
 
 HOME_DIR="$HOME/.claude/claude-console"
 APP="$HOME_DIR/ClaudeVoiceHelper.app"
@@ -41,10 +44,10 @@ echo ">>> voice payload OK (helper notarized + stapled)"
 # deleted since, so a file dropped from the repo lingers in bin/Release and ships anyway — a
 # retired profile rode along into 1.8.4 exactly this way.
 echo ">>> clearing stale build output"
-rm -rf "$ROOT/bin/Release"
+rm -rf "$BUILD_DIR"
 
 echo ">>> building plugin (Release)"
-( cd "$ROOT/src" && dotnet build -c Release -p:SkipPluginLink=true >/dev/null )
+( cd "$ROOT/src/Products/$PRODUCT" && dotnet build -c Release -p:SkipPluginLink=true >/dev/null )
 
 # Belt and braces: if a .link is already lying around from an earlier dev build, it will collide
 # with the package we are about to install. Clear it now rather than debugging it later.
@@ -59,7 +62,7 @@ echo ">>> building Windows helper payload"
 bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64
 
 # --- embed the notarized voice payload next to the plugin DLL (bin/voice/) ------------------------
-PKG_VOICE="$ROOT/bin/Release/bin/voice"
+PKG_VOICE="$BUILD_DIR/bin/voice"
 echo ">>> embedding voice payload -> $PKG_VOICE"
 rm -rf "$PKG_VOICE"
 mkdir -p "$PKG_VOICE"
@@ -69,7 +72,7 @@ ditto "$WBIN" "$PKG_VOICE/whisper-bin"
 # --- pack ----------------------------------------------------------------------------------------
 echo ">>> packing $OUT"
 rm -f "$OUT"
-logiplugintool pack "$ROOT/bin/Release" "$OUT"
+logiplugintool pack "$BUILD_DIR" "$OUT"
 
 echo
 echo "✅ $OUT"

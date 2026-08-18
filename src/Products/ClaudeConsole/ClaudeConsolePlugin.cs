@@ -2,6 +2,8 @@ namespace Loupedeck.ClaudeConsolePlugin
 {
     using System;
 
+    using Loupedeck.ClaudeConsolePlugin.Agents;
+
     /// <summary>
     /// Claude Console — Logitech MX Creative Keypad plugin for Claude Code.
     /// Physical LCD-key controls for AI-assisted coding, bridged to Claude Code over file IPC.
@@ -26,6 +28,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             PluginLog.Init(this.Log);
             PluginResources.Init(this.Assembly);
+
+            // Declared HERE, not in Load(): the SDK constructs every action in between, and an
+            // action reads the agent to decide which keys to add and the product to resolve its
+            // IPC paths. Declaring late would build the keys against no agent at all.
+            var agent = new ClaudeCodeAdapter();
+            IpcPaths.UseProduct(agent.ProductSlug);
+            BridgeManager.Instance.Agent = agent;
         }
 
         public override void Load()

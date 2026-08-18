@@ -106,16 +106,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         /// <summary>
-        /// The default matters: anything constructed before a product assigns its agent must behave
-        /// as the shipped plugin does, not as an empty or throwing stub.
+        /// An undeclared agent supports NOTHING, rather than quietly behaving like Claude Code.
+        ///
+        /// This is the safer default of the two. If Core defaulted to a real agent, that adapter
+        /// would be compiled into every product — including ones shipping a different agent — and a
+        /// product that forgot to declare itself would type another agent's slash commands at
+        /// whatever was actually running. Supporting nothing makes the mistake visible as keys that
+        /// don't appear, and it is still an object rather than a null, so nothing throws inside an
+        /// SDK callback during load.
         /// </summary>
         [Fact]
-        public void The_default_agent_is_claude_code()
+        public void An_undeclared_agent_supports_nothing_rather_than_impersonating_one()
         {
             var manager = new BridgeManager();
 
-            Assert.Equal("claude-code", manager.Agent.Id);
-            Assert.Equal("/clear", manager.Agent.SlashCommand(AgentVerb.Clear));
+            Assert.Equal("none", manager.Agent.Id);
+            Assert.Null(manager.Agent.SlashCommand(AgentVerb.Clear));
+            Assert.False(manager.Agent.Capabilities.Cost);
+            Assert.False(manager.Agent.Capabilities.ApprovalSignal);
         }
 
         /// <summary>Each product sets its own; the keys follow it immediately.</summary>

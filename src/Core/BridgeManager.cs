@@ -117,10 +117,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// a verb, and to decide whether a key should exist at all — a Cost key on an agent that
         /// reports no cost hides rather than rendering a zero.
         ///
-        /// Defaults to Claude Code so a product that never sets it behaves exactly as before; each
-        /// product's plugin class assigns its own at load.
+        /// Defaults to NoAgentAdapter, never to a real agent: Core naming one would compile that
+        /// adapter into every product, and a product that forgot to declare itself would silently
+        /// type another agent's slash commands at whatever was actually running. Each product
+        /// assigns its own in its plugin CONSTRUCTOR — the SDK builds actions before Load(), and an
+        /// action decides then which keys to add.
         /// </summary>
-        internal IAgentAdapter Agent { get; set; } = new ClaudeCodeAdapter();
+        internal IAgentAdapter Agent { get; set; } = new NoAgentAdapter();
 
         // Test seams for the macOS backend, forwarded so the existing mac tests can keep driving
         // the manager directly. No-ops when the backend isn't the mac one.
