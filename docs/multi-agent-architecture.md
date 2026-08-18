@@ -196,35 +196,48 @@ Do that deliberately, capture one payload per event, and write the adapter again
 
 ## Codex hook payloads — captured, not guessed (codex-cli 0.145.0, 2026-08-18)
 
-Recorded from a live session via a temporary `~/.codex/hooks.json` listener. Vizhi guessed these
-field names with nested fallback chains; these are observed.
+Recorded from live sessions via a temporary `~/.codex/hooks.json` listener, all seven events.
+Vizhi guessed these field names with nested fallback chains; these are observed.
 
-**Every event carries:** `session_id`, `turn_id` (turn-scoped events), `cwd`, `model`,
-`hook_event_name`, `permission_mode`, `transcript_path`.
+**Carried by every event:** `session_id`, `cwd`, `hook_event_name`, `transcript_path`.
+Everything except `SessionEnd` also carries `model` and `permission_mode`; turn-scoped events add
+`turn_id`. Do not assume a uniform payload — `SessionEnd` is the exception.
 
 | Event | Adds |
 |---|---|
 | `SessionStart` | `source` (e.g. `startup`) |
 | `UserPromptSubmit` | `prompt` — the user's text |
-| `PreToolUse` | `tool_name` (`Bash`), `tool_input.command`, `tool_use_id` |
+| `PreToolUse` | `tool_name`, `tool_input.command`, `tool_use_id` |
 | `PostToolUse` | `tool_response`, plus the `PreToolUse` fields |
+| `PermissionRequest` | `tool_name`, `tool_input.command` (no `tool_use_id`) |
 | `Stop` | `stop_hook_active`, **`last_assistant_message`** |
+| `SessionEnd` | `reason` (e.g. `other`) — and **no** `model` / `permission_mode` |
 
-Three consequences that simplify the adapter:
+**`tool_input.command` is overloaded, and this is the trap.** Its meaning depends on `tool_name`:
 
-1. **`tool_input.command` is the same shape Claude Code sends**, so `RiskClassifier` grades Codex's
-   pending commands with no changes at all — the amber/red approval key is free.
-2. **`last_assistant_message` arrives on `Stop`.** Vizhi tailed 512 KB of rollout JSONL to
-   reconstruct it. No transcript parsing is needed for this.
-3. **`transcript_path` is handed to us**, so the best-effort token read never has to construct or
-   guess a path — it opens what the event names, or gives up.
+- `tool_name: "Bash"` → a shell command string, the same shape Claude Code sends. `RiskClassifier`
+  grades it unchanged.
+- `tool_name: "apply_patch"` → **not a command at all**, but a patch body:
+  `*** Begin Patch / *** Add File: /tmp/codex-probe.txt / +hello / *** End Patch`.
+
+Feeding a patch to a shell-command classifier is a category error in both directions: it will miss
+the actual risk (which files are touched, and whether they are outside the workspace — the captured
+example writes to `/tmp`), and it can fire on shell metacharacters that appear in ordinary diff
+content. **Risk grading must branch on `tool_name` first**, with a path-based rule for `apply_patch`
+alongside the existing command-based rule for `Bash`.
+
+Three findings that shorten the adapter:
+
+1. **`last_assistant_message` arrives on `Stop`.** Vizhi tailed 512 KB of rollout JSONL to
+   reconstruct it. No transcript parsing needed for this.
+2. **`transcript_path` is handed to us**, so the best-effort token read never constructs or guesses
+   a path — it opens what the event names, or gives up.
+3. **`permission_mode`** is a field Vizhi never knew about; it makes the active approval policy
+   displayable, the closest Codex analogue to Claude Code's input-mode cycle.
 
 Not present anywhere: cost, token counts, context percentage, and **no TTY**. Session identity is
 `session_id` + `cwd`. The hook process is a child of `codex` and inherits its controlling terminal,
 so it can read its own TTY directly rather than walking the parent chain as Vizhi does.
-
-`permission_mode` on every event is a field Vizhi never knew about — it makes the current approval
-policy displayable, which is the closest Codex equivalent to Claude Code's input-mode cycle.
 
 ## Do not port Vizhi's code
 
