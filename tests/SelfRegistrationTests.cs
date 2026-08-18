@@ -103,14 +103,51 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Directory.CreateDirectory(existing);
             File.WriteAllText(Path.Combine(existing, "ApplicationInfo.json"), "{}");
 
-            Assert.True(SelfRegistration.RegistrationExists(appsRoot));
+            Assert.True(SelfRegistration.RegistrationExists(appsRoot, "@_claudeconsole"));
+        }
+
+        /// <summary>
+        /// Two products built from this repo must not claim one another's entry. The identity comes
+        /// from each package's own ApplicationInfo.json, so a registration for one is invisible to
+        /// the other — without this, installing the second console would overwrite the first's
+        /// application row and its imported layout.
+        /// </summary>
+        [Fact]
+        public void One_products_registration_is_not_mistaken_for_anothers()
+        {
+            var appsRoot = Path.Combine(this._root, "Applications");
+            var claude = Path.Combine(appsRoot, "Loupedeck70", "@_claudeconsole");
+            Directory.CreateDirectory(claude);
+            File.WriteAllText(Path.Combine(claude, "ApplicationInfo.json"), "{}");
+
+            Assert.True(SelfRegistration.RegistrationExists(appsRoot, "@_claudeconsole"));
+            Assert.False(SelfRegistration.RegistrationExists(appsRoot, "@_codexconsole"));
+        }
+
+        /// <summary>The name is read from the package, never assumed.</summary>
+        [Fact]
+        public void The_application_name_comes_from_the_packaged_profile()
+        {
+            Assert.Equal("@_claudeconsole", SelfRegistration.ReadApplicationName(PackagedProfilePath()));
+        }
+
+        /// <summary>An unreadable package yields null rather than throwing during plugin load.</summary>
+        [Fact]
+        public void An_unreadable_package_has_no_application_name()
+        {
+            var junk = Path.Combine(this._root, "not-a-zip.lp5");
+            Directory.CreateDirectory(this._root);
+            File.WriteAllText(junk, "definitely not a zip");
+
+            Assert.Null(SelfRegistration.ReadApplicationName(junk));
+            Assert.Null(SelfRegistration.ReadApplicationName(Path.Combine(this._root, "missing.lp5")));
         }
 
         [Fact]
         public void No_applications_directory_means_no_registration_yet()
         {
-            Assert.False(SelfRegistration.RegistrationExists(Path.Combine(this._root, "nope")));
-            Assert.False(SelfRegistration.RegistrationExists(null));
+            Assert.False(SelfRegistration.RegistrationExists(Path.Combine(this._root, "nope"), "@_claudeconsole"));
+            Assert.False(SelfRegistration.RegistrationExists(null, "@_claudeconsole"));
         }
 
         [Fact]

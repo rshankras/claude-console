@@ -60,8 +60,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                     return false;                                    // dev tree without the package payload
                 }
 
+                // The package names itself; nothing here hardcodes a product. Two consoles built
+                // from this repo therefore register under their own entries instead of overwriting
+                // each other's — the identity travels with the profile, not with the code.
+                var appName = ReadApplicationName(lp5);
+                if (appName == null)
+                {
+                    return false;
+                }
+
                 var appsRoot = RegistrationHeal.ApplicationsRoot();
-                if (RegistrationExists(appsRoot))
+                if (RegistrationExists(appsRoot, appName))
                 {
                     return false;
                 }
@@ -85,8 +94,35 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
         }
 
-        /// <summary>True when any device type already has an @_claudeconsole registration.</summary>
-        internal static Boolean RegistrationExists(String appsRoot)
+        /// <summary>
+        /// The application name the packaged profile declares (e.g. "@_claudeconsole"). This is the
+        /// registration's identity, and reading it rather than assuming it is what keeps two
+        /// products from claiming the same entry. Null when the package can't be read.
+        /// </summary>
+        internal static String ReadApplicationName(String lp5Path)
+        {
+            try
+            {
+                using var zip = ZipFile.OpenRead(lp5Path);
+                var entry = zip.GetEntry("ApplicationInfo.json");
+                if (entry == null)
+                {
+                    return null;
+                }
+
+                using var stream = entry.Open();
+                var name = (String)JsonNode.Parse(stream)?["name"];
+                return String.IsNullOrWhiteSpace(name) ? null : name;
+            }
+            catch (Exception ex)
+            {
+                try { PluginLog.Warning($"SelfRegistration: cannot read application name ({ex.Message})"); } catch { }
+                return null;
+            }
+        }
+
+        /// <summary>True when any device type already has a registration for this application.</summary>
+        internal static Boolean RegistrationExists(String appsRoot, String appName)
         {
             if (String.IsNullOrEmpty(appsRoot) || !Directory.Exists(appsRoot))
             {
@@ -95,7 +131,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
             foreach (var deviceDir in Directory.GetDirectories(appsRoot))
             {
-                if (File.Exists(Path.Combine(deviceDir, "@_claudeconsole", "ApplicationInfo.json")))
+                if (File.Exists(Path.Combine(deviceDir, appName, "ApplicationInfo.json")))
                 {
                     return true;
                 }
@@ -130,12 +166,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             if (windows)
             {
                 // The document in the package is authored for macOS; Windows binds the same
-                // layout to Windows Terminal (the shipped platform default).
+                // layout to Windows Terminal (the shipped platform default). The description is
+                // rewritten rather than replaced so it keeps whatever the product called itself.
                 appInfo["processOrBundleName"] = "WindowsTerminal";
-                appInfo["description"] = "Claude Code controls for Windows Terminal.";
+                var description = (String)appInfo["description"];
+                appInfo["description"] = String.IsNullOrEmpty(description)
+                    ? "Controls for Windows Terminal."
+                    : description.Replace("Terminal.app", "Windows Terminal");
             }
 
-            var appDir = Path.Combine(appsRoot, deviceType, "@_claudeconsole");
+            var appName = (String)appInfo["name"]
+                ?? throw new InvalidDataException("packaged ApplicationInfo has no name");
+
+            var appDir = Path.Combine(appsRoot, deviceType, appName);
             var profileDir = Path.Combine(appDir, "Profiles", profileName);
             try
             {

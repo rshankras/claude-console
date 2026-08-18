@@ -200,9 +200,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             DateTime? newest = null;
             foreach (var deviceDir in Directory.GetDirectories(appsRoot))
             {
-                var info = Path.Combine(deviceDir, "@_claudeconsole", "ApplicationInfo.json");
-                if (File.Exists(info))
+                // Any application directory this device type carries, not a fixed name: the heal
+                // must work for whichever product is running, and each names itself in its package.
+                foreach (var appDir in Directory.GetDirectories(deviceDir))
                 {
+                    var info = Path.Combine(appDir, "ApplicationInfo.json");
+                    if (!File.Exists(info))
+                    {
+                        continue;
+                    }
+
                     var t = File.GetLastWriteTimeUtc(info);
                     if (newest == null || t > newest.Value)
                     {
