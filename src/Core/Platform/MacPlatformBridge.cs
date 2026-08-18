@@ -23,8 +23,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // Claude Code so existing callers and tests are unaffected.
         private readonly AgentProcessMatcher _matcher;
 
-        public MacPlatformBridge(AgentProcessMatcher matcher = null) =>
+        // The CLI a new session runs. Data, not knowledge of an agent: the bridge opens a terminal
+        // and types this, exactly as it would any other command.
+        private readonly String _cliCommand;
+
+        public MacPlatformBridge(AgentProcessMatcher matcher = null, String cliCommand = null)
+        {
             this._matcher = matcher ?? AgentProcessMatcher.ClaudeCode;
+            this._cliCommand = String.IsNullOrWhiteSpace(cliCommand) ? "claude" : cliCommand;
+        }
 
         // ------------------------------------------------------------------------------------------
         // Guarded keystroke injection — every injection FIRST focuses the tracked Claude tab in
@@ -352,7 +359,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
 
             // Single-quote the path for the shell so spaces are safe (project paths have no quotes).
-            var cmd = "cd '" + projectDir + "' && claude";
+            var cmd = "cd '" + projectDir + "' && " + this._cliCommand;
             var script =
                 "tell application \"Terminal\"\n" +
                 "  activate\n" +

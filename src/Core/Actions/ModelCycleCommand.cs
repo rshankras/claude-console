@@ -2,6 +2,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 {
     using System;
 
+    using Loupedeck.ClaudeConsolePlugin.Agents;
+
     /// <summary>
     /// "Model" key (group "Core"). Live-displays the CURRENT model as a colour-coded brain (read
     /// from the status line) and, on press, sends "/model" to open Claude Code's built-in model
@@ -34,7 +36,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         protected override void RunCommand(String actionParameter)
         {
             // Open the built-in picker rather than guessing the next model — always current, no drift.
-            _bridge.SendPrompt("/model");
+            // The agent's own picker, by its own name — both agents call it /model today, but the
+            // key must not assume that. Null would mean an agent with no picker at all.
+            var command = _bridge.Agent.SlashCommand(AgentVerb.Model);
+            if (command != null)
+            {
+                _bridge.SendPrompt(command);
+            }
             PluginLog.Info("ModelCycleCommand: opened /model picker");
         }
 

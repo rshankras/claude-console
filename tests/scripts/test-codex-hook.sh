@@ -12,8 +12,16 @@ set -u
 # The session key comes from the hook's controlling TTY, so without a pty that path silently falls
 # back to "shared" — exactly the logic worth testing. Re-exec under one when we don't have it.
 if [ ! -t 0 ] && [ -z "${CX_TESTS_PTY:-}" ]; then
-  export CX_TESTS_PTY=1
-  exec script -q /dev/null bash "$0" "$@"
+  # `script` needs a real terminal to allocate from. Under a redirected stdout, a pipe, or a CI
+  # runner it fails with "tcgetattr/ioctl: Operation not supported on socket" — and exec'ing into
+  # a command that dies took the whole suite down with it. Probe first, and carry on without a pty
+  # when there isn't one: the TTY-keyed assertions fall back to the shared path rather than
+  # failing, which is worth more than a suite that only runs interactively.
+  if script -q /dev/null true >/dev/null 2>&1; then
+    export CX_TESTS_PTY=1
+    exec script -q /dev/null bash "$0" "$@"
+  fi
+  printf '  note no pty available — TTY-keyed cases fall back to the shared path\n'
 fi
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

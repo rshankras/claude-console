@@ -14,6 +14,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.Threading.Tasks;
 
     using Loupedeck.ClaudeConsolePlugin.Models;
+    using Loupedeck.ClaudeConsolePlugin.Agents;
     using Loupedeck.ClaudeConsolePlugin.Platform;
 
     /// <summary>
@@ -108,6 +109,16 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         /// <summary>The active OS backend. Internal so tests can substitute a fake.</summary>
         internal IPlatformBridge Platform => _platform;
+
+        /// <summary>
+        /// Which agent the keys are driving. Actions read this to ask for the agent's own word for
+        /// a verb, and to decide whether a key should exist at all — a Cost key on an agent that
+        /// reports no cost hides rather than rendering a zero.
+        ///
+        /// Defaults to Claude Code so a product that never sets it behaves exactly as before; each
+        /// product's plugin class assigns its own at load.
+        /// </summary>
+        internal IAgentAdapter Agent { get; set; } = new ClaudeCodeAdapter();
 
         // Test seams for the macOS backend, forwarded so the existing mac tests can keep driving
         // the manager directly. No-ops when the backend isn't the mac one.

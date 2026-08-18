@@ -2,6 +2,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 {
     using System;
 
+    using Loupedeck.ClaudeConsolePlugin.Agents;
     using Loupedeck.ClaudeConsolePlugin.Platform;
 
     /// <summary>
@@ -13,9 +14,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     ///             (normal → auto-accept edits → plan). Action id stays "plan".
     ///   Tab     → Tab then Return in one press — accepts the highlighted autocomplete AND submits
     ///             (e.g. complete a slash command and run it). Distinct from Mode's Shift+Tab.
-    ///   Compact → "/compact" slash command
-    ///   Clear   → "/clear" slash command — resets the conversation
-    ///   Exit    → "/exit" slash command — quits the Claude Code session
+    ///   Compact → the agent's compact command
+    ///   Clear   → the agent's clear command — resets the conversation ("/clear", "/new", …)
+    ///   Exit    → the agent's exit command
+    ///
+    /// THE WORDS COME FROM THE AGENT, and a key the agent has no word for is never added. Typing
+    /// "/context" at an agent that has no such command produces an error on screen and a key that
+    /// looks broken; an absent key is honest. Same for Mode, which needs an input-mode cycle to
+    /// drive. Claude Code supports all of them, so its profile is unchanged.
     /// (Context lives on its own gauge key — see ContextCommand.)
     /// </summary>
     public class ControlCommand : PluginDynamicCommand
@@ -30,18 +36,36 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public ControlCommand()
             : base()
         {
+            var agent = BridgeManager.Instance.Agent;
+
+            // Escape and Tab are keystrokes, not vocabulary — every terminal agent understands them.
             this.AddParameter(Esc, "Esc", "Core")
-                .SetDescription("Interrupt Claude, exit a mode, or dismiss a menu (Escape)");
-            this.AddParameter(Mode, "Mode", "Core")
-                .SetDescription("Cycle input mode: normal → auto-accept edits → plan (Shift+Tab)");
+                .SetDescription($"Interrupt {agent.DisplayName}, exit a mode, or dismiss a menu (Escape)");
             this.AddParameter(Tab, "Tab", "Core")
                 .SetDescription("Accept the highlighted autocomplete and submit it (Tab, then Return)");
-            this.AddParameter(Compact, "Compact", "Core")
-                .SetDescription("Run /compact to shrink the context window");
-            this.AddParameter(Clear, "Clear", "Core")
-                .SetDescription("Run /clear to reset the conversation");
-            this.AddParameter(Exit, "Exit", "Core")
-                .SetDescription("Run /exit to quit the Claude Code session");
+
+            if (agent.Capabilities.InputModes)
+            {
+                this.AddParameter(Mode, "Mode", "Core")
+                    .SetDescription("Cycle input mode: normal → auto-accept edits → plan (Shift+Tab)");
+            }
+
+            this.AddVerbParameter(agent, AgentVerb.Compact, Compact, "Compact", "shrink the context window");
+            this.AddVerbParameter(agent, AgentVerb.Clear, Clear, "Clear", "reset the conversation");
+            this.AddVerbParameter(agent, AgentVerb.Exit, Exit, "Exit", $"quit the {agent.DisplayName} session");
+        }
+
+        // One key per verb the agent actually has a word for. The description names the real
+        // command so the Options+ action list tells the truth about what a press will type.
+        private void AddVerbParameter(IAgentAdapter agent, AgentVerb verb, String id, String label, String what)
+        {
+            var command = agent.SlashCommand(verb);
+            if (command == null)
+            {
+                return;
+            }
+
+            this.AddParameter(id, label, "Core").SetDescription($"Run {command} to {what}");
         }
 
         protected override void RunCommand(String actionParameter)
@@ -59,17 +83,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     bridge.InjectTabThenEnter(); // Tab (accept autocomplete) + Return (submit), one press
                     break;
                 case Compact:
-                    bridge.SendPrompt("/compact");
+                    SendVerb(bridge, AgentVerb.Compact);
                     break;
                 case Clear:
-                    bridge.SendPrompt("/clear");
+                    SendVerb(bridge, AgentVerb.Clear);
                     break;
                 case Exit:
-                    bridge.SendPrompt("/exit");
+                    SendVerb(bridge, AgentVerb.Exit);
                     break;
             }
 
             PluginLog.Info($"ControlCommand: {actionParameter}");
+        }
+
+        // A key can only exist when the agent has a word for its verb, so a null here means the
+        // binding outlived a change of agent — type nothing rather than something it will reject.
+        private static void SendVerb(BridgeManager bridge, AgentVerb verb)
+        {
+            var command = bridge.Agent.SlashCommand(verb);
+            if (command == null)
+            {
+                PluginLog.Info($"ControlCommand: {bridge.Agent.DisplayName} has no command for {verb} — ignoring");
+                return;
+            }
+
+            bridge.SendPrompt(command);
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)

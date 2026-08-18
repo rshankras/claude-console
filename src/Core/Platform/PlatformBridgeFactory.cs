@@ -14,11 +14,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// What an agent's process looks like in a process listing. Null means Claude Code, so a
         /// caller that predates the agent seam keeps working unchanged.
         /// </param>
-        public static IPlatformBridge Create(AgentProcessMatcher matcher = null)
+        public static IPlatformBridge Create(AgentProcessMatcher matcher = null, String cliCommand = null)
         {
             if (OperatingSystem.IsMacOS())
             {
-                return new MacPlatformBridge(matcher);
+                return new MacPlatformBridge(matcher, cliCommand);
             }
 
             if (OperatingSystem.IsWindows())
