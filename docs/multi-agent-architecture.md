@@ -151,6 +151,26 @@ and the hook already stamps `agent` into every file. What is missing is a per-se
 Everything else must still be namespaced per product: IPC root, `@_` registration, profile GUIDs,
 package name, crash-marker assembly version, `~/.<product>/` runtime home.
 
+## Uninstall leaves the registration behind
+
+Uninstalling through Options+ removes the PLUGIN and nothing else. A sideloaded install never gets
+an application entry from the service, so the plugin writes one itself — and that entry survives.
+It keeps claiming the terminal, wins activation against a plugin that IS installed, and shows a
+keypad of unresolvable keys, so the surviving product looks broken with nothing to explain it.
+
+Two legs, because neither covers the other's case:
+
+1. **A running plugin sweeps on load** (`RegistrationCleanup`). Covers uninstalling one of two
+   products. Safe because ownership is stamped: an entry without our stamp is never touched, and
+   the running plugin's own entry is never removed.
+2. **`scripts/uninstall-registration.sh`** covers uninstalling the LAST one — with no plugin left
+   to run, nothing sweeps and the orphan persists indefinitely. Observed on hardware 2026-08-18.
+
+A full uninstall also leaves `~/.codex/hooks.json` and `~/.codex/codex-console/` (the hook launcher)
+and the `/tmp/<product>` IPC roots. The hooks file matters most: Codex keeps running a hook for a
+plugin that no longer exists. Removing the launcher without the hooks file is the worst order —
+every session then runs a hook pointing at a missing script.
+
 ## Repo layout
 
 **Chosen: B — one repo, N packages.** This repo, renamed once 2.0.1 clears Marketplace review
