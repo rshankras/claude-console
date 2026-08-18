@@ -194,6 +194,38 @@ nested fallback chains and never confirmed them — its single largest fragility
 needs user-level hooks plus an interactive trust grant, i.e. a change to a live `~/.codex/config.toml`.
 Do that deliberately, capture one payload per event, and write the adapter against ground truth.
 
+## Codex hook payloads — captured, not guessed (codex-cli 0.145.0, 2026-08-18)
+
+Recorded from a live session via a temporary `~/.codex/hooks.json` listener. Vizhi guessed these
+field names with nested fallback chains; these are observed.
+
+**Every event carries:** `session_id`, `turn_id` (turn-scoped events), `cwd`, `model`,
+`hook_event_name`, `permission_mode`, `transcript_path`.
+
+| Event | Adds |
+|---|---|
+| `SessionStart` | `source` (e.g. `startup`) |
+| `UserPromptSubmit` | `prompt` — the user's text |
+| `PreToolUse` | `tool_name` (`Bash`), `tool_input.command`, `tool_use_id` |
+| `PostToolUse` | `tool_response`, plus the `PreToolUse` fields |
+| `Stop` | `stop_hook_active`, **`last_assistant_message`** |
+
+Three consequences that simplify the adapter:
+
+1. **`tool_input.command` is the same shape Claude Code sends**, so `RiskClassifier` grades Codex's
+   pending commands with no changes at all — the amber/red approval key is free.
+2. **`last_assistant_message` arrives on `Stop`.** Vizhi tailed 512 KB of rollout JSONL to
+   reconstruct it. No transcript parsing is needed for this.
+3. **`transcript_path` is handed to us**, so the best-effort token read never has to construct or
+   guess a path — it opens what the event names, or gives up.
+
+Not present anywhere: cost, token counts, context percentage, and **no TTY**. Session identity is
+`session_id` + `cwd`. The hook process is a child of `codex` and inherits its controlling terminal,
+so it can read its own TTY directly rather than walking the parent chain as Vizhi does.
+
+`permission_mode` on every event is a field Vizhi never knew about — it makes the current approval
+policy displayable, which is the closest Codex equivalent to Claude Code's input-mode cycle.
+
 ## Do not port Vizhi's code
 
 Vizhi is frozen pending hackathon judging, and whether the submission encumbers its IP — and the
