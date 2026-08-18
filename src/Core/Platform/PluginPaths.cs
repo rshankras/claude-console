@@ -27,6 +27,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         internal static String PluginAssemblyFilePath { get; set; }
 
         /// <summary>
+        /// Where the service keeps installed plugins, one directory per plugin. Used to tell an
+        /// installed plugin from an uninstalled one when sweeping orphaned registrations.
+        /// </summary>
+        internal static String PluginsRoot =>
+            OperatingSystem.IsWindows()
+                ? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Logi", "LogiPluginService", "Plugins")
+                : Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "Library", "Application Support", "Logi", "LogiPluginService", "Plugins");
+
+        /// <summary>
         /// The directory holding the plugin DLL — and therefore the helper executables and the
         /// voice payload shipped beside it. Null when the SDK path hasn't been provided.
         /// </summary>

@@ -178,6 +178,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             var appName = (String)appInfo["name"]
                 ?? throw new InvalidDataException("packaged ApplicationInfo has no name");
 
+            // Stamp ownership. Uninstalling through Options+ removes the plugin and leaves this
+            // entry behind, where it still claims the terminal with keys that cannot resolve — so a
+            // surviving plugin sweeps it up later (RegistrationCleanup), and this is what tells it
+            // the entry is ours to remove rather than another vendor's.
+            appInfo[RegistrationCleanup.OwnerKey] = (String)appInfo["nativePluginName"];
+
             var appDir = Path.Combine(appsRoot, deviceType, appName);
             var profileDir = Path.Combine(appDir, "Profiles", profileName);
             try

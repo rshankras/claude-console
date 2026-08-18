@@ -56,6 +56,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             // a reinstall drops an existing one from the service's live list while disk stays
             // correct. Create it from the packaged profile when it's missing entirely, otherwise
             // heal the reinstall desync — either path schedules one service restart.
+            // Sweep orphans first: an entry whose plugin was uninstalled still holds the terminal
+            // and shows a keypad of unresolvable keys, which looks like THIS plugin being broken.
+            Platform.RegistrationCleanup.RemoveOrphans(
+                Platform.RegistrationHeal.ApplicationsRoot(),
+                Platform.PluginPaths.PluginsRoot,
+                "ClaudeConsole");
+
             if (!Platform.SelfRegistration.RegisterIfMissing())
             {
                 Platform.RegistrationHeal.HealIfNeeded();

@@ -45,6 +45,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             // is outstanding rather than leaving a keypad that just looks broken.
             this.WireStateBridge();
 
+            // Sweep orphans first: an entry whose plugin was uninstalled still holds the terminal
+            // and shows a keypad of unresolvable keys, which looks like THIS plugin being broken.
+            Platform.RegistrationCleanup.RemoveOrphans(
+                Platform.RegistrationHeal.ApplicationsRoot(),
+                Platform.PluginPaths.PluginsRoot,
+                "VizhiCodex");
+
             if (!Platform.SelfRegistration.RegisterIfMissing())
             {
                 Platform.RegistrationHeal.HealIfNeeded();
