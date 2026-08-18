@@ -62,6 +62,12 @@
     <EmbeddedResource Include="..\scripts\activity-hook.sh">
       <LogicalName>ClaudeConsole.activity-hook.sh</LogicalName>
     </EmbeddedResource>
+    <!-- The Codex launcher. Embedded for the same reason: one copy in scripts/ is the source of
+         truth. Its CONTENT is part of Codex's hook-trust hash, so changing this file re-prompts
+         every user — keep it a stable launcher (see CodexStateBridge). -->
+    <EmbeddedResource Include="..\scripts\codex-hook.sh">
+      <LogicalName>CodexConsole.codex-hook.sh</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <Target Name="CopyPackage" AfterTargets="PostBuildEvent">

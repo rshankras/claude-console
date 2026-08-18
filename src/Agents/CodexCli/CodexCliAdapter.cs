@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Agents
 {
     using System;
+    using System.IO;
 
     /// <summary>
     /// OpenAI's Codex CLI. Second adapter, and the one that proves the seam earns its keep.
@@ -56,6 +57,36 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             MultiConsumerHooks = true,   // matcher groups; concurrent handlers per event
             HooksNeedTrust = true,       // one-time /hooks trust grant, re-flagged on change
         };
+
+        /// <summary>
+        /// The Codex end of the state bridge — installing the hook, and knowing whether the user
+        /// still owes it a /hooks trust grant.
+        ///
+        /// Deliberately NOT on IAgentAdapter yet. Claude Code's equivalent still lives inside
+        /// BridgeManager, from before this seam existed, so declaring it on the interface would
+        /// mean one real implementation and one no-op pretending to be one. It moves up when
+        /// BridgeManager is split.
+        /// </summary>
+        public CodexStateBridge StateBridge { get; } = new CodexStateBridge();
+
+        /// <summary>
+        /// The launcher's contents, embedded at build time so scripts/codex-hook.sh stays the one
+        /// source of truth. Null if it is missing from the assembly — which would mean a package
+        /// that silently cannot install its own hook, so the tests assert it is present.
+        /// </summary>
+        public static String HookScriptContents()
+        {
+            using var stream = typeof(CodexCliAdapter).Assembly
+                .GetManifestResourceStream("CodexConsole.codex-hook.sh");
+
+            if (stream == null)
+            {
+                return null;
+            }
+
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        }
 
         public String SlashCommand(AgentVerb verb) =>
             verb switch
