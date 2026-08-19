@@ -77,8 +77,12 @@ Please preview on macOS.
 - Layout changes in a future package don't reach an already-imported profile (import
   de-duplicates by profile id); a version-aware heal is on the roadmap.
 
-## Ask us about
+## Going deeper
 
-The two-seam architecture ([docs/multi-agent-architecture.md](https://github.com/rshankras/claude-console/blob/vizhi-codex/v1.4.4/docs/multi-agent-architecture.md)), the risk classifier behind
-the approval keys, the offline voice pipeline (notarized helper + whisper.cpp, no network),
-or what a third agent would take to add.
+The two-seam design that makes this a product line rather than a fork — a platform bridge
+hiding the OS, an agent adapter hiding the CLI — is in
+[docs/multi-agent-architecture.md](https://github.com/rshankras/claude-console/blob/vizhi-codex/v1.4.4/docs/multi-agent-architecture.md).
+A third agent is an adapter plus a thin product folder; the engine, the 550-test suite, and
+the packaging are shared. Also in the codebase: the risk classifier behind the approval keys,
+and the fully offline voice pipeline (Developer-ID signed, notarized helper + whisper.cpp —
+no network).
