@@ -17,6 +17,20 @@ concern) declaring what the agent can honestly report; `src/Products/<name>` pai
 branding, a profile, and a version. Supporting a new terminal agent is an adapter plus a thin
 product folder — the engine, tests, and packaging are shared.
 
+## The keys, page by page
+
+| Page | Keys |
+|---|---|
+| 1 — Sessions & answers | Codex sessions ×3 (live state per tab) · **Screenshot** · **Voice** · **Voice Draft** · Yes · No · Esc |
+| 2 — Session control | **Review** (native `/review` picker) · Model · Compact · Up · Enter · Down · Scroll ↑ · Scroll ↓ · Clear (`/new`) |
+| 3 — Prompts | Explore · Explain · Review (prompt) · Optimize · Refactor · Write Tests · Document · Fix Bug · Security |
+| 4 — Terminal & sessions | Voice "Go to Project" · New Tab · Next Tab · Prev Tab · **New Codex** · Exit |
+| 5 — Git | Commit · Create PR · Diff · Log · Push · Status |
+
+Session keys and Yes/No light **amber** when Codex asks permission, **red** when the pending
+command is destructive (`git push`, `rm -rf`, `sudo`…). The full key-by-key story is in the
+[product README](https://github.com/rshankras/claude-console/blob/vizhi-codex/v1.4.4/src/Products/VizhiCodex/README.md).
+
 Two design rules the product is built around:
 
 - **A key never shows a value the agent did not report.** Codex bills a subscription and
@@ -65,6 +79,6 @@ Please preview on macOS.
 
 ## Ask us about
 
-The two-seam architecture (`docs/multi-agent-architecture.md`), the risk classifier behind
+The two-seam architecture ([docs/multi-agent-architecture.md](https://github.com/rshankras/claude-console/blob/vizhi-codex/v1.4.4/docs/multi-agent-architecture.md)), the risk classifier behind
 the approval keys, the offline voice pipeline (notarized helper + whisper.cpp, no network),
 or what a third agent would take to add.
