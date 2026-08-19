@@ -32,10 +32,49 @@ PLUGIN = "VizhiCodex"
 DROP = {
     "ControlCommand___tab": "no completion to accept — the press would do nothing",
     "CostDisplayCommand": "Codex bills a subscription and reports no spend; the key would show a dash",
-    "VoiceCommand": "this product ships no voice payload",
-    "VoiceDraftCommand": "this product ships no voice payload",
-    "ProjectVoiceCommand": "this product ships no voice payload",
 }
+
+# Voice is NOT dropped. It is agent-neutral — the helper records, whisper transcribes, and the text
+# lands in whichever session has focus — and this package now embeds the payload, so the keys work.
+
+
+# Codex frees two slots (Tab, Cost) and a hole on page 1 is the one the user stares at. Esc moves
+# down beside Yes and No — yes, no, escape are the three ways to answer an approval prompt, so they
+# belong on one row — which frees the slot next to Voice for Voice Draft: the same capture, but it
+# types the transcript WITHOUT submitting, so you can fix whatever whisper misheard.
+#
+# Keyed by (page index, control id). Each entry declares what it expects to overwrite, so a change
+# to Claude Console's layout upstream fails here loudly instead of silently shipping a keypad whose
+# keys have quietly moved.
+PLACE = {
+    (0, 5): ("ControlCommand___esc", "VoiceDraftCommand"),
+    (0, 8): (None, "ControlCommand___esc"),
+}
+
+ACTION = "Loupedeck.ClaudeConsolePlugin.Actions."
+
+
+def rearrange(profile) -> int:
+    """Move keys the Codex layout places differently. Returns how many were placed."""
+    placed = 0
+    for mode in profile["layout"]["layoutModes"]:
+        for workspace in mode.get("workspaces", []):
+            for pi, page in enumerate(workspace.get("pressPages", [])):
+                for control in page.get("controls", []):
+                    key = (pi, control.get("controlId"))
+                    if key not in PLACE:
+                        continue
+                    expected, wanted = PLACE[key]
+                    actual = control.get("pressAction")
+                    actual_short = actual.split("___", 1)[1].replace(ACTION, "") if actual else None
+                    if actual_short != expected:
+                        raise SystemExit(
+                            f"page {pi} control {key[1]}: expected {expected!r} to move, found "
+                            f"{actual_short!r} — Claude Console's layout changed, so fix PLACE.")
+                    control["pressAction"] = f"${PLUGIN}___{ACTION}{wanted}"
+                    print(f"   placed {wanted} at page {pi + 1} key {key[1] + 1}")
+                    placed += 1
+    return placed
 
 
 def drops(action: str):
@@ -76,6 +115,7 @@ def main() -> None:
                 doc["nativePluginName"] = PLUGIN
                 freed = strip_unsupported(doc)
                 print(f"   {freed} keys freed")
+                rearrange(doc)
                 data = json.dumps(doc, indent=2).encode("utf-8")
 
             elif item.filename == "ApplicationInfo.json":

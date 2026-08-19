@@ -25,11 +25,13 @@ HOME_DIR="$HOME/.claude/claude-console"
 APP="$HOME_DIR/ClaudeVoiceHelper.app"
 WBIN="$HOME_DIR/whisper-bin"
 
-# Which products ship offline voice. Codex has no voice path yet, and demanding a notarized
-# helper for a package that would never launch it only blocks the build.
+# Which products ship offline voice. Both do: voice is agent-neutral — it records, transcribes and
+# injects into the focused session without asking which agent runs there. The payload installs to a
+# runtime home shared by every product (~/.claude/claude-console) under one bundle id, so a user with
+# both packages gets one notarized helper, one Microphone grant and one 141 MB model download.
 case "$PRODUCT" in
-  ClaudeConsole) SHIPS_VOICE=1 ;;
-  *)             SHIPS_VOICE=0 ;;
+  ClaudeConsole|VizhiCodex) SHIPS_VOICE=1 ;;
+  *)                        SHIPS_VOICE=0 ;;
 esac
 
 # --- preflight: the voice payload must exist and be notarized ------------------------------------

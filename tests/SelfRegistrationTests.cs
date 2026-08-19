@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
+    using System.Linq;
     using System.IO;
     using System.IO.Compression;
     using System.Text.Json.Nodes;
@@ -171,7 +172,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         /// <summary>
         /// The profile and the product must agree. Gating an action in code while the profile still
         /// binds it does not remove the key — it turns it into an unresolvable binding, a key that
-        /// looks live and cannot fire. These are the four Codex genuinely does not have.
+        /// looks live and cannot fire. These two are what Codex genuinely does not have.
         /// </summary>
         [Fact]
         public void The_codex_profile_binds_nothing_the_product_cannot_do()
@@ -183,8 +184,58 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.DoesNotContain("ControlCommand___tab", body);      // no completion to accept
             Assert.DoesNotContain("CostDisplayCommand", body);        // reports no spend
-            Assert.DoesNotContain("VoiceCommand", body);              // ships no voice payload
-            Assert.DoesNotContain("ProjectVoiceCommand", body);
+        }
+
+        /// <summary>
+        /// Voice is agent-neutral and this package embeds the payload, so the Codex profile binds it
+        /// like Claude Console does. The keys are only honest while pack-release.sh ships the helper
+        /// for this product — the guard for that lives in Pack_release_ships_voice_for_both_products.
+        /// </summary>
+        [Fact]
+        public void The_codex_profile_binds_voice()
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(CodexProfilePath());
+            using var entry = zip.GetEntry("ProfileInfo.json").Open();
+            using var reader = new System.IO.StreamReader(entry);
+            var body = reader.ReadToEnd();
+
+            Assert.Contains("VoiceCommand", body);
+            Assert.Contains("ProjectVoiceCommand", body);
+        }
+
+        /// <summary>
+        /// Page 1 is the page a user actually looks at, so it carries no holes. Dropping Tab left
+        /// one, and the fix is a rearrangement rather than filler: Esc moves down beside Yes and No
+        /// — yes, no and escape are the three ways to answer an approval prompt — which frees the
+        /// slot next to Voice for its Draft twin (same capture, types without submitting).
+        /// </summary>
+        [Fact]
+        public void The_codex_first_page_has_no_empty_keys()
+        {
+            var page = CodexPressPage(0);
+
+            for (var i = 0; i < 9; i++)
+            {
+                Assert.False(
+                    page[i]!["pressAction"] is null,
+                    $"page 1 key {i + 1} is unbound — the first page must be full");
+            }
+
+            Assert.Contains("VoiceCommand", (String)page[4]!["pressAction"]!);
+            Assert.Contains("VoiceDraftCommand", (String)page[5]!["pressAction"]!);
+            Assert.Contains("ControlCommand___esc", (String)page[8]!["pressAction"]!);
+        }
+
+        /// <summary>Reads one press page's controls out of the packaged Codex profile.</summary>
+        private static JsonArray CodexPressPage(Int32 index)
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(CodexProfilePath());
+            using var entry = zip.GetEntry("ProfileInfo.json").Open();
+            using var reader = new System.IO.StreamReader(entry);
+            var doc = JsonNode.Parse(reader.ReadToEnd());
+
+            return (JsonArray)doc!["layout"]!["layoutModes"]![0]!["workspaces"]![0]!
+                ["pressPages"]![index]!["controls"]!;
         }
 
         /// <summary>Claude Console keeps all four — this is a per-product difference, not a removal.</summary>
@@ -199,6 +250,47 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("ControlCommand___tab", body);
             Assert.Contains("CostDisplayCommand", body);
             Assert.Contains("VoiceCommand", body);
+        }
+
+        /// <summary>
+        /// A bound voice key with no payload in the package is exactly the failure this whole file
+        /// guards against: the action registers, the key looks live, and the press finds no helper.
+        /// The profile above is only honest because the packer embeds the payload for both products.
+        /// </summary>
+        [Fact]
+        public void Pack_release_ships_voice_for_both_products()
+        {
+            var script = File.ReadAllText(RepoFile("tools", "voice", "pack-release.sh"));
+
+            Assert.Contains("ClaudeConsole|VizhiCodex) SHIPS_VOICE=1", script);
+        }
+
+        /// <summary>The voice actions must be compiled INTO the Codex product, not excluded from it.</summary>
+        [Fact]
+        public void The_codex_build_includes_the_voice_actions()
+        {
+            var csproj = File.ReadAllText(
+                RepoFile("src", "Products", "VizhiCodex", "VizhiCodexPlugin.csproj"));
+
+            Assert.DoesNotContain("Compile Remove", csproj);
+        }
+
+        /// <summary>Walks up from the test binary to a repo-relative file.</summary>
+        private static String RepoFile(params String[] parts)
+        {
+            var dir = AppContext.BaseDirectory;
+            for (var i = 0; i < 8 && dir != null; i++)
+            {
+                var candidate = Path.Combine(new[] { dir }.Concat(parts).ToArray());
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+
+                dir = Path.GetDirectoryName(dir);
+            }
+
+            throw new FileNotFoundException($"not found walking up from {AppContext.BaseDirectory}: {String.Join("/", parts)}");
         }
 
         private static String CodexProfilePath()

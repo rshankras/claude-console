@@ -38,13 +38,12 @@
     <Compile Include="..\..\Core\**\*.cs" />
     <Compile Include="..\..\Agents\CodexCli\**\*.cs" />
 
-    <!-- This product ships no voice payload (no notarized helper, no whisper binary), so the voice
-         actions must not exist in it at all. A registered action whose press cannot work is worse
-         than an absent one: the key looks live and does nothing. Excluding the SOURCE is the same
-         mechanism that keeps the other agent's adapter out — the compiler enforces it. -->
-    <Compile Remove="..\..\Core\Actions\VoiceCommand.cs" />
-    <Compile Remove="..\..\Core\Actions\VoiceDraftCommand.cs" />
-    <Compile Remove="..\..\Core\Actions\ProjectVoiceCommand.cs" />
+    <!-- Voice IS shipped here. It is agent-neutral: the helper records, whisper transcribes, and
+         the text is injected into whichever session has focus — nothing in the path asks which
+         agent is running. The runtime home (~/.claude/claude-console) and the helper's bundle id
+         are shared with Claude Console on purpose, so a user who has both gets one notarized
+         helper, one Microphone grant, and one copy of the speech model. pack-release.sh embeds the
+         payload for this product too; without it the actions would exist and fail on press. -->
   </ItemGroup>
 
   <ItemGroup>
