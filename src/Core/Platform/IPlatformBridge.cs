@@ -89,6 +89,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// </summary>
         void LaunchClaudeInProject(String projectDir);
 
+        /// <summary>
+        /// Interactive screenshot: the user drags a region (or picks a window) and the capture
+        /// lands at <paramref name="outputPath"/>. BLOCKS until they finish or cancel — callers
+        /// run it off the action thread. Returns false when cancelled or unsupported; true only
+        /// if the file exists. First use may cost a one-time Screen Recording grant for the
+        /// plugin service, the same shape as voice's Microphone grant.
+        /// </summary>
+        Boolean CaptureScreenshotInteractive(String outputPath);
+
+        /// <summary>
+        /// Open a terminal and start the agent CLI with <paramref name="extraArgs"/> appended —
+        /// same idle-tab reuse as <see cref="LaunchClaudeInProject"/>, but no cd: for launches
+        /// whose input is a file (Codex `-i image.png`), not a project. Args are discrete argv
+        /// elements so each backend applies its own quoting — a joined string would have to be
+        /// re-split, and Windows temp paths contain spaces.
+        /// </summary>
+        void LaunchAgentSession(String[] extraArgs);
+
         /// <summary>Audible "that didn't work" — the plugin's only out-of-band signal.</summary>
         void Alert();
     }

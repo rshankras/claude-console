@@ -46,9 +46,14 @@ DROP = {
 # Keyed by (page index, control id). Each entry declares what it expects to overwrite, so a change
 # to Claude Console's layout upstream fails here loudly instead of silently shipping a keypad whose
 # keys have quietly moved.
+# The Screenshot key takes Clear's slot on page 1 — it feeds the CURRENT conversation, which earns
+# a front-page key the way a reset verb does not. Clear is not lost: it moves to page 2 into Cost's
+# freed slot, landing beside Compact — its sibling reset verb.
 PLACE = {
+    (0, 3): ("ControlCommand___clear", "ScreenshotCommand"),
     (0, 5): ("ControlCommand___esc", "VoiceDraftCommand"),
     (0, 8): (None, "ControlCommand___esc"),
+    (1, 0): (None, "ControlCommand___clear"),
 }
 
 ACTION = "Loupedeck.ClaudeConsolePlugin.Actions."

@@ -60,6 +60,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             ApprovalSignal = true,       // PermissionRequest, with a structured decision protocol
             MultiConsumerHooks = true,   // matcher groups; concurrent handlers per event
             HooksNeedTrust = true,       // one-time /hooks trust grant, re-flagged on change
+            ImageInConversation = true,  // not via the composer — the MODEL reads the file with its
+                                         // image-viewing tool when told the path (proven on hardware
+                                         // by the July Vizhi plugin, VizhiActionRouter.cs:444)
+            ImageAtLaunch = true,        // -i/--image also exists, but only for the initial prompt
         };
 
         /// <summary>

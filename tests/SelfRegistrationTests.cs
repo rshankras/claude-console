@@ -221,9 +221,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                     $"page 1 key {i + 1} is unbound — the first page must be full");
             }
 
+            Assert.Contains("ScreenshotCommand", (String)page[3]!["pressAction"]!);
             Assert.Contains("VoiceCommand", (String)page[4]!["pressAction"]!);
             Assert.Contains("VoiceDraftCommand", (String)page[5]!["pressAction"]!);
             Assert.Contains("ControlCommand___esc", (String)page[8]!["pressAction"]!);
+        }
+
+        /// <summary>
+        /// Screenshot took Clear's slot on page 1, but Clear is demoted, not dropped — it lands in
+        /// Cost's freed slot on page 2, beside Compact, its sibling reset verb. A rearrangement
+        /// that silently lost a key would be the profile-vs-product bug wearing a new coat.
+        /// </summary>
+        [Fact]
+        public void Clear_moved_to_page_two_rather_than_disappearing()
+        {
+            var page = CodexPressPage(1);
+
+            Assert.Contains("ControlCommand___clear", (String)page[0]!["pressAction"]!);
         }
 
         /// <summary>Reads one press page's controls out of the packaged Codex profile.</summary>

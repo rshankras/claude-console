@@ -101,5 +101,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             // far cheaper mistake.
             return new List<String> { "-w", "0", "new-tab", "-d", projectDir, ClaudeCommand() };
         }
+
+        /// <summary>
+        /// Open a new tab running the agent with extra arguments (e.g. `-i shot.png`). Each arg is
+        /// its own argv element — the same no-quoting discipline as LaunchClaudeArgs, and the
+        /// reason this takes an array: Windows temp paths contain spaces, so a joined string
+        /// could never be re-split safely.
+        /// </summary>
+        internal static List<String> LaunchAgentArgs(String[] extraArgs)
+        {
+            if (extraArgs == null || extraArgs.Length == 0)
+            {
+                return null;
+            }
+
+            var args = new List<String> { "-w", "0", "new-tab", ClaudeCommand() };
+            args.AddRange(extraArgs);
+            return args;
+        }
     }
 }

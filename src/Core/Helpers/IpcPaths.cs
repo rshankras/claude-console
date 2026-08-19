@@ -47,6 +47,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         public static String SessionsDir => Path.Combine(Root, "sessions");
         public static String ActivityDir => Path.Combine(Root, "activity");
         public static String VoiceDir => Path.Combine(Root, "voice");
+        public static String ScreenshotsDir => Path.Combine(Root, "screenshots");
 
         /// <summary>Fallback (last-writer-wins) state, used when no per-tab file matches.</summary>
         public static String SharedStateFile => Path.Combine(SessionsDir, "shared.json");

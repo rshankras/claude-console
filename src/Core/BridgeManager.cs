@@ -568,6 +568,24 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
         public void Navigate(TerminalAction action) => _platform.Navigate(action);
 
+        /// <summary>
+        /// Interactive screenshot into this product's IPC tree. Returns the file's path, or null
+        /// when the user cancelled the picker (or the platform can't capture). Timestamped names,
+        /// never reused: an earlier shot may still be sitting unsubmitted in a composer, and
+        /// overwriting it would silently swap the image that prompt refers to.
+        /// </summary>
+        public String CaptureScreenshot()
+        {
+            var dir = IpcPaths.ScreenshotsDir;
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, $"shot-{DateTime.Now:yyyyMMdd-HHmmss}.png");
+
+            return _platform.CaptureScreenshotInteractive(path) ? path : null;
+        }
+
+        /// <summary>Open a terminal and start the agent with extra CLI args (e.g. -i shot.png).</summary>
+        public void LaunchAgentSession(params String[] extraArgs) => _platform.LaunchAgentSession(extraArgs);
+
         // State/activity files are a few KB — refuse to slurp anything huge (corrupt or hostile).
         private const Int64 MaxIpcFileBytes = 1 << 20;
 

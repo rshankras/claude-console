@@ -40,6 +40,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             ApprovalSignal = true,       // PermissionRequest hook carries tool_name + tool_input
             MultiConsumerHooks = false,  // the statusline is single-slot; wiring must chain
             HooksNeedTrust = false,      // settings.json edits take effect with no trust prompt
+            ImageInConversation = true,  // a typed/pasted file path is read mid-conversation
+            ImageAtLaunch = false,       // no image flag on the claude CLI
         };
 
         /// <summary>

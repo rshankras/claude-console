@@ -60,5 +60,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         /// <summary>Requires a one-time interactive trust grant before the plugin's hooks run.</summary>
         public Boolean HooksNeedTrust { get; init; }
+
+        /// <summary>
+        /// An image FILE PATH typed into the composer reaches the CURRENT conversation — whether
+        /// the composer attaches it (Claude Code) or the model opens it with its own image-viewing
+        /// tool when told the path (Codex). The delivery differs; the honest question this flag
+        /// answers is the same: can a screenshot join the running session? Where false, it cannot,
+        /// whatever the key face implies.
+        /// </summary>
+        public Boolean ImageInConversation { get; init; }
+
+        /// <summary>
+        /// The CLI accepts images only when a session STARTS (Codex: `-i, --image` — "attach to
+        /// the initial prompt", verified against codex-cli 0.147.0). A screenshot key on such an
+        /// agent honestly means "new session seeded with this image", and must say so.
+        /// </summary>
+        public Boolean ImageAtLaunch { get; init; }
     }
 }

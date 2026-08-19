@@ -405,6 +405,26 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             this.RunTerminal(args);
         }
 
+        public Boolean CaptureScreenshotInteractive(String outputPath)
+        {
+            // Windows has no CLI equivalent of `screencapture -i` that writes to a chosen path
+            // (Snipping Tool only targets the clipboard). Honest answer until the port grows one:
+            // unsupported — the action logs and does nothing, it never fakes a capture.
+            PluginLog.Info("WindowsPlatformBridge.CaptureScreenshotInteractive: not supported on Windows yet");
+            return false;
+        }
+
+        public void LaunchAgentSession(String[] extraArgs)
+        {
+            var args = WindowsTerminalCli.LaunchAgentArgs(extraArgs);
+            if (args == null)
+            {
+                return;
+            }
+
+            this.RunTerminal(args);
+        }
+
         public void LaunchClaudeInProject(String projectDir)
         {
             var args = WindowsTerminalCli.LaunchClaudeArgs(projectDir);

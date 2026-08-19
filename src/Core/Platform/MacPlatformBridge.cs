@@ -360,7 +360,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
 
             // Single-quote the path for the shell so spaces are safe (project paths have no quotes).
-            var cmd = "cd '" + projectDir + "' && " + this._cliCommand;
+            this.LaunchShellCommand("cd '" + projectDir + "' && " + this._cliCommand);
+        }
+
+        // The busy-aware launch shared by LaunchClaudeInProject and LaunchAgentSession: reuse an
+        // idle front tab, open a new one when it is busy, never type into a live session.
+        private void LaunchShellCommand(String cmd)
+        {
+            if (!this.CanRun())
+            {
+                return;
+            }
+
             var script =
                 "tell application \"Terminal\"\n" +
                 "  activate\n" +
@@ -381,6 +392,43 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 "  end if\n" +
                 "end tell";
             this.RunAppleScript(script);
+        }
+
+        /// <summary>
+        /// `screencapture -i`: the system's own region/window picker (the Shift+Cmd+4 gesture).
+        /// Cancelling with Esc exits without writing a file, so file-exists IS the outcome — the
+        /// tool's exit code does not distinguish the cases. The generous timeout is thinking time:
+        /// the user is aiming a crosshair, and killing the picker under them takes the shot anyway.
+        /// </summary>
+        public Boolean CaptureScreenshotInteractive(String outputPath)
+        {
+            if (!OperatingSystem.IsMacOS())
+            {
+                return false;
+            }
+
+            BoundedProcess.Run("/usr/sbin/screencapture", new List<String> { "-i", outputPath }, 120000, wantOutput: false);
+
+            if (!File.Exists(outputPath))
+            {
+                PluginLog.Info("MacPlatformBridge.CaptureScreenshotInteractive: no file — cancelled, or the service lacks a Screen Recording grant (System Settings → Privacy & Security)");
+                return false;
+            }
+
+            return true;
+        }
+
+        public void LaunchAgentSession(String[] extraArgs)
+        {
+            var quoted = new List<String>();
+            foreach (var arg in extraArgs ?? Array.Empty<String>())
+            {
+                // Single-quote for the shell, the same discipline LaunchClaudeInProject applies to
+                // its path; embedded quotes get the standard '\'' splice.
+                quoted.Add("'" + arg.Replace("'", "'\''") + "'");
+            }
+
+            this.LaunchShellCommand(this._cliCommand + " " + String.Join(" ", quoted));
         }
 
         public void Alert() => this.RunAppleScript("beep");

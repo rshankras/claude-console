@@ -79,6 +79,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             public void Navigate(TerminalAction action) => this.Navigations.Add(action);
             public void LaunchClaudeInProject(String projectDir) => this.Launches.Add(projectDir);
             public void Alert() => this.Alerts++;
+
+            public List<String> CaptureRequests { get; } = new();
+            public Boolean CaptureSucceeds { get; set; }
+            public List<String[]> AgentLaunches { get; } = new();
+
+            public Boolean CaptureScreenshotInteractive(String outputPath)
+            {
+                this.CaptureRequests.Add(outputPath);
+                if (this.CaptureSucceeds)
+                {
+                    // The contract is file-exists, not exit-code — honour it like the real bridge.
+                    System.IO.File.WriteAllBytes(outputPath, new Byte[] { 0x89 });
+                    return true;
+                }
+
+                return false;
+            }
+
+            public void LaunchAgentSession(String[] extraArgs) => this.AgentLaunches.Add(extraArgs);
         }
 
         private static (BridgeManager Bridge, FakePlatformBridge Fake) Rig(String activeTty = "ttys001")
@@ -237,6 +256,58 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.SelectSlot(1);
 
             Assert.Equal("ttys011", Assert.Single(fake.Focused));
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // Screenshot: capture through the seam, file-exists is the outcome
+        // ---------------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_cancelled_capture_returns_null_not_a_path()
+        {
+            // The caller branches on the return: a path means "hand it to the agent". Handing over
+            // a path with no file behind it would type a dangling reference into the composer.
+            var fake = new FakePlatformBridge { CaptureSucceeds = false };
+            var bridge = new BridgeManager(fake);
+
+            Assert.Null(bridge.CaptureScreenshot());
+            Assert.Single(fake.CaptureRequests);
+        }
+
+        [Fact]
+        public void A_capture_lands_in_this_products_ipc_tree_and_returns_its_path()
+        {
+            IpcPaths.UseProduct("seamtest-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var fake = new FakePlatformBridge { CaptureSucceeds = true };
+                var bridge = new BridgeManager(fake);
+
+                var path = bridge.CaptureScreenshot();
+
+                Assert.NotNull(path);
+                Assert.True(File.Exists(path));
+                Assert.StartsWith(IpcPaths.ScreenshotsDir, path);
+            }
+            finally
+            {
+                try { Directory.Delete(IpcPaths.Root, recursive: true); } catch { }
+                IpcPaths.UseProduct("claude-console");
+            }
+        }
+
+        [Fact]
+        public void Launching_with_image_args_passes_them_as_discrete_argv_elements()
+        {
+            // Windows temp paths contain spaces; a joined string could never be re-split safely,
+            // so the seam carries argv elements and each backend quotes for itself.
+            var fake = new FakePlatformBridge();
+            var bridge = new BridgeManager(fake);
+
+            bridge.LaunchAgentSession("-i", "/tmp/x y/shot.png");
+
+            var args = Assert.Single(fake.AgentLaunches);
+            Assert.Equal(new[] { "-i", "/tmp/x y/shot.png" }, args);
         }
 
         // ---------------------------------------------------------------------------------------

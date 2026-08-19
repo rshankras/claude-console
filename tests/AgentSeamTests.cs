@@ -141,5 +141,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.True(new CodexCliAdapter().Capabilities.HooksNeedTrust);
             Assert.False(new ClaudeCodeAdapter().Capabilities.HooksNeedTrust);
         }
+
+        /// <summary>
+        /// Both agents take a screenshot into the CURRENT conversation — that is the Screenshot
+        /// key's whole promise, and it held only after a correction: Codex looked launch-only from
+        /// its CLI (`-i` attaches to the initial prompt), but the model reads a file mid-session
+        /// with its own image-viewing tool when told the path, proven on hardware by the July
+        /// Vizhi plugin. The flag pins the WORKFLOW truth, not the flag-parser truth; if it ever
+        /// flips false again, the key silently degrades to session-spawning — which is exactly the
+        /// surprise a user reported.
+        /// </summary>
+        [Fact]
+        public void BothAgentsTakeImagesIntoTheCurrentConversation()
+        {
+            var claude = new ClaudeCodeAdapter().Capabilities;
+            var codex = new CodexCliAdapter().Capabilities;
+
+            Assert.True(claude.ImageInConversation);
+            Assert.True(codex.ImageInConversation);
+
+            // Codex additionally seeds a session at launch; Claude Code's CLI has no image flag.
+            Assert.True(codex.ImageAtLaunch);
+            Assert.False(claude.ImageAtLaunch);
+        }
     }
 }

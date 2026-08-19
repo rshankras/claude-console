@@ -63,6 +63,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
         public void LaunchClaudeInProject(String projectDir) => this.Unsupported(nameof(this.LaunchClaudeInProject));
 
+        public Boolean CaptureScreenshotInteractive(String outputPath)
+        {
+            this.Unsupported(nameof(this.CaptureScreenshotInteractive));
+            return false;
+        }
+
+        public void LaunchAgentSession(String[] extraArgs) => this.Unsupported(nameof(this.LaunchAgentSession));
+
         public void Alert() { /* no backend to beep with */ }
 
         private InjectionOutcome Unsupported(String what)

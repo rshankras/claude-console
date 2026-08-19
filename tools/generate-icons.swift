@@ -16,6 +16,7 @@ let icons: [(String, String, String)] = [
     ("model", "sparkles", P),                        // legacy basename, kept for old bindings
     ("deploy", "shippingbox.fill", G),               // 10th prompt key — absent from the pack
     ("terminal", "terminal.fill", Y),
+    ("screenshot", "camera.viewfinder", B),          // Screenshot key — capture region → agent
     // Window nav — solid TRIANGLES in squares. Differs from the tab keys' line-arrows-in-circles on
     // BOTH the inner glyph (▶ vs →) and the outer shape (square vs circle), so window ≠ tab even on a
     // tiny dark key (a plain arrow.*.square just re-drew the tab arrow in a near-invisible square).
