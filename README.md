@@ -90,7 +90,12 @@ Notes:
 ## Repository layout
 
 This repo builds **one package per agent** from a shared engine — Claude Console for Claude Code,
-and a Codex build on the same core. `src/Core` is the engine (keypad, session grid, terminal
+and **[Vizhi for Codex](src/Products/VizhiCodex/README.md)** for OpenAI's Codex CLI on the same core.
+
+> **⚠️ Install one console per machine.** Both products bind to Terminal.app, and the Logi Plugin
+> Service activates only one plugin per application — installing both leaves one silently dead
+> (its keys stop responding with no error). If you run both agents, pick one console for now; a
+> unified dual-agent console is on the roadmap. `src/Core` is the engine (keypad, session grid, terminal
 targeting, voice, install/repair), `src/Agents/<agent>` is a small adapter per agent, and
 `src/Products/<name>` is a thin product that pairs them with its own branding, profile and
 version. Products version and release independently.

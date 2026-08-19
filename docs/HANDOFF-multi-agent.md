@@ -96,8 +96,9 @@ occurrence is this bug waiting.
    with no explanation. That is a real bug-fix release independent of any Codex work. Land as the
    no-op-for-Claude refactor release the architecture doc describes, then tag per product
    (`claude-console/v2.1.0`) since bare `v…` tags are now ambiguous.
-2. **Write the "install one" note** in both READMEs and both listings. Cheap; prevents the worst
-   support case.
+2. ~~Write the "install one" note~~ — DONE 2026-08-19 in the root README and the new
+   src/Products/VizhiCodex/README.md (plus docs/vizhi-codex-preview.md, the note that travels
+   with the preview build). Still owed to the two Marketplace LISTINGS when they exist.
 3. **Long press.** The keypad delivers only Press/Release (`PressDuration` is always 0), so hold
    detection has to be timed locally — Vizhi does this in `VoiceCommand.cs:57-86`. Nine keys is this
    product's binding constraint and this doubles them. Highest value per unit of work.
@@ -151,8 +152,12 @@ enforces that they agree. The assembly version is what the crash-disable marker 
   next to `RegistrationHeal.cs`. Until it exists, any layout change we ship reaches new installs
   only.
 
-- Which Marketplace listing name the Codex product ships under — "Vizhi for Codex" is chosen but
-  gated on the hackathon IP answer about the Vizhi name.
+- ~~The Vizhi name gate~~ — RESOLVED 2026-08-19: the hackathon's published rules (OpenAI Devpost,
+  Section 8) keep submissions entrant property; the sponsor's only rights are judging plus three
+  years of hackathon-promotion use. No commercialization restriction, so "Vizhi for Codex" is
+  clear to use — unless a separate signed prize agreement exists, which would control. The real
+  brand step was never Devpost: a trademark search + registration for "Vizhi" before the paid
+  Apple app ships.
 - Repo rename (to something neutral) once 2.0.1 clears review; the submitted package carries GitHub
   URLs, and redirects would cover it, but there is no reason to make QA look twice.
 - Per-product CHANGELOG split — one file currently tells Claude Console's story only.
