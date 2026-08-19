@@ -38,6 +38,11 @@ Please preview on macOS.
 
 ## Install
 
+> **Preview on a machine without Claude Console installed** — the two plugins both bind
+> Terminal.app and the plugin service activates only one, so a keypad that already runs
+> Claude Console will show that plugin's keys, not this one's. Uninstall it first
+> (Options+ → Plugins) or use a different machine.
+
 1. Logi Options+ **6.4+**, MX Creative Keypad, [Codex CLI](https://developers.openai.com/codex/cli) installed natively.
 2. Double-click `VizhiCodex_1.4.4.lplug4` → install via Options+.
 3. Wait ~1 minute: the plugin self-registers its application + layout and restarts the plugin

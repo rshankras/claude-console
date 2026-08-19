@@ -16,6 +16,10 @@ agent, one package per product. *(Not an OpenAI product; Codex is a trademark of
 > Terminal.app, and the Logi Plugin Service activates only one plugin per application — the
 > other silently loses its keys. If you use both agents, pick one console for now; a unified
 > dual-agent console is on the roadmap.
+>
+> **Trying this preview?** Use a machine that does **not** have Claude Console installed —
+> if it's already on your keypad, uninstall it first (Options+ → Plugins), or the keys you
+> see may belong to the wrong plugin and nothing will look live.
 
 ## Status
 
