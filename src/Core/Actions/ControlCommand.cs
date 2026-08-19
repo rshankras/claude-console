@@ -107,6 +107,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             PluginLog.Info($"ControlCommand: {actionParameter}");
         }
 
+        // Two Core keys carry icons that CANNOT be the parameter id: review.png is the Prompts
+        // family's blue (and still bound on the prompts page), and clear.png is Git-amber by
+        // designer-pack inheritance. Purple _core variants keep page 2 one family — and give the
+        // native review a different glyph from the review prompt, so the two stop wearing one face.
+        private static String IconFor(String actionParameter) =>
+            actionParameter switch
+            {
+                Review => "review_core",
+                Clear => "clear_core",
+                _ => actionParameter,
+            };
+
         // A key can only exist when the agent has a word for its verb, so a null here means the
         // binding outlived a change of agent — type nothing rather than something it will reject.
         private static void SendVerb(BridgeManager bridge, AgentVerb verb)
@@ -143,11 +155,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             {
                 case Esc: color = KeyImage.Red; break;
                 case Exit: color = KeyImage.Red; break;
-                case Clear: color = KeyImage.Orange; break;
                 case Mode: color = KeyImage.Purple; break;
+                case Review: color = KeyImage.Purple; break;   // the Core family's colour
+                case Clear: color = KeyImage.Purple; break;
                 default: color = KeyImage.Slate; break; // Compact, Tab
             }
-            return KeyImage.Render(imageSize, this.GetCommandDisplayName(actionParameter, imageSize), color, actionParameter);
+            return KeyImage.Render(imageSize, this.GetCommandDisplayName(actionParameter, imageSize), color, IconFor(actionParameter));
         }
     }
 }
