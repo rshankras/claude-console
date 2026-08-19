@@ -61,9 +61,13 @@ Please preview on macOS.
 2. Double-click `VizhiCodex_1.4.4.lplug4` → install via Options+.
 3. Wait ~1 minute: the plugin self-registers its application + layout and restarts the plugin
    service once (Options+ blinks and returns on its own).
-4. In Codex, run `/hooks` → **trust** the `vizhi-codex` entry → start a new session. Codex
-   trusts hooks by hash, so this is a one-time, deliberate step — live state on the keys
-   begins here.
+4. **Trust the hooks.** At your next Codex session start you'll see **"Hooks need review — 7
+   hooks are new or changed"**. That's this plugin: one entry per lifecycle event
+   (SessionStart, PreToolUse, PermissionRequest, …), all running the same one-line launcher,
+   `~/.codex/codex-console/scripts/codex-hook.sh` — it writes state files for the keypad and
+   nothing else. Choose **Review hooks**, confirm, and trust (or *Trust all and continue*).
+   Codex trusts by hash, so this is one-time. If you pick *Continue without trusting*, keys
+   stay static — recover later with `/hooks`.
 5. Grant, once each as macOS prompts: **Accessibility** (typing), **Microphone** (voice),
    **Screen Recording** (screenshot).
 

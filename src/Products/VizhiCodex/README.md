@@ -73,9 +73,12 @@ The keypad never shows a value the agent did not report:
    application in Options+ and imports the keypad layout by itself, then restarts the plugin
    service once — the Options+ window closes and reopens on its own. Don't quit Options+
    during that first minute.
-4. **Trust the hook.** Codex trusts lifecycle hooks by hash: run `/hooks` inside Codex, trust
-   the `vizhi-codex` entry, then start a new session. Until then keys show static labels and no
-   live state. (Never use `--dangerously-bypass-hook-trust` — it disables the review for
+4. **Trust the hooks.** Your next Codex session opens with **"Hooks need review — 7 hooks are
+   new or changed"**. All seven are this plugin: one per lifecycle event, each running the same
+   one-line launcher (`~/.codex/codex-console/scripts/codex-hook.sh`), which writes state files
+   for the keypad and nothing else. Review and trust; Codex trusts by hash, so it's one-time.
+   Until trusted, keys show static labels and no live state — `/hooks` reopens the review if
+   you skipped it. (Never use `--dangerously-bypass-hook-trust` — it disables the review for
    everything, not just this plugin.)
 5. **Grant permissions as macOS asks**, each once:
    - **Accessibility** (Logi Plugin Service) — how keys type into Terminal.
