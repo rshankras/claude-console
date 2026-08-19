@@ -26,6 +26,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         internal static String ObservedClaudeExe { get; set; }
 
         /// <summary>
+        /// The agent this product drives ("claude" | "codex"), set once by the bridge — the same
+        /// one-product-per-process contract as IpcPaths.ProductSlug. The claude-specific install
+        /// probing below only runs when this IS claude; other agents resolve observed-exe or PATH.
+        /// </summary>
+        internal static String AgentCli { get; set; } = "claude";
+
+        /// <summary>
         /// What to tell Windows Terminal to run for a Claude tab.
         ///
         /// NOT the bare word "claude": wt resolves its command against the environment it
@@ -45,6 +52,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             if (observed != null && FileExists(observed))
             {
                 return observed;
+            }
+
+            // The native-installer probe is claude knowledge; for any other agent the honest
+            // cold-start answer is the bare name on PATH.
+            if (!String.Equals(AgentCli, "claude", StringComparison.Ordinal))
+            {
+                return AgentCli;
             }
 
             var native = System.IO.Path.Combine(

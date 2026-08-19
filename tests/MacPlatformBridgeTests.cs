@@ -188,6 +188,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("do script \"claude\"", Assert.Single(calls)[1]);
         }
 
+        /// <summary>
+        /// The New key launches THE PRODUCT'S OWN AGENT. These scripts were consts hardcoding
+        /// "claude" long after the bridge knew its cli — so the Codex keypad's New key opened a
+        /// claude session. The earlier test pinned that bug by asserting the literal; this one
+        /// pins the seam: whatever cli the bridge was built with is the one `do script` runs.
+        /// </summary>
+        [Theory]
+        [InlineData(TerminalAction.NewClaudeTab)]
+        [InlineData(TerminalAction.NewClaudeWindow)]
+        public void Starting_a_session_launches_the_agent_the_bridge_was_built_for(TerminalAction action)
+        {
+            var calls = new List<List<String>>();
+            var codex = new MacPlatformBridge(cliCommand: "codex")
+            {
+                OsascriptRunner = (args, timeout, wantOutput) => { calls.Add(args); return "ok"; },
+            };
+
+            codex.Navigate(action);
+
+            var script = Assert.Single(calls)[1];
+            Assert.Contains("do script \"codex\"", script);
+            Assert.DoesNotContain("claude", script);
+        }
+
         [Fact]
         public void Opening_a_project_never_types_into_a_busy_tab()
         {

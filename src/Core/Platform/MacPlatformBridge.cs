@@ -83,21 +83,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             "delay 0.05\n" +
             "tell application \"System Events\" to ";
 
-        // Open a new tab, then run `claude` in it via `do script` (reliable command send — no
-        // per-character keystroke timing). delay lets the new tab become front first.
-        private const String NewClaudeScript =
+        // Open a new tab, then run the AGENT's cli in it via `do script` (reliable command send —
+        // no per-character keystroke timing). delay lets the new tab become front first. Built
+        // from _cliCommand, never a literal: these two were consts hardcoding "claude" long after
+        // the rest of the bridge had learned the agent's name, so the Codex keypad's New key
+        // opened a claude session — found only when a user read the key label.
+        private String NewAgentTabScript() =>
             "tell application \"Terminal\"\n" +
             "  activate\n" +
             "  tell application \"System Events\" to keystroke \"t\" using command down\n" +
             "  delay 0.5\n" +
-            "  do script \"claude\" in front window\n" +
+            "  do script \"" + this._cliCommand + "\" in front window\n" +
             "end tell";
 
-        // New WINDOW running `claude`: `do script` with no "in" target opens a fresh window.
-        private const String NewClaudeWindowScript =
+        // New WINDOW running the agent: `do script` with no "in" target opens a fresh window.
+        private String NewAgentWindowScript() =>
             "tell application \"Terminal\"\n" +
             "  activate\n" +
-            "  do script \"claude\"\n" + // no target → new window
+            "  do script \"" + this._cliCommand + "\"\n" + // no target → new window
             "end tell";
 
         // Test seam: when set, replaces the real osascript invocation so the unit tests can assert
@@ -329,10 +332,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             {
                 TerminalAction.Activate => "tell application \"Terminal\" to activate",
                 TerminalAction.NewTab => ActivateThen + "keystroke \"t\" using {command down}",           // Cmd+T
-                TerminalAction.NewClaudeTab => NewClaudeScript,
+                TerminalAction.NewClaudeTab => this.NewAgentTabScript(),
                 TerminalAction.NextTab => ActivateThen + "key code 48 using {control down}",              // Ctrl+Tab
                 TerminalAction.PreviousTab => ActivateThen + "key code 48 using {control down, shift down}",
-                TerminalAction.NewClaudeWindow => NewClaudeWindowScript,
+                TerminalAction.NewClaudeWindow => this.NewAgentWindowScript(),
                 TerminalAction.NextWindow => ActivateThen + "key code 50 using {command down}",           // Cmd+`
                 TerminalAction.PreviousWindow => ActivateThen + "key code 50 using {command down, shift down}",
                 _ => null,

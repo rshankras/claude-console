@@ -133,10 +133,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // No context command: the number isn't exposed, so the key hides rather than
                 // typing something Codex would reject.
                 AgentVerb.Context => null,
-                // Codex has these as first-class verbs Claude Code lacks. They are subcommands
-                // rather than slash commands, so they belong on a launch path, not a typed key —
-                // recorded here so the capability isn't lost when the keys get built.
-                AgentVerb.Review => null,
+                // Review is a first-class TUI command (tui/chatwidget/review_popups.rs in the
+                // 0.148 binary): typing "/review" opens the picker — uncommitted, against a base
+                // branch, or a commit. The earlier note here called it subcommand-only; that was
+                // the CLI's `codex review`, and it missed the TUI door. Same trap as images.
+                AgentVerb.Review => "/review",
+                // ResumeLast really is launch-only (`codex resume --last`) — a launch path verb.
                 AgentVerb.ResumeLast => null,
                 _ => null,
             };

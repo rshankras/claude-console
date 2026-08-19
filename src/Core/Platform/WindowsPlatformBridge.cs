@@ -24,6 +24,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     {
         public String Name => "Windows";
 
+        /// <summary>The agent CLI this product drives. Declared once, at construction.</summary>
+        internal WindowsPlatformBridge(String cliCommand = "claude")
+        {
+            WindowsTerminalCli.AgentCli = String.IsNullOrWhiteSpace(cliCommand) ? "claude" : cliCommand;
+        }
+
         // Discovery, injection and terminal control are all implemented (Phases 1-3). Voice is
         // not (Phase 5) — those keys log and no-op. Nothing gates on this today; it is the
         // backend's own statement of whether it has a working implementation, and Windows now does.

@@ -29,6 +29,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private const String Esc = "esc";
         private const String Mode = "plan"; // action id kept as "plan" so existing key bindings survive the relabel
         private const String Tab = "tab";
+        private const String Review = "review";
         private const String Compact = "compact";
         private const String Clear = "clear";
         private const String Exit = "exit";
@@ -56,6 +57,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     .SetDescription("Cycle input mode: normal → auto-accept edits → plan (Shift+Tab)");
             }
 
+            this.AddVerbParameter(agent, AgentVerb.Review, Review, "Review", "run the agent's native code review");
             this.AddVerbParameter(agent, AgentVerb.Compact, Compact, "Compact", "shrink the context window");
             this.AddVerbParameter(agent, AgentVerb.Clear, Clear, "Clear", "reset the conversation");
             this.AddVerbParameter(agent, AgentVerb.Exit, Exit, "Exit", $"quit the {agent.DisplayName} session");
@@ -87,6 +89,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     break;
                 case Tab:
                     bridge.InjectTabThenEnter(); // Tab (accept autocomplete) + Return (submit), one press
+                    break;
+                case Review:
+                    SendVerb(bridge, AgentVerb.Review);
                     break;
                 case Compact:
                     SendVerb(bridge, AgentVerb.Compact);
@@ -121,6 +126,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             switch (actionParameter)
             {
                 case Esc: return "Esc";
+                case Review: return "Review";
                 case Mode: return "Mode";
                 case Tab: return "Tab";
                 case Compact: return "Compact";

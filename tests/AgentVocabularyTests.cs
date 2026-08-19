@@ -74,6 +74,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         /// Clear means "start over", and the two agents spell it differently — this is the mapping
         /// a user asked about, pinned so it cannot drift: Claude /clear, Codex /new.
         /// </summary>
+        /// <summary>
+        /// Review is Codex's own first-class verb — "/review" opens the TUI picker
+        /// (review_popups.rs) — and on Claude Code it is a PROMPT, not a command, so the verb maps
+        /// to null and the key never appears there. The null is what keeps the Claude keypad from
+        /// typing "/review" into an agent that would reject it.
+        /// </summary>
+        [Fact]
+        public void Review_is_a_codex_command_and_absent_on_claude()
+        {
+            Assert.Equal("/review", Codex.SlashCommand(AgentVerb.Review));
+            Assert.Null(Claude.SlashCommand(AgentVerb.Review));
+        }
+
         [Fact]
         public void Clear_is_slash_clear_on_claude_and_slash_new_on_codex()
         {

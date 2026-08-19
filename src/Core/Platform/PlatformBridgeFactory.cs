@@ -25,7 +25,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             {
                 // Discovery + injection + terminal control. Voice is still a no-op (Phase 5).
                 // See docs/windows-port-2.0-plan.md for the hardware verification checklist.
-                return new WindowsPlatformBridge();
+                return new WindowsPlatformBridge(cliCommand);
             }
 
             // Deliberately a working object rather than null: every key press then degrades to a

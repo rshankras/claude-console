@@ -228,16 +228,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         /// <summary>
-        /// Screenshot took Clear's slot on page 1, but Clear is demoted, not dropped — it lands in
-        /// Cost's freed slot on page 2, beside Compact, its sibling reset verb. A rearrangement
-        /// that silently lost a key would be the profile-vs-product bug wearing a new coat.
+        /// Cost's freed slot on page 2 carries Review — Codex's own first-class verb — and Clear
+        /// is demoted to the far corner, not dropped. A rearrangement that silently lost a key
+        /// would be the profile-vs-product bug wearing a new coat.
         /// </summary>
         [Fact]
-        public void Clear_moved_to_page_two_rather_than_disappearing()
+        public void Page_two_leads_with_review_and_keeps_clear_in_the_corner()
         {
             var page = CodexPressPage(1);
 
-            Assert.Contains("ControlCommand___clear", (String)page[0]!["pressAction"]!);
+            Assert.Contains("ControlCommand___review", (String)page[0]!["pressAction"]!);
+            Assert.Contains("ControlCommand___clear", (String)page[8]!["pressAction"]!);
         }
 
         /// <summary>Reads one press page's controls out of the packaged Codex profile.</summary>
