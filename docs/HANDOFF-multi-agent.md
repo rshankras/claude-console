@@ -14,11 +14,21 @@ today, not just in tests.
 | `main` | untouched at `0472f03` — the shipped 2.0.1 |
 | Claude Console | **2.1.0** (was 2.0.1) |
 | Vizhi for Codex | **1.4.0** (new product) |
-| Tests | 540 C# + 47 shell, green, deterministic |
+| Tests | 549 C# + 47 shell, green, deterministic |
 
 **Verified working on hardware (Codex):** session discovery, the hook state bridge, live
 busy/waiting/ready, project name from `cwd`, focus tracking and tab switching, risk-graded
 approvals, model, and context percentage. Prompts, git and navigation keys all fire.
+
+**Voice ships in both products.** It was briefly excluded from Codex on the reasoning that the
+package carried no payload — true of the package, false of the feature: voice is agent-neutral, and
+it had been working on the dev machine all along because the runtime home
+(`~/.claude/claude-console`, a shared literal in `BridgeManager.cs:47`) already held Claude
+Console's notarized helper. `pack-release.sh` now embeds the payload for `VizhiCodex` too. Sharing
+that home is deliberate — one bundle id, one Microphone grant, one 141 MB model — but note it also
+means both products read the same `prompts.json` (`PromptCommand.cs:23`), which nobody has decided
+on. Only Tab and Cost stay dropped from the Codex profile; those are capability gaps, not
+packaging ones.
 
 **Never tested:** Windows, for either product. The Codex adapter has never run there.
 
@@ -70,6 +80,15 @@ whether the system connects them.
 A fourth, different in kind: gating an action in code while the profile still binds it does not
 remove the key — it becomes an unresolvable binding. **The profile and the product must agree.**
 
+A fifth surfaced 2026-08-19, same shape as the first three: `MacPlatformBridge` took `cliCommand`
+at construction and used it on every launch path EXCEPT the two `Navigate` scripts, which were
+consts hardcoding `do script "claude"` — so the Codex keypad's "New Codex" key opened a claude
+session. `NavCommand.GetCommandDisplayName` hardcoded the "New Claude" label two lines below a
+comment warning against exactly that, and a test PINNED the bug by asserting the literal
+(`Assert.Contains("do script \"claude\"")` for every product). Found because a user read a key
+label. When a constructor takes a value, grep for the literal it replaces — every remaining
+occurrence is this bug waiting.
+
 ## Next, in the order I would do it
 
 1. **Land the branch.** Claude Console 2.1.0 fixes orphaned registrations, which affects users on
@@ -82,17 +101,32 @@ remove the key — it becomes an unresolvable binding. **The profile and the pro
 3. **Long press.** The keypad delivers only Press/Release (`PressDuration` is always 0), so hold
    detection has to be timed locally — Vizhi does this in `VoiceCommand.cs:57-86`. Nine keys is this
    product's binding constraint and this doubles them. Highest value per unit of work.
-4. **Codex's own verbs** — `codex review`, `resume --last`, `fork`, `apply` — into the four slots
-   freed on the Codex profile.
-5. **Screenshot key**, scoped per agent: Claude Code takes an image mid-conversation via a path;
-   Codex only at launch via `-i, --image`. Same key, honestly different meanings. (Clipboard is not
-   worth it — it duplicates ⌘V, and Vizhi's version clobbers the clipboard without restoring it.)
+4. **Codex's own verbs** — STARTED 2026-08-19: Review landed. `/review` is a first-class TUI
+   command (review_popups.rs), not subcommand-only as the adapter first recorded — the same
+   CLI-is-not-the-only-door trap as images. `AgentVerb.Review` now maps to "/review" on Codex and
+   stays null on Claude Code (there it is a prompt, and the key hides). It holds page 2 slot 1;
+   Clear demoted to page 2's far corner. Still open: `resume --last`, `fork`, `apply` — genuinely
+   launch-path verbs (`LaunchAgentSession` is the machinery to reuse).
+5. ~~Screenshot key~~ — DONE 2026-08-19, corrected same day. `ScreenshotCommand` in Core:
+   `screencapture -i` (the system picker) → the path is TYPED into the CURRENT conversation with
+   Vizhi's proven instruction sentence, no Return — the user appends their question. This item's
+   original premise ("Codex only at launch via `-i`") was true of the CLI flag and WRONG about
+   the workflow: Codex's model opens a file mid-session with its image-viewing tool when told the
+   path, which the July Vizhi plugin proved on hardware (VizhiActionRouter.cs:444-448). The trap,
+   for next time: the CLI is not the only door into an agent — the model's own tools are another.
+   First press cost a one-time Screen Recording grant for LogiPluginService (granted on this
+   machine; verified capturing real files). `ImageAtLaunch`/`LaunchAgentSession("-i", path)`
+   survives as the tested fallback for a genuinely launch-only agent. On the Codex profile the
+   key holds page 1 slot 4; Clear moved to page 2 beside Compact. Claude Console's profile does
+   NOT bind it (its page 1 is full) — the action registers there, bindable from the sidebar.
+   Windows capture is an honest unsupported-stub. (Clipboard remains not worth it — duplicates
+   ⌘V, and Vizhi's version clobbers the clipboard without restoring it.)
 6. **Windows**, for either product.
 
 ## Commands
 
 ```bash
-bash tests/run-all.sh                                    # 540 C# + 47 shell
+bash tests/run-all.sh                                    # 549 C# + 47 shell
 dotnet build src/Products/<Product> -t:Compile           # compile-check only
 
 DOTNET_ROLL_FORWARD=LatestMajor \
@@ -106,6 +140,16 @@ Version lives in **two** files per product (csproj + `LoupedeckPackage.yaml`) an
 enforces that they agree. The assembly version is what the crash-disable marker keys on.
 
 ## Still open
+
+- **A shipped profile never updates on an existing install.** Import dedupes by profile GUID, so a
+  package update leaves whatever was imported first — a dev machine ran the fixed 1.4.0 package for
+  a day while the keypad still rendered the layout imported ten days earlier, warning triangle and
+  all. The only path that refreshes it today is losing the registration entirely, which makes
+  `SelfRegistration.RegisterIfMissing()` rewrite it from the packaged lp5 (verified: delete
+  `Applications/Loupedeck70/@_<slug>/Profiles/<GUID>/` with the service stopped, and the service
+  reaps the empty registration; the plugin recreates it on next load). A version-aware heal belongs
+  next to `RegistrationHeal.cs`. Until it exists, any layout change we ship reaches new installs
+  only.
 
 - Which Marketplace listing name the Codex product ships under — "Vizhi for Codex" is chosen but
   gated on the hackathon IP answer about the Vizhi name.

@@ -43,9 +43,15 @@ DOTNET_ROLL_FORWARD=LatestMajor bash tools/voice/pack-release.sh <ver> <Product>
 rejected a submission over exactly this. Enforced by `<Private>false</Private>` on the reference.
 
 **A key must never show a value the agent did not report.** Codex reports no cost, so the Cost
-key shows the model rather than `$0.00` — a zero is indistinguishable from a free session. Gate
-on `Capabilities`, and return `null` from `SlashCommand` for a verb the agent lacks so the key is
-never added at all.
+key renders a dash and its binding is dropped from that product's profile — a `$0.00` is
+indistinguishable from a free session, and borrowing another key's value (it briefly showed the
+model) just gives the keypad two keys saying the same thing. Gate on `Capabilities`, and return
+`null` from `SlashCommand` for a verb the agent lacks so the key is never added at all.
+
+**Capability gaps and packaging gaps are not the same thing.** Codex cannot report cost — that is
+the agent. Voice, by contrast, is agent-neutral: it records, transcribes and injects into the
+focused session without asking what runs there, so it ships in every product. Before dropping a key
+from a product, decide which kind of gap you are looking at; only the first is permanent.
 
 **Each product declares itself in its plugin CONSTRUCTOR, not `Load()`.** The SDK builds every
 action in between, and an action reads the agent to decide which keys to add and the product slug
