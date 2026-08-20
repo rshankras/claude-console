@@ -206,7 +206,16 @@ enforces that they agree. The assembly version is what the crash-disable marker 
   (every session must carry --remote, e.g. via the New Codex key), and TUI-over-remote behavior
   (approval prompt still lands in the TUI beside a passive observer) is the one link not yet
   verified with a real TUI. Reproduction scripts from the session: scratchpad ws_probe.py
-  pattern — hand-rolled ws client, driver + observer, deny-and-cleanup.
+  pattern — hand-rolled ws client, driver + observer, deny-and-cleanup. The live-TUI attempt
+  (tools/windows/approval-observer-prototype.py) surfaced three lessons before the account's
+  codex usage limit ended it: (1) per-thread status events are TARGETED — an observer must
+  thread/read (subscribe) each thread, including ids returned as BARE strings by
+  thread/loaded/list, or it hears nothing; (2) the grid discovers the `codex app-server`
+  process as a phantom session — the real bridge must exclude helper codex processes from
+  discovery (command-line check); (3) the user's trusted-project profile grants write to all
+  of C:\Users\<user>, so approval bait must target truly read-only paths (C:\ root), not the
+  Desktop. The remote-TUI approval link REMAINS unverified — the session that would have
+  proven it died on "You've hit your usage limit", not on the mechanism.
 
 - **A shipped profile never updates on an existing install.** Import dedupes by profile GUID, so a
   package update leaves whatever was imported first — a dev machine ran the fixed 1.4.0 package for
