@@ -148,6 +148,22 @@ enforces that they agree. The assembly version is what the crash-disable marker 
 
 ## Still open
 
+- **Windows: codex tab-switching lands on the first tab** (hardware, 2026-08-20, 1.4.8). The
+  focus helper identifies a tab by its console TITLE (the only process→tab mapping Windows
+  offers); codex tabs likely share one title, so UI Automation's first match always wins. Needs a
+  hardware-in-the-loop investigation: confirm the title collision (read the tab labels of two
+  codex sessions), then either find a second discriminator or degrade honestly to raising the
+  window. Injection is unaffected — it addresses console handles, not tabs.
+- **Windows: a Microsoft Store-installed codex CLI would be invisible.** The desktop-app
+  exclusion drops any process under WindowsApps — right for the OpenAI desktop app's bundled
+  codex.exe, wrong if a user's ONLY codex is the Store one run via an app-execution alias.
+  Distinguish the desktop app by its own resources path, not by WindowsApps wholesale, when this
+  shape shows up in the field.
+- **Windows codex hooks: "exited with code 1"** still unexplained as of 1.4.8 — the verb cannot
+  return 1 since 1.4.7, so if it persists the exe fails to LAUNCH under codex's spawn (suspect:
+  command quoting). hook-error.log (1.4.7+) plus the sessions dir decides it; awaiting the
+  post-1.4.8 diagnostic run.
+
 - **A shipped profile never updates on an existing install.** Import dedupes by profile GUID, so a
   package update leaves whatever was imported first — a dev machine ran the fixed 1.4.0 package for
   a day while the keypad still rendered the layout imported ten days earlier, warning triangle and
