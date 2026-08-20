@@ -87,9 +87,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 // icacls rather than a managed ACL edit: the plugin runs inside the Logi service,
                 // and a bad DirectorySecurity write there is far more dangerous than a subprocess
                 // that fails. Bounded like every other subprocess in this codebase.
+                //
+                // NO /T. An (OI)(CI) ACE set on the root propagates to the whole subtree through
+                // NTFS auto-inheritance; /T additionally REWRITES every descendant's ACL, which
+                // took ~10s across the Logi tree on hardware — the 1.5.0 install failure: Load()
+                // has a 10s budget and this call sat on it. The no-/T form was what the spike ran
+                // by hand, and it made the hook exe launchable several levels down (Layer 2).
                 var exit = BoundedProcess.RunForExitCode(
                     "icacls",
-                    new List<String> { path, "/grant", $"{SandboxGroup}:(OI)(CI){rights}", "/T", "/C", "/Q" },
+                    new List<String> { path, "/grant", $"{SandboxGroup}:(OI)(CI){rights}", "/C", "/Q" },
                     15000);
 
                 if (exit == 0)

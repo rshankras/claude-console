@@ -1,7 +1,12 @@
-# Vizhi for Codex 1.5.0 — preview notes
+# Vizhi for Codex 1.5.1 — preview notes
 
 *For initial review. Not yet on the Marketplace; Claude Console 2.0.1 is in Marketplace review
 separately.*
+
+*1.5.1 fixes the Windows install failure in 1.5.0: the sandbox ACL grants ran on the plugin's
+Load path and their recursive `icacls /T` walk of the Logi tree ate the service's 10-second
+Load budget, so Options+ showed the plugin stuck "waiting" and the install failed. The grants
+now run in the background and let NTFS inheritance do the propagation.*
 
 ## What this is
 
@@ -79,7 +84,7 @@ runner, hooks light up with no plugin update needed.
 > (Options+ → Plugins) or use a different machine.
 
 1. Logi Options+ **6.4+**, MX Creative Keypad, [Codex CLI](https://developers.openai.com/codex/cli) installed natively.
-2. Double-click `VizhiCodex_1.5.0.lplug4` → install via Options+.
+2. Double-click `VizhiCodex_1.5.1.lplug4` → install via Options+.
 3. Wait ~1 minute: the plugin self-registers its application + layout and restarts the plugin
    service once (Options+ blinks and returns on its own).
 4. **Trust the hooks.** At your next Codex session start you'll see **"Hooks need review — 7
