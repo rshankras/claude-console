@@ -159,17 +159,35 @@ enforces that they agree. The assembly version is what the crash-disable marker 
   codex.exe, wrong if a user's ONLY codex is the Store one run via an app-execution alias.
   Distinguish the desktop app by its own resources path, not by WindowsApps wholesale, when this
   shape shows up in the field.
-- ~~Windows codex hooks: "exited with code 1"~~ — ROOT CAUSE FOUND 2026-08-20, not ours: codex
-  on Windows spawns hooks through its native sandbox, and on the test machine that sandbox
-  fails to start ("the local command sandbox failed to start" — codex's own shell commands die
-  the same way). Confirmed against the binary (WindowsSandboxSetupMode elevated/unelevated) and
-  the official doc. Fix on the machine: repair the elevated setup (UAC approval, local-user
-  creation, firewall, logon rights — Windows error 1385 = missing logon rights) or set
-  `[windows] sandbox = "unelevated"` in config.toml. The four hardening rounds it took to
-  corner this (1.4.7-1.4.11: exit-zero guarantee, kernel parent walks, evidence-first writes,
-  bounded stdin, spawn-proof breadcrumb) all remain — the hook exe is now bulletproof and
-  self-diagnosing, which is how a spawn-side failure was finally provable. The lesson for the
-  file: when hardening produces no change in symptoms, the failure is upstream of your code.
+- ~~Windows codex hooks: "exited with code 1"~~ — CLOSED 2026-08-20 after the on-hardware spike
+  run ([spike-windows-codex-hooks.md](spike-windows-codex-hooks.md) has the full table): upstream
+  codex bug, but the earlier "sandbox fails to start, unelevated fixes it" record was
+  INCOMPLETE. The failure has three layers. (1) The standalone 0.148.0 install never puts its
+  sandbox helpers (`codex-windows-sandbox-setup.exe`, `codex-command-runner.exe`) where codex
+  looks — beside the launcher exe — so no sandboxed process of any kind could spawn; copying
+  both from the release's `codex-resources\` into `…\Programs\OpenAI\Codex\bin\` repairs codex's
+  own tools. (2) The Logi installer disables ACL inheritance on `%LOCALAPPDATA%\Logi`, so
+  codex's `CodexSandboxUsers` read ACE never reaches our hook exe — spawn dies with
+  `CreateProcessAsUserW failed: 5`; `icacls … /grant "CodexSandboxUsers:(OI)(CI)RX"` repairs it,
+  and the same command line then runs fine via `codex sandbox`. (3) With BOTH repaired, codex's
+  hook-runner path still spawns nothing: a swapped-in probe exe (logs every invocation, cannot
+  exit nonzero) was never invoked while every hook reported `hook exited with code 1` in ~400 ms
+  — the exit-1 belongs to codex's own wrapper chain, elevated AND unelevated (the unelevated
+  fallback does NOT fix hooks; preview note corrected). Two diagnostic instruments are invalid
+  under a working sandbox: the spawn-proof breadcrumb (exe dir is RX-only to the sandbox user)
+  and the IPC state files (`%TEMP%\codex-console` is not sandbox-writable — when OpenAI fixes
+  the runner, the plugin must also grant CodexSandboxUsers write on the IPC root). Upstream
+  cluster: openai/codex #17478, #27052, #26158, #24098, #20346. The 1.4.7–1.4.11 hardening all
+  remains, and the lesson stands: when hardening produces no change in symptoms, the failure is
+  upstream of your code — and the second lesson from this run: prove it with a probe the failing
+  system cannot distinguish from your real binary. SAME-DAY POSTSCRIPT: Windows live state does
+  NOT have to wait on OpenAI — two hook-free channels verified on hardware: `notify` spawns its
+  program UNSANDBOXED with an `agent-turn-complete` JSON payload (thread-id + cwd + last
+  message; single config slot, so chain the desktop app's existing notify command like
+  statusline-chain), and the live rollout JSONL carries `task_started`/`task_complete` event
+  msgs (CodexContextReader already tails rollouts under the best-effort contract). Together:
+  busy→done→ready without hooks. Only approval events are unverified in the rollout stream —
+  if absent, amber/red approval keys alone wait upstream. Details in the spike doc postscript.
 
 - **A shipped profile never updates on an existing install.** Import dedupes by profile GUID, so a
   package update leaves whatever was imported first — a dev machine ran the fixed 1.4.0 package for

@@ -46,20 +46,26 @@ tracking and tab switching · risk-graded approvals (amber/red) · model + conte
 voice (submit and draft) · screenshot → current conversation · native `/review` · all prompt,
 git, and navigation keys.
 
-**Windows requires a working Codex sandbox for live state.** Codex on Windows launches hooks
-through its native sandbox (elevated preferred, unelevated fallback). If Codex reports "the
-local command sandbox failed to start", both its own shell commands AND this plugin's hooks
-fail ("hook exited with code 1") — the plugin is not involved. Fix per the official guide
-(learn.chatgpt.com/docs/windows/windows-sandbox): retry the elevated setup approving the admin
-prompt, or set the supported fallback in `%USERPROFILE%\.codex\config.toml`:
+**Windows live state is blocked on an upstream Codex bug (verified on hardware 2026-08-20).**
+Codex on Windows launches hooks through its native sandbox, and in codex-cli 0.148.0 the
+hook-runner spawn path fails ("hook exited with code 1") even when the sandbox itself is fully
+working — in BOTH elevated and unelevated modes. An earlier version of this note suggested the
+`[windows] sandbox = "unelevated"` fallback fixes hooks; hardware testing disproved that. The
+plugin is not involved: a probe binary that logs every launch and cannot exit nonzero shows
+Codex never creates the hook process at all (details and the experiment table:
+docs/spike-windows-codex-hooks.md; upstream: openai/codex issues #17478, #26158, #24098).
 
-```toml
-[windows]
-sandbox = "unelevated"
-```
+If Codex ALSO fails its own shell commands with "the local command sandbox failed to start",
+that part is repairable: the standalone install leaves `codex-windows-sandbox-setup.exe` and
+`codex-command-runner.exe` in the release's `codex-resources\` folder where Codex does not look
+— copying both beside `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` restores Codex's own
+tooling (but not hooks).
 
 Session keys, focus, and typed keys (prompts/git/nav) work regardless — only live
-busy/waiting/approval state rides the hooks.
+busy/waiting/approval state rides the hooks today. A hook-free bridge is planned: Codex's
+`notify` mechanism spawns outside the sandbox (verified on hardware) and the live session
+rollout records turn start/complete, which together restore busy/done/ready state on Windows
+without waiting on the upstream fix; risk-graded approvals may still need the hook path.
 
 **Windows: fixes landed 2026-08-20, verification in progress.** The first Windows hardware run
 found three porting gaps — session discovery, the state bridge, the process scan's name filter, hook timeout survival
