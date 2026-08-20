@@ -307,7 +307,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var src = ReadShimSource();
 
-            Assert.Contains("try { Console.Write("{}"); } catch (Exception ex) { Breadcrumb(ex, eventName); }", src);
+            Assert.Contains("try { Console.Write(\"{}\"); } catch (Exception ex) { Breadcrumb(ex, eventName); }", src);
             Assert.Contains("hook-error.log", src);
         }
 
