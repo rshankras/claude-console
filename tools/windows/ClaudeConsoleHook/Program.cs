@@ -3,6 +3,9 @@
 //
 //   claude-console-hook statusline          <- reads Claude's JSON on stdin, writes it verbatim
 //   claude-console-hook activity <state>    <- busy | waiting | done | permission
+//   claude-console-hook codex <event>       <- the Windows body of scripts/codex-hook.sh: wraps
+//                                              the event JSON in the state envelope and writes it
+//                                              to the CODEX product's IPC root (%TEMP%\codex-console)
 //
 // TWO THINGS MUST MATCH THE PLUGIN EXACTLY, or the live keys silently show defaults:
 //
@@ -34,6 +37,7 @@ internal static class Program
             {
                 > 0 when args[0] == "statusline" => Statusline(),
                 > 1 when args[0] == "activity" => Activity(args[1]),
+                > 1 when args[0] == "codex" => Codex(args[1]),
                 > 0 when args[0] == "selftest" => SelfTest(),
                 _ => Usage(),
             };
@@ -46,7 +50,7 @@ internal static class Program
 
     private static Int32 Usage()
     {
-        Console.Error.WriteLine("usage: claude-console-hook statusline | activity <busy|waiting|done|permission> | selftest");
+        Console.Error.WriteLine("usage: claude-console-hook statusline | activity <state> | codex <event> | selftest");
         return 2;
     }
 
@@ -56,6 +60,11 @@ internal static class Program
     private static String SessionsDir => Path.Combine(Root, "sessions");
     private static String ActivityDir => Path.Combine(Root, "activity");
     private const String SharedName = "shared";
+
+    // The CODEX product's tree. Separate on purpose: two consoles must never share an IPC root,
+    // or each would reap the other's sessions as dead (IpcPaths.ProductSlug, "codex-console").
+    private static String CodexRoot => Path.Combine(Path.GetTempPath(), "codex-console");
+    private static String CodexSessionsDir => Path.Combine(CodexRoot, "sessions");
 
     // ---- commands ----------------------------------------------------------
 
@@ -135,6 +144,39 @@ internal static class Program
         return 0;
     }
 
+    /// <summary>
+    /// The Windows body of scripts/codex-hook.sh, envelope-for-envelope: wrap the event JSON as
+    /// {"schema":1,"agent":"codex-cli","event":…,"ts":…,"payload":…} and atomically replace this
+    /// session's state file. The session key is the CODEX process up the parent chain — Windows'
+    /// answer to the script reading its own controlling terminal. Like the script, it never
+    /// blocks Codex: every path prints {} and exits 0, because a hook that fails loudly would
+    /// break the user's session to report a keypad problem.
+    /// </summary>
+    private static Int32 Codex(String eventName)
+    {
+        try
+        {
+            var payload = Console.IsInputRedirected ? Console.In.ReadToEnd() : "";
+            var body = payload.TrimStart().StartsWith('{') ? payload : "null";
+            var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var envelope =
+                $"{{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"{JsonEscape(eventName)}\",\"ts\":{ts},\"payload\":{body}}}\n";
+
+            // No key resolved -> the shared file, mirroring the script's "shared" tty fallback
+            // (codex exec, CI, or a parent chain we couldn't walk).
+            var key = SessionKey(IsCodex) ?? SharedName;
+            Directory.CreateDirectory(CodexSessionsDir);
+            WriteAtomic(Path.Combine(CodexSessionsDir, key + ".json"), envelope);
+        }
+        catch
+        {
+            // Swallowed on purpose — same contract as the script.
+        }
+
+        Console.Write("{}");
+        return 0;
+    }
+
     private static Int32 SelfTest()
     {
         Console.WriteLine("claude-console-hook selftest");
@@ -157,7 +199,10 @@ internal static class Program
     /// the bash scripts walk up until a real tty appears.
     /// </summary>
     [SupportedOSPlatform("windows")]
-    private static String? SessionKey()
+    private static String? SessionKey() => SessionKey(IsClaude);
+
+    [SupportedOSPlatform("windows")]
+    private static String? SessionKey(Func<Process, Boolean> isAgent)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -170,7 +215,7 @@ internal static class Program
             for (var hop = 0; hop < 8; hop++)
             {
                 using var proc = Process.GetProcessById(pid);
-                if (IsClaude(proc))
+                if (isAgent(proc))
                 {
                     return $"pid-{proc.Id}-{proc.StartTime.ToUniversalTime().Ticks}";
                 }
@@ -223,6 +268,41 @@ internal static class Program
                 cmd.Contains("claude.js", StringComparison.OrdinalIgnoreCase) ||
                 cmd.Contains(@"\claude", StringComparison.OrdinalIgnoreCase) ||
                 cmd.Contains("/claude", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The codex twin of IsClaude — mirrors AgentProcessMatcher.CodexCli the way IsClaude mirrors
+    /// ClaudeCode: native binary by name, npm install by interpreter + script path.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static Boolean IsCodex(Process proc)
+    {
+        String name;
+        try
+        {
+            name = proc.ProcessName;
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (name.Equals("codex", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (name is not ("node" or "bun" or "deno" or "npx"))
+        {
+            return false;
+        }
+
+        var cmd = CommandLineOf(proc.Id);
+        return cmd != null &&
+               (cmd.Contains(@"\@openai\codex", StringComparison.OrdinalIgnoreCase) ||
+                cmd.Contains("/@openai/codex", StringComparison.OrdinalIgnoreCase) ||
+                cmd.Contains(@"\codex", StringComparison.OrdinalIgnoreCase) ||
+                cmd.Contains("/codex", StringComparison.OrdinalIgnoreCase));
     }
 
     [SupportedOSPlatform("windows")]

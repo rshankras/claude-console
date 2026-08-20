@@ -24,11 +24,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     {
         public String Name => "Windows";
 
-        /// <summary>The agent CLI this product drives. Declared once, at construction.</summary>
-        internal WindowsPlatformBridge(String cliCommand = "claude")
+        /// <summary>
+        /// The agent this product drives: what its processes look like, and the CLI the launch
+        /// keys run. Declared once, at construction. The matcher defaults to None — matching
+        /// NOTHING — for the same reason AgentProcessMatcher.None exists at all: an undeclared
+        /// product must never silently adopt another agent's sessions.
+        /// </summary>
+        internal WindowsPlatformBridge(AgentProcessMatcher matcher = null, String cliCommand = "claude")
         {
+            this._matcher = matcher ?? AgentProcessMatcher.None;
             WindowsTerminalCli.AgentCli = String.IsNullOrWhiteSpace(cliCommand) ? "claude" : cliCommand;
         }
+
+        private readonly AgentProcessMatcher _matcher;
 
         // Discovery, injection and terminal control are all implemented (Phases 1-3). Voice is
         // not (Phase 5) — those keys log and no-op. Nothing gates on this today; it is the
@@ -85,9 +93,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             // its exe is also claude.exe, and capturing IT would launch the desktop app.
             foreach (var row in rows)
             {
-                if (WindowsProcessWatcher.IsClaudeSession(row))
+                if (WindowsProcessWatcher.IsAgentSession(row, this._matcher))
                 {
-                    var exe = WindowsProcessWatcher.ExeFromCommandLine(row.CommandLine);
+                    var exe = WindowsProcessWatcher.ExeFromCommandLine(row.CommandLine, this._matcher);
                     if (exe != null)
                     {
                         WindowsTerminalCli.ObservedClaudeExe = exe;
@@ -96,7 +104,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 }
             }
 
-            return WindowsProcessWatcher.SessionsFrom(rows);
+            return WindowsProcessWatcher.SessionsFrom(rows, this._matcher);
         }
 
         // Every candidate needs its command line (see NeedsCommandLine), so the cost matters: a

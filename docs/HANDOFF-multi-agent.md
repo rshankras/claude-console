@@ -30,7 +30,13 @@ means both products read the same `prompts.json` (`PromptCommand.cs:23`), which 
 on. Only Tab and Cost stay dropped from the Codex profile; those are capability gaps, not
 packaging ones.
 
-**Never tested:** Windows, for either product. The Codex adapter has never run there.
+**Windows:** first hardware attempt 2026-08-20 found the Codex adapter dead there — profile
+visible, no keys firing — from two more unwired seams (bugs six and seven of the shape): discovery
+(`WindowsProcessWatcher` carried hardcoded claude names; now matcher-driven like macOS) and the
+state bridge (`hooks.json` got `/bin/sh …` on Windows, which can never run; the packaged hook exe
+grew a `codex <event>` verb that writes the same envelope as codex-hook.sh to the codex-console
+IPC root). Fixed and unit-pinned in 1.4.5, NOT yet re-verified on the Windows box. Claude Console
+2.0 remains Windows-verified.
 
 ## What is on this machine right now
 

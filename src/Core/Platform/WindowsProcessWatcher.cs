@@ -54,20 +54,43 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             "node.exe", "bun.exe", "deno.exe", "npx.exe", "node", "bun", "deno", "npx",
         };
 
-        private static readonly HashSet<String> ClaudeCliNames = new HashSet<String>(StringComparer.OrdinalIgnoreCase)
-        {
-            "claude.exe", "claude",
-        };
+        // The agent's names and script hints come from the AgentProcessMatcher the product was
+        // constructed with — the same seam macOS discovery has used since it existed. This class
+        // carried hardcoded Claude names long after that seam landed, so the Codex product's
+        // Windows build scanned for claude processes and found nothing: profile visible, every
+        // key refusing to type. Sixth bug of the built-but-never-wired shape.
 
-        // Fragments that identify the Claude Code CLI on an interpreter's command line. Checked
-        // case-insensitively: Windows paths vary in case by installer and by user.
-        private static readonly String[] CliMarkers =
+        /// <summary>Exe basenames to match, case-insensitively, with and without ".exe".</summary>
+        private static IEnumerable<String> CliNames(AgentProcessMatcher matcher)
         {
-            "claude-code",      // npm package dir: @anthropic-ai\claude-code\cli.js
-            "claude.js",
-            @"\claude",         // …\.local\bin\claude
-            "/claude",          // forward slashes appear in npm-generated shims
-        };
+            foreach (var name in matcher?.ExeNames ?? Array.Empty<String>())
+            {
+                yield return name;
+                yield return name + ".exe";
+            }
+        }
+
+        /// <summary>
+        /// Fragments that identify the agent's CLI on an interpreter's command line, in BOTH slash
+        /// flavours: matcher hints are written mac-style ("/@openai/codex/"), Windows paths mostly
+        /// arrive backslashed, and npm-generated shims mix the two freely. Plus one derived
+        /// fragment per exe name ("\claude", "/codex"), which is what recognises
+        /// `node …\.local\bin\claude` and script names like claude.js.
+        /// </summary>
+        private static IEnumerable<String> CliMarkers(AgentProcessMatcher matcher)
+        {
+            foreach (var hint in matcher?.ScriptHints ?? Array.Empty<String>())
+            {
+                yield return hint;
+                yield return hint.Replace('/', '\\');
+            }
+
+            foreach (var name in matcher?.ExeNames ?? Array.Empty<String>())
+            {
+                yield return "/" + name;
+                yield return "\\" + name;
+            }
+        }
 
         // Claude Desktop is Electron AND its executable is also called claude.exe, so the name alone
         // cannot tell the two apart. Its renderer/GPU/utility children carry --type=, but the MAIN
@@ -100,11 +123,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// Decide which rows are live Claude Code sessions and mint a session key for each.
         /// Pure — no OS calls — so it is unit-tested against captured process tables.
         /// </summary>
-        internal static HashSet<String> SessionsFrom(IEnumerable<WindowsProcessInfo> processes)
+        internal static HashSet<String> SessionsFrom(IEnumerable<WindowsProcessInfo> processes, AgentProcessMatcher matcher)
         {
             var rows = processes?.Where(p => p != null).ToList() ?? new List<WindowsProcessInfo>();
 
-            var candidates = rows.Where(IsClaudeSession).ToList();
+            var candidates = rows.Where(p => IsAgentSession(p, matcher)).ToList();
 
             // Drop a candidate whose parent is also a candidate — one key per session, even when a
             // session shells out to another claude.
@@ -122,7 +145,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// installer's default. Only rooted paths qualify: a bare `claude --resume …` command
         /// line names no directory, and guessing one would defeat the point.
         /// </summary>
-        internal static String ExeFromCommandLine(String cmd)
+        internal static String ExeFromCommandLine(String cmd, AgentProcessMatcher matcher)
         {
             if (String.IsNullOrWhiteSpace(cmd))
             {
@@ -146,9 +169,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 exe = end < 0 ? t : t.Substring(0, end);
             }
 
-            return exe.EndsWith("claude.exe", StringComparison.OrdinalIgnoreCase) && IsWindowsRooted(exe)
-                ? exe
-                : null;
+            var isAgentExe = CliNames(matcher).Any(n =>
+                exe.EndsWith("\\" + n, StringComparison.OrdinalIgnoreCase) ||
+                exe.EndsWith("/" + n, StringComparison.OrdinalIgnoreCase));
+
+            return isAgentExe && IsWindowsRooted(exe) ? exe : null;
         }
 
         /// <summary>
@@ -165,7 +190,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
               Char.IsLetter(path[0]) && path[1] == ':' && (path[2] == '\\' || path[2] == '/')) ||
              path.StartsWith(@"\\", StringComparison.Ordinal));
 
-        internal static Boolean IsClaudeSession(WindowsProcessInfo p)
+        internal static Boolean IsAgentSession(WindowsProcessInfo p, AgentProcessMatcher matcher)
         {
             if (p == null || String.IsNullOrWhiteSpace(p.Name))
             {
@@ -174,24 +199,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
             var cmd = p.CommandLine ?? String.Empty;
 
-            // Claude Desktop and its Electron helpers are never sessions.
+            // Desktop GUI apps and their Electron helpers are never sessions, whatever the agent.
             if (DesktopMarkers.Any(m => cmd.Contains(m, StringComparison.OrdinalIgnoreCase)))
             {
                 return false;
             }
 
-            // The native CLI: claude.exe. Guard against the desktop app's binary, which can also be
-            // named claude.exe but lives under its own install directory (already excluded above by
-            // command line; this catches the case where the command line couldn't be read).
-            if (ClaudeCliNames.Contains(p.Name))
+            // The native CLI: <agent>.exe. Case-insensitive on purpose — Windows filesystems are —
+            // and the desktop-app collision that forces case-sensitivity on macOS is handled here
+            // by the command-line exclusions above instead.
+            if (CliNames(matcher).Contains(p.Name, StringComparer.OrdinalIgnoreCase))
             {
                 return true;
             }
 
-            // An npm/bun install: an interpreter running the Claude CLI script.
+            // An npm/bun install: an interpreter running the agent's CLI script.
             if (Interpreters.Contains(p.Name))
             {
-                return CliMarkers.Any(m => cmd.Contains(m, StringComparison.OrdinalIgnoreCase));
+                return CliMarkers(matcher).Any(m => cmd.Contains(m, StringComparison.OrdinalIgnoreCase));
             }
 
             return false;

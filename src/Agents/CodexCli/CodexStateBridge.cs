@@ -82,6 +82,32 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             Path.Combine(this._codexHome, "codex-console", "scripts", "codex-hook.sh");
 
         /// <summary>
+        /// The Windows launcher: the packaged hook exe's codex verb. Windows has no /bin/sh and
+        /// cannot run the .sh, so the command in hooks.json points at the exe instead. Resolved
+        /// lazily — the SDK provides the plugin path after construction — and settable for tests.
+        /// </summary>
+        private String _hookExe;
+
+        internal String HookExe
+        {
+            get => this._hookExe ?? Platform.PluginPaths.PackagedFile("claude-console-hook.exe") ?? "claude-console-hook.exe";
+            set => this._hookExe = value;
+        }
+
+        /// <summary>
+        /// The command Codex runs for one lifecycle event. Split by OS because the launch vehicle
+        /// differs (sh script vs exe verb); both are STABLE strings, which trust-by-hash requires.
+        /// The OS-free overload exists so tests can pin both shapes from any machine.
+        /// </summary>
+        internal String HookCommand(String eventName) =>
+            this.HookCommand(eventName, OperatingSystem.IsWindows());
+
+        internal String HookCommand(String eventName, Boolean windows) =>
+            windows
+                ? $"\"{this.HookExe}\" codex {eventName}"
+                : $"/bin/sh '{this.HookScript}' {eventName}";
+
+        /// <summary>
         /// Install the launcher and our hooks file if they are missing or out of date. Returns true
         /// when something was written — the caller can then tell the user a trust grant is due.
         /// Never throws: a failed install must degrade to a plugin that simply reports nothing.
@@ -197,8 +223,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                             new JsonObject
                             {
                                 ["type"] = "command",
-                                // Single-quoted so a space in the home directory can't split it.
-                                ["command"] = $"/bin/sh '{this.HookScript}' {e}",
+                                // Quoted so a space in the home directory can't split it.
+                                ["command"] = this.HookCommand(e),
                                 ["timeout"] = 5,
                             }),
                     });

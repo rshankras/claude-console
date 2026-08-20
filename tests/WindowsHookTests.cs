@@ -252,6 +252,60 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(2, ((System.Text.Json.Nodes.JsonArray)hooks["Stop"]).Count);
         }
 
+        // ---------------------------------------------------------------------------------------
+        // The CODEX verb — the Windows body of scripts/codex-hook.sh. Found missing on hardware
+        // 2026-08-20: the bridge wrote "/bin/sh …" into hooks.json on Windows, a command that can
+        // never run there, so no state ever arrived. These pin both sides of the fix.
+        // ---------------------------------------------------------------------------------------
+
+        [Fact]
+        public void The_codex_hook_command_is_the_exe_verb_on_windows_and_the_script_on_macos()
+        {
+            var bridge = new Agents.CodexStateBridge(codexHome: @"C:\Users\me\.codex") { HookExe = Exe };
+
+            Assert.Equal($"\"{Exe}\" codex SessionStart", bridge.HookCommand("SessionStart", windows: true));
+            Assert.Contains("/bin/sh '", bridge.HookCommand("SessionStart", windows: false));
+            Assert.Contains("codex-hook.sh' SessionStart", bridge.HookCommand("SessionStart", windows: false));
+        }
+
+        [Fact]
+        public void The_shim_dispatches_the_codex_verb()
+        {
+            var src = ReadShimSource();
+
+            Assert.Contains("args[0] == \"codex\" => Codex(args[1])", src);
+        }
+
+        [Fact]
+        public void The_codex_verb_writes_to_the_codex_products_ipc_root()
+        {
+            // Two consoles must never share an IPC root — each reaps sessions it can't see.
+            var src = ReadShimSource();
+
+            Assert.Contains("Path.Combine(Path.GetTempPath(), \"codex-console\")", src);
+            Assert.Contains("Path.Combine(CodexRoot, \"sessions\")", src);
+        }
+
+        [Fact]
+        public void The_codex_verb_writes_the_scripts_envelope()
+        {
+            // Field-for-field the envelope scripts/codex-hook.sh writes and CodexStateReader parses.
+            var src = ReadShimSource();
+
+            Assert.Contains("\\\"schema\\\":1,\\\"agent\\\":\\\"codex-cli\\\",\\\"event\\\":", src);
+            Assert.Contains("\\\"ts\\\":{ts},\\\"payload\\\":{body}", src);
+        }
+
+        [Fact]
+        public void The_codex_verb_resolves_the_codex_process_not_claude()
+        {
+            var src = ReadShimSource();
+
+            Assert.Contains("SessionKey(IsCodex)", src);
+            Assert.Contains("name.Equals(\"codex\", StringComparison.OrdinalIgnoreCase)", src);
+            Assert.Contains("@openai\\codex", src);
+        }
+
         private static String ReadShimSource()
         {
             var dir = AppContext.BaseDirectory;
