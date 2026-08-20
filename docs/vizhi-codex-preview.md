@@ -65,12 +65,12 @@ The honest gap: **risk-graded approval lighting is unavailable on Windows.** Cod
 approval event outside the hook runner, so the keypad declares the capability absent rather
 than lighting keys amber on evidence that does not exist — the same rule that gives Codex no
 Cost key. Yes/No still answer prompts; they type, they do not observe. Tab-switching on Windows
-is exact when tab titles are unique (verified on hardware via UI Automation) — but two sessions
-started in the same directory share a console title, and identically-labeled tabs are
-indistinguishable to Windows, so the first one wins; start sessions from different directories
-to keep switching precise, and avoid Windows Terminal's "Rename tab" (it detaches the label from
-the console title the switcher matches on). macOS keeps the full hook bridge and every feature,
-approvals included.
+selects by identity, even for identically-titled tabs (verified on hardware): unique titles
+match directly, and on a duplicate the switcher briefly retitles the target session's own
+console to a nonce, selects the one tab that repaints to it, and restores the title — the tab
+is found by which console it is, not what it says. One caveat: avoid Windows Terminal's
+"Rename tab", which detaches the label from the console title the switcher works through.
+macOS keeps the full hook bridge and every feature, approvals included.
 
 Two Windows repairs worth knowing, both from the same hardware session: if codex ALSO fails its
 own shell commands with "the local command sandbox failed to start", copy
