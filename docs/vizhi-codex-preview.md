@@ -1,4 +1,4 @@
-# Vizhi for Codex 1.4.11 — preview notes
+# Vizhi for Codex 1.5.0 — preview notes
 
 *For initial review. Not yet on the Marketplace; Claude Console 2.0.1 is in Marketplace review
 separately.*
@@ -46,37 +46,30 @@ tracking and tab switching · risk-graded approvals (amber/red) · model + conte
 voice (submit and draft) · screenshot → current conversation · native `/review` · all prompt,
 git, and navigation keys.
 
-**Windows live state is blocked on an upstream Codex bug (verified on hardware 2026-08-20).**
-Codex on Windows launches hooks through its native sandbox, and in codex-cli 0.148.0 the
-hook-runner spawn path fails ("hook exited with code 1") even when the sandbox itself is fully
-working — in BOTH elevated and unelevated modes. An earlier version of this note suggested the
-`[windows] sandbox = "unelevated"` fallback fixes hooks; hardware testing disproved that. The
-plugin is not involved: a probe binary that logs every launch and cannot exit nonzero shows
-Codex never creates the hook process at all (details and the experiment table:
-docs/spike-windows-codex-hooks.md; upstream: openai/codex issues #17478, #26158, #24098).
+**Windows works differently, on purpose (1.5.0).** Codex's hook runner creates no process on
+Windows — a probe binary that logs every launch and cannot exit nonzero was never invoked while
+codex reported "hook exited with code 1", in BOTH elevated and unelevated sandbox modes, with
+the sandbox itself provably working. That is upstream (openai/codex #17478, #26158, #24098;
+experiment table in `docs/spike-windows-codex-hooks.md`), so 1.5.0 stops waiting on it.
 
-If Codex ALSO fails its own shell commands with "the local command sandbox failed to start",
-that part is repairable: the standalone install leaves `codex-windows-sandbox-setup.exe` and
-`codex-command-runner.exe` in the release's `codex-resources\` folder where Codex does not look
-— copying both beside `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` restores Codex's own
-tooling (but not hooks).
+**Windows reads codex's own rollout transcript instead.** Sessions, project name, busy / done /
+ready and best-effort context all work — with **no hooks installed and no `/hooks` trust prompt
+on that platform**. The transport differs; the state files, the grid and every key do not.
 
-Session keys, focus, and typed keys (prompts/git/nav) work regardless — only live
-busy/waiting/approval state rides the hooks today. A hook-free bridge is planned: Codex's
-`notify` mechanism spawns outside the sandbox (verified on hardware) and the live session
-rollout records turn start/complete, which together restore busy/done/ready state on Windows
-without waiting on the upstream fix; risk-graded approvals may still need the hook path.
+The honest gap: **risk-graded approval lighting is unavailable on Windows.** Codex publishes no
+approval event outside the hook runner, so the keypad declares the capability absent rather
+than lighting keys amber on evidence that does not exist — the same rule that gives Codex no
+Cost key. Yes/No still answer prompts; they type, they do not observe. Tab-switching on Windows
+currently lands on the first tab (tracked). macOS keeps the full hook bridge and every feature,
+approvals included.
 
-**Windows: fixes landed 2026-08-20, verification in progress.** The first Windows hardware run
-found three porting gaps — session discovery, the state bridge, the process scan's name filter, hook timeout survival
-(bounded stdin read + kernel parent lookups), and one-key-per-session de-duplication (codex
-runs as a TUI process plus a child app server); 1.4.11 fixes all of it, unit-pinned, and adds
-spawn-proof diagnostics (the hook exe logs its own launch) for the remaining hook-exit issue
-under investigation on Windows. Hardware verification so far: profile registration,
-hooks installed and active, the hook exe writing state, and key presses reaching the plugin are
-all confirmed on Windows; the final live-session pass is in progress. Claude Console 2.0 is
-Windows-verified on this same engine. Treat Windows as beta until this note says otherwise;
-macOS remains the hardware-verified platform.
+Two Windows repairs worth knowing, both from the same hardware session: if codex ALSO fails its
+own shell commands with "the local command sandbox failed to start", copy
+`codex-windows-sandbox-setup.exe` and `codex-command-runner.exe` from the release's
+`codex-resources\` folder to beside `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` —
+codex does not look where its own installer put them. And this plugin now grants codex's sandbox
+users access to its install and IPC directories automatically, so the day OpenAI fixes the hook
+runner, hooks light up with no plugin update needed.
 
 ## Install
 
@@ -86,7 +79,7 @@ macOS remains the hardware-verified platform.
 > (Options+ → Plugins) or use a different machine.
 
 1. Logi Options+ **6.4+**, MX Creative Keypad, [Codex CLI](https://developers.openai.com/codex/cli) installed natively.
-2. Double-click `VizhiCodex_1.4.11.lplug4` → install via Options+.
+2. Double-click `VizhiCodex_1.5.0.lplug4` → install via Options+.
 3. Wait ~1 minute: the plugin self-registers its application + layout and restarts the plugin
    service once (Options+ blinks and returns on its own).
 4. **Trust the hooks.** At your next Codex session start you'll see **"Hooks need review — 7

@@ -13,8 +13,8 @@ today, not just in tests.
 | Branch | `feat/multi-agent`, **unpushed** (`git log --oneline origin/main..HEAD`) |
 | `main` | untouched at `0472f03` — the shipped 2.0.1 |
 | Claude Console | **2.1.0** (was 2.0.1) |
-| Vizhi for Codex | **1.4.0** (new product) |
-| Tests | 549 C# + 47 shell, green, deterministic |
+| Vizhi for Codex | **1.5.0** (new product; hook-free Windows transport) |
+| Tests | 598 C# + 47 shell, green, deterministic |
 
 **Verified working on hardware (Codex):** session discovery, the hook state bridge, live
 busy/waiting/ready, project name from `cwd`, focus tracking and tab switching, risk-graded
@@ -128,12 +128,14 @@ occurrence is this bug waiting.
    NOT bind it (its page 1 is full) — the action registers there, bindable from the sidebar.
    Windows capture is an honest unsupported-stub. (Clipboard remains not worth it — duplicates
    ⌘V, and Vizhi's version clobbers the clipboard without restoring it.)
-6. **Windows**, for either product.
+6. **Windows** — Claude Console is verified; Vizhi's port landed 2026-08-20 with a hook-free
+   state transport (1.5.0, see docs/windows-hookless-bridge-plan.md). Awaiting the hardware pass;
+   tab-switching and the Store-codex shape are the tracked tails.
 
 ## Commands
 
 ```bash
-bash tests/run-all.sh                                    # 549 C# + 47 shell
+bash tests/run-all.sh                                    # 598 C# + 47 shell
 dotnet build src/Products/<Product> -t:Compile           # compile-check only
 
 DOTNET_ROLL_FORWARD=LatestMajor \

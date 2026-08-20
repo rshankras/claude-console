@@ -25,9 +25,16 @@ agent, one package per product. *(Not an OpenAI product; Codex is a trademark of
 
 **Preview.** Verified on real hardware on macOS (Apple Silicon): session discovery, the hook
 state bridge, live busy/waiting/ready, focus tracking and tab switching, risk-graded approvals,
-model and context display, voice, screenshot, and every prompt/git/navigation key. **Windows is
-untested for this product** — the package carries the Windows payload, but the Codex adapter has
-never run there. Preview on macOS.
+model and context display, voice, screenshot, and every prompt/git/navigation key.
+
+**Windows (1.5.0): a different state transport, and one honest gap.** Codex's hook runner
+creates no process on Windows — proven on hardware, and an upstream issue, not something a
+plugin can fix ([the spike](../../../docs/spike-windows-codex-hooks.md)). So Windows reads
+codex's own rollout transcript instead: sessions, project, busy/done/ready and best-effort
+context all work, with **no hooks installed and no `/hooks` trust prompt**. Risk-graded
+approval lighting is unavailable there — codex publishes no approval event outside the hook
+runner, and this keypad never shows a state the agent did not report. Yes/No keys still answer
+prompts. Windows tab-switching currently lands on the first tab (tracked).
 
 ## The layout
 
