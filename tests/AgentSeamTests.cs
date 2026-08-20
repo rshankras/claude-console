@@ -122,9 +122,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             foreach (var a in All)
             {
-                Assert.True(a.Capabilities.ApprovalSignal, $"{a.DisplayName}: approval signal");
                 Assert.True(a.Capabilities.Model, $"{a.DisplayName}: model reporting");
             }
+
+            // Approval signalling is the shared floor only where a transport delivers it: Claude
+            // Code always, Codex wherever its hooks run (everywhere but Windows — see
+            // ApprovalSignalFollowsTheTransport).
+            Assert.True(new ClaudeCodeAdapter().Capabilities.ApprovalSignal);
 
             Assert.True(new ClaudeCodeAdapter().Capabilities.Cost);
             Assert.False(new CodexCliAdapter().Capabilities.Cost);
@@ -132,14 +136,32 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         /// <summary>
         /// Codex trusts hook commands by hash and re-prompts when one changes, so its wiring can
-        /// never be silent. Pinning the flag keeps the installer honest about needing a documented
-        /// user step, the way the Accessibility grant already is.
+        /// never be silent — where hooks are installed at all. On Windows none are, so no trust
+        /// is ever due.
         /// </summary>
         [Fact]
         public void CodexIsMarkedAsNeedingAnInteractiveTrustGrant()
         {
-            Assert.True(new CodexCliAdapter().Capabilities.HooksNeedTrust);
+            Assert.Equal(!OperatingSystem.IsWindows(), new CodexCliAdapter().Capabilities.HooksNeedTrust);
             Assert.False(new ClaudeCodeAdapter().Capabilities.HooksNeedTrust);
+        }
+
+        /// <summary>
+        /// A capability describes what the agent can HONESTLY REPORT HERE, which for Codex means
+        /// per-OS: its hook runner creates no process on Windows (hardware-proven, see
+        /// docs/spike-windows-codex-hooks.md), so state comes from the rollout stream, which
+        /// carries busy/idle edges but no approval event. Claiming ApprovalSignal there would
+        /// light keys amber on evidence that does not exist — the same lie as a $0.00 cost.
+        /// </summary>
+        [Fact]
+        public void ApprovalSignalFollowsTheTransport()
+        {
+            var codex = new CodexCliAdapter().Capabilities;
+
+            Assert.Equal(!OperatingSystem.IsWindows(), codex.ApprovalSignal);
+
+            // Claude Code's transport (settings.json hooks) works on both platforms.
+            Assert.True(new ClaudeCodeAdapter().Capabilities.ApprovalSignal);
         }
 
         /// <summary>

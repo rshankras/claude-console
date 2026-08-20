@@ -75,6 +75,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         public String HooksFile => Path.Combine(this._codexHome, "hooks.json");
 
         /// <summary>
+        /// Whether this platform's codex runs hooks at all. False on Windows, where the hook
+        /// runner creates no process (docs/spike-windows-codex-hooks.md) and the rollout bridge
+        /// carries state instead. Settable so BOTH branches are testable from either OS — the
+        /// production path is identical, only the platform's answer is injected.
+        /// </summary>
+        internal Boolean InstallsHooks { get; set; } = !OperatingSystem.IsWindows();
+
+        /// <summary>
         /// Where the launcher lives. Under Codex's own directory, mirroring how Claude Console keeps
         /// its scripts under <c>~/.claude/</c>, and stable because the trust hash depends on it.
         /// </summary>
@@ -116,6 +124,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         {
             try
             {
+                // Windows installs NO hooks. Codex's hook runner there creates no process at all
+                // (hardware-proven; docs/spike-windows-codex-hooks.md), so writing hooks.json
+                // would only buy the user a /hooks trust prompt for keys that can never light.
+                // CodexRolloutBridge carries state on that platform instead.
+                if (!this.InstallsHooks)
+                {
+                    PluginLog.Info(
+                        "CodexStateBridge: Windows — hooks not installed (codex's hook runner spawns nothing " +
+                        "there); state comes from the rollout bridge");
+                    return false;
+                }
+
                 if (this.Status == CodexBridgeStatus.ForeignHooksFile)
                 {
                     return false;

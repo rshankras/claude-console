@@ -26,7 +26,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         private const String Script = "#!/bin/bash\n# stable launcher\nprintf '{}'\n";
 
-        private CodexStateBridge New() => new CodexStateBridge(this._home, this._sessions);
+        // InstallsHooks = true drives the hooks path on ANY host OS: these tests are about what
+        // the installer writes, not about which platform is running them. The Windows branch —
+        // install nothing at all — has its own test below.
+        private CodexStateBridge New() =>
+            new CodexStateBridge(this._home, this._sessions) { InstallsHooks = true };
 
         public void Dispose()
         {
@@ -37,6 +41,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void A_fresh_machine_reports_nothing_installed() =>
             Assert.Equal(CodexBridgeStatus.NotInstalled, this.New().Status);
+
+        /// <summary>
+        /// Where codex's hook runner spawns nothing — Windows, proven on hardware
+        /// (docs/spike-windows-codex-hooks.md) — the installer writes NOTHING. Not the hooks
+        /// file, not the launcher. Writing them would cost the user a /hooks trust prompt for
+        /// keys that can never light, and leave a file behind that uninstall has to reason
+        /// about. The rollout bridge carries state there instead.
+        /// </summary>
+        [Fact]
+        public void Where_hooks_do_not_run_nothing_is_installed()
+        {
+            var b = new CodexStateBridge(this._home, this._sessions) { InstallsHooks = false };
+
+            Assert.False(b.EnsureInstalled(Script));
+            Assert.False(File.Exists(b.HooksFile));
+            Assert.False(File.Exists(b.HookScript));
+        }
+
+        /// <summary>The platform default is the real decision: hooks everywhere except Windows.</summary>
+        [Fact]
+        public void The_default_follows_the_platform() =>
+            Assert.Equal(!OperatingSystem.IsWindows(), new CodexStateBridge(this._home, this._sessions).InstallsHooks);
 
         [Fact]
         public void Install_writes_the_hooks_file_and_the_launcher()
@@ -79,7 +105,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void The_script_path_is_quoted_so_a_space_cannot_split_it()
         {
             var spaced = Path.Combine(this._home, "Application Support", ".codex");
-            var b = new CodexStateBridge(spaced, this._sessions);
+            var b = new CodexStateBridge(spaced, this._sessions) { InstallsHooks = true };
             b.EnsureInstalled(Script);
 
             var command = JsonNode.Parse(File.ReadAllText(b.HooksFile))

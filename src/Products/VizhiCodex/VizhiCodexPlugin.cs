@@ -62,6 +62,15 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         private void WireStateBridge()
         {
+            // Windows takes the hook-free path: codex's hook runner creates no process there, so
+            // there is nothing to install and no trust to ask for. State arrives from the rollout
+            // stream instead (docs/windows-codex-hookless-bridge.md).
+            if (OperatingSystem.IsWindows())
+            {
+                PluginLog.Info("VizhiCodexPlugin: Windows — state bridge is the rollout reader, no hooks installed");
+                return;
+            }
+
             var script = CodexCliAdapter.HookScriptContents();
             if (script == null)
             {

@@ -57,9 +57,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             Model = true,                // present on every hook payload
             TabCompletion = false,       // no completion to accept — verified on hardware
             InputModes = false,          // approval policy is a flag/picker, not a cycle chord
-            ApprovalSignal = true,       // PermissionRequest, with a structured decision protocol
+
+            // The two below are TRANSPORT-dependent, so they differ by OS. Codex's hook runner
+            // creates no process on Windows — proven on hardware 2026-08-20 with a known-good
+            // probe exe that logs every invocation and cannot exit nonzero, never invoked while
+            // codex reported "hook exited with code 1" (docs/spike-windows-codex-hooks.md).
+            // Windows therefore drives state from the rollout stream instead, which carries the
+            // busy/idle edges but no approval event: claiming ApprovalSignal there would light
+            // keys amber on evidence that does not exist.
+            ApprovalSignal = !OperatingSystem.IsWindows(),  // PermissionRequest hook (macOS)
+            HooksNeedTrust = !OperatingSystem.IsWindows(),  // no hooks installed on Windows at all
+
             MultiConsumerHooks = true,   // matcher groups; concurrent handlers per event
-            HooksNeedTrust = true,       // one-time /hooks trust grant, re-flagged on change
             ImageInConversation = true,  // not via the composer — the MODEL reads the file with its
                                          // image-viewing tool when told the path (proven on hardware
                                          // by the July Vizhi plugin, VizhiActionRouter.cs:444)
