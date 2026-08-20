@@ -29,6 +29,13 @@ internal static class Program
 {
     private static Int32 Main(String[] args)
     {
+        // FIRST, before anything that could hang, throw, or depend on the spawn environment:
+        // prove we were launched at all. Windows hardware reported hooks "exited with code 1"
+        // while the exe's every internal path was already guarded — the remaining question is
+        // whether codex ever spawns the process. This line is the answer: if hook-invoked.log
+        // is silent while codex reports failures, the exe was never the patient.
+        EntryBreadcrumb(args);
+
         // A hook must never break the user's session. Any failure is silent and non-zero at worst;
         // Claude Code keeps going either way.
         try
@@ -45,6 +52,41 @@ internal static class Program
         catch
         {
             return 1;
+        }
+    }
+
+    /// <summary>
+    /// One line per invocation, written beside the exe itself — the only location that needs no
+    /// environment variables and no directory creation. Records what the spawn actually looked
+    /// like (args, TEMP, cwd, whether stdin is a pipe), because a hook launched with a scrubbed
+    /// environment writes its state somewhere nobody looks and this is how we'd know. Capped so
+    /// it can never grow into a problem; every failure is swallowed.
+    /// </summary>
+    private static void EntryBreadcrumb(String[] args)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(Environment.ProcessPath);
+            if (dir == null)
+            {
+                return;
+            }
+
+            var path = Path.Combine(dir, "hook-invoked.log");
+            if (File.Exists(path) && new FileInfo(path).Length > 256 * 1024)
+            {
+                return;
+            }
+
+            Boolean redirected;
+            try { redirected = Console.IsInputRedirected; } catch { redirected = false; }
+
+            File.AppendAllText(path,
+                $"{DateTime.UtcNow:o} args=[{String.Join(" ", args)}] temp={Environment.GetEnvironmentVariable("TEMP") ?? "(unset)"} cwd={Environment.CurrentDirectory} stdinRedirected={redirected}{Environment.NewLine}");
+        }
+        catch
+        {
+            // Diagnostics must never become the failure they exist to explain.
         }
     }
 
