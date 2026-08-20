@@ -1,4 +1,4 @@
-# Vizhi for Codex 1.4.10 — preview notes
+# Vizhi for Codex 1.4.11 — preview notes
 
 *For initial review. Not yet on the Marketplace; Claude Console 2.0.1 is in Marketplace review
 separately.*
@@ -49,7 +49,9 @@ git, and navigation keys.
 **Windows: fixes landed 2026-08-20, verification in progress.** The first Windows hardware run
 found three porting gaps — session discovery, the state bridge, the process scan's name filter, hook timeout survival
 (bounded stdin read + kernel parent lookups), and one-key-per-session de-duplication (codex
-runs as a TUI process plus a child app server); 1.4.10 fixes all of it, unit-pinned. Hardware verification so far: profile registration,
+runs as a TUI process plus a child app server); 1.4.11 fixes all of it, unit-pinned, and adds
+spawn-proof diagnostics (the hook exe logs its own launch) for the remaining hook-exit issue
+under investigation on Windows. Hardware verification so far: profile registration,
 hooks installed and active, the hook exe writing state, and key presses reaching the plugin are
 all confirmed on Windows; the final live-session pass is in progress. Claude Console 2.0 is
 Windows-verified on this same engine. Treat Windows as beta until this note says otherwise;
@@ -63,7 +65,7 @@ macOS remains the hardware-verified platform.
 > (Options+ → Plugins) or use a different machine.
 
 1. Logi Options+ **6.4+**, MX Creative Keypad, [Codex CLI](https://developers.openai.com/codex/cli) installed natively.
-2. Double-click `VizhiCodex_1.4.10.lplug4` → install via Options+.
+2. Double-click `VizhiCodex_1.4.11.lplug4` → install via Options+.
 3. Wait ~1 minute: the plugin self-registers its application + layout and restarts the plugin
    service once (Options+ blinks and returns on its own).
 4. **Trust the hooks.** At your next Codex session start you'll see **"Hooks need review — 7
