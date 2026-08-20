@@ -190,6 +190,23 @@ enforces that they agree. The assembly version is what the crash-disable marker 
   msgs (CodexContextReader already tails rollouts under the best-effort contract). Together:
   busy→done→ready without hooks. Only approval events are unverified in the rollout stream —
   if absent, amber/red approval keys alone wait upstream. Details in the spike doc postscript.
+  LATER SAME DAY, approvals settled BOTH ways on hardware: (1) the rollout records NOTHING at
+  the moment an approval is pending (captured a live `item/commandExecution/requestApproval`
+  over the app-server protocol while the rollout tail stayed silent; the state DB row carries no
+  flag either) — so no file-based transport can ever light amber/red, confirmed empirically,
+  not assumed. (2) BUT a workaround exists and was PROVEN end-to-end: `codex app-server
+  --listen ws://127.0.0.1:<port>` runs a multi-client server on Windows (the `daemon` wrapper
+  is Unix-only; the raw listener is not), and a second, purely passive client that merely
+  `thread/read`s a thread RECEIVES `thread/status/changed` with
+  `activeFlags:["waitingOnApproval"]` when the driving client's turn hits an approval, clearing
+  on resolution. The pending command for risk grading is fetchable via `thread/items/list`.
+  The deployment shape: plugin (or user) runs the listener, sessions launch as
+  `codex --remote ws://127.0.0.1:<port>`, plugin observes. Costs to weigh before building: the
+  surface is EXPERIMENTAL (could shift any release), plain `codex` sessions stay invisible
+  (every session must carry --remote, e.g. via the New Codex key), and TUI-over-remote behavior
+  (approval prompt still lands in the TUI beside a passive observer) is the one link not yet
+  verified with a real TUI. Reproduction scripts from the session: scratchpad ws_probe.py
+  pattern — hand-rolled ws client, driver + observer, deny-and-cleanup.
 
 - **A shipped profile never updates on an existing install.** Import dedupes by profile GUID, so a
   package update leaves whatever was imported first — a dev machine ran the fixed 1.4.0 package for
