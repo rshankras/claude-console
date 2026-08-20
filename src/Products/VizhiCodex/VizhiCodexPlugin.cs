@@ -1,8 +1,10 @@
 namespace Loupedeck.ClaudeConsolePlugin
 {
     using System;
+    using System.Collections.Generic;
 
     using Loupedeck.ClaudeConsolePlugin.Agents;
+    using Loupedeck.ClaudeConsolePlugin.Models;
 
     /// <summary>
     /// Vizhi for Codex — the same engine as Claude Console, driving OpenAI's Codex CLI.
@@ -60,6 +62,41 @@ namespace Loupedeck.ClaudeConsolePlugin
             PluginLog.Info("VizhiCodexPlugin: Loaded — driving Codex CLI");
         }
 
+        /// <summary>
+        /// The Windows transport: pull state from codex's rollout transcript on every poll, since
+        /// its hook runner never spawns a process to push it (docs/spike-windows-codex-hooks.md).
+        ///
+        /// The bridge needs to know which sessions are live and when each started, to attach a
+        /// rollout file to a key. Both are already in the key itself — Windows keys are
+        /// "pid-&lt;pid&gt;-&lt;utcStartTicks&gt;" — so this reads the grid rather than asking the
+        /// platform for a second process scan on every poll.
+        /// </summary>
+        private void WireRolloutBridge()
+        {
+            var bridge = new CodexRolloutBridge();
+            var manager = BridgeManager.Instance;
+
+            manager.PullState = () =>
+            {
+                var live = new List<(String Key, DateTime Start)>();
+                var sessions = manager.Grid?.LiveSessions();
+                foreach (var session in sessions ?? new List<GridSession>())
+                {
+                    if (Platform.WindowsInjection.TryParseSessionKey(session.SessionKey, out _, out var ticks))
+                    {
+                        live.Add((session.SessionKey, new DateTime(ticks, DateTimeKind.Utc)));
+                    }
+                }
+
+                bridge.LiveSessions = live;
+                bridge.Poll();
+            };
+
+            PluginLog.Info(
+                "VizhiCodexPlugin: Windows — reading state from codex's rollout transcript (no hooks; " +
+                "codex's hook runner spawns nothing on this platform)");
+        }
+
         private void WireStateBridge()
         {
             // Windows takes the hook-free path: codex's hook runner creates no process there, so
@@ -67,7 +104,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             // stream instead (docs/windows-codex-hookless-bridge.md).
             if (OperatingSystem.IsWindows())
             {
-                PluginLog.Info("VizhiCodexPlugin: Windows — state bridge is the rollout reader, no hooks installed");
+                this.WireRolloutBridge();
                 return;
             }
 

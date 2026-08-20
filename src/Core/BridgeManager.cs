@@ -269,6 +269,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var liveTtys = _pollTick % 4 == 2 ? _platform.DiscoverSessions() : null;
                 Grid.Refresh(liveTtys);
 
+                // Where the agent cannot push state to us, pull it. Only Windows/Codex sets this
+                // (its hook runner spawns nothing there), and the bridge writes the very same IPC
+                // files a hook would — so everything below this line is identical either way.
+                this.PullState?.Invoke();
+
                 var newState = ReadJsonWithRetry<ClaudeState>(ActiveStateFile());
 
                 if (newState != null)
@@ -564,6 +569,14 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// Accept the highlighted autocomplete AND submit it in one press.
         /// </summary>
         public void InjectTabThenEnter() => _platform.InjectTabThenEnter(TargetTty());
+
+        /// <summary>
+        /// Optional per-poll pull of agent state, for a product whose agent cannot push it.
+        /// Set by the product at load (Windows/Codex → CodexRolloutBridge.Poll); null everywhere
+        /// else, where lifecycle hooks push state as it happens. Whatever it writes goes to the
+        /// same IPC files, so nothing downstream knows which transport filled them.
+        /// </summary>
+        public Action PullState { get; set; }
 
         /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
         public void Navigate(TerminalAction action) => _platform.Navigate(action);

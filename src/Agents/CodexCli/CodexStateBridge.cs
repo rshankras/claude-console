@@ -62,6 +62,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             "PermissionRequest", "PostToolUse", "Stop", "SessionEnd",
         };
 
+        /// <summary>
+        /// The two edges any transport must be able to express, named so a second transport
+        /// (CodexRolloutBridge on Windows) writes the SAME envelope rather than inventing a
+        /// dialect. CodexStateReader.ActivityFor maps these to busy / done.
+        /// </summary>
+        internal const String BusyEvent = "UserPromptSubmit";
+
+        internal const String IdleEvent = "Stop";
+
         private readonly String _codexHome;
         private readonly String _sessionsDir;
 
