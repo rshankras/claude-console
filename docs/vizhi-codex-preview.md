@@ -46,6 +46,21 @@ tracking and tab switching · risk-graded approvals (amber/red) · model + conte
 voice (submit and draft) · screenshot → current conversation · native `/review` · all prompt,
 git, and navigation keys.
 
+**Windows requires a working Codex sandbox for live state.** Codex on Windows launches hooks
+through its native sandbox (elevated preferred, unelevated fallback). If Codex reports "the
+local command sandbox failed to start", both its own shell commands AND this plugin's hooks
+fail ("hook exited with code 1") — the plugin is not involved. Fix per the official guide
+(learn.chatgpt.com/docs/windows/windows-sandbox): retry the elevated setup approving the admin
+prompt, or set the supported fallback in `%USERPROFILE%\.codex\config.toml`:
+
+```toml
+[windows]
+sandbox = "unelevated"
+```
+
+Session keys, focus, and typed keys (prompts/git/nav) work regardless — only live
+busy/waiting/approval state rides the hooks.
+
 **Windows: fixes landed 2026-08-20, verification in progress.** The first Windows hardware run
 found three porting gaps — session discovery, the state bridge, the process scan's name filter, hook timeout survival
 (bounded stdin read + kernel parent lookups), and one-key-per-session de-duplication (codex

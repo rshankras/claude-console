@@ -159,10 +159,17 @@ enforces that they agree. The assembly version is what the crash-disable marker 
   codex.exe, wrong if a user's ONLY codex is the Store one run via an app-execution alias.
   Distinguish the desktop app by its own resources path, not by WindowsApps wholesale, when this
   shape shows up in the field.
-- **Windows codex hooks: "exited with code 1"** still unexplained as of 1.4.8 — the verb cannot
-  return 1 since 1.4.7, so if it persists the exe fails to LAUNCH under codex's spawn (suspect:
-  command quoting). hook-error.log (1.4.7+) plus the sessions dir decides it; awaiting the
-  post-1.4.8 diagnostic run.
+- ~~Windows codex hooks: "exited with code 1"~~ — ROOT CAUSE FOUND 2026-08-20, not ours: codex
+  on Windows spawns hooks through its native sandbox, and on the test machine that sandbox
+  fails to start ("the local command sandbox failed to start" — codex's own shell commands die
+  the same way). Confirmed against the binary (WindowsSandboxSetupMode elevated/unelevated) and
+  the official doc. Fix on the machine: repair the elevated setup (UAC approval, local-user
+  creation, firewall, logon rights — Windows error 1385 = missing logon rights) or set
+  `[windows] sandbox = "unelevated"` in config.toml. The four hardening rounds it took to
+  corner this (1.4.7-1.4.11: exit-zero guarantee, kernel parent walks, evidence-first writes,
+  bounded stdin, spawn-proof breadcrumb) all remain — the hook exe is now bulletproof and
+  self-diagnosing, which is how a spawn-side failure was finally provable. The lesson for the
+  file: when hardening produces no change in symptoms, the failure is upstream of your code.
 
 - **A shipped profile never updates on an existing install.** Import dedupes by profile GUID, so a
   package update leaves whatever was imported first — a dev machine ran the fixed 1.4.0 package for
