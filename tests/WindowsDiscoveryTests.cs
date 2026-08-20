@@ -86,6 +86,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(@"C:\Users\sahan\.codex\packages\standalone\releases\0.148.0-x86_64-pc-windows-msvc\bin\codex.exe", exe);
         }
 
+        /// <summary>
+        /// The enumerator's name pre-filter must come from the matcher too. It was a hardcoded
+        /// claude list until 2026-08-20 — the matcher-driven watcher was correct and never
+        /// received a codex row, because the OS was never asked for processes named codex. The
+        /// unit tests inject their own process tables, which is exactly why only this derivation
+        /// can be pinned here; the lesson is that a seam is only as honest as its narrowest layer.
+        /// </summary>
+        [Fact]
+        public void The_process_scan_asks_the_os_for_the_matchers_names()
+        {
+            Assert.Contains("codex", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.CodexCli));
+            Assert.DoesNotContain("claude", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.CodexCli));
+
+            Assert.Contains("claude", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.ClaudeCode));
+            Assert.DoesNotContain("codex", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.ClaudeCode));
+
+            // Interpreters are platform knowledge, present for every agent — an npm install of
+            // either CLI runs under node.
+            Assert.Contains("node", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.None));
+        }
+
         // --- fixtures -------------------------------------------------------------------------
 
         private static WindowsProcessInfo NativeCli(Int32 pid, DateTime? start = null) =>

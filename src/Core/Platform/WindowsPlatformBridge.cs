@@ -178,17 +178,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // ------------------------------------------------------------------------------------------
 
         // Names worth enumerating at all — everything else in the process table is irrelevant, and
-        // touching fewer Process objects keeps the ~2s scan cheap.
-        private static readonly String[] InterestingNames =
+        // touching fewer Process objects keeps the ~2s scan cheap. The AGENT's names come from the
+        // matcher; only the interpreter set is static knowledge. This was a hardcoded claude list
+        // until 2026-08-20 — the eighth bug of the built-but-never-wired shape, and the deepest:
+        // the matcher-driven watcher was correct and never received a codex row to inspect,
+        // because the scan never asked the OS for processes named codex. The unit tests inject
+        // their process tables, so only hardware could see it.
+        internal static IEnumerable<String> NamesWorthEnumerating(AgentProcessMatcher matcher)
         {
-            "claude", "node", "bun", "deno", "npx",
-        };
+            foreach (var name in matcher?.ExeNames ?? Array.Empty<String>())
+            {
+                yield return name;
+            }
+
+            yield return "node";
+            yield return "bun";
+            yield return "deno";
+            yield return "npx";
+        }
 
         private IEnumerable<WindowsProcessInfo> EnumerateProcesses()
         {
             var rows = new List<WindowsProcessInfo>();
 
-            foreach (var name in InterestingNames)
+            foreach (var name in NamesWorthEnumerating(this._matcher))
             {
                 Process[] found;
                 try
