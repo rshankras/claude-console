@@ -73,6 +73,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         private void WireRolloutBridge()
         {
+            // Lay down the sandbox grants now, so the day codex's hook runner is fixed the hooks
+            // can both LAUNCH and WRITE without a plugin update. Best effort: the sandbox group
+            // exists only after codex's own setup has run (Platform.CodexSandboxAccess).
+            Platform.CodexSandboxAccess.EnsureGranted();
+
             var bridge = new CodexRolloutBridge();
             var manager = BridgeManager.Instance;
 
