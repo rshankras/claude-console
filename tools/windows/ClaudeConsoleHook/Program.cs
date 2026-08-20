@@ -163,8 +163,10 @@ internal static class Program
                 $"{{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"{JsonEscape(eventName)}\",\"ts\":{ts},\"payload\":{body}}}\n";
 
             // No key resolved -> the shared file, mirroring the script's "shared" tty fallback
-            // (codex exec, CI, or a parent chain we couldn't walk).
-            var key = SessionKey(IsCodex) ?? SharedName;
+            // (codex exec, CI, or a parent chain we couldn't walk). TOPMOST codex, not nearest:
+            // codex runs as a TUI process plus a child codex (its app server), hooks can be
+            // spawned by either, and the grid keys sessions on the TUI — the outermost one.
+            var key = SessionKeyTopmost(IsCodex) ?? SharedName;
             Directory.CreateDirectory(CodexSessionsDir);
             WriteAtomic(Path.Combine(CodexSessionsDir, key + ".json"), envelope);
         }
@@ -235,6 +237,47 @@ internal static class Program
     /// </summary>
     [SupportedOSPlatform("windows")]
     private static String? SessionKey() => SessionKey(IsClaude);
+
+    /// <summary>
+    /// Like SessionKey, but keeps climbing and returns the OUTERMOST matching ancestor. The grid
+    /// drops a session candidate whose parent is also a candidate, so it keys the topmost process
+    /// of a nested pair — this must mint the same key or state never attaches to the session.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static String? SessionKeyTopmost(Func<Process, Boolean> isAgent)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        try
+        {
+            String? best = null;
+            var pid = Environment.ProcessId;
+            for (var hop = 0; hop < 8; hop++)
+            {
+                using var proc = Process.GetProcessById(pid);
+                if (isAgent(proc))
+                {
+                    best = $"pid-{proc.Id}-{proc.StartTime.ToUniversalTime().Ticks}";
+                }
+
+                var parent = ParentOf(pid);
+                if (parent <= 0 || parent == pid)
+                {
+                    break;
+                }
+                pid = parent;
+            }
+
+            return best;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     [SupportedOSPlatform("windows")]
     private static String? SessionKey(Func<Process, Boolean> isAgent)

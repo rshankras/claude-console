@@ -56,9 +56,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// </summary>
         internal Func<Int32, String> CommandLineResolver { get; set; }
 
-        // Session key → command line. Pruned every scan to the processes still alive, so a
-        // long-running plugin that sees thousands of short-lived node processes doesn't grow.
-        private readonly Dictionary<String, String> _cmdCache = new Dictionary<String, String>(StringComparer.Ordinal);
+        /// <summary>
+        /// Resolves a PID's parent, or 0 if unknown. Test seam; production batches parents into
+        /// the same query as command lines. Parents exist so SessionsFrom's one-key-per-session
+        /// rule can fire: codex ALWAYS runs as a TUI process plus a child codex (its app server),
+        /// and without parents both got a key — "codex codex" on real hardware, with the phantom
+        /// child's key focusing nothing.
+        /// </summary>
+        internal Func<Int32, Int32> ParentPidResolver { get; set; }
+
+        // Session key → (command line, parent pid). Pruned every scan to the processes still
+        // alive, so a long-running plugin that sees thousands of short-lived node processes
+        // doesn't grow.
+        private readonly Dictionary<String, (String Cmd, Int32 Ppid)> _cmdCache =
+            new Dictionary<String, (String, Int32)>(StringComparer.Ordinal);
 
         /// <summary>Test seam: proves the cache is pruned rather than accumulating.</summary>
         internal Int32 CommandLineCacheCount => _cmdCache.Count;
@@ -128,23 +139,42 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             if (pending.Count > 0)
             {
                 var perPid = this.CommandLineResolver != null
-                    ? pending.ToDictionary(r => r.Pid, r => SafeResolve(this.CommandLineResolver, r.Pid))
-                    : ResolveCommandLines(pending.Select(r => r.Pid));
+                    ? pending.ToDictionary(
+                        r => r.Pid,
+                        r => (Cmd: SafeResolve(this.CommandLineResolver, r.Pid),
+                              Ppid: this.ParentPidResolver != null ? SafeResolveParent(this.ParentPidResolver, r.Pid) : 0))
+                    : ResolveDetails(pending.Select(r => r.Pid));
 
                 foreach (var row in pending)
                 {
-                    perPid.TryGetValue(row.Pid, out var cmd);
-                    _cmdCache[WindowsProcessWatcher.SessionKeyFor(row)] = cmd;
+                    perPid.TryGetValue(row.Pid, out var details);
+                    _cmdCache[WindowsProcessWatcher.SessionKeyFor(row)] = details;
                 }
             }
 
             foreach (var row in rows)
             {
-                if (row.CommandLine == null &&
-                    _cmdCache.TryGetValue(WindowsProcessWatcher.SessionKeyFor(row), out var cached))
+                if (_cmdCache.TryGetValue(WindowsProcessWatcher.SessionKeyFor(row), out var cached))
                 {
-                    row.CommandLine = cached;
+                    row.CommandLine ??= cached.Cmd;
+                    if (row.ParentPid == 0)
+                    {
+                        row.ParentPid = cached.Ppid;
+                    }
                 }
+            }
+        }
+
+        private static Int32 SafeResolveParent(Func<Int32, Int32> resolver, Int32 pid)
+        {
+            try
+            {
+                return resolver(pid);
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, $"WindowsPlatformBridge: could not read parent for pid {pid}");
+                return 0;
             }
         }
 
@@ -221,13 +251,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                         rows.Add(new WindowsProcessInfo
                         {
                             Pid = proc.Id,
-                            // KNOWN GAP: not populated. Process.GetProcessesByName gives no parent,
-                            // and fetching one per process would add a CIM query to every scan for a
-                            // case that barely occurs. Consequence: SessionsFrom's "drop a candidate
-                            // whose parent is also a candidate" rule never fires on Windows, so a
-                            // session that spawns a NESTED claude would take two keys instead of one.
-                            // The real-hardware capture (2026-08-07, 4 sessions) showed no nesting.
-                            // Revisit if it turns up; a cheap parent lookup exists via NtQuery.
+                            // Filled by FillCommandLines: the parent rides the same batched CIM
+                            // query as the command line. It was a KNOWN GAP ("nesting barely
+                            // occurs") until codex — which ALWAYS nests, TUI plus a child codex —
+                            // put two keys per session on real hardware (2026-08-20).
                             ParentPid = 0,
                             Name = name + ".exe",
                             StartTime = proc.StartTime,
@@ -256,15 +283,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         }
 
         /// <summary>
-        /// Fetch command lines for many pids in ONE query.
+        /// Fetch command lines AND parent pids for many pids in ONE query.
         ///
-        /// Batched deliberately: every claude.exe needs its command line to tell the CLI from
-        /// Claude Desktop, and a machine with Desktop open has a dozen of them. One PowerShell
-        /// spawn per scan-with-new-pids is fine; a dozen would not be.
+        /// Batched deliberately: every agent-named process needs its command line to tell the CLI
+        /// from a desktop app, and the parent is what lets SessionsFrom keep one key per session —
+        /// codex always runs as a TUI process plus a child codex, and without parents both keyed.
+        /// One PowerShell spawn per scan-with-new-pids is fine; a dozen would not be.
         /// </summary>
-        internal static Dictionary<Int32, String> ResolveCommandLines(IEnumerable<Int32> pids)
+        internal static Dictionary<Int32, (String Cmd, Int32 Ppid)> ResolveDetails(IEnumerable<Int32> pids)
         {
-            var result = new Dictionary<Int32, String>();
+            var result = new Dictionary<Int32, (String, Int32)>();
             var list = pids?.Distinct().ToList() ?? new List<Int32>();
             if (list.Count == 0 || !OperatingSystem.IsWindows())
             {
@@ -287,7 +315,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 {
                     "-NoProfile", "-NonInteractive", "-Command",
                     $"Get-CimInstance Win32_Process -Filter \"{filter}\" | " +
-                    "ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
+                    "ForEach-Object { \"$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.CommandLine)\" }",
                 },
                 8000,
                 wantOutput: true);
@@ -305,9 +333,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 {
                     continue;
                 }
+
+                var second = trimmed.IndexOf('\t', tab + 1);
+                if (second <= tab)
+                {
+                    continue;
+                }
+
                 if (Int32.TryParse(trimmed.Substring(0, tab), out var pid))
                 {
-                    result[pid] = trimmed.Substring(tab + 1);
+                    Int32.TryParse(trimmed.Substring(tab + 1, second - tab - 1), out var ppid);
+                    result[pid] = (trimmed.Substring(second + 1), ppid);
                 }
             }
 

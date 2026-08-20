@@ -316,7 +316,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var src = ReadShimSource();
 
-            Assert.Contains("SessionKey(IsCodex)", src);
+            Assert.Contains("SessionKeyTopmost(IsCodex)", src);
             Assert.Contains("name.Equals(\"codex\", StringComparison.OrdinalIgnoreCase)", src);
             Assert.Contains("@openai\\codex", src);
         }

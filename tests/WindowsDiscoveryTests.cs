@@ -107,6 +107,33 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("node", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.None));
         }
 
+        /// <summary>
+        /// Codex ALWAYS runs nested — a TUI process plus a child codex (its app server) — and on
+        /// hardware both took a key: "codex codex", with the phantom child's key focusing nothing.
+        /// Parents now ride the same batched query as command lines, so the one-key-per-session
+        /// rule fires; the child collapses into its parent.
+        /// </summary>
+        [Fact]
+        public void A_codex_tui_and_its_app_server_child_are_one_session()
+        {
+            var parents = new Dictionary<Int32, Int32> { [14484] = 800, [24628] = 14484 };
+            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.CodexCli)
+            {
+                ProcessEnumerator = () => new[]
+                {
+                    Proc(14484, "codex.exe"),
+                    Proc(24628, "codex.exe"),
+                },
+                CommandLineResolver = _ => @"C:\Users\sahan\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe",
+                ParentPidResolver = pid => parents.TryGetValue(pid, out var p) ? p : 0,
+            };
+
+            var sessions = bridge.DiscoverSessions();
+
+            Assert.Single(sessions);
+            Assert.Contains(sessions, k => k.StartsWith("pid-14484-", StringComparison.Ordinal));
+        }
+
         // --- fixtures -------------------------------------------------------------------------
 
         private static WindowsProcessInfo NativeCli(Int32 pid, DateTime? start = null) =>
@@ -536,11 +563,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 return;
             }
 
-            var resolved = WindowsPlatformBridge.ResolveCommandLines(new[] { Environment.ProcessId });
+            var resolved = WindowsPlatformBridge.ResolveDetails(new[] { Environment.ProcessId });
 
-            Assert.True(resolved.TryGetValue(Environment.ProcessId, out var cmd),
+            Assert.True(resolved.TryGetValue(Environment.ProcessId, out var details),
                 "the batched PowerShell query returned nothing parseable for the current process");
-            Assert.False(String.IsNullOrWhiteSpace(cmd));
+            Assert.False(String.IsNullOrWhiteSpace(details.Cmd));
+            Assert.True(details.Ppid > 0, "the batched query must carry the parent pid too");
         }
 
         [Fact]
