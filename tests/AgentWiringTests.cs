@@ -29,8 +29,62 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         // bug this file exists for, so it must be exercised end to end or not at all.
         private static HashSet<String> Discover(BridgeManager manager, String psOutput)
         {
-            manager.PsRunner = () => psOutput;
+            // Feed whichever seam the host's bridge exposes. The wiring under test — does
+            // declaring an agent change what discovery looks for — is identical on both, but a
+            // `ps` string means nothing to the Windows bridge, which would otherwise scan the
+            // REAL process table and answer with whatever happened to be running.
+            if (OperatingSystem.IsWindows())
+            {
+                manager.ProcessEnumerator = () => WindowsRowsFrom(psOutput);
+            }
+            else
+            {
+                manager.PsRunner = () => psOutput;
+            }
+
             return manager.Platform.DiscoverSessions();
+        }
+
+        /// <summary>
+        /// The same fixture, in Windows shape: one process per `ps` row, named &lt;agent&gt;.exe.
+        /// Session keys differ by platform (tty vs pid+start), so callers compare COUNTS on
+        /// Windows and tty names on macOS — the question is which processes were recognised.
+        /// </summary>
+        private static IEnumerable<WindowsProcessInfo> WindowsRowsFrom(String psOutput)
+        {
+            var rows = new List<WindowsProcessInfo>();
+            var start = new DateTime(2026, 8, 20, 9, 0, 0, DateTimeKind.Utc);
+
+            foreach (var line in psOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var pid = Int32.Parse(parts[0]);
+                var name = parts[3];
+
+                rows.Add(new WindowsProcessInfo
+                {
+                    Pid = pid,
+                    ParentPid = 0,
+                    Name = name + ".exe",
+                    CommandLine = $@"C:\Users\me\{name}.exe",
+                    StartTime = start.AddSeconds(pid),
+                });
+            }
+
+            return rows;
+        }
+
+        /// <summary>How many sessions this fixture should yield for the given agent.</summary>
+        private static void AssertDiscovered(HashSet<String> found, Int32 expectedCount, params String[] macTtys)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Assert.Equal(expectedCount, found.Count);
+            }
+            else
+            {
+                Assert.Equal(macTtys, found.OrderBy(t => t));
+            }
         }
 
         private const String TwoClaudeOneCodex =
@@ -47,7 +101,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var codex = new BridgeManager { Agent = new CodexCliAdapter() };
 
-            Assert.Equal(new[] { "s003" }, Discover(codex, TwoClaudeOneCodex).OrderBy(t => t));
+            AssertDiscovered(Discover(codex, TwoClaudeOneCodex), 1, "s003");
         }
 
         [Fact]
@@ -55,7 +109,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var claude = new BridgeManager { Agent = new ClaudeCodeAdapter() };
 
-            Assert.Equal(new[] { "s000", "s001" }, Discover(claude, TwoClaudeOneCodex).OrderBy(t => t));
+            AssertDiscovered(Discover(claude, TwoClaudeOneCodex), 2, "s000", "s001");
         }
 
         /// <summary>

@@ -163,6 +163,17 @@ namespace Loupedeck.ClaudeConsolePlugin
             set { if (_platform is MacPlatformBridge m) { m.OsascriptRunner = value; } }
         }
 
+        /// <summary>
+        /// Test seam for discovery, per platform: a `ps` table on macOS, a process list on
+        /// Windows. Both feed the SAME decision code — which agent's processes count — so a
+        /// wiring test can drive whichever bridge the host actually built and assert one answer.
+        /// </summary>
+        internal Func<IEnumerable<WindowsProcessInfo>> ProcessEnumerator
+        {
+            get => (_platform as WindowsPlatformBridge)?.ProcessEnumerator;
+            set { if (_platform is WindowsPlatformBridge w) { w.ProcessEnumerator = value; } }
+        }
+
         internal Func<String> PsRunner
         {
             get => (_platform as MacPlatformBridge)?.PsRunner;
