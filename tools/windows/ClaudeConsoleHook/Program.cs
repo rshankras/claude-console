@@ -162,13 +162,23 @@ internal static class Program
             var envelope =
                 $"{{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"{JsonEscape(eventName)}\",\"ts\":{ts},\"payload\":{body}}}\n";
 
-            // No key resolved -> the shared file, mirroring the script's "shared" tty fallback
-            // (codex exec, CI, or a parent chain we couldn't walk). TOPMOST codex, not nearest:
-            // codex runs as a TUI process plus a child codex (its app server), hooks can be
-            // spawned by either, and the grid keys sessions on the TUI — the outermost one.
-            var key = SessionKeyTopmost(IsCodex) ?? SharedName;
+            // The shared file goes FIRST, before any process walking: codex enforces the hook
+            // timeout by TERMINATING the process (exit code 1 — seen as "hook exited with code 1"
+            // on hardware, with no breadcrumb and no state file, because the old order died mid
+            // climb). Whatever happens after this line, evidence exists and the plugin's shared
+            // fallback lights up.
             Directory.CreateDirectory(CodexSessionsDir);
-            WriteAtomic(Path.Combine(CodexSessionsDir, key + ".json"), envelope);
+            WriteAtomic(Path.Combine(CodexSessionsDir, SharedName + ".json"), envelope);
+
+            // TOPMOST codex, not nearest: codex runs as a TUI process plus a child codex (its
+            // app server), hooks can be spawned by either, and the grid keys sessions on the
+            // TUI — the outermost one. The climb is cheap now (kernel parent lookups, no
+            // PowerShell spawns), which is what keeps this verb inside codex's timeout.
+            var key = SessionKeyTopmost(IsCodex);
+            if (key != null)
+            {
+                WriteAtomic(Path.Combine(CodexSessionsDir, key + ".json"), envelope);
+            }
         }
         catch (Exception ex)
         {
@@ -384,8 +394,55 @@ internal static class Program
     }
 
     [SupportedOSPlatform("windows")]
-    private static Int32 ParentOf(Int32 pid) =>
-        Int32.TryParse(Wmic($"ParentProcessId from Win32_Process where ProcessId={pid}"), out var ppid) ? ppid : 0;
+    private static Int32 ParentOf(Int32 pid)
+    {
+        // Kernel first: NtQueryInformationProcess answers in microseconds. The PowerShell path
+        // survives only as a fallback — a PS cold start costs seconds, and codex TERMINATES a
+        // hook that outlives its timeout (exit code 1), so a climb that spawned PowerShell per
+        // hop was killed mid-walk on real hardware before it ever wrote state.
+        var viaKernel = ParentViaNtQuery(pid);
+        if (viaKernel > 0)
+        {
+            return viaKernel;
+        }
+
+        return Int32.TryParse(Wmic($"ParentProcessId from Win32_Process where ProcessId={pid}"), out var ppid) ? ppid : 0;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct ProcessBasicInformation
+    {
+        public IntPtr Reserved1;
+        public IntPtr PebBaseAddress;
+        public IntPtr Reserved2_0;
+        public IntPtr Reserved2_1;
+        public IntPtr UniqueProcessId;
+        public IntPtr InheritedFromUniqueProcessId;
+    }
+
+    [System.Runtime.InteropServices.DllImport("ntdll.dll")]
+    private static extern Int32 NtQueryInformationProcess(
+        IntPtr processHandle, Int32 processInformationClass,
+        ref ProcessBasicInformation processInformation, Int32 processInformationLength, out Int32 returnLength);
+
+    [SupportedOSPlatform("windows")]
+    private static Int32 ParentViaNtQuery(Int32 pid)
+    {
+        try
+        {
+            using var proc = Process.GetProcessById(pid);
+            var info = new ProcessBasicInformation();
+            var status = NtQueryInformationProcess(
+                proc.Handle, 0, ref info, System.Runtime.InteropServices.Marshal.SizeOf<ProcessBasicInformation>(), out _);
+
+            return status == 0 ? (Int32)info.InheritedFromUniqueProcessId : 0;
+        }
+        catch
+        {
+            // Access denied or the process exited mid-walk — let the caller fall back.
+            return 0;
+        }
+    }
 
     [SupportedOSPlatform("windows")]
     private static String? CommandLineOf(Int32 pid) => Wmic($"CommandLine from Win32_Process where ProcessId={pid}");

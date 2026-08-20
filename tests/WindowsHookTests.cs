@@ -311,6 +311,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("hook-error.log", src);
         }
 
+        /// <summary>
+        /// Codex TERMINATES a hook that outlives its timeout — exit code 1, no exception, no
+        /// breadcrumb — which is exactly what hardware showed while parent lookups spawned
+        /// PowerShell (seconds of cold start per hop). Two defenses, both pinned: the shared
+        /// state file is written BEFORE any process walking, and parent lookups go through the
+        /// kernel before ever considering a PowerShell spawn.
+        /// </summary>
+        [Fact]
+        public void The_codex_verb_writes_evidence_before_walking_and_walks_without_powershell()
+        {
+            var src = ReadShimSource();
+
+            var sharedWrite = src.IndexOf(
+                "WriteAtomic(Path.Combine(CodexSessionsDir, SharedName + \".json\"), envelope)",
+                StringComparison.Ordinal);
+            var climb = src.IndexOf("SessionKeyTopmost(IsCodex)", StringComparison.Ordinal);
+
+            Assert.True(sharedWrite >= 0, "the codex verb must write the shared file");
+            Assert.True(climb > sharedWrite, "the shared write must come BEFORE the ancestor climb");
+            Assert.Contains("NtQueryInformationProcess", src);
+        }
+
         [Fact]
         public void The_codex_verb_resolves_the_codex_process_not_claude()
         {
