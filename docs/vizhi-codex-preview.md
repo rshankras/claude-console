@@ -1,4 +1,4 @@
-# Vizhi for Codex 1.4.5 — preview notes
+# Vizhi for Codex 1.4.6 — preview notes
 
 *For initial review. Not yet on the Marketplace; Claude Console 2.0.1 is in Marketplace review
 separately.*
@@ -46,10 +46,13 @@ tracking and tab switching · risk-graded approvals (amber/red) · model + conte
 voice (submit and draft) · screenshot → current conversation · native `/review` · all prompt,
 git, and navigation keys.
 
-**Windows: fixed 2026-08-20, first verification in progress.** The first Windows hardware run
-found two porting gaps (session discovery and the state bridge); 1.4.5 fixes both, unit-pinned.
-Claude Console 2.0 is Windows-verified on this same engine. Treat Windows as beta until this
-note says otherwise; macOS remains the hardware-verified platform.
+**Windows: fixes landed 2026-08-20, verification in progress.** The first Windows hardware run
+found three porting gaps — session discovery, the state bridge, and the process scan's name
+filter; 1.4.6 fixes all three, unit-pinned. Hardware verification so far: profile registration,
+hooks installed and active, the hook exe writing state, and key presses reaching the plugin are
+all confirmed on Windows; the final live-session pass is in progress. Claude Console 2.0 is
+Windows-verified on this same engine. Treat Windows as beta until this note says otherwise;
+macOS remains the hardware-verified platform.
 
 ## Install
 
@@ -59,7 +62,7 @@ note says otherwise; macOS remains the hardware-verified platform.
 > (Options+ → Plugins) or use a different machine.
 
 1. Logi Options+ **6.4+**, MX Creative Keypad, [Codex CLI](https://developers.openai.com/codex/cli) installed natively.
-2. Double-click `VizhiCodex_1.4.5.lplug4` → install via Options+.
+2. Double-click `VizhiCodex_1.4.6.lplug4` → install via Options+.
 3. Wait ~1 minute: the plugin self-registers its application + layout and restarts the plugin
    service once (Options+ blinks and returns on its own).
 4. **Trust the hooks.** At your next Codex session start you'll see **"Hooks need review — 7
