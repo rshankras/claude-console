@@ -156,7 +156,13 @@ internal static class Program
     {
         try
         {
-            var payload = Console.IsInputRedirected ? Console.In.ReadToEnd() : "";
+            // BOUNDED stdin read, never ReadToEnd bare: on Windows the hook's stdin can fail to
+            // deliver EOF even after codex has written the whole payload (inherited pipe write
+            // handles), so an unbounded read hangs until codex kills the hook at its timeout —
+            // kill code 1, nothing written, no exception to breadcrumb. Exactly the hardware
+            // signature that survived three fixes aimed downstream of it. On timeout the payload
+            // is forfeited but the EVENT still records — the keys light with less detail.
+            var payload = ReadStdinBounded(1500);
             var body = payload.TrimStart().StartsWith('{') ? payload : "null";
             var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var envelope =
@@ -192,6 +198,28 @@ internal static class Program
         // write was the leading suspect for exactly that report from Windows hardware.
         try { Console.Write("{}"); } catch (Exception ex) { Breadcrumb(ex, eventName); }
         return 0;
+    }
+
+    /// <summary>
+    /// Read all of stdin, but never wait longer than <paramref name="ms"/> for EOF. The reader
+    /// task is a background thread, so an abandoned read cannot keep the process alive.
+    /// </summary>
+    private static String ReadStdinBounded(Int32 ms)
+    {
+        try
+        {
+            if (!Console.IsInputRedirected)
+            {
+                return "";
+            }
+
+            var read = System.Threading.Tasks.Task.Run(() => Console.In.ReadToEnd());
+            return read.Wait(ms) ? read.Result : "";
+        }
+        catch
+        {
+            return "";
+        }
     }
 
     /// <summary>

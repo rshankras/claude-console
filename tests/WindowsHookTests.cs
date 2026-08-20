@@ -333,6 +333,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("NtQueryInformationProcess", src);
         }
 
+        /// <summary>
+        /// The codex verb must never read stdin unbounded. On Windows the hook's stdin can fail
+        /// to deliver EOF even after the payload is fully written (inherited pipe write handles),
+        /// so a bare ReadToEnd hangs until codex kills the hook at its timeout — kill code 1,
+        /// nothing written, no exception to breadcrumb. The bounded read forfeits the payload on
+        /// timeout but always records the event.
+        /// </summary>
+        [Fact]
+        public void The_codex_verb_reads_stdin_with_a_time_bound()
+        {
+            var src = ReadShimSource();
+
+            Assert.Contains("ReadStdinBounded(", src);
+            Assert.Contains("read.Wait(ms) ? read.Result : \"\"", src);
+        }
+
         [Fact]
         public void The_codex_verb_resolves_the_codex_process_not_claude()
         {
