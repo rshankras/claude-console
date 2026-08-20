@@ -470,11 +470,37 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
         public Boolean CaptureScreenshotInteractive(String outputPath)
         {
-            // Windows has no CLI equivalent of `screencapture -i` that writes to a chosen path
-            // (Snipping Tool only targets the clipboard). Honest answer until the port grows one:
-            // unsupported — the action logs and does nothing, it never fakes a capture.
-            PluginLog.Info("WindowsPlatformBridge.CaptureScreenshotInteractive: not supported on Windows yet");
-            return false;
+            // Windows' interactive capture (the ms-screenclip: overlay) delivers to the
+            // clipboard, not a file, and reading an image off the clipboard takes an STA thread
+            // plus WinForms — neither belongs in the service process. claude-console-shot.exe
+            // owns the whole dance: launch the overlay, wait for the snip, save the PNG.
+            var helper = this.ShotHelperPath;
+            if (helper == null || !File.Exists(helper))
+            {
+                PluginLog.Warning("WindowsPlatformBridge: claude-console-shot.exe not found in the plugin package");
+                return false;
+            }
+
+            // The helper polices its own 120s deadline and exits fast on a dismissed overlay;
+            // the bound here is the backstop, a little above the helper's own.
+            var exit = BoundedProcess.RunForExitCode(helper, new List<String> { outputPath }, 130000);
+
+            if (exit != 0 || !File.Exists(outputPath))
+            {
+                PluginLog.Info($"WindowsPlatformBridge.CaptureScreenshotInteractive: no file (exit {exit?.ToString() ?? "null"}) — cancelled, or the capture overlay is unavailable");
+                return false;
+            }
+
+            return true;
+        }
+
+        private String _shotHelperPath;
+
+        /// <summary>Path to claude-console-shot.exe. Injectable for tests.</summary>
+        internal String ShotHelperPath
+        {
+            get => this._shotHelperPath ?? PluginPaths.PackagedFile("claude-console-shot.exe");
+            set => this._shotHelperPath = value;
         }
 
         public void LaunchAgentSession(String[] extraArgs)
