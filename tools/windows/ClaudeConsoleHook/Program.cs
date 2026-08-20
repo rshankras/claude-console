@@ -168,13 +168,48 @@ internal static class Program
             Directory.CreateDirectory(CodexSessionsDir);
             WriteAtomic(Path.Combine(CodexSessionsDir, key + ".json"), envelope);
         }
-        catch
+        catch (Exception ex)
         {
-            // Swallowed on purpose — same contract as the script.
+            // Swallowed on purpose — same contract as the script — but never silently: the
+            // breadcrumb is how "hook exited with code 1" stops being a guessing game.
+            Breadcrumb(ex, eventName);
         }
 
-        Console.Write("{}");
+        // Even the goodbye is guarded: codex reports a nonzero hook exit to the USER, so this
+        // verb must be structurally unable to produce one. A closed stdout pipe on the final
+        // write was the leading suspect for exactly that report from Windows hardware.
+        try { Console.Write("{}"); } catch (Exception ex) { Breadcrumb(ex, eventName); }
         return 0;
+    }
+
+    /// <summary>
+    /// Last-resort diagnostics for the codex verb: append the exception where a human will look
+    /// (the codex IPC root), falling back to the exe's own directory if even that is unreachable.
+    /// Failures here are swallowed — the breadcrumb must never become a new way to exit nonzero.
+    /// </summary>
+    private static void Breadcrumb(Exception ex, String eventName)
+    {
+        var line = $"{DateTime.UtcNow:o} {eventName}: {ex}{Environment.NewLine}";
+        try
+        {
+            Directory.CreateDirectory(CodexRoot);
+            File.AppendAllText(Path.Combine(CodexRoot, "hook-error.log"), line);
+            return;
+        }
+        catch
+        {
+            // fall through to the exe-side location
+        }
+
+        try
+        {
+            var beside = Path.Combine(AppContext.BaseDirectory, "hook-error.log");
+            File.AppendAllText(beside, line);
+        }
+        catch
+        {
+            // out of places to write — stay silent, stay exit 0
+        }
     }
 
     private static Int32 SelfTest()

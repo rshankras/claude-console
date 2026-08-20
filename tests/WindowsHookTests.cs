@@ -296,6 +296,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("\\\"ts\\\":{ts},\\\"payload\\\":{body}", src);
         }
 
+        /// <summary>
+        /// Codex surfaces a nonzero hook exit to the USER ("hook exited with code 1" appeared in
+        /// the TUI on Windows hardware, 2026-08-20), so the codex verb must be structurally unable
+        /// to produce one: every statement, including the final {} write, is inside a guard, and
+        /// failures leave a breadcrumb file instead of an exit code.
+        /// </summary>
+        [Fact]
+        public void The_codex_verb_cannot_exit_nonzero_and_never_fails_silently()
+        {
+            var src = ReadShimSource();
+
+            Assert.Contains("try { Console.Write("{}"); } catch (Exception ex) { Breadcrumb(ex, eventName); }", src);
+            Assert.Contains("hook-error.log", src);
+        }
+
         [Fact]
         public void The_codex_verb_resolves_the_codex_process_not_claude()
         {
