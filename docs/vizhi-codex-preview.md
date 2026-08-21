@@ -1,7 +1,7 @@
 # Vizhi for Codex 1.5.3 — preview notes
 
-*For initial review. Not yet on the Marketplace; Claude Console 2.0.1 is in Marketplace review
-separately.*
+*Preview build, pending Marketplace submission. Claude Console 2.0.1 is in Marketplace review
+separately — install only one of the two (see below).*
 
 *1.5.3 rolls up the Windows hardware-verification fixes on top of 1.5.0 (which never installed
 cleanly on Windows and was not re-released):*
@@ -25,8 +25,9 @@ cleanly on Windows and was not re-released):*
 
 A second keypad product from the Claude Console codebase: **Vizhi for Codex** gives OpenAI's
 Codex CLI the same physical control surface Claude Console gives Claude Code — live session
-keys, risk-graded approvals, one-press prompts and git verbs, native `/review`, screenshot
-into the running conversation, and fully offline voice dictation.
+keys, one-press prompts and git verbs, native `/review`, screenshot into the running
+conversation, and fully offline voice dictation. **Risk-graded approval lighting (amber/red)
+is macOS-only** — see Windows, below.
 
 The point of the preview is as much the **architecture** as the product: one engine now builds
 a package per agent. `src/Core` is agent-neutral (platform bridges, session grid, file IPC,
@@ -104,18 +105,39 @@ runner, hooks light up with no plugin update needed.
 2. Double-click `VizhiCodex_1.5.3.lplug4` → install via Options+.
 3. Wait ~1 minute: the plugin self-registers its application + layout and restarts the plugin
    service once (Options+ blinks and returns on its own).
-4. **Trust the hooks.** At your next Codex session start you'll see **"Hooks need review — 7
-   hooks are new or changed"**. That's this plugin: one entry per lifecycle event
+4. **macOS only — trust the hooks.** At your next Codex session start you'll see **"Hooks need
+   review — 7 hooks are new or changed"**. That's this plugin: one entry per lifecycle event
    (SessionStart, PreToolUse, PermissionRequest, …), all running the same one-line launcher,
    `~/.codex/codex-console/scripts/codex-hook.sh` — it writes state files for the keypad and
    nothing else. Choose **Review hooks**, confirm, and trust (or *Trust all and continue*).
    Codex trusts by hash, so this is one-time. If you pick *Continue without trusting*, keys
    stay static — recover later with `/hooks`.
-5. Grant, once each as macOS prompts: **Accessibility** (typing), **Microphone** (voice),
-   **Screen Recording** (screenshot).
+
+   **On Windows there is no hook step and no trust prompt at all** — the plugin installs no
+   hooks there and reads Codex's session transcript instead. If Codex ever asks you to trust
+   hooks on Windows, they are not ours.
+5. Grant permissions, once each. **macOS**: **Accessibility** (typing), **Microphone** (voice),
+   **Screen Recording** (screenshot). **Windows**: microphone access for desktop apps, if you
+   use voice — nothing else.
+
+## The Yes / No keys, precisely
+
+They do two separate things, and only one of them is cross-platform:
+
+- **Answering** — pressing Yes or No types the answer into the focused Codex session. This
+  works on **macOS and Windows**, always: the keys type, they do not observe.
+- **Lighting** — the same keys (and the session key) turn **amber** when Codex is waiting for
+  an approval and **red** when the pending command is destructive. This needs Codex to announce
+  the approval, which it does through a lifecycle hook — so it works on **macOS only**. On
+  Windows the keys stay dark and answer exactly as well; you just don't get the glance-from-
+  across-the-room signal.
 
 ## Known limitations (preview)
 
+- **Windows: no approval lighting** (above). Codex's hook runner spawns no process on that
+  platform, and no other Codex channel announces an approval, so the capability is declared
+  absent rather than guessed. A working prototype exists behind Codex's app-server websocket;
+  it is documented, not shipped.
 - **One console per machine** — this and Claude Console both bind Terminal.app; the plugin
   service activates one plugin per application, so installing both leaves one silently dead.
   A unified dual-agent console is the planned answer for users of both.
