@@ -104,6 +104,61 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         // ------------------------------------------------------------------------------------
+        // The cwd: what lets a key show the project's folder name instead of "Codex"
+        // ------------------------------------------------------------------------------------
+
+        [Fact]
+        public void The_cwd_is_read_from_a_turn_context_record()
+        {
+            Assert.Equal(@"C:\Users\me\proj",
+                CodexRolloutBridge.CwdFrom(TurnContext));
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("{ not json \"cwd\"")]
+        [InlineData("{\"type\":\"turn_context\",\"payload\":{\"cwd\":\"\"}}")]
+        [InlineData("{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\"}}")]
+        public void An_unreadable_or_absent_cwd_is_null(String line) =>
+            Assert.Null(CodexRolloutBridge.CwdFrom(line));
+
+        /// <summary>
+        /// The envelope carries the last-reported cwd, backslashes intact through JSON escaping,
+        /// so CodexStateReader's payload.cwd → ProjectDir path lights the label. Before this, the
+        /// Windows transport wrote payload:null forever and every key could only say "Codex" —
+        /// seen on hardware 2026-08-21.
+        /// </summary>
+        [Fact]
+        public void The_envelope_carries_the_cwd_once_seen()
+        {
+            var path = this.Rollout("a", Today, TurnContext);
+            var bridge = this.New();
+            bridge.Poll();
+
+            this.Append(path, TaskComplete);
+            Assert.Equal(1, bridge.Poll());
+
+            var snap = CodexStateReader.Parse(this.SharedState());
+            Assert.Equal(@"C:\Users\me\proj", snap.ProjectDir);
+        }
+
+        [Fact]
+        public void Without_a_cwd_the_payload_stays_null_rather_than_guessed()
+        {
+            var path = this.Rollout("a", Today, TaskStarted);
+            var bridge = this.New();
+            bridge.Poll();
+
+            this.Append(path, TaskComplete);
+            bridge.Poll();
+
+            Assert.Contains("\"payload\":null", this.SharedState());
+        }
+
+        private const String TurnContext =
+            "{\"timestamp\":\"2026-08-20T14:00:00.500Z\",\"type\":\"turn_context\",\"payload\":{\"turn_id\":\"t1\",\"cwd\":\"C:\\\\Users\\\\me\\\\proj\",\"workspace_roots\":[]}}";
+
+        // ------------------------------------------------------------------------------------
         // Polling: only what is new, only what is complete
         // ------------------------------------------------------------------------------------
 

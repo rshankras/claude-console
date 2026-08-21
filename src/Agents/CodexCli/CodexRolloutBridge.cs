@@ -42,6 +42,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// <summary>Rollout file → the session key it was matched to, so a pairing sticks.</summary>
         private readonly Dictionary<String, String> _claims = new Dictionary<String, String>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>Rollout file → its last-reported cwd, so every envelope can carry the project.</summary>
+        private readonly Dictionary<String, String> _cwds = new Dictionary<String, String>(StringComparer.OrdinalIgnoreCase);
+
         public CodexRolloutBridge(String sessionsRoot = null, String ipcSessionsDir = null)
         {
             this._sessionsRoot = sessionsRoot ?? Path.Combine(
@@ -193,7 +196,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             this._offsets[path] = known + Encoding.UTF8.GetByteCount(complete) + 1;
 
             // Only the LAST recognised event of this batch matters: the keys show a state, not a
-            // history, and a batch containing start-then-complete means the turn is over.
+            // history, and a batch containing start-then-complete means the turn is over. The cwd
+            // rides along the same pass: turn_context/session_meta records carry it, and without
+            // it the envelope's payload is empty and the key can only ever say "Codex" instead of
+            // the project's folder name — seen on hardware 2026-08-21.
             String activity = null;
             foreach (var line in complete.Split('\n'))
             {
@@ -201,6 +207,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 if (mapped != null)
                 {
                     activity = mapped;
+                }
+
+                var cwd = CwdFrom(line);
+                if (cwd != null)
+                {
+                    this._cwds[path] = cwd;
                 }
             }
 
@@ -257,6 +269,42 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 _ => null,
             };
 
+        /// <summary>
+        /// The session's working directory, when this line reports one — turn_context and
+        /// session_meta both carry payload.cwd. Same defensive posture as ActivityFor: anything
+        /// unreadable is null, never a guess. The cheap Contains guard keeps the JSON parse off
+        /// the overwhelmingly common lines that carry no cwd at all.
+        /// </summary>
+        internal static String CwdFrom(String line)
+        {
+            if (String.IsNullOrWhiteSpace(line) || !line.Contains("\"cwd\"", StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+
+                if (root.ValueKind == JsonValueKind.Object
+                    && root.TryGetProperty("payload", out var payload)
+                    && payload.ValueKind == JsonValueKind.Object
+                    && payload.TryGetProperty("cwd", out var cwd)
+                    && cwd.ValueKind == JsonValueKind.String)
+                {
+                    var value = cwd.GetString();
+                    return String.IsNullOrWhiteSpace(value) ? null : value;
+                }
+
+                return null;
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+
         private static String TypeOf(JsonElement element) =>
             element.ValueKind == JsonValueKind.Object
             && element.TryGetProperty("type", out var t)
@@ -271,9 +319,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// </summary>
         private Boolean WriteState(String rolloutPath, String activityEvent)
         {
+            // The cwd is the one payload field this transport can honestly supply — it is what
+            // lets the key show the project's folder name instead of a generic label. Absent,
+            // the payload stays null: the reader treats both identically except for the name.
+            var payload = this._cwds.TryGetValue(rolloutPath, out var cwd)
+                ? "{\"cwd\":\"" + JsonEscape(cwd) + "\"}"
+                : "null";
+
             var envelope =
                 "{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"" + activityEvent + "\",\"ts\":" +
-                DateTimeOffset.UtcNow.ToUnixTimeSeconds() + ",\"payload\":null}\n";
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds() + ",\"payload\":" + payload + "}\n";
 
             try
             {
@@ -365,6 +420,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             var tmp = path + "." + Environment.ProcessId + ".tmp";
             File.WriteAllText(tmp, content);
             File.Move(tmp, path, overwrite: true);
+        }
+
+        // Minimal JSON string escaping for the one hand-built payload field — same discipline as
+        // the hook exe's JsonEscape, and for the same reason: Windows paths are full of
+        // backslashes and this string lands in a file the plugin parses as JSON.
+        private static String JsonEscape(String s)
+        {
+            var sb = new StringBuilder(s.Length + 8);
+            foreach (var ch in s)
+            {
+                switch (ch)
+                {
+                    case '"': sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    default:
+                        if (ch < 0x20) { sb.Append("\\u").Append(((Int32)ch).ToString("x4")); }
+                        else { sb.Append(ch); }
+                        break;
+                }
+            }
+            return sb.ToString();
         }
     }
 }
