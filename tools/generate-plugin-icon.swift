@@ -1,9 +1,18 @@
-// generate-plugin-icon.swift — renders the Claude Console plugin icon (256×256 PNG).
-// A warm-amber terminal prompt "❯_" with a sparkle, on a dark rounded square.
-// Usage: swift generate-plugin-icon.swift <output.png>
+// generate-plugin-icon.swift — renders a product's plugin icon (256×256 PNG).
+// A terminal prompt "❯_" on a dark rounded square, optionally with a sparkle.
+//
+// Usage: swift generate-plugin-icon.swift <output.png> [accentHex] [sparkleHex|none]
+//   Claude Console : accent f59e0b, sparkle fde68a
+//   Vizhi for Codex: accent 4fd1c5, sparkle none
+//
+// The sparkle is a deliberate per-product choice, not decoration: it echoes Anthropic's mark, so a
+// product driving a different vendor's agent must not carry it. The shared terminal frame is what
+// makes the family read as one; the accent is what tells the two apart on the app strip.
 import AppKit
 
 let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "Icon256x256.png"
+let accentHex = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "f59e0b"
+let sparkleArg = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "fde68a"
 let size: CGFloat = 256
 
 func hex(_ h: String, _ a: CGFloat = 1) -> NSColor {
@@ -33,7 +42,7 @@ NSGraphicsContext.restoreGraphicsState()
 // hairline edge so it reads on light backgrounds too
 hex("4a4a5e").setStroke(); bg.lineWidth = 2; bg.stroke()
 
-let amber = hex("f59e0b")
+let amber = hex(accentHex)
 
 // --- prompt chevron "❯" (thick stroked polyline, vertex pointing right) ---
 let chev = NSBezierPath()
@@ -62,8 +71,10 @@ func sparkle(_ c: NSPoint, outer R: CGFloat, inner r: CGFloat) -> NSBezierPath {
     }
     p.close(); return p
 }
-hex("fde68a").setFill()
-sparkle(NSPoint(x: 194, y: 190), outer: 26, inner: 7).fill()
+if sparkleArg.lowercased() != "none" {
+    hex(sparkleArg).setFill()
+    sparkle(NSPoint(x: 194, y: 190), outer: 26, inner: 7).fill()
+}
 
 NSGraphicsContext.restoreGraphicsState()
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: outPath))

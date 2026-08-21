@@ -32,6 +32,108 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 StartTime = start ?? T0,
             };
 
+        // ----------------------------------------------------------------------------------------
+        // The other agent. Discovery on Windows carried hardcoded claude names long after macOS
+        // went matcher-driven, so the Codex product's Windows build scanned for claude processes
+        // and found nothing — profile visible, every key refusing to type (found on hardware,
+        // 2026-08-20). These pin the seam: what a matcher names is what discovery finds.
+        // ----------------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_native_codex_exe_is_a_session_for_the_codex_matcher_only()
+        {
+            var codex = Proc(4100, "codex.exe",
+                @"""C:\Users\sahan\.codex\packages\standalone\releases\0.148.0-x86_64-pc-windows-msvc\bin\codex.exe""");
+
+            Assert.True(WindowsProcessWatcher.IsAgentSession(codex, AgentProcessMatcher.CodexCli));
+            Assert.False(WindowsProcessWatcher.IsAgentSession(codex, AgentProcessMatcher.ClaudeCode));
+        }
+
+        [Fact]
+        public void An_npm_installed_codex_under_node_is_recognised_by_its_script_path()
+        {
+            // The matcher's hints are written mac-style; the Windows path arrives backslashed.
+            var npm = Proc(4200, "node.exe",
+                @"""C:\Program Files\nodejs\node.exe"" ""C:\Users\sahan\AppData\Roaming\npm\node_modules\@openai\codex\bin\codex.js""");
+
+            Assert.True(WindowsProcessWatcher.IsAgentSession(npm, AgentProcessMatcher.CodexCli));
+            Assert.False(WindowsProcessWatcher.IsAgentSession(npm, AgentProcessMatcher.ClaudeCode));
+        }
+
+        [Fact]
+        public void A_claude_session_is_invisible_to_the_codex_matcher()
+        {
+            Assert.False(WindowsProcessWatcher.IsAgentSession(NativeCli(1234), AgentProcessMatcher.CodexCli));
+            Assert.False(WindowsProcessWatcher.IsAgentSession(NpmCli(2222), AgentProcessMatcher.CodexCli));
+        }
+
+        [Fact]
+        public void The_none_matcher_matches_nothing_ever()
+        {
+            // The engine default. A product that never declared its agent must not adopt sessions.
+            Assert.Empty(WindowsProcessWatcher.SessionsFrom(
+                new[] { NativeCli(1), NpmCli(2), Proc(3, "codex.exe", @"""C:\x\codex.exe""") },
+                AgentProcessMatcher.None));
+        }
+
+        [Fact]
+        public void Codex_exe_location_is_learned_from_a_live_session()
+        {
+            var exe = WindowsProcessWatcher.ExeFromCommandLine(
+                @"""C:\Users\sahan\.codex\packages\standalone\releases\0.148.0-x86_64-pc-windows-msvc\bin\codex.exe"" --model gpt-5",
+                AgentProcessMatcher.CodexCli);
+
+            Assert.Equal(@"C:\Users\sahan\.codex\packages\standalone\releases\0.148.0-x86_64-pc-windows-msvc\bin\codex.exe", exe);
+        }
+
+        /// <summary>
+        /// The enumerator's name pre-filter must come from the matcher too. It was a hardcoded
+        /// claude list until 2026-08-20 — the matcher-driven watcher was correct and never
+        /// received a codex row, because the OS was never asked for processes named codex. The
+        /// unit tests inject their own process tables, which is exactly why only this derivation
+        /// can be pinned here; the lesson is that a seam is only as honest as its narrowest layer.
+        /// </summary>
+        [Fact]
+        public void The_process_scan_asks_the_os_for_the_matchers_names()
+        {
+            Assert.Contains("codex", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.CodexCli));
+            Assert.DoesNotContain("claude", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.CodexCli));
+
+            Assert.Contains("claude", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.ClaudeCode));
+            Assert.DoesNotContain("codex", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.ClaudeCode));
+
+            // Interpreters are platform knowledge, present for every agent — an npm install of
+            // either CLI runs under node.
+            Assert.Contains("node", WindowsPlatformBridge.NamesWorthEnumerating(AgentProcessMatcher.None));
+        }
+
+        /// <summary>
+        /// Codex ALWAYS runs nested — a TUI process plus a child codex (its app server) — and on
+        /// hardware both took a key: "codex codex", with the phantom child's key focusing nothing.
+        /// Parents now ride the same batched query as command lines, so the one-key-per-session
+        /// rule fires; the child collapses into its parent.
+        /// </summary>
+        [Fact]
+        public void A_codex_tui_and_its_app_server_child_are_one_session()
+        {
+            var parents = new Dictionary<Int32, Int32> { [14484] = 800, [24628] = 14484 };
+            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.CodexCli)
+            {
+                ProcessEnumerator = () => new[]
+                {
+                    Proc(14484, "codex.exe"),
+                    Proc(24628, "codex.exe"),
+                },
+                CommandLineResolver = _ => @"C:\Users\sahan\AppData\Local\Programs\OpenAI\Codex\bin\codex.exe",
+                ParentPidResolver = pid => parents.TryGetValue(pid, out var p) ? p : 0,
+            };
+
+            var sessions = bridge.DiscoverSessions();
+
+            Assert.Single(sessions);
+            Assert.Contains(sessions, k => k.StartsWith("pid-14484-", StringComparison.Ordinal));
+        }
+
         // --- fixtures -------------------------------------------------------------------------
 
         private static WindowsProcessInfo NativeCli(Int32 pid, DateTime? start = null) =>
@@ -54,7 +156,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void The_native_cli_is_a_session()
         {
-            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { NativeCli(1234) });
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { NativeCli(1234) }, AgentProcessMatcher.ClaudeCode);
 
             Assert.Single(sessions);
         }
@@ -62,7 +164,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void An_npm_install_is_a_session()
         {
-            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { NpmCli(2222) });
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { NpmCli(2222) }, AgentProcessMatcher.ClaudeCode);
 
             Assert.Single(sessions);
         }
@@ -72,7 +174,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var vite = Proc(3333, "node.exe", @"""C:\Program Files\nodejs\node.exe"" ""C:\dev\app\node_modules\vite\bin\vite.js""");
 
-            Assert.Empty(WindowsProcessWatcher.SessionsFrom(new[] { vite }));
+            Assert.Empty(WindowsProcessWatcher.SessionsFrom(new[] { vite }, AgentProcessMatcher.ClaudeCode));
         }
 
         [Fact]
@@ -81,7 +183,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // The macOS watcher excludes the desktop app via "no controlling terminal"; Windows has
             // no such signal, so this is the explicit replacement for it. A false positive here
             // would put a phantom key on the grid that no keystroke can ever reach.
-            Assert.Empty(WindowsProcessWatcher.SessionsFrom(DesktopTree()));
+            Assert.Empty(WindowsProcessWatcher.SessionsFrom(DesktopTree(), AgentProcessMatcher.ClaudeCode));
         }
 
         [Fact]
@@ -89,7 +191,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var rows = DesktopTree().Concat(new[] { NativeCli(1234) });
 
-            var sessions = WindowsProcessWatcher.SessionsFrom(rows);
+            var sessions = WindowsProcessWatcher.SessionsFrom(rows, AgentProcessMatcher.ClaudeCode);
 
             Assert.Single(sessions);
             Assert.Contains("pid-1234-", sessions.Single());
@@ -99,7 +201,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void A_process_with_no_readable_command_line_still_counts_when_named_claude()
         {
             // Access-denied on the command line must not lose a real session.
-            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { Proc(1234, "claude.exe", cmd: null) });
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { Proc(1234, "claude.exe", cmd: null) }, AgentProcessMatcher.ClaudeCode);
 
             Assert.Single(sessions);
         }
@@ -109,7 +211,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             // The opposite bias: a bare node.exe we can't inspect is far more likely to be someone
             // else's dev server than a Claude session. A phantom key is worse than a missing one.
-            Assert.Empty(WindowsProcessWatcher.SessionsFrom(new[] { Proc(3333, "node.exe", cmd: null) }));
+            Assert.Empty(WindowsProcessWatcher.SessionsFrom(new[] { Proc(3333, "node.exe", cmd: null) }, AgentProcessMatcher.ClaudeCode));
         }
 
         // --- real hardware capture, 2026-08-07 --------------------------------------------------
@@ -153,7 +255,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void The_real_capture_yields_exactly_the_four_cli_sessions()
         {
-            var sessions = WindowsProcessWatcher.SessionsFrom(RealCapture());
+            var sessions = WindowsProcessWatcher.SessionsFrom(RealCapture(), AgentProcessMatcher.ClaudeCode);
 
             Assert.Equal(4, sessions.Count);
             foreach (var pid in new[] { 27904, 20748, 36636, 15988 })
@@ -172,15 +274,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 "claude.exe",
                 @"""C:\Program Files\WindowsApps\Claude_1.26832.0.0_x64__pzs8sxrjxfjjc\app\Claude.exe""");
 
-            Assert.False(WindowsProcessWatcher.IsClaudeSession(desktopMain));
+            Assert.False(WindowsProcessWatcher.IsAgentSession(desktopMain, AgentProcessMatcher.ClaudeCode));
         }
 
         [Fact]
         public void A_bare_claude_invocation_is_still_a_session()
         {
             // `claude --resume <id>` has no path at all — it must not be excluded by accident.
-            Assert.True(WindowsProcessWatcher.IsClaudeSession(
-                Proc(15988, "claude.exe", "claude  --resume 4160c9c8-1896-430d-a56c-b313e3a56e33")));
+            Assert.True(WindowsProcessWatcher.IsAgentSession(
+                Proc(15988, "claude.exe", "claude  --resume 4160c9c8-1896-430d-a56c-b313e3a56e33"), AgentProcessMatcher.ClaudeCode));
         }
 
         [Fact]
@@ -197,7 +299,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var real = RealCapture().ToList();
             var cmdlines = real.ToDictionary(r => r.Pid, r => r.CommandLine);
 
-            var bridge = new WindowsPlatformBridge
+            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
             {
                 ProcessEnumerator = () => real.Select(r => Proc(r.Pid, r.Name, cmd: null, start: r.StartTime)),
                 CommandLineResolver = pid => cmdlines.TryGetValue(pid, out var c) ? c : null,
@@ -223,7 +325,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // claude.exe must NOT be skipped: its command line is the only thing separating the
             // CLI from Claude Desktop.
             var asked = new List<Int32>();
-            var bridge = new WindowsPlatformBridge
+            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
             {
                 ProcessEnumerator = () => new[] { Proc(1234, "claude.exe"), Proc(3333, "node.exe") },
                 CommandLineResolver = pid => { asked.Add(pid); return null; },
@@ -243,7 +345,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var parent = NativeCli(100);
             var child = Proc(101, "claude.exe", @"""C:\Users\me\.local\bin\claude.exe""", ppid: 100);
 
-            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { parent, child });
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { parent, child }, AgentProcessMatcher.ClaudeCode);
 
             Assert.Single(sessions);
             Assert.Contains("pid-100-", sessions.Single());
@@ -252,7 +354,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Two_real_sessions_get_two_keys()
         {
-            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { NativeCli(100), NpmCli(200) });
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { NativeCli(100), NpmCli(200) }, AgentProcessMatcher.ClaudeCode);
 
             Assert.Equal(2, sessions.Count);
         }
@@ -300,7 +402,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void Discovery_reports_null_when_the_scan_throws()
         {
             // "I don't know" — not "no sessions", which would reap every live session.
-            var bridge = new WindowsPlatformBridge
+            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
             {
                 ProcessEnumerator = () => throw new InvalidOperationException("scan blew up"),
             };
@@ -312,7 +414,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void A_resolved_command_line_is_cached_across_scans()
         {
             var calls = 0;
-            var bridge = new WindowsPlatformBridge
+            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
             {
                 ProcessEnumerator = () => new[] { Proc(3333, "node.exe") },
                 CommandLineResolver = pid =>
@@ -336,7 +438,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // A long-running plugin sees many short-lived node processes. Entries for processes
             // that are gone must not accumulate for the life of the session.
             var pid = 4000;
-            var bridge = new WindowsPlatformBridge
+            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
             {
                 ProcessEnumerator = () => new[] { Proc(pid, "node.exe") },
                 CommandLineResolver = _ => null,
@@ -361,7 +463,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // C:\dev\proj" error tab on the developer's screen (seen on hardware 2026-08-07).
             // Tests must never reach the live terminal.
             var runs = new List<List<String>>();
-            var bridge = new WindowsPlatformBridge
+            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
             {
                 TerminalRunner = (exe, args) => { runs.Add(args); return true; },
             };
@@ -384,7 +486,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("", null)]
         [InlineData(null, null)]
         public void The_exe_is_learned_only_from_a_rooted_claude_command_line(String cmd, String expected) =>
-            Assert.Equal(expected, WindowsProcessWatcher.ExeFromCommandLine(cmd));
+            Assert.Equal(expected, WindowsProcessWatcher.ExeFromCommandLine(cmd, AgentProcessMatcher.ClaudeCode));
 
         [Fact]
         public void Discovery_learns_the_install_location_from_a_live_session_on_any_drive()
@@ -395,7 +497,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             try
             {
                 WindowsTerminalCli.ObservedClaudeExe = null;
-                var bridge = new WindowsPlatformBridge
+                var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
                 {
                     ProcessEnumerator = () => new[]
                     {
@@ -423,7 +525,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             try
             {
                 WindowsTerminalCli.ObservedClaudeExe = null;
-                var bridge = new WindowsPlatformBridge
+                var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
                 {
                     ProcessEnumerator = () => new[]
                     {
@@ -461,11 +563,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 return;
             }
 
-            var resolved = WindowsPlatformBridge.ResolveCommandLines(new[] { Environment.ProcessId });
+            var resolved = WindowsPlatformBridge.ResolveDetails(new[] { Environment.ProcessId });
 
-            Assert.True(resolved.TryGetValue(Environment.ProcessId, out var cmd),
+            Assert.True(resolved.TryGetValue(Environment.ProcessId, out var details),
                 "the batched PowerShell query returned nothing parseable for the current process");
-            Assert.False(String.IsNullOrWhiteSpace(cmd));
+            Assert.False(String.IsNullOrWhiteSpace(details.Cmd));
+            Assert.True(details.Ppid > 0, "the batched query must carry the parent pid too");
         }
 
         [Fact]
@@ -494,7 +597,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             using var decoy = System.Diagnostics.Process.Start(psi);
             try
             {
-                var bridge = new WindowsPlatformBridge
+                var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
                 {
                     ProcessEnumerator = () => new[]
                     {

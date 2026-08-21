@@ -1,5 +1,9 @@
 # Handoff — Windows port, as of 2026-08-08
 
+> **Note:** this document covers the 2.0.0 Windows port. The multi-agent work (one repo,
+> a package per agent) is on `feat/multi-agent` — see
+> [HANDOFF-multi-agent.md](HANDOFF-multi-agent.md).
+
 **2.0.0 SHIPPED 2026-08-08**: clean-install gate passed on a fresh account (item 2),
 `feat/windows-port-phase0` merged to `main`, tagged `v2.0.0`, released on GitHub.
 Suite: **396 C# + 20 bash, green** — `bash tests/run-all.sh`.

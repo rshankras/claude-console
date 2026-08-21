@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      A console app like the other helpers: a human can run `claude-console-shot out.png` by
+      hand to debug a capture that never lands.
+    -->
+    <OutputType>Exe</OutputType>
+    <!--
+      net8.0-windows + UseWindowsForms, because Windows' interactive capture (the ms-screenclip:
+      overlay) delivers its result to the CLIPBOARD, not a file — and reading an image off the
+      clipboard takes an STA thread plus WinForms' Clipboard/Image, which must never run inside
+      the Logi service process. Same degradation contract as the focus helper: a machine without
+      the Desktop runtime loses only this key. (Any machine running Logi Options+ has it.)
+    -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RollForward>LatestMajor</RollForward>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>claude-console-shot</AssemblyName>
+    <RootNamespace>ClaudeConsoleShot</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Ships inside the plugin package, beside the plugin DLL. -->
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+  </PropertyGroup>
+
+</Project>

@@ -1,7 +1,10 @@
 <Project>
     <PropertyGroup>
         <LangVersion>latest</LangVersion>
-        <BaseIntermediateOutputPath>$(SolutionDir)obj\</BaseIntermediateOutputPath>
-        <BaseOutputPath>$(SolutionDir)..\bin\</BaseOutputPath>
+        <!-- Per-project intermediates. One shared obj/ was fine when src held a single project;
+             with a product per agent, two builds generate conflicting AssemblyInfo into the same
+             directory and the solution build fails with duplicate-attribute errors. Each product
+             sets its own BaseOutputPath, so only the intermediate path needs a default here. -->
+        <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\obj\</BaseIntermediateOutputPath>
     </PropertyGroup>
 </Project>

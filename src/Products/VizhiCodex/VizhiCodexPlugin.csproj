@@ -1,0 +1,115 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RootNamespace>Loupedeck.ClaudeConsolePlugin</RootNamespace>
+    <AssemblyName>VizhiCodexPlugin</AssemblyName>
+
+    <!-- Track releases in the assembly version too. The Logi Plugin Service keys its
+         crash-disable marker (Logs/plugin_crashes/) by assembly version; if this stays
+         1.0.0.0 forever, any one load-crash disables the plugin permanently. Bumping it
+         per release lets a new build dodge a stale marker. -->
+    <Version>1.5.3</Version>
+
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+    <PluginApiDir Condition="$(OS) == 'Windows_NT'">C:\Program Files\Logi\LogiPluginService\</PluginApiDir>
+    <PluginApiDir Condition="$(OS) != 'Windows_NT'">/Applications/Utilities/LogiPluginService.app/Contents/MonoBundle/</PluginApiDir>
+
+    <PluginDir Condition="$(OS) == 'Windows_NT'">$(LocalAppData)\Logi\LogiPluginService\Plugins\</PluginDir>
+    <PluginDir Condition="$(OS) != 'Windows_NT'">~/Library/Application\ Support/Logi/LogiPluginService/Plugins/</PluginDir>
+
+    <BaseOutputPath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\bin\VizhiCodex\'))</BaseOutputPath>
+    <OutputPath>$(BaseOutputPath)$(Configuration)\bin\</OutputPath>
+
+    <PluginShortName>VizhiCodex</PluginShortName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The engine and this product's agent. The other agent's sources are not compiled in at all,
+         so the package cannot carry code for an agent it doesn't ship — enforced by the compiler
+         rather than by remembering. -->
+    <Compile Include="..\..\Core\**\*.cs" />
+    <Compile Include="..\..\Agents\CodexCli\**\*.cs" />
+
+    <!-- Voice IS shipped here. It is agent-neutral: the helper records, whisper transcribes, and
+         the text is injected into whichever session has focus — nothing in the path asks which
+         agent is running. The runtime home (~/.claude/claude-console) and the helper's bundle id
+         are shared with Claude Console on purpose, so a user who has both gets one notarized
+         helper, one Microphone grant, and one copy of the speech model. pack-release.sh embeds the
+         payload for this product too; without it the actions would exist and fail on press. -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="PluginApi">
+      <HintPath>$(PluginApiDir)PluginApi.dll</HintPath>
+      <!-- Host-provided at runtime; never ship it in the package (Marketplace QA requirement) -->
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The unit tests exercise internal helpers (injection-argument building, IPC pruning,
+         TTY normalisation, project fuzzy-matching) that have no business being public API. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>ClaudeConsolePlugin.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\Core\Resources\**\*.png">
+      <Link>Resources\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The Codex launcher, embedded so scripts/ stays the single source of truth. Its CONTENT is
+         part of Codex's hook-trust hash: changing this file asks every user to re-approve, so keep
+         it a stable launcher and put churn in the C# (see CodexStateBridge). -->
+    <EmbeddedResource Include="..\..\..\scripts\codex-hook.sh">
+      <LogicalName>CodexConsole.codex-hook.sh</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <Target Name="CopyPackage" AfterTargets="PostBuildEvent">
+    <Message Text="📦 Copying package files..." Importance="High" />
+    <ItemGroup>
+      <PackageFiles Include="package\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PackageFiles)" DestinationFolder="$(OutputPath)..\%(RecursiveDir)" />
+    <Message Text="✅ Package files copied to $(OutputPath)..\" Importance="High" />
+  </Target>
+
+  <!-- Writes the dev .link into the LIVE Logi plugin dir and hot-reloads the running service —
+       that's the dev loop, but it must NOT happen as a side effect of `dotnet test`. The test
+       project references this one with SkipPluginLink=true (see tests/*.csproj) so a test run
+       never touches the installed plugin. -->
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(SkipPluginLink)' != 'true'">
+    <Exec Condition="$(OS) == 'Windows_NT'" Command="echo $(BaseOutputPath)$(Configuration)\ &gt; &quot;$(PluginDir)$(ProjectName).link&quot;" />
+    <Exec Condition="$(OS) != 'Windows_NT'" Command="echo $(BaseOutputPath)$(Configuration)\ &gt; $(PluginDir)$(ProjectName).link" />
+    <Message Text="🔨 Created plugin link at: $(PluginDir)$(ProjectName).link" Importance="High" />
+
+    <Message Text="🔄 Sending plugin reload command for $(PluginShortName) to Logi Plugin Service" Importance="High" />
+    <Exec Condition="$(OS) == 'Windows_NT'" Command="start loupedeck:plugin/$(PluginShortName)/reload" ContinueOnError="true" />
+    <Exec Condition="$(OS) != 'Windows_NT'" Command="open loupedeck:plugin/$(PluginShortName)/reload" ContinueOnError="true" />
+    <Message Condition="'$(MSBuildLastTaskResult)' == 'false'" Text="❌ Couldn't reload the plugin, please restart the Logi Plugin Service manually" Importance="High" />
+  </Target>
+
+  <Target Name="PluginClean" AfterTargets="CoreClean">
+    <Message Text="🧹 Cleaning up plugin link file and output directories..." Importance="High" />
+
+    <Delete Condition="$(OS) == 'Windows_NT'" Files="$(PluginDir)$(ProjectName).link" />
+    <Exec Condition="$(OS) != 'Windows_NT'" Command="rm -f $(PluginDir)$(ProjectName).link" />
+
+    <RemoveDir Directories="$(OutputPath)..\" />
+
+    <Message Text="🧼 Plugin link file and output directories have been cleaned!" Importance="High" />
+  </Target>
+
+</Project>

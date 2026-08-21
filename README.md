@@ -87,11 +87,28 @@ Notes:
 - The profile is bound to Apple's **Terminal.app**, and so are the keys themselves: since 1.4.0 every typing key (prompts, answers, voice) focuses Claude's Terminal.app tab before it types — it will not type into iTerm2/Ghostty/Warp or any other app.
 - It's only a starting point — rebind or rearrange any key afterward.
 
+## Repository layout
+
+This repo builds **one package per agent** from a shared engine — Claude Console for Claude Code,
+and **[Vizhi for Codex](src/Products/VizhiCodex/README.md)** for OpenAI's Codex CLI on the same core.
+
+> **⚠️ Install one console per machine.** Both products bind to Terminal.app, and the Logi Plugin
+> Service activates only one plugin per application — installing both leaves one silently dead
+> (its keys stop responding with no error). If you run both agents, pick one console for now; a
+> unified dual-agent console is on the roadmap. `src/Core` is the engine (keypad, session grid, terminal
+targeting, voice, install/repair), `src/Agents/<agent>` is a small adapter per agent, and
+`src/Products/<name>` is a thin product that pairs them with its own branding, profile and
+version. Products version and release independently.
+
+The design, and why it is a shared engine rather than a fork, is in
+[docs/multi-agent-architecture.md](docs/multi-agent-architecture.md); contributor notes are in
+[CLAUDE.md](CLAUDE.md).
+
 ## Install (build from source)
 
 ```bash
 # 1. Build the plugin — links + hot-reloads into the Logi Plugin Service
-cd src
+cd src/Products/ClaudeConsole
 dotnet build -c Debug
 
 # 2. Build the voice helper AND bundle a self-contained whisper-cli
@@ -187,7 +204,7 @@ When Claude asks something, answer from the keypad instead of the keyboard:
 | 🟡 **Amber** | Waiting on you, and it's **routine** — reading a file, running a test, an edit. | Press **Yes** without looking. |
 | 🔴 **Red** | Waiting on something **destructive or outward-facing**. | Look at the screen first. |
 
-Red is triggered by the pending command matching one of the patterns in [`src/RiskClassifier.cs`](src/RiskClassifier.cs) — `sudo`, `rm -rf`, `git push`, `git reset --hard`, `git clean -fd`, `--force`, `dd of=`, `mkfs`, `chmod 777`, `drop table`, `delete from`, piping a download into a shell, `kubectl delete`, `terraform apply`/`destroy`, `npm publish`, `gh release create`, `killall`, `shutdown`…
+Red is triggered by the pending command matching one of the patterns in [`src/Core/RiskClassifier.cs`](src/Core/RiskClassifier.cs) — `sudo`, `rm -rf`, `git push`, `git reset --hard`, `git clean -fd`, `--force`, `dd of=`, `mkfs`, `chmod 777`, `drop table`, `delete from`, piping a download into a shell, `kubectl delete`, `terraform apply`/`destroy`, `npm publish`, `gh release create`, `killall`, `shutdown`…
 
 The same pending request lights up **three keys at once**:
 

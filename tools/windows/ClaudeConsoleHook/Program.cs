@@ -3,6 +3,9 @@
 //
 //   claude-console-hook statusline          <- reads Claude's JSON on stdin, writes it verbatim
 //   claude-console-hook activity <state>    <- busy | waiting | done | permission
+//   claude-console-hook codex <event>       <- the Windows body of scripts/codex-hook.sh: wraps
+//                                              the event JSON in the state envelope and writes it
+//                                              to the CODEX product's IPC root (%TEMP%\codex-console)
 //
 // TWO THINGS MUST MATCH THE PLUGIN EXACTLY, or the live keys silently show defaults:
 //
@@ -26,6 +29,13 @@ internal static class Program
 {
     private static Int32 Main(String[] args)
     {
+        // FIRST, before anything that could hang, throw, or depend on the spawn environment:
+        // prove we were launched at all. Windows hardware reported hooks "exited with code 1"
+        // while the exe's every internal path was already guarded — the remaining question is
+        // whether codex ever spawns the process. This line is the answer: if hook-invoked.log
+        // is silent while codex reports failures, the exe was never the patient.
+        EntryBreadcrumb(args);
+
         // A hook must never break the user's session. Any failure is silent and non-zero at worst;
         // Claude Code keeps going either way.
         try
@@ -34,6 +44,7 @@ internal static class Program
             {
                 > 0 when args[0] == "statusline" => Statusline(),
                 > 1 when args[0] == "activity" => Activity(args[1]),
+                > 1 when args[0] == "codex" => Codex(args[1]),
                 > 0 when args[0] == "selftest" => SelfTest(),
                 _ => Usage(),
             };
@@ -44,9 +55,44 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// One line per invocation, written beside the exe itself — the only location that needs no
+    /// environment variables and no directory creation. Records what the spawn actually looked
+    /// like (args, TEMP, cwd, whether stdin is a pipe), because a hook launched with a scrubbed
+    /// environment writes its state somewhere nobody looks and this is how we'd know. Capped so
+    /// it can never grow into a problem; every failure is swallowed.
+    /// </summary>
+    private static void EntryBreadcrumb(String[] args)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(Environment.ProcessPath);
+            if (dir == null)
+            {
+                return;
+            }
+
+            var path = Path.Combine(dir, "hook-invoked.log");
+            if (File.Exists(path) && new FileInfo(path).Length > 256 * 1024)
+            {
+                return;
+            }
+
+            Boolean redirected;
+            try { redirected = Console.IsInputRedirected; } catch { redirected = false; }
+
+            File.AppendAllText(path,
+                $"{DateTime.UtcNow:o} args=[{String.Join(" ", args)}] temp={Environment.GetEnvironmentVariable("TEMP") ?? "(unset)"} cwd={Environment.CurrentDirectory} stdinRedirected={redirected}{Environment.NewLine}");
+        }
+        catch
+        {
+            // Diagnostics must never become the failure they exist to explain.
+        }
+    }
+
     private static Int32 Usage()
     {
-        Console.Error.WriteLine("usage: claude-console-hook statusline | activity <busy|waiting|done|permission> | selftest");
+        Console.Error.WriteLine("usage: claude-console-hook statusline | activity <state> | codex <event> | selftest");
         return 2;
     }
 
@@ -56,6 +102,11 @@ internal static class Program
     private static String SessionsDir => Path.Combine(Root, "sessions");
     private static String ActivityDir => Path.Combine(Root, "activity");
     private const String SharedName = "shared";
+
+    // The CODEX product's tree. Separate on purpose: two consoles must never share an IPC root,
+    // or each would reap the other's sessions as dead (IpcPaths.ProductSlug, "codex-console").
+    private static String CodexRoot => Path.Combine(Path.GetTempPath(), "codex-console");
+    private static String CodexSessionsDir => Path.Combine(CodexRoot, "sessions");
 
     // ---- commands ----------------------------------------------------------
 
@@ -135,6 +186,114 @@ internal static class Program
         return 0;
     }
 
+    /// <summary>
+    /// The Windows body of scripts/codex-hook.sh, envelope-for-envelope: wrap the event JSON as
+    /// {"schema":1,"agent":"codex-cli","event":…,"ts":…,"payload":…} and atomically replace this
+    /// session's state file. The session key is the CODEX process up the parent chain — Windows'
+    /// answer to the script reading its own controlling terminal. Like the script, it never
+    /// blocks Codex: every path prints {} and exits 0, because a hook that fails loudly would
+    /// break the user's session to report a keypad problem.
+    /// </summary>
+    private static Int32 Codex(String eventName)
+    {
+        try
+        {
+            // BOUNDED stdin read, never ReadToEnd bare: on Windows the hook's stdin can fail to
+            // deliver EOF even after codex has written the whole payload (inherited pipe write
+            // handles), so an unbounded read hangs until codex kills the hook at its timeout —
+            // kill code 1, nothing written, no exception to breadcrumb. Exactly the hardware
+            // signature that survived three fixes aimed downstream of it. On timeout the payload
+            // is forfeited but the EVENT still records — the keys light with less detail.
+            var payload = ReadStdinBounded(1500);
+            var body = payload.TrimStart().StartsWith('{') ? payload : "null";
+            var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var envelope =
+                $"{{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"{JsonEscape(eventName)}\",\"ts\":{ts},\"payload\":{body}}}\n";
+
+            // The shared file goes FIRST, before any process walking: codex enforces the hook
+            // timeout by TERMINATING the process (exit code 1 — seen as "hook exited with code 1"
+            // on hardware, with no breadcrumb and no state file, because the old order died mid
+            // climb). Whatever happens after this line, evidence exists and the plugin's shared
+            // fallback lights up.
+            Directory.CreateDirectory(CodexSessionsDir);
+            WriteAtomic(Path.Combine(CodexSessionsDir, SharedName + ".json"), envelope);
+
+            // TOPMOST codex, not nearest: codex runs as a TUI process plus a child codex (its
+            // app server), hooks can be spawned by either, and the grid keys sessions on the
+            // TUI — the outermost one. The climb is cheap now (kernel parent lookups, no
+            // PowerShell spawns), which is what keeps this verb inside codex's timeout.
+            var key = SessionKeyTopmost(IsCodex);
+            if (key != null)
+            {
+                WriteAtomic(Path.Combine(CodexSessionsDir, key + ".json"), envelope);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Swallowed on purpose — same contract as the script — but never silently: the
+            // breadcrumb is how "hook exited with code 1" stops being a guessing game.
+            Breadcrumb(ex, eventName);
+        }
+
+        // Even the goodbye is guarded: codex reports a nonzero hook exit to the USER, so this
+        // verb must be structurally unable to produce one. A closed stdout pipe on the final
+        // write was the leading suspect for exactly that report from Windows hardware.
+        try { Console.Write("{}"); } catch (Exception ex) { Breadcrumb(ex, eventName); }
+        return 0;
+    }
+
+    /// <summary>
+    /// Read all of stdin, but never wait longer than <paramref name="ms"/> for EOF. The reader
+    /// task is a background thread, so an abandoned read cannot keep the process alive.
+    /// </summary>
+    private static String ReadStdinBounded(Int32 ms)
+    {
+        try
+        {
+            if (!Console.IsInputRedirected)
+            {
+                return "";
+            }
+
+            var read = System.Threading.Tasks.Task.Run(() => Console.In.ReadToEnd());
+            return read.Wait(ms) ? read.Result : "";
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    /// <summary>
+    /// Last-resort diagnostics for the codex verb: append the exception where a human will look
+    /// (the codex IPC root), falling back to the exe's own directory if even that is unreachable.
+    /// Failures here are swallowed — the breadcrumb must never become a new way to exit nonzero.
+    /// </summary>
+    private static void Breadcrumb(Exception ex, String eventName)
+    {
+        var line = $"{DateTime.UtcNow:o} {eventName}: {ex}{Environment.NewLine}";
+        try
+        {
+            Directory.CreateDirectory(CodexRoot);
+            File.AppendAllText(Path.Combine(CodexRoot, "hook-error.log"), line);
+            return;
+        }
+        catch
+        {
+            // fall through to the exe-side location
+        }
+
+        try
+        {
+            var beside = Path.Combine(AppContext.BaseDirectory, "hook-error.log");
+            File.AppendAllText(beside, line);
+        }
+        catch
+        {
+            // out of places to write — stay silent, stay exit 0
+        }
+    }
+
     private static Int32 SelfTest()
     {
         Console.WriteLine("claude-console-hook selftest");
@@ -157,7 +316,51 @@ internal static class Program
     /// the bash scripts walk up until a real tty appears.
     /// </summary>
     [SupportedOSPlatform("windows")]
-    private static String? SessionKey()
+    private static String? SessionKey() => SessionKey(IsClaude);
+
+    /// <summary>
+    /// Like SessionKey, but keeps climbing and returns the OUTERMOST matching ancestor. The grid
+    /// drops a session candidate whose parent is also a candidate, so it keys the topmost process
+    /// of a nested pair — this must mint the same key or state never attaches to the session.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static String? SessionKeyTopmost(Func<Process, Boolean> isAgent)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        try
+        {
+            String? best = null;
+            var pid = Environment.ProcessId;
+            for (var hop = 0; hop < 8; hop++)
+            {
+                using var proc = Process.GetProcessById(pid);
+                if (isAgent(proc))
+                {
+                    best = $"pid-{proc.Id}-{proc.StartTime.ToUniversalTime().Ticks}";
+                }
+
+                var parent = ParentOf(pid);
+                if (parent <= 0 || parent == pid)
+                {
+                    break;
+                }
+                pid = parent;
+            }
+
+            return best;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static String? SessionKey(Func<Process, Boolean> isAgent)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -170,7 +373,7 @@ internal static class Program
             for (var hop = 0; hop < 8; hop++)
             {
                 using var proc = Process.GetProcessById(pid);
-                if (IsClaude(proc))
+                if (isAgent(proc))
                 {
                     return $"pid-{proc.Id}-{proc.StartTime.ToUniversalTime().Ticks}";
                 }
@@ -225,9 +428,91 @@ internal static class Program
                 cmd.Contains("/claude", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// The codex twin of IsClaude — mirrors AgentProcessMatcher.CodexCli the way IsClaude mirrors
+    /// ClaudeCode: native binary by name, npm install by interpreter + script path.
+    /// </summary>
     [SupportedOSPlatform("windows")]
-    private static Int32 ParentOf(Int32 pid) =>
-        Int32.TryParse(Wmic($"ParentProcessId from Win32_Process where ProcessId={pid}"), out var ppid) ? ppid : 0;
+    private static Boolean IsCodex(Process proc)
+    {
+        String name;
+        try
+        {
+            name = proc.ProcessName;
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (name.Equals("codex", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (name is not ("node" or "bun" or "deno" or "npx"))
+        {
+            return false;
+        }
+
+        var cmd = CommandLineOf(proc.Id);
+        return cmd != null &&
+               (cmd.Contains(@"\@openai\codex", StringComparison.OrdinalIgnoreCase) ||
+                cmd.Contains("/@openai/codex", StringComparison.OrdinalIgnoreCase) ||
+                cmd.Contains(@"\codex", StringComparison.OrdinalIgnoreCase) ||
+                cmd.Contains("/codex", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static Int32 ParentOf(Int32 pid)
+    {
+        // Kernel first: NtQueryInformationProcess answers in microseconds. The PowerShell path
+        // survives only as a fallback — a PS cold start costs seconds, and codex TERMINATES a
+        // hook that outlives its timeout (exit code 1), so a climb that spawned PowerShell per
+        // hop was killed mid-walk on real hardware before it ever wrote state.
+        var viaKernel = ParentViaNtQuery(pid);
+        if (viaKernel > 0)
+        {
+            return viaKernel;
+        }
+
+        return Int32.TryParse(Wmic($"ParentProcessId from Win32_Process where ProcessId={pid}"), out var ppid) ? ppid : 0;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct ProcessBasicInformation
+    {
+        public IntPtr Reserved1;
+        public IntPtr PebBaseAddress;
+        public IntPtr Reserved2_0;
+        public IntPtr Reserved2_1;
+        public IntPtr UniqueProcessId;
+        public IntPtr InheritedFromUniqueProcessId;
+    }
+
+    [System.Runtime.InteropServices.DllImport("ntdll.dll")]
+    private static extern Int32 NtQueryInformationProcess(
+        IntPtr processHandle, Int32 processInformationClass,
+        ref ProcessBasicInformation processInformation, Int32 processInformationLength, out Int32 returnLength);
+
+    [SupportedOSPlatform("windows")]
+    private static Int32 ParentViaNtQuery(Int32 pid)
+    {
+        try
+        {
+            using var proc = Process.GetProcessById(pid);
+            var info = new ProcessBasicInformation();
+            var status = NtQueryInformationProcess(
+                proc.Handle, 0, ref info, System.Runtime.InteropServices.Marshal.SizeOf<ProcessBasicInformation>(), out _);
+
+            return status == 0 ? (Int32)info.InheritedFromUniqueProcessId : 0;
+        }
+        catch
+        {
+            // Access denied or the process exited mid-walk — let the caller fall back.
+            return 0;
+        }
+    }
 
     [SupportedOSPlatform("windows")]
     private static String? CommandLineOf(Int32 pid) => Wmic($"CommandLine from Win32_Process where ProcessId={pid}");

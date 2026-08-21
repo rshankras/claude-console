@@ -108,6 +108,33 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 WindowsTerminalCli.ArgsFor(TerminalAction.PreviousTab));
         }
 
+        /// <summary>
+        /// Same seam as the Mac test: the New key launches the product's OWN agent. AgentCli is
+        /// process-global (one product per process, like IpcPaths.ProductSlug), and the
+        /// claude-specific native-install probe must not fire for another agent's cli.
+        /// </summary>
+        [Fact]
+        public void Starting_a_session_launches_the_agent_the_bridge_was_built_for()
+        {
+            var previousCli = WindowsTerminalCli.AgentCli;
+            var previousFiles = WindowsTerminalCli.FileExists;
+            try
+            {
+                WindowsTerminalCli.AgentCli = "codex";
+                WindowsTerminalCli.FileExists = _ => false;   // no observed exe → bare name
+
+                var args = WindowsTerminalCli.ArgsFor(TerminalAction.NewClaudeTab);
+
+                Assert.Contains("codex", args);
+                Assert.DoesNotContain("claude", args);
+            }
+            finally
+            {
+                WindowsTerminalCli.AgentCli = previousCli;
+                WindowsTerminalCli.FileExists = previousFiles;
+            }
+        }
+
         [Fact]
         public void Starting_a_session_asks_for_claude_by_name()
         {
@@ -288,7 +315,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             try
             {
-                bridge.Grid = new SessionRegistry(sessions, activity, System.IO.Path.Combine(root, "registry.json"));
+                bridge.Grid = new SessionRegistry(sessions, activity, System.IO.Path.Combine(root, "registry.json")) { Agent = new Agents.ClaudeCodeAdapter() };
                 bridge.Grid.Refresh(new HashSet<String> { "pid-1234-638900000000000000" });
 
                 bridge.SendPrompt("hello");

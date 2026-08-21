@@ -120,7 +120,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         private Models.GridSession Session(String tty = "ttys001")
         {
-            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json"));
+            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json")) { Agent = new Agents.ClaudeCodeAdapter() };
             grid.Refresh(new HashSet<String> { tty });
             return grid.SlotSession(1);
         }
@@ -190,7 +190,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             WriteActivity("ttys001", "waiting");
             WritePending(@"{""tool_name"":""Bash"",""tool_input"":{""command"":""npm test""}}");
 
-            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json"));
+            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json")) { Agent = new Agents.ClaudeCodeAdapter() };
             grid.Refresh(new HashSet<String> { "ttys001" });
 
             var repaints = 0;
@@ -208,7 +208,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             WriteActivity("ttys001", "waiting");
             var pending = WritePending(@"{""tool_name"":""Bash"",""tool_input"":{""command"":""npm test""}}");
 
-            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json"));
+            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json")) { Agent = new Agents.ClaudeCodeAdapter() };
             grid.Refresh(new HashSet<String>());   // the tab is gone
 
             Assert.False(File.Exists(pending));

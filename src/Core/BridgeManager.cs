@@ -1,0 +1,1438 @@
+namespace Loupedeck.ClaudeConsolePlugin
+{
+    using System;
+    using System.Collections.Generic;
+    using System.Diagnostics;
+    using System.IO;
+    using System.Linq;
+    using System.Net.Http;
+    using System.Security.Cryptography;
+    using System.Text;
+    using System.Text.Json;
+    using System.Text.Json.Nodes;
+    using System.Threading;
+    using System.Threading.Tasks;
+
+    using Loupedeck.ClaudeConsolePlugin.Models;
+    using Loupedeck.ClaudeConsolePlugin.Agents;
+    using Loupedeck.ClaudeConsolePlugin.Platform;
+
+    /// <summary>
+    /// Bridge Manager — Connects the Logitech Actions SDK plugin to Claude Code
+    /// via file-based IPC under a private root in the system temp directory
+    /// (owner-only 0700 dirs / 0600 files — see PrivateFiles).
+    ///
+    /// Reads:  sessions/ + activity/ (statusline + hook data, per Terminal tab)
+    /// Types:  keystrokes into the TTY-verified Claude tab in Terminal.app
+    /// </summary>
+    public class BridgeManager
+    {
+        // The private IPC layout lives in IpcPaths (shared with SessionRegistry). Local aliases keep
+        // the rest of this file readable. They are PROPERTIES, not static readonly fields: the root
+        // is per-product and a product declares itself at load, so capturing a path at type-init
+        // would freeze the default and quietly point a second console at the first one's tree.
+        private static String TempDir => IpcPaths.TempDir;
+        private static String SessionsDir => IpcPaths.SessionsDir;
+        private static String ActivityDir => IpcPaths.ActivityDir;
+        private static String VoiceDir => IpcPaths.VoiceDir;
+        private static String StateFile => IpcPaths.SharedStateFile;
+        private static String ActivityFile => IpcPaths.SharedActivityFile;
+
+        // Voice capture IPC. Every path is passed to ClaudeVoiceHelper explicitly, so moving them
+        // needs no helper rebuild (re-signing the helper would silently reset its Microphone grant).
+        private static String VoiceStopFile => IpcPaths.VoiceStopFile;
+        private static String VoiceTranscriptFile => IpcPaths.VoiceTranscriptFile;
+        private static String VoiceWavFile => IpcPaths.VoiceWavFile;
+
+        // Runtime home shared with the voice helper: ~/.claude/claude-console/
+        private static readonly String ClaudeConsoleHome = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "claude-console");
+        private static readonly String VoiceHelperApp = Path.Combine(ClaudeConsoleHome, "ClaudeVoiceHelper.app");
+        // Self-contained whisper-cli produced by tools/voice/bundle-whisper.sh (no Homebrew needed).
+        private static readonly String WhisperBinDir = Path.Combine(ClaudeConsoleHome, "whisper-bin");
+        private static readonly String BundledWhisperCli = Path.Combine(WhisperBinDir, "whisper-cli");
+
+        // Live-status bridge — scripts + settings.json the plugin auto-wires (see EnsureBridgeAutoWired).
+        private static readonly String ClaudeDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
+        private static readonly String SettingsFile = Path.Combine(ClaudeDir, "settings.json");
+        private static readonly String SettingsBackup = Path.Combine(ClaudeDir, "settings.json.claude-console.bak");
+        private static readonly String ScriptsDir = Path.Combine(ClaudeConsoleHome, "scripts");
+        private static readonly String StatuslineScript = Path.Combine(ScriptsDir, "statusline-handler.sh");
+        private static readonly String ActivityScript = Path.Combine(ScriptsDir, "activity-hook.sh");
+        private static readonly String StatuslineChainFile = Path.Combine(ClaudeConsoleHome, "statusline-chain");
+        private static readonly String BridgeOptOutFile = Path.Combine(ClaudeConsoleHome, "no-autowire");
+
+        // Speech model — fetched on first use if absent (see EnsureVoiceModel). base.en ≈ 142 MB.
+        private static readonly String VoiceModelFile = Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
+        private const String VoiceModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
+        private const String VoiceModelSha256 = "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
+        private const Int64 VoiceModelSize = 147964211;
+
+        // On-disk path of the plugin DLL — set by ClaudeConsolePlugin.Load from the SDK's
+        // Plugin.AssemblyFilePath. Assembly.Location is EMPTY in the SDK's load context, so this is
+        // how EnsureVoiceRuntimeInstalled locates the in-package voice payload (bin/voice/).
+        /// <summary>
+        /// Mirrored into PluginPaths on assignment so every "where am I installed" lookup — the
+        /// voice payload AND the Windows helper executables — resolves from one place. See
+        /// PluginPaths for why AppContext.BaseDirectory cannot be used here.
+        /// </summary>
+        public String PluginAssemblyFilePath
+        {
+            get => PluginPaths.PluginAssemblyFilePath;
+            set => PluginPaths.PluginAssemblyFilePath = value;
+        }
+
+        private Timer _pollTimer;
+        private ClaudeState _currentState;
+        private ActivityState _activity;
+        private String _activeTty;   // opaque id of the frontmost session (macOS: "ttys003"); null until known
+        private String _pinnedTty;   // session PINNED by a session-key press; outranks _activeTty (see TargetTty)
+        private Int32 _pollTick;     // drives the ~1s cadence of the frontmost-tab check
+
+        // Everything OS-specific lives behind this seam: session discovery, injection, focus, nav.
+        // See IPlatformBridge — above it, neither AppleScript nor TTYs nor consoles are visible.
+        // Not readonly: declaring the agent rebuilds it, because the product declares itself after
+        // this singleton already exists. See the Agent setter.
+        private IPlatformBridge _platform;
+
+        public event Action<ClaudeState> OnStateChanged;
+        public event Action<ActivityState> OnActivityChanged;
+
+        /// <summary>The session grid — one row per live Claude Code session. See SessionRegistry.</summary>
+        /// <remarks>Settable internally so tests can inject a registry rooted in a temp directory.</remarks>
+        public SessionRegistry Grid { get; internal set; } = new SessionRegistry();
+
+        public ClaudeState CurrentState => _currentState;
+        public ActivityState CurrentActivity => _activity;
+
+        // Test seam: lets the unit tests stand in a known target tab instead of shelling out to
+        // osascript to discover the frontmost one. Assigning ActiveTty is exactly what the
+        // frontmost-tab probe does, so it is also how the tests simulate a poll.
+        internal String ActiveTty { get => _activeTty; set => _activeTty = value; }
+
+        /// <summary>The active OS backend. Internal so tests can substitute a fake.</summary>
+        internal IPlatformBridge Platform => _platform;
+
+        /// <summary>
+        /// Which agent the keys are driving. Actions read this to ask for the agent's own word for
+        /// a verb, and to decide whether a key should exist at all — a Cost key on an agent that
+        /// reports no cost hides rather than rendering a zero.
+        ///
+        /// Defaults to NoAgentAdapter, never to a real agent: Core naming one would compile that
+        /// adapter into every product, and a product that forgot to declare itself would silently
+        /// type another agent's slash commands at whatever was actually running. Each product
+        /// assigns its own in its plugin CONSTRUCTOR — the SDK builds actions before Load(), and an
+        /// action decides then which keys to add.
+        /// </summary>
+        internal IAgentAdapter Agent
+        {
+            get => this._agent;
+            set
+            {
+                this._agent = value ?? new NoAgentAdapter();
+
+                // REBUILD the platform bridge. It is constructed before the product declares its
+                // agent — the SDK builds this singleton on first touch — so a bridge made at
+                // construction time carries the DEFAULT matcher, and a Codex console would happily
+                // discover `claude` processes and show them on its grid. Found on hardware, not in
+                // a unit test: every piece was correct in isolation and never wired together.
+                if (!this._platformInjected)
+                {
+                    this._platform = PlatformBridgeFactory.Create(
+                        this._agent.ProcessMatcher, this._agent.CliCommand);
+                }
+
+                // The grid reads state files through the agent too. Setting one without the other
+                // is the same wiring gap in a second place: discovery would find the right tabs and
+                // then fail to understand a word they said.
+                this.Grid.Agent = this._agent;
+            }
+        }
+
+        private IAgentAdapter _agent = new NoAgentAdapter();
+
+        // True when a test supplied its own bridge; declaring an agent must not replace it.
+        private Boolean _platformInjected;
+
+        // Test seams for the macOS backend, forwarded so the existing mac tests can keep driving
+        // the manager directly. No-ops when the backend isn't the mac one.
+        internal Func<List<String>, Int32, Boolean, String> OsascriptRunner
+        {
+            get => (_platform as MacPlatformBridge)?.OsascriptRunner;
+            set { if (_platform is MacPlatformBridge m) { m.OsascriptRunner = value; } }
+        }
+
+        /// <summary>
+        /// Test seam for discovery, per platform: a `ps` table on macOS, a process list on
+        /// Windows. Both feed the SAME decision code — which agent's processes count — so a
+        /// wiring test can drive whichever bridge the host actually built and assert one answer.
+        /// </summary>
+        internal Func<IEnumerable<WindowsProcessInfo>> ProcessEnumerator
+        {
+            get => (_platform as WindowsPlatformBridge)?.ProcessEnumerator;
+            set { if (_platform is WindowsPlatformBridge w) { w.ProcessEnumerator = value; } }
+        }
+
+        internal Func<String> PsRunner
+        {
+            get => (_platform as MacPlatformBridge)?.PsRunner;
+            set { if (_platform is MacPlatformBridge m) { m.PsRunner = value; } }
+        }
+
+        /// <summary>Kept as a forwarder so the TTY-normalization tests keep their entry point.</summary>
+        internal static String NormalizeTty(String raw) => MacPlatformBridge.NormalizeTty(raw);
+
+        public BridgeManager()
+            : this(PlatformBridgeFactory.Create(), injected: false)
+        {
+        }
+
+        /// <summary>Test/DI constructor — inject a fake or a specific platform backend.</summary>
+        internal BridgeManager(IPlatformBridge platform)
+            : this(platform, injected: true)
+        {
+        }
+
+        // `injected` says whether the CALLER chose this bridge. The public constructor builds a
+        // default one before any agent is known, and that must be replaceable — chaining the two
+        // constructors without this distinction marked every bridge as injected and silently
+        // disabled the rebuild, which is exactly how a Codex keypad kept showing Claude sessions.
+        private BridgeManager(IPlatformBridge platform, Boolean injected)
+        {
+            this._platform = platform ?? new UnsupportedPlatformBridge();
+            this._platformInjected = injected;
+        }
+
+        // Test seam: the pinned session, so a test can assert the pin was set/released without
+        // reaching through TargetTty's fallbacks.
+        internal String PinnedTty => _pinnedTty;
+
+        // ------------------------------------------------------------------------------------------
+        // Singleton — the SDK auto-discovers PluginDynamicCommand/Adjustment subclasses and
+        // instantiates them with their parameterless constructors, so they cannot receive the
+        // bridge by constructor injection. They pull the shared instance from here instead.
+        // Lazy + locked so it is safe regardless of whether a command ctor or Plugin.Load()
+        // touches it first.
+        // ------------------------------------------------------------------------------------------
+        private static readonly Object _instanceLock = new Object();
+        private static BridgeManager _instance;
+
+        public static BridgeManager Instance
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    lock (_instanceLock)
+                    {
+                        _instance ??= new BridgeManager();
+                    }
+                }
+                return _instance;
+            }
+        }
+
+        public void StartPolling()
+        {
+            EnsureIpcRoot();
+            CleanupLegacyIpcFiles();
+            Grid.LoadPersisted();   // keep slot assignments across a plugin reload
+            _pinnedTty = Grid.FocusedSession;   // ...and the session you had selected
+
+            // One-shot timer, re-armed at the END of each PollState (see its finally). This makes
+            // polls NON-OVERLAPPING: the next poll can't start until the previous one finishes, so a
+            // slow poll (osascript) can never pile callbacks onto the thread pool. An auto-repeating
+            // Timer(..., 0, 500) does NOT serialize callbacks, and that pile-up leaked threads until
+            // LogiPluginService hit the 4096-thread limit and aborted.
+            _pollTimer = new Timer(PollState, null, 0, Timeout.Infinite);
+            PluginLog.Info("BridgeManager: Started polling state file (~500ms, non-overlapping)");
+        }
+
+        public void StopPolling()
+        {
+            _pollTimer?.Dispose();
+            _pollTimer = null;
+            PluginLog.Info("BridgeManager: Stopped polling");
+        }
+
+        private void PollState(Object timerState)
+        {
+            try
+            {
+                // ~Every 2s, refresh which Terminal tab is frontmost so the live keys follow the
+                // session you're actually looking at. Keep the last known tab when Terminal isn't
+                // frontmost, so glancing away (e.g. to a browser) doesn't reset the display. The
+                // frontmost-tab probe shells out to osascript, so we do it every 4th poll (not every
+                // poll) to keep that comparatively expensive call off the hot path.
+                if (_pollTick++ % 4 == 0)
+                {
+                    var tty = _platform.QueryFrontmostSession();
+                    if (!String.IsNullOrEmpty(tty))
+                    {
+                        _activeTty = tty;
+                    }
+                }
+
+                // Refresh the session grid. The `ps` scan runs on a DIFFERENT tick from the osascript
+                // frontmost probe above (2 vs 0) so the two subprocess calls never share a poll —
+                // stacking expensive calls on one tick is how the 1.3.1 thread leak began.
+                var liveTtys = _pollTick % 4 == 2 ? _platform.DiscoverSessions() : null;
+                Grid.Refresh(liveTtys);
+
+                // Where the agent cannot push state to us, pull it. Only Windows/Codex sets this
+                // (its hook runner spawns nothing there), and the bridge writes the very same IPC
+                // files a hook would — so everything below this line is identical either way.
+                this.PullState?.Invoke();
+
+                var newState = ReadJsonWithRetry<ClaudeState>(ActiveStateFile());
+
+                if (newState != null)
+                {
+                    _currentState = newState;
+                    OnStateChanged?.Invoke(_currentState);
+                }
+
+                // Activity is pushed by the Claude Code hooks into a separate file; surface changes
+                // so the Status key can flip between working / waiting / idle — for the active tab.
+                var act = ReadActivity();
+                if (act?.State != _activity?.State)
+                {
+                    _activity = act;
+                    OnActivityChanged?.Invoke(_activity);
+                }
+
+                // ~Every 60s, prune per-tab files from dead sessions so closed tabs don't
+                // accumulate state on disk forever.
+                if (_pollTick % 120 == 1)
+                {
+                    PruneStaleIpcFiles();
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, "BridgeManager: PollState error");
+            }
+            finally
+            {
+                // Re-arm the one-shot: the next poll fires 500ms AFTER this one returns, so polls
+                // never overlap. Swallow ObjectDisposedException from a concurrent StopPolling.
+                try { _pollTimer?.Change(500, Timeout.Infinite); }
+                catch (ObjectDisposedException) { /* stopped */ }
+            }
+        }
+
+        // Read the hook-written activity flag (busy/waiting/done). A "busy" with no Stop for a long
+        // while is treated as done, so a missed Stop hook can't leave the key stuck on "Working".
+        private ActivityState ReadActivity()
+        {
+            var file = ActiveActivityFile();
+            if (!File.Exists(file))
+            {
+                return null;
+            }
+
+            var a = ReadJsonWithRetry<ActivityState>(file);
+            if (a != null && a.State == "busy" &&
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds() - a.Ts > 300)
+            {
+                a.State = "done";
+            }
+            return a;
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Per-tab session routing — each Claude Code session (one per Terminal tab) writes a file
+        // keyed by its tab's TTY (the bash scripts derive it via `ps -o tty`); the plugin shows
+        // whichever tab is frontmost. Falls back to the shared file (last writer) when the active
+        // tab has no per-TTY file yet, or when Terminal isn't the frontmost app.
+        // ------------------------------------------------------------------------------------------
+        private String ActiveStateFile() => PerTty(SessionsDir, StateFile);
+        private String ActiveActivityFile() => PerTty(ActivityDir, ActivityFile);
+
+        private String PerTty(String dir, String shared)
+        {
+            var tty = TargetTty();
+            if (!String.IsNullOrEmpty(tty))
+            {
+                var p = Path.Combine(dir, tty + ".json");
+                if (File.Exists(p))
+                {
+                    return p;
+                }
+            }
+            return shared;
+        }
+
+        // Create the private IPC tree (0700). The bash scripts also mkdir it (whichever runs
+        // first wins), so both sides must agree on the layout.
+        private static void EnsureIpcRoot()
+        {
+            try
+            {
+                IpcPaths.EnsureAll();
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager: could not secure the IPC root");
+            }
+        }
+
+        // Pre-1.4 builds wrote world-readable loose files (/tmp/claude-console-*.json, cmd-queue,
+        // voice transcript). Clear them once on load; the glob can't match the new root dir.
+        private static void CleanupLegacyIpcFiles()
+        {
+            try
+            {
+                foreach (var f in Directory.GetFiles(TempDir, "claude-console-*"))
+                {
+                    TryDelete(f);
+                }
+            }
+            catch { /* best effort */ }
+        }
+
+        // Delete per-tab/voice files not written for 10+ minutes. A live session's statusline
+        // refreshes on every assistant message, so anything this old belongs to a dead tab.
+        private static readonly TimeSpan StaleIpcAge = TimeSpan.FromMinutes(10);
+
+        private static void PruneStaleIpcFiles() =>
+            PruneStaleFiles(new[] { SessionsDir, ActivityDir, VoiceDir }, DateTime.UtcNow - StaleIpcAge);
+
+        // Split out so the tests can drive it against a temp root and a controlled cutoff.
+        internal static void PruneStaleFiles(IEnumerable<String> dirs, DateTime cutoff)
+        {
+            foreach (var dir in dirs)
+            {
+                try
+                {
+                    if (!Directory.Exists(dir))
+                    {
+                        continue;
+                    }
+                    foreach (var f in Directory.GetFiles(dir))
+                    {
+                        try
+                        {
+                            if (File.GetLastWriteTimeUtc(f) < cutoff)
+                            {
+                                File.Delete(f);
+                            }
+                        }
+                        catch { /* best effort */ }
+                    }
+                }
+                catch { /* best effort */ }
+            }
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Targeting — which session the typing keys act on.
+        //
+        // Pressing a session key PINS that session (see SelectSlot); with nothing pinned the keys
+        // follow the frontmost Terminal tab, which is what single-session users already expect.
+        // ------------------------------------------------------------------------------------------
+        internal String TargetTty()
+        {
+            var live = Grid.LiveSessions();
+
+            // 0. An explicit session-key press wins over everything below, and keeps winning. This
+            //    is the entire point of the grid: act on session 2 while you are looking at session
+            //    1, or at a browser. It must NOT be a field the frontmost-tab probe can overwrite —
+            //    that made a selection decay within ~2.5s, and let a probe already in flight when
+            //    you pressed silently revert the press. Released only by pinning another session,
+            //    or automatically when this one exits so the keys are never stranded on a dead tab.
+            var pinned = _pinnedTty;
+            if (!String.IsNullOrEmpty(pinned))
+            {
+                if (live.Any(s => s.SessionKey == pinned))
+                {
+                    return pinned;
+                }
+                this.ClearPin();
+            }
+
+            // 1. The tracked tab, when it is a session we know about.
+            var active = _activeTty;
+            if (!String.IsNullOrEmpty(active) && live.Any(s => s.SessionKey == active))
+            {
+                return active;
+            }
+
+            // 2. Exactly one session waiting on you — the obvious thing to answer.
+            var waiting = live.Where(s => s.State == "waiting").ToList();
+            if (waiting.Count == 1)
+            {
+                return waiting[0].SessionKey;
+            }
+
+            // 3. Exactly one session at all.
+            if (live.Count == 1)
+            {
+                return live[0].SessionKey;
+            }
+
+            // 4. Ambiguous (or nothing running): fall back to the tracked tab, which may be null —
+            //    the injection guard then beeps rather than typing somewhere unintended.
+            return active;
+        }
+
+        /// <summary>
+        /// Press a session key: focus that tab and make it the target for every subsequent key,
+        /// until you pin a different session or this one exits. The pin is what makes "press slot
+        /// 2, then Clear" land in slot 2 even minutes later, and even if you have since switched
+        /// Terminal back to another tab.
+        /// </summary>
+        public void SelectSlot(Int32 slot)
+        {
+            var session = Grid.SlotSession(slot);
+            if (session == null)
+            {
+                return;
+            }
+
+            _pinnedTty = session.SessionKey;
+            Grid.FocusedSession = session.SessionKey;   // survives a plugin reload, like the slot assignments
+            _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
+            _platform.FocusSession(session.SessionKey);
+            PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.SessionKey} ({session.Project})");
+        }
+
+        // Drop the pin and go back to following the frontmost tab. Called when the pinned session
+        // exits, and when we deliberately start a session somewhere else (voice "go to project").
+        private void ClearPin()
+        {
+            if (_pinnedTty == null)
+            {
+                return;
+            }
+
+            PluginLog.Info($"BridgeManager: released the pin on {_pinnedTty} — keys follow the frontmost tab again");
+            _pinnedTty = null;
+            Grid.FocusedSession = null;
+        }
+
+        /// <summary>
+        /// Read a JSON file with retry logic to handle race conditions from concurrent writes.
+        /// </summary>
+        private T ReadJsonWithRetry<T>(String filePath, Int32 maxAttempts = 3, Int32 backoffMs = 10) where T : class
+        {
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                try
+                {
+                    var fi = new FileInfo(filePath);
+                    if (!fi.Exists)
+                    {
+                        return null;
+                    }
+                    if (fi.Length > MaxIpcFileBytes)
+                    {
+                        // State/activity files are a few KB; anything huge is corrupt or hostile.
+                        PluginLog.Warning($"BridgeManager: {filePath} is {fi.Length} bytes (cap {MaxIpcFileBytes}) — ignoring");
+                        return null;
+                    }
+
+                    var json = File.ReadAllText(filePath);
+                    if (String.IsNullOrWhiteSpace(json))
+                    {
+                        continue;
+                    }
+
+                    return JsonSerializer.Deserialize<T>(json);
+                }
+                catch
+                {
+                    if (attempt < maxAttempts - 1)
+                    {
+                        Thread.Sleep(backoffMs * (attempt + 1));
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Type a prompt into the tracked Claude tab and press Return.
+        /// </summary>
+        public void SendPrompt(String prompt) => InjectText(prompt, pressEnter: true);
+
+        // ------------------------------------------------------------------------------------------
+        // Guarded keystroke injection. The guarantee — focus the tracked session and type in ONE
+        // indivisible operation, or type nothing at all — is the backend's to keep; see
+        // IPlatformBridge. What lives here is only the platform-neutral half: resolve WHICH session
+        // the keys act on (TargetTty), then hand the request across the seam.
+        // ------------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// Type text into the tracked Claude session and optionally press Return.
+        /// </summary>
+        public void InjectText(String text, Boolean pressEnter) =>
+            _platform.InjectText(TargetTty(), text, pressEnter);
+
+        /// <summary>
+        /// Send a single key chord to the tracked Claude session, e.g. Shift+Tab to cycle modes.
+        /// </summary>
+        public void InjectKey(KeyStroke key) => _platform.InjectKey(TargetTty(), key);
+
+        /// <summary>
+        /// Accept the highlighted autocomplete AND submit it in one press.
+        /// </summary>
+        public void InjectTabThenEnter() => _platform.InjectTabThenEnter(TargetTty());
+
+        /// <summary>
+        /// Optional per-poll pull of agent state, for a product whose agent cannot push it.
+        /// Set by the product at load (Windows/Codex → CodexRolloutBridge.Poll); null everywhere
+        /// else, where lifecycle hooks push state as it happens. Whatever it writes goes to the
+        /// same IPC files, so nothing downstream knows which transport filled them.
+        /// </summary>
+        public Action PullState { get; set; }
+
+        /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
+        public void Navigate(TerminalAction action) => _platform.Navigate(action);
+
+        /// <summary>
+        /// Interactive screenshot into this product's IPC tree. Returns the file's path, or null
+        /// when the user cancelled the picker (or the platform can't capture). Timestamped names,
+        /// never reused: an earlier shot may still be sitting unsubmitted in a composer, and
+        /// overwriting it would silently swap the image that prompt refers to.
+        /// </summary>
+        public String CaptureScreenshot()
+        {
+            var dir = IpcPaths.ScreenshotsDir;
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, $"shot-{DateTime.Now:yyyyMMdd-HHmmss}.png");
+
+            return _platform.CaptureScreenshotInteractive(path) ? path : null;
+        }
+
+        /// <summary>Open a terminal and start the agent with extra CLI args (e.g. -i shot.png).</summary>
+        public void LaunchAgentSession(params String[] extraArgs) => _platform.LaunchAgentSession(extraArgs);
+
+        // State/activity files are a few KB — refuse to slurp anything huge (corrupt or hostile).
+        private const Int64 MaxIpcFileBytes = 1 << 20;
+
+        // ------------------------------------------------------------------------------------------
+        // Voice capture — offline dictation via the bundled ClaudeVoiceHelper.app (whisper.cpp).
+        // The helper is a separate signed app bundle so it can hold its OWN Microphone TCC grant;
+        // LogiPluginService (a background daemon) cannot get mic access itself. Flow:
+        //   press 1 -> StartVoiceCapture launches the helper (records 16kHz WAV, polls the stop flag)
+        //   press 2 -> StopVoiceCapture writes the stop flag; the helper transcribes -> writes the
+        //              transcript; a background thread reads it and types it into the focused terminal.
+        // ------------------------------------------------------------------------------------------
+        /// <summary>
+        /// The platforms with a working capture backend: the signed helper app on macOS, the
+        /// WinMM helper exe on Windows. Testable for the same reason as AutoWireSupported — a
+        /// silent platform gate is how Phase 4 shipped unreachable.
+        /// </summary>
+        internal static Boolean VoiceSupported =>
+            OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
+
+        public void StartVoiceCapture()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                this.StartVoiceCaptureWindows();
+                return;
+            }
+
+            if (!OperatingSystem.IsMacOS())
+            {
+                PluginLog.Info("BridgeManager.StartVoiceCapture: unsupported platform");
+                return;
+            }
+
+            // Install the helper + whisper from the plugin package if this is a package-only install
+            // (no-op for dev builds, where tools/voice/build.sh already placed them in the runtime home).
+            EnsureVoiceRuntimeInstalled();
+
+            // Clear any stale transcript/flag so we never type a previous result.
+            EnsureIpcRoot();
+            TryDelete(VoiceTranscriptFile);
+            TryDelete(VoiceStopFile);
+
+            if (!Directory.Exists(VoiceHelperApp))
+            {
+                PluginLog.Warning($"BridgeManager.StartVoiceCapture: helper missing at {VoiceHelperApp} (run tools/voice/build.sh, or reinstall the plugin)");
+                return;
+            }
+
+            // Make sure the speech model is present. If it's still downloading, skip this capture
+            // (an audible beep tells the user to try again once it's ready) rather than record audio
+            // the helper can't transcribe yet.
+            if (!EnsureVoiceModel())
+            {
+                PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
+                _platform.Alert();
+                return;
+            }
+
+            // Launch via LaunchServices (open) so the helper is its own TCC subject. Detached.
+            var args = new List<String>
+            {
+                VoiceHelperApp, "--args",
+                "--maxsec", "60",
+                "--out", VoiceWavFile,
+                "--stopflag", VoiceStopFile,
+                "--transcript", VoiceTranscriptFile,
+                "--model", VoiceModelFile,
+            };
+            // Point the helper at the self-contained whisper-cli when we've bundled it.
+            if (File.Exists(BundledWhisperCli))
+            {
+                args.Add("--whisper");
+                args.Add(BundledWhisperCli);
+            }
+            RunDetached("open", args);
+            PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+        }
+
+        // Windows whisper-cli lives in the same runtime-home dir as the macOS bundle, with the
+        // platform's suffix. Installed by EnsureVoiceRuntimeInstalled from the package (or by
+        // hand from a whisper.cpp release during development).
+        private static readonly String WindowsWhisperCli = Path.Combine(WhisperBinDir, "whisper-cli.exe");
+
+        // The same flow as macOS with the platform differences flattened out: the helper is a
+        // plain exe launched directly (no LaunchServices, no TCC — Windows mic permission is a
+        // Settings toggle the helper documents), and whisper is REQUIRED up front — the Windows
+        // helper has no embedded fallback, so recording without it would always type nothing.
+        private void StartVoiceCaptureWindows()
+        {
+            EnsureVoiceRuntimeInstalled();
+
+            EnsureIpcRoot();
+            TryDelete(VoiceTranscriptFile);
+            TryDelete(VoiceStopFile);
+
+            var helper = PluginPaths.PackagedFile("claude-console-voice.exe");
+            if (helper == null)
+            {
+                PluginLog.Warning("BridgeManager.StartVoiceCapture: claude-console-voice.exe not found in the plugin package");
+                return;
+            }
+
+            if (!File.Exists(WindowsWhisperCli))
+            {
+                PluginLog.Warning($"BridgeManager.StartVoiceCapture: whisper-cli.exe missing at {WhisperBinDir} — voice needs the whisper bundle installed");
+                _platform.Alert();
+                return;
+            }
+
+            if (!EnsureVoiceModel())
+            {
+                PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
+                _platform.Alert();
+                return;
+            }
+
+            RunDetached(helper, new List<String>
+            {
+                "--maxsec", "60",
+                "--out", VoiceWavFile,
+                "--stopflag", VoiceStopFile,
+                "--transcript", VoiceTranscriptFile,
+                "--model", VoiceModelFile,
+                "--whisper", WindowsWhisperCli,
+            });
+            PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Package bootstrap — when the helper + whisper ship INSIDE the .lplug4 (release builds), copy
+        // them into the runtime home on first use so a package-only install has working voice. Files
+        // unpacked from a downloaded .lplug4 carry com.apple.quarantine, so strip it after copying.
+        // For dev builds the package has no voice/ payload and the runtime files already exist — no-op.
+        // ------------------------------------------------------------------------------------------
+        private void EnsureVoiceRuntimeInstalled()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                this.EnsureVoiceRuntimeInstalledWindows();
+                return;
+            }
+
+            try
+            {
+                // The SDK loads the plugin in a context where Assembly.Location is empty, so use the
+                // path the plugin captured from Plugin.AssemblyFilePath; fall back to Location.
+                var asmPath = PluginAssemblyFilePath;
+                if (String.IsNullOrEmpty(asmPath))
+                {
+                    asmPath = typeof(BridgeManager).Assembly.Location;
+                }
+                var pkgDir = String.IsNullOrEmpty(asmPath) ? null : Path.GetDirectoryName(asmPath);
+                if (String.IsNullOrEmpty(pkgDir))
+                {
+                    PluginLog.Info("BridgeManager.EnsureVoiceRuntimeInstalled: plugin dir unknown — skipping");
+                    return;
+                }
+                var pkgVoice = Path.Combine(pkgDir, "voice");
+                PluginLog.Verbose($"BridgeManager.EnsureVoiceRuntimeInstalled: pkgVoice={pkgVoice} exists={Directory.Exists(pkgVoice)}");
+
+                var pkgHelper = Path.Combine(pkgVoice, "ClaudeVoiceHelper.app");
+                if (Directory.Exists(pkgHelper) && !Directory.Exists(VoiceHelperApp))
+                {
+                    PluginLog.Info($"BridgeManager: installing voice helper from package -> {VoiceHelperApp}");
+                    Directory.CreateDirectory(ClaudeConsoleHome);
+                    RunSync("/usr/bin/ditto", pkgHelper, VoiceHelperApp);
+                    RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", VoiceHelperApp);
+                }
+
+                var pkgWhisper = Path.Combine(pkgVoice, "whisper-bin");
+                if (Directory.Exists(pkgWhisper) && !Directory.Exists(WhisperBinDir))
+                {
+                    PluginLog.Info($"BridgeManager: installing whisper bundle from package -> {WhisperBinDir}");
+                    RunSync("/usr/bin/ditto", pkgWhisper, WhisperBinDir);
+                    RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", WhisperBinDir);
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager.EnsureVoiceRuntimeInstalled failed");
+            }
+        }
+
+        // The Windows analogue of the ditto branch above: a release package carries whisper's
+        // Windows build under bin\voice\whisper-bin-win\ (its own directory — voice\whisper-bin
+        // holds the macOS dylibs), and it is copied into the runtime home on first use. Plain
+        // managed copy: no quarantine to strip, nothing to chmod. A dev machine where whisper-bin
+        // was placed by hand is left alone.
+        private void EnsureVoiceRuntimeInstalledWindows()
+        {
+            try
+            {
+                if (File.Exists(WindowsWhisperCli))
+                {
+                    return;   // already installed (by a previous run, or by hand)
+                }
+
+                var pkgDir = PluginPaths.PluginDirectory;
+                if (String.IsNullOrEmpty(pkgDir))
+                {
+                    return;
+                }
+
+                var pkgWhisper = Path.Combine(pkgDir, "voice", "whisper-bin-win");
+                if (!Directory.Exists(pkgWhisper))
+                {
+                    return;   // dev build — nothing packaged
+                }
+
+                PluginLog.Info($"BridgeManager: installing whisper bundle from package -> {WhisperBinDir}");
+                CopyTree(pkgWhisper, WhisperBinDir);
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager.EnsureVoiceRuntimeInstalledWindows failed");
+            }
+        }
+
+        private static void CopyTree(String from, String to)
+        {
+            Directory.CreateDirectory(to);
+            foreach (var dir in Directory.GetDirectories(from, "*", SearchOption.AllDirectories))
+            {
+                Directory.CreateDirectory(Path.Combine(to, Path.GetRelativePath(from, dir)));
+            }
+            foreach (var file in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+            {
+                File.Copy(file, Path.Combine(to, Path.GetRelativePath(from, file)), overwrite: true);
+            }
+        }
+
+        // Run a process and wait for it (ditto/xattr install steps must finish before launching).
+        private static void RunSync(String file, params String[] args)
+        {
+            var psi = new ProcessStartInfo { FileName = file, UseShellExecute = false, CreateNoWindow = true };
+            foreach (var a in args)
+            {
+                psi.ArgumentList.Add(a);
+            }
+            using var p = Process.Start(psi);
+            p.WaitForExit();
+        }
+
+        // ==========================================================================================
+        // Live-status bridge — auto-install + auto-wire (zero user action)
+        //
+        // The live keys (Cost / Context / Model, Activity) read /tmp state files that only get
+        // written when Claude Code is wired to push them: a `statusLine` handler feeds Cost/Context/
+        // Model and four `hooks` feed Activity, all via ~/.claude/settings.json. A package-only user
+        // never does this by hand, so those keys show defaults. To make them "just work", the plugin
+        // ships the two scripts embedded in the DLL, writes them to ~/.claude/claude-console/scripts/
+        // on first run, and merges the statusLine + hooks into settings.json itself.
+        //
+        // Safe by design: backs settings.json up once, MERGES rather than clobbers (appends a hook
+        // only if absent; CHAINS an existing statusLine instead of replacing it — see the chain block
+        // in statusline-handler.sh), writes atomically, and is idempotent. Drop a file at
+        // ~/.claude/claude-console/no-autowire to opt out.
+        //
+        // Effect lands on the user's NEXT Claude Code session — Claude Code reads hooks/statusLine at
+        // session start, so a session already running won't pick it up.
+        // ==========================================================================================
+        public void EnsureBridgeAutoWired()
+        {
+            if (!AutoWireSupported)
+            {
+                return;
+            }
+
+            // Never block or break plugin load — run on a background thread and swallow failures.
+            new Thread(() =>
+            {
+                try
+                {
+                    if (File.Exists(BridgeOptOutFile))
+                    {
+                        PluginLog.Info("Bridge auto-wire: opt-out file present — skipping");
+                        return;
+                    }
+                    EnsureBridgeInstalled();
+                    EnsureBridgeWired();
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "Bridge auto-wire failed");
+                }
+            })
+            { IsBackground = true, Name = "claude-bridge-autowire" }.Start();
+        }
+
+        // Write the embedded bridge scripts to ~/.claude/claude-console/scripts/ (refreshed every load
+        // so a plugin upgrade updates them) and mark them executable.
+        private void EnsureBridgeInstalled()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                // The Windows shim is a compiled exe shipped in the plugin package — there is
+                // nothing to extract, and nothing to chmod.
+                return;
+            }
+
+            Directory.CreateDirectory(ScriptsDir);
+            ExtractEmbeddedScript("ClaudeConsole.statusline-handler.sh", StatuslineScript);
+            ExtractEmbeddedScript("ClaudeConsole.activity-hook.sh", ActivityScript);
+        }
+
+        /// <summary>
+        /// The handler Claude Code should invoke: the bash script on macOS, the packaged shim on
+        /// Windows. Null on Windows when the shim is missing from the package — we then leave
+        /// settings.json alone rather than wiring a command that cannot run.
+        /// </summary>
+        internal String BridgeHandlerPath(String state) =>
+            OperatingSystem.IsWindows() ? HookExePath : (state == null ? StatuslineScript : ActivityScript);
+
+        /// <summary>
+        /// The platforms auto-wiring knows how to serve: bash scripts on macOS, the compiled shim
+        /// on Windows. Testable so "Windows silently skips wiring" can never come back — that
+        /// exact early-return shipped in 1.8.x and the live keys showed defaults with nothing in
+        /// the log to say why.
+        /// </summary>
+        internal static Boolean AutoWireSupported =>
+            OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
+
+        // Resolved LAZILY, never in a field initialiser: the SDK hands us the plugin path AFTER
+        // construction (see PluginPaths), so anything captured at construction is null forever.
+        // Same discipline as WindowsPlatformBridge.HelperPath — and the same fix, second time
+        // around: this one still used AppContext.BaseDirectory, which points at the SERVICE's
+        // directory under the SDK's load context, not the plugin's.
+        private String _hookExePath;
+
+        /// <summary>Where the Windows hook shim lives — beside the plugin DLL. Settable for tests.</summary>
+        internal String HookExePath
+        {
+            get => _hookExePath ?? PluginPaths.PackagedFile("claude-console-hook.exe");
+            set => _hookExePath = value;
+        }
+
+        private static void ExtractEmbeddedScript(String resourceName, String destPath)
+        {
+            var asm = typeof(BridgeManager).Assembly;
+            using var s = asm.GetManifestResourceStream(resourceName);
+            if (s == null)
+            {
+                PluginLog.Warning($"Bridge auto-wire: embedded resource {resourceName} not found");
+                return;
+            }
+            using (var fs = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                s.CopyTo(fs);
+            }
+            RunSync("/bin/chmod", "+x", destPath);
+        }
+
+        // Merge the statusLine + activity hooks into ~/.claude/settings.json. Idempotent: appends a
+        // hook only if ours isn't already there, and chains (never clobbers) an existing statusLine.
+        private void EnsureBridgeWired()
+        {
+            // Refuse a symlinked settings.json — a planted link could redirect our atomic
+            // rename-over-write somewhere else entirely. (LinkTarget is null for a missing file.)
+            if (new FileInfo(SettingsFile).LinkTarget != null)
+            {
+                PluginLog.Warning("Bridge auto-wire: settings.json is a symlink — leaving it untouched");
+                return;
+            }
+
+            JsonObject root;
+            if (File.Exists(SettingsFile))
+            {
+                var text = File.ReadAllText(SettingsFile);
+                if (String.IsNullOrWhiteSpace(text))
+                {
+                    root = new JsonObject();
+                }
+                else
+                {
+                    JsonNode parsed;
+                    try
+                    {
+                        parsed = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions
+                        {
+                            CommentHandling = JsonCommentHandling.Skip,
+                            AllowTrailingCommas = true,
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        PluginLog.Warning(ex, "Bridge auto-wire: settings.json isn't valid JSON — leaving it untouched");
+                        return;
+                    }
+                    root = parsed as JsonObject;
+                    if (root == null)
+                    {
+                        PluginLog.Warning("Bridge auto-wire: settings.json isn't a JSON object — leaving it untouched");
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                root = new JsonObject();
+            }
+
+            var isWindows = OperatingSystem.IsWindows();
+            var statusHandler = this.BridgeHandlerPath(null);
+            var activityHandler = this.BridgeHandlerPath("busy");
+
+            if (isWindows && (statusHandler == null || activityHandler == null))
+            {
+                PluginLog.Warning("Bridge auto-wire: claude-console-hook.exe is missing from the package — leaving settings.json untouched");
+                return;
+            }
+
+            var changed = false;
+
+            // --- hooks (additive — append our entry only when it isn't already present) ---
+            if (root["hooks"] is not JsonObject hooks)
+            {
+                hooks = new JsonObject();
+                root["hooks"] = hooks;
+            }
+            changed |= EnsureHook(hooks, "UserPromptSubmit", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
+            changed |= EnsureHook(hooks, "PostToolUse", "*", BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
+            changed |= EnsureHook(hooks, "Notification", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "waiting"));
+            changed |= EnsureHook(hooks, "Stop", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "done"));
+            // PermissionRequest fires the moment a tool needs approval and carries the tool name and
+            // its input, which is what tells a routine approval from `git push --force`. Notification
+            // can't: it has no tool name and is delayed ~6s for permission prompts. Unknown events are
+            // ignored by older Claude Code builds, so adding this is safe there — the badge simply
+            // stays amber instead of going red.
+            changed |= EnsureHook(hooks, "PermissionRequest", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "permission"));
+
+            // --- statusLine (chain an existing one rather than clobbering it) ---
+            var ourStatusCmd = BridgeWiring.StatuslineCommand(isWindows, statusHandler);
+            var sl = root["statusLine"] as JsonObject;
+            var existingCmd = sl?["command"]?.GetValue<String>();
+            if (String.IsNullOrWhiteSpace(existingCmd))
+            {
+                root["statusLine"] = new JsonObject { ["type"] = "command", ["command"] = ourStatusCmd };
+                TryDelete(StatuslineChainFile);
+                changed = true;
+            }
+            else if (BridgeWiring.IsOurs(existingCmd))
+            {
+                // already ours — nothing to do
+            }
+            else
+            {
+                // Preserve the user's status bar: record their command so our handler runs it and
+                // passes its output through (see the chain block in statusline-handler.sh).
+                File.WriteAllText(StatuslineChainFile, existingCmd);
+                sl["command"] = ourStatusCmd;
+                sl["type"] = "command";
+                PluginLog.Info("Bridge auto-wire: chained existing statusLine so it still renders");
+                changed = true;
+            }
+
+            if (!changed)
+            {
+                PluginLog.Info("Bridge auto-wire: settings.json already wired — no changes");
+                return;
+            }
+
+            // Back up once before the first write.
+            try
+            {
+                if (File.Exists(SettingsFile) && !File.Exists(SettingsBackup))
+                {
+                    File.Copy(SettingsFile, SettingsBackup);
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "Bridge auto-wire: couldn't back up settings.json (continuing)");
+            }
+
+            // Atomic write (temp + rename) so a concurrent reader never sees a half-written file.
+            Directory.CreateDirectory(ClaudeDir);
+            var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            var tmp = SettingsFile + ".cc.tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, SettingsFile, overwrite: true);
+            PluginLog.Info("Bridge auto-wire: wired live-status bridge into settings.json — start a NEW Claude Code session to activate Cost/Context/Activity");
+        }
+
+        // Ensure a hook event's array contains an entry pointing at our activity handler; append if
+        // missing. Returns true when it added one. Matches by command substring so a re-run is a
+        // no-op — on either platform (see BridgeWiring.IsOurHook). Internal for the idempotence test.
+        internal static Boolean EnsureHook(JsonObject hooks, String eventName, String matcher, String command)
+        {
+            if (hooks[eventName] is not JsonArray arr)
+            {
+                arr = new JsonArray();
+                hooks[eventName] = arr;
+            }
+
+            foreach (var entry in arr)
+            {
+                if (entry?["hooks"] is not JsonArray inner)
+                {
+                    continue;
+                }
+                foreach (var h in inner)
+                {
+                    var c = h?["command"]?.GetValue<String>();
+                    if (BridgeWiring.IsOurHook(c))
+                    {
+                        return false; // ours (or an equivalent) already present
+                    }
+                }
+            }
+
+            var newEntry = new JsonObject();
+            if (matcher != null)
+            {
+                newEntry["matcher"] = matcher;
+            }
+            newEntry["hooks"] = new JsonArray
+            {
+                new JsonObject { ["type"] = "command", ["command"] = command },
+            };
+            arr.Add(newEntry);
+            return true;
+        }
+
+        // ------------------------------------------------------------------------------------------
+        // Speech-model bootstrap — fetch ggml-base.en.bin on first use so the user never has to
+        // download it by hand. The download is verified by sha256 before it's promoted into place.
+        // ------------------------------------------------------------------------------------------
+        private static readonly HttpClient _modelHttp = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        private Int32 _modelDownloading; // 0 = idle, 1 = a background download is in flight
+
+        // True when the model is present and complete. If it is missing, kicks off a one-time
+        // background download and returns false so the caller can skip the current capture.
+        private Boolean EnsureVoiceModel()
+        {
+            try
+            {
+                var fi = new FileInfo(VoiceModelFile);
+                if (fi.Exists && fi.Length == VoiceModelSize)
+                {
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager.EnsureVoiceModel: stat failed");
+            }
+
+            if (Interlocked.CompareExchange(ref _modelDownloading, 1, 0) == 0)
+            {
+                new Thread(DownloadVoiceModel) { IsBackground = true, Name = "claude-voice-model-download" }.Start();
+            }
+            return false;
+        }
+
+        private void DownloadVoiceModel()
+        {
+            var partFile = VoiceModelFile + ".part";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(VoiceModelFile));
+                TryDelete(partFile);
+                PluginLog.Info($"BridgeManager: downloading whisper model (~142 MB) from {VoiceModelUrl}");
+
+                using (var resp = _modelHttp.GetAsync(VoiceModelUrl, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult())
+                {
+                    resp.EnsureSuccessStatusCode();
+                    using (var src = resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
+                    using (var dst = new FileStream(partFile, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        src.CopyTo(dst, 1 << 20);
+                    }
+                }
+
+                var sha = HashFileSha256(partFile);
+                if (!String.Equals(sha, VoiceModelSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    PluginLog.Warning($"BridgeManager: model checksum mismatch (got {sha}) — discarding download");
+                    TryDelete(partFile);
+                    return;
+                }
+
+                TryDelete(VoiceModelFile);
+                File.Move(partFile, VoiceModelFile);
+                PluginLog.Info("BridgeManager: whisper model ready");
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager: whisper model download failed");
+                TryDelete(partFile);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _modelDownloading, 0);
+            }
+        }
+
+        private static String HashFileSha256(String path)
+        {
+            using (var sha = SHA256.Create())
+            using (var fs = File.OpenRead(path))
+            {
+                var hash = sha.ComputeHash(fs);
+                var sb = new StringBuilder(hash.Length * 2);
+                foreach (var b in hash)
+                {
+                    sb.Append(b.ToString("x2"));
+                }
+                return sb.ToString();
+            }
+        }
+
+        // Stop voice capture and TYPE the transcript into the focused terminal (dictation).
+        // submit: true sends it (Return) — the Voice key; false leaves it in the input box for the
+        // user to correct before sending — the Voice Draft key. Whisper mishears often enough that
+        // "fix it, then press Return yourself" deserves a first-class path.
+        public void StopVoiceCapture(Boolean submit = true) =>
+            StopVoiceCaptureThen(text => InjectText(text, pressEnter: submit));
+
+        // Stop voice capture and use the transcript to OPEN a project (new tab + cd + claude).
+        public void StopVoiceCaptureForProject() => StopVoiceCaptureThen(NavigateToProjectByVoice);
+
+        // Shared: signal the helper to stop, then wait for the transcript off the UI thread and run
+        // <paramref name="handler"/> with it. An empty transcript (silence / mic denied) is ignored.
+        private void StopVoiceCaptureThen(Action<String> handler)
+        {
+            if (!VoiceSupported)
+            {
+                return;
+            }
+
+            try
+            {
+                File.WriteAllText(VoiceStopFile, "");
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "BridgeManager.StopVoiceCapture: failed to write stop flag");
+                return;
+            }
+
+            new Thread(() =>
+            {
+                var deadline = DateTime.UtcNow.AddSeconds(20);
+                while (DateTime.UtcNow < deadline)
+                {
+                    Thread.Sleep(150);
+                    if (!File.Exists(VoiceTranscriptFile))
+                    {
+                        continue;
+                    }
+
+                    String text;
+                    try
+                    {
+                        text = File.ReadAllText(VoiceTranscriptFile).Trim();
+                    }
+                    catch
+                    {
+                        continue; // still being written — retry
+                    }
+
+                    TryDelete(VoiceTranscriptFile);
+                    if (!String.IsNullOrWhiteSpace(text))
+                    {
+                        PluginLog.Info($"BridgeManager: transcript ({text.Length} chars): {text}");
+                        try { handler(text); }
+                        catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: transcript handler failed"); }
+                    }
+                    else
+                    {
+                        PluginLog.Info("BridgeManager: empty transcript (silence or mic denied)");
+                    }
+                    return;
+                }
+                PluginLog.Warning("BridgeManager: transcript not produced within 20s");
+            })
+            { IsBackground = true, Name = "claude-voice-transcript" }.Start();
+        }
+
+        // Roots scanned (live) for voice project navigation — newly-added folders work with no code change.
+        private static readonly String[] ProjectRoots =
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Work", "MyApps"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Work"),
+        };
+
+        // Match a spoken phrase to a project folder, then open it (new Terminal tab + cd + claude).
+        private void NavigateToProjectByVoice(String transcript)
+        {
+            var match = MatchProject(transcript);
+            if (match == null)
+            {
+                PluginLog.Warning($"NavigateToProjectByVoice: no project matched \"{transcript}\"");
+                _platform.Alert(); // audible "didn't catch a project" feedback
+                return;
+            }
+            PluginLog.Info($"NavigateToProjectByVoice: \"{transcript}\" -> {match}");
+            LaunchClaudeInProject(match);
+        }
+
+        private static String MatchProject(String transcript)
+        {
+            var t = NormalizeForMatch(transcript);
+            if (t.Length < 2)
+            {
+                return null;
+            }
+
+            String best = null;
+            var bestScore = 0;
+            foreach (var root in ProjectRoots)
+            {
+                if (!Directory.Exists(root))
+                {
+                    continue;
+                }
+                foreach (var dir in Directory.GetDirectories(root))
+                {
+                    var f = NormalizeForMatch(Path.GetFileName(dir));
+                    if (f.Length == 0)
+                    {
+                        continue;
+                    }
+                    var score = MatchScore(t, f);
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        best = dir;
+                    }
+                }
+            }
+
+            // Require a real match (exact / prefix / substring / strong overlap) to avoid mis-launches.
+            return bestScore >= 300 ? best : null;
+        }
+
+        // Lowercase, drop common filler/command words ("open the X project"), keep letters+digits only.
+        internal static String NormalizeForMatch(String s)
+        {
+            s = (s ?? "").ToLowerInvariant();
+            foreach (var w in new[] { "go to", "switch to", "open", "launch", "the", "project", "folder", "claude" })
+            {
+                s = s.Replace(w, " ");
+            }
+            return new String(s.Where(Char.IsLetterOrDigit).ToArray());
+        }
+
+        internal static Int32 MatchScore(String t, String f)
+        {
+            if (t == f) return 1000;
+            if (f.StartsWith(t) || t.StartsWith(f)) return 700 + Math.Min(t.Length, f.Length);
+            if (f.Contains(t) || t.Contains(f)) return 500 + Math.Min(t.Length, f.Length);
+
+            // Fuzzy fallback: longest contiguous overlap, ≥4 chars and ≥50% of the shorter name.
+            var lcs = LongestCommonSubstringLength(t, f);
+            var shorter = Math.Min(t.Length, f.Length);
+            if (lcs >= 4 && shorter > 0 && lcs * 2 >= shorter)
+            {
+                return 300 + lcs;
+            }
+            return 0;
+        }
+
+        internal static Int32 LongestCommonSubstringLength(String a, String b)
+        {
+            if (a.Length == 0 || b.Length == 0) return 0;
+            var prev = new Int32[b.Length + 1];
+            var best = 0;
+            for (var i = 1; i <= a.Length; i++)
+            {
+                var cur = new Int32[b.Length + 1];
+                for (var j = 1; j <= b.Length; j++)
+                {
+                    if (a[i - 1] == b[j - 1])
+                    {
+                        cur[j] = prev[j - 1] + 1;
+                        if (cur[j] > best) best = cur[j];
+                    }
+                }
+                prev = cur;
+            }
+            return best;
+        }
+
+        // Open the project in a terminal and start claude there. Where exactly (reuse an idle tab
+        // vs open a new one) is the backend's call — it needs terminal-specific knowledge of what
+        // "idle" means. What is platform-neutral, and stays here, is the pin bookkeeping.
+        internal void LaunchClaudeInProject(String path)
+        {
+            // Opening a project is an explicit "I'm working here now", and it starts a session in a
+            // tab that has no key yet. Holding a pin from before would quietly send Yes / Clear /
+            // voice to the OLD session while you type in the new one.
+            this.ClearPin();
+
+            _platform.LaunchClaudeInProject(path);
+        }
+
+        private static void TryDelete(String path)
+        {
+            try { File.Delete(path); } catch { /* best effort */ }
+        }
+
+        private void RunDetached(String file, List<String> args)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = file,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                foreach (var a in args)
+                {
+                    psi.ArgumentList.Add(a);
+                }
+                Process.Start(psi);
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, $"BridgeManager.RunDetached: failed to launch {file}");
+            }
+        }
+
+    }
+}

@@ -1,0 +1,82 @@
+namespace Loupedeck.ClaudeConsolePlugin.Platform
+{
+    using System;
+    using System.Collections.Generic;
+
+    /// <summary>
+    /// Picks the backend for the machine we're running on. Selection is at RUNTIME, not compile
+    /// time: one plugin assembly serves both operating systems, and only the helper executables
+    /// shipped alongside it are per-platform.
+    /// </summary>
+    internal static class PlatformBridgeFactory
+    {
+        /// <param name="matcher">
+        /// What an agent's process looks like in a process listing. Null matches nothing — Core
+        /// names no agent, so an undeclared product finds no sessions rather than someone else's.
+        /// </param>
+        public static IPlatformBridge Create(AgentProcessMatcher matcher = null, String cliCommand = null)
+        {
+            if (OperatingSystem.IsMacOS())
+            {
+                return new MacPlatformBridge(matcher, cliCommand);
+            }
+
+            if (OperatingSystem.IsWindows())
+            {
+                // Discovery + injection + terminal control. Voice is still a no-op (Phase 5).
+                // See docs/windows-port-2.0-plan.md for the hardware verification checklist.
+                return new WindowsPlatformBridge(matcher, cliCommand);
+            }
+
+            // Deliberately a working object rather than null: every key press then degrades to a
+            // logged no-op instead of throwing inside an SDK callback.
+            return new UnsupportedPlatformBridge();
+        }
+    }
+
+    /// <summary>
+    /// The "this OS has no backend yet" bridge. Reports no sessions and performs no injection,
+    /// which is exactly what the pre-seam code did on non-macOS — it just says so in one place
+    /// now instead of at fifteen call sites.
+    /// </summary>
+    internal sealed class UnsupportedPlatformBridge : IPlatformBridge
+    {
+        public String Name => "unsupported";
+
+        public Boolean IsSupported => false;
+
+        // null, not an empty set: "I don't know" — an empty set would tell the registry to reap
+        // every live session (see IPlatformBridge.DiscoverSessions).
+        public HashSet<String> DiscoverSessions() => null;
+
+        public String QueryFrontmostSession() => null;
+
+        public InjectionOutcome InjectText(String sessionKey, String text, Boolean pressEnter) => this.Unsupported(nameof(this.InjectText));
+
+        public InjectionOutcome InjectKey(String sessionKey, KeyStroke key) => this.Unsupported(nameof(this.InjectKey));
+
+        public InjectionOutcome InjectTabThenEnter(String sessionKey) => this.Unsupported(nameof(this.InjectTabThenEnter));
+
+        public void FocusSession(String sessionKey) => this.Unsupported(nameof(this.FocusSession));
+
+        public void Navigate(TerminalAction action) => this.Unsupported(nameof(this.Navigate));
+
+        public void LaunchClaudeInProject(String projectDir) => this.Unsupported(nameof(this.LaunchClaudeInProject));
+
+        public Boolean CaptureScreenshotInteractive(String outputPath)
+        {
+            this.Unsupported(nameof(this.CaptureScreenshotInteractive));
+            return false;
+        }
+
+        public void LaunchAgentSession(String[] extraArgs) => this.Unsupported(nameof(this.LaunchAgentSession));
+
+        public void Alert() { /* no backend to beep with */ }
+
+        private InjectionOutcome Unsupported(String what)
+        {
+            PluginLog.Info($"UnsupportedPlatformBridge: {what} — no backend for this OS yet");
+            return InjectionOutcome.Unsupported;
+        }
+    }
+}

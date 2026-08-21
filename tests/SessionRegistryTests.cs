@@ -46,7 +46,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             try { Directory.Delete(_root, recursive: true); } catch { /* best effort */ }
         }
 
-        private SessionRegistry NewRegistry() => new SessionRegistry(_sessionsDir, _activityDir, _registryFile);
+        private SessionRegistry NewRegistry() => new SessionRegistry(_sessionsDir, _activityDir, _registryFile) { Agent = new Agents.ClaudeCodeAdapter() };
 
         private String StateFor(String tty) => Path.Combine(_sessionsDir, tty + ".json");
         private String ActivityFor(String tty) => Path.Combine(_activityDir, tty + ".json");
@@ -121,7 +121,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.NotNull(session);
             Assert.True(session.IsProvisional);
-            Assert.Equal("Claude", session.Project);
+            // No agent name on a provisional session: the key falls back to whichever
+            // agent is running, so the engine must not pick one.
+            Assert.Null(session.Project);
             Assert.Null(session.CtxPercent);
         }
 
@@ -354,9 +356,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Theory]
         [InlineData("/Users/x/Work/MyApps/claude-console", "claude-console")]
         [InlineData("/Users/x/Work/MyApps/claude-console/", "claude-console")]
-        [InlineData("/", "Claude")]
-        [InlineData("", "Claude")]
-        [InlineData(null, "Claude")]
+        [InlineData("/", null)]
+        [InlineData("", null)]
+        [InlineData(null, null)]
         public void Project_name_is_the_directory_basename(String dir, String expected)
         {
             Assert.Equal(expected, SessionRegistry.ProjectName(dir));

@@ -16,6 +16,12 @@ let icons: [(String, String, String)] = [
     ("model", "sparkles", P),                        // legacy basename, kept for old bindings
     ("deploy", "shippingbox.fill", G),               // 10th prompt key — absent from the pack
     ("terminal", "terminal.fill", Y),
+    ("screenshot", "camera.viewfinder", B),          // Screenshot key — capture region → agent
+    // ControlCommand's Core keys wear the Core purple (the model/compact/arrows family).
+    // review_core is distinct from the designer's blue review.png on BOTH color and glyph —
+    // that file belongs to the Prompts family and is still bound on the prompts page.
+    ("review_core", "doc.text.magnifyingglass", P),  // native /review — inspect the changes
+    ("clear_core", "trash.fill", P),                 // /clear-/new — was Git-amber by inheritance
     // Window nav — solid TRIANGLES in squares. Differs from the tab keys' line-arrows-in-circles on
     // BOTH the inner glyph (▶ vs →) and the outer shape (square vs circle), so window ≠ tab even on a
     // tiny dark key (a plain arrow.*.square just re-drew the tab arrow in a near-invisible square).

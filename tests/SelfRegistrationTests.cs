@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
+    using System.Linq;
     using System.IO;
     using System.IO.Compression;
     using System.Text.Json.Nodes;
@@ -103,14 +104,252 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Directory.CreateDirectory(existing);
             File.WriteAllText(Path.Combine(existing, "ApplicationInfo.json"), "{}");
 
-            Assert.True(SelfRegistration.RegistrationExists(appsRoot));
+            Assert.True(SelfRegistration.RegistrationExists(appsRoot, "@_claudeconsole"));
+        }
+
+        /// <summary>
+        /// Two products built from this repo must not claim one another's entry. The identity comes
+        /// from each package's own ApplicationInfo.json, so a registration for one is invisible to
+        /// the other — without this, installing the second console would overwrite the first's
+        /// application row and its imported layout.
+        /// </summary>
+        [Fact]
+        public void One_products_registration_is_not_mistaken_for_anothers()
+        {
+            var appsRoot = Path.Combine(this._root, "Applications");
+            var claude = Path.Combine(appsRoot, "Loupedeck70", "@_claudeconsole");
+            Directory.CreateDirectory(claude);
+            File.WriteAllText(Path.Combine(claude, "ApplicationInfo.json"), "{}");
+
+            Assert.True(SelfRegistration.RegistrationExists(appsRoot, "@_claudeconsole"));
+            Assert.False(SelfRegistration.RegistrationExists(appsRoot, "@_codexconsole"));
+        }
+
+        /// <summary>
+        /// The Codex package must be a COMPLETE registration in its own right, and must not collide
+        /// with Claude Console's. Identity, profile GUID and the plugin the keys bind to all differ;
+        /// a shared GUID in particular would have the service dedupe one profile away.
+        /// </summary>
+        [Fact]
+        public void The_codex_package_registers_as_its_own_application()
+        {
+            var lp5 = CodexProfilePath();
+            var claude = PackagedProfilePath();
+
+            using var zip = System.IO.Compression.ZipFile.OpenRead(lp5);
+            var appInfo = ReadJsonEntry(zip, "ApplicationInfo.json");
+            var profileInfo = ReadJsonEntry(zip, "ProfileInfo.json");
+
+            Assert.Equal("@_codexconsole", (String)appInfo["name"]);
+            Assert.Equal("@_codexconsole", (String)profileInfo["applicationName"]);
+            Assert.Equal((String)profileInfo["name"], (String)appInfo["defaultProfileName"]);
+
+            Assert.NotEqual(SelfRegistration.ReadApplicationName(claude),
+                            SelfRegistration.ReadApplicationName(lp5));
+
+            using var claudeZip = System.IO.Compression.ZipFile.OpenRead(claude);
+            Assert.NotEqual((String)ReadJsonEntry(claudeZip, "ProfileInfo.json")["name"],
+                            (String)profileInfo["name"]);
+        }
+
+        /// <summary>
+        /// Key bindings name the plugin that owns them ("<PluginShortName>___<Type>___<param>"), so
+        /// a profile copied from another product binds every key to a plugin this package does not
+        /// contain — the layout would import and do nothing at all.
+        /// </summary>
+        [Fact]
+        public void Every_key_in_the_codex_profile_binds_to_the_codex_plugin()
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(CodexProfilePath());
+            using var entry = zip.GetEntry("ProfileInfo.json").Open();
+            using var reader = new System.IO.StreamReader(entry);
+            var body = reader.ReadToEnd();
+
+            Assert.DoesNotContain("ClaudeConsole___", body);
+            Assert.Contains("VizhiCodex___", body);
+        }
+
+        /// <summary>
+        /// The profile and the product must agree. Gating an action in code while the profile still
+        /// binds it does not remove the key — it turns it into an unresolvable binding, a key that
+        /// looks live and cannot fire. These two are what Codex genuinely does not have.
+        /// </summary>
+        [Fact]
+        public void The_codex_profile_binds_nothing_the_product_cannot_do()
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(CodexProfilePath());
+            using var entry = zip.GetEntry("ProfileInfo.json").Open();
+            using var reader = new System.IO.StreamReader(entry);
+            var body = reader.ReadToEnd();
+
+            Assert.DoesNotContain("ControlCommand___tab", body);      // no completion to accept
+            Assert.DoesNotContain("CostDisplayCommand", body);        // reports no spend
+        }
+
+        /// <summary>
+        /// Voice is agent-neutral and this package embeds the payload, so the Codex profile binds it
+        /// like Claude Console does. The keys are only honest while pack-release.sh ships the helper
+        /// for this product — the guard for that lives in Pack_release_ships_voice_for_both_products.
+        /// </summary>
+        [Fact]
+        public void The_codex_profile_binds_voice()
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(CodexProfilePath());
+            using var entry = zip.GetEntry("ProfileInfo.json").Open();
+            using var reader = new System.IO.StreamReader(entry);
+            var body = reader.ReadToEnd();
+
+            Assert.Contains("VoiceCommand", body);
+            Assert.Contains("ProjectVoiceCommand", body);
+        }
+
+        /// <summary>
+        /// Page 1 is the page a user actually looks at, so it carries no holes. Dropping Tab left
+        /// one, and the fix is a rearrangement rather than filler: Esc moves down beside Yes and No
+        /// — yes, no and escape are the three ways to answer an approval prompt — which frees the
+        /// slot next to Voice for its Draft twin (same capture, types without submitting).
+        /// </summary>
+        [Fact]
+        public void The_codex_first_page_has_no_empty_keys()
+        {
+            var page = CodexPressPage(0);
+
+            for (var i = 0; i < 9; i++)
+            {
+                Assert.False(
+                    page[i]!["pressAction"] is null,
+                    $"page 1 key {i + 1} is unbound — the first page must be full");
+            }
+
+            Assert.Contains("ScreenshotCommand", (String)page[3]!["pressAction"]!);
+            Assert.Contains("VoiceCommand", (String)page[4]!["pressAction"]!);
+            Assert.Contains("VoiceDraftCommand", (String)page[5]!["pressAction"]!);
+            Assert.Contains("ControlCommand___esc", (String)page[8]!["pressAction"]!);
+        }
+
+        /// <summary>
+        /// Cost's freed slot on page 2 carries Review — Codex's own first-class verb — and Clear
+        /// is demoted to the far corner, not dropped. A rearrangement that silently lost a key
+        /// would be the profile-vs-product bug wearing a new coat.
+        /// </summary>
+        [Fact]
+        public void Page_two_leads_with_review_and_keeps_clear_in_the_corner()
+        {
+            var page = CodexPressPage(1);
+
+            Assert.Contains("ControlCommand___review", (String)page[0]!["pressAction"]!);
+            Assert.Contains("ControlCommand___clear", (String)page[8]!["pressAction"]!);
+        }
+
+        /// <summary>Reads one press page's controls out of the packaged Codex profile.</summary>
+        private static JsonArray CodexPressPage(Int32 index)
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(CodexProfilePath());
+            using var entry = zip.GetEntry("ProfileInfo.json").Open();
+            using var reader = new System.IO.StreamReader(entry);
+            var doc = JsonNode.Parse(reader.ReadToEnd());
+
+            return (JsonArray)doc!["layout"]!["layoutModes"]![0]!["workspaces"]![0]!
+                ["pressPages"]![index]!["controls"]!;
+        }
+
+        /// <summary>Claude Console keeps all four — this is a per-product difference, not a removal.</summary>
+        [Fact]
+        public void The_claude_profile_still_binds_them()
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(PackagedProfilePath());
+            using var entry = zip.GetEntry("ProfileInfo.json").Open();
+            using var reader = new System.IO.StreamReader(entry);
+            var body = reader.ReadToEnd();
+
+            Assert.Contains("ControlCommand___tab", body);
+            Assert.Contains("CostDisplayCommand", body);
+            Assert.Contains("VoiceCommand", body);
+        }
+
+        /// <summary>
+        /// A bound voice key with no payload in the package is exactly the failure this whole file
+        /// guards against: the action registers, the key looks live, and the press finds no helper.
+        /// The profile above is only honest because the packer embeds the payload for both products.
+        /// </summary>
+        [Fact]
+        public void Pack_release_ships_voice_for_both_products()
+        {
+            var script = File.ReadAllText(RepoFile("tools", "voice", "pack-release.sh"));
+
+            Assert.Contains("ClaudeConsole|VizhiCodex) SHIPS_VOICE=1", script);
+        }
+
+        /// <summary>The voice actions must be compiled INTO the Codex product, not excluded from it.</summary>
+        [Fact]
+        public void The_codex_build_includes_the_voice_actions()
+        {
+            var csproj = File.ReadAllText(
+                RepoFile("src", "Products", "VizhiCodex", "VizhiCodexPlugin.csproj"));
+
+            Assert.DoesNotContain("Compile Remove", csproj);
+        }
+
+        /// <summary>Walks up from the test binary to a repo-relative file.</summary>
+        private static String RepoFile(params String[] parts)
+        {
+            var dir = AppContext.BaseDirectory;
+            for (var i = 0; i < 8 && dir != null; i++)
+            {
+                var candidate = Path.Combine(new[] { dir }.Concat(parts).ToArray());
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+
+                dir = Path.GetDirectoryName(dir);
+            }
+
+            throw new FileNotFoundException($"not found walking up from {AppContext.BaseDirectory}: {String.Join("/", parts)}");
+        }
+
+        private static String CodexProfilePath()
+        {
+            var dir = AppContext.BaseDirectory;
+            for (var i = 0; i < 8 && dir != null; i++)
+            {
+                var candidate = Path.Combine(
+                    dir, "src", "Products", "VizhiCodex", "package", "profiles", "DefaultProfile70.lp5");
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+
+                dir = Path.GetDirectoryName(dir);
+            }
+
+            throw new InvalidOperationException("could not locate the Codex profile");
+        }
+
+        /// <summary>The name is read from the package, never assumed.</summary>
+        [Fact]
+        public void The_application_name_comes_from_the_packaged_profile()
+        {
+            Assert.Equal("@_claudeconsole", SelfRegistration.ReadApplicationName(PackagedProfilePath()));
+        }
+
+        /// <summary>An unreadable package yields null rather than throwing during plugin load.</summary>
+        [Fact]
+        public void An_unreadable_package_has_no_application_name()
+        {
+            var junk = Path.Combine(this._root, "not-a-zip.lp5");
+            Directory.CreateDirectory(this._root);
+            File.WriteAllText(junk, "definitely not a zip");
+
+            Assert.Null(SelfRegistration.ReadApplicationName(junk));
+            Assert.Null(SelfRegistration.ReadApplicationName(Path.Combine(this._root, "missing.lp5")));
         }
 
         [Fact]
         public void No_applications_directory_means_no_registration_yet()
         {
-            Assert.False(SelfRegistration.RegistrationExists(Path.Combine(this._root, "nope")));
-            Assert.False(SelfRegistration.RegistrationExists(null));
+            Assert.False(SelfRegistration.RegistrationExists(Path.Combine(this._root, "nope"), "@_claudeconsole"));
+            Assert.False(SelfRegistration.RegistrationExists(null, "@_claudeconsole"));
         }
 
         [Fact]
@@ -149,8 +388,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var dir = AppContext.BaseDirectory;
             for (var i = 0; i < 8 && dir != null; i++)
             {
+                // Each product owns its own package tree; this suite is about Claude Console's.
                 var candidate = Path.Combine(
-                    dir, "src", "package", "profiles", "DefaultProfile70.lp5");
+                    dir, "src", "Products", "ClaudeConsole", "package", "profiles", "DefaultProfile70.lp5");
                 if (File.Exists(candidate))
                 {
                     return candidate;

@@ -174,18 +174,23 @@ internal static class Program
 
             if (title != null)
             {
-                foreach (AutomationElement window in windows)
+                var matches = MatchingTabs(windows, title);
+
+                // Two tabs with the same label are indistinguishable BY LABEL — two sessions
+                // started in the same directory both title their console after it. But the label
+                // IS the target's console title, and we hold that console: briefly retitle it to
+                // a nonce, select the one tab that repaints to the nonce, restore. That is
+                // selection by identity, not by name — seen needed on hardware 2026-08-20, where
+                // the first "sahan" tab won and the session lived in the second.
+                if (matches.Count > 1 && SelectByNonce(pid))
                 {
-                    var tab = FindTab(window, title);
-                    if (tab != null)
-                    {
-                        if (tab.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var pattern))
-                        {
-                            ((SelectionItemPattern)pattern).Select();
-                        }
-                        Raise(window);
-                        return ExitOk;
-                    }
+                    return ExitOk;
+                }
+
+                if (matches.Count > 0)
+                {
+                    Select(matches[0].Window, matches[0].Tab);
+                    return ExitOk;
                 }
             }
 
@@ -203,43 +208,126 @@ internal static class Program
         return ExitRaisedOnly;
     }
 
+    /// <summary>
+    /// Every tab matching the title, across every terminal window — exact matches when any
+    /// exist, else the fuzzy tiers. Exact first; then glyph-stripped, because a busy Claude
+    /// animates the leading status glyph and the read and the walk can straddle a repaint; then
+    /// prefix, because the terminal ellipsizes long titles and Claude's conversation summaries
+    /// are long. Returning ALL matches is what lets the caller see a duplicate and switch to
+    /// selection by identity instead of by name.
+    /// </summary>
     [SupportedOSPlatform("windows")]
-    private static AutomationElement? FindTab(AutomationElement window, String title)
+    private static List<(AutomationElement Window, AutomationElement Tab)> MatchingTabs(
+        AutomationElementCollection windows, String title)
     {
-        var tabs = window.FindAll(
-            TreeScope.Descendants,
-            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem));
-
-        // Exact first; then glyph-stripped, because a busy Claude animates the leading status
-        // glyph and the read and the walk can straddle a repaint; then prefix, because the
-        // terminal ellipsizes long titles and Claude's conversation summaries are long. First
-        // match wins on a duplicate (two fresh sessions are both "✳ Claude Code") — approximate,
-        // and still the right window.
-        foreach (AutomationElement tab in tabs)
-        {
-            if (String.Equals(tab.Current.Name, title, StringComparison.Ordinal))
-            {
-                return tab;
-            }
-        }
-
+        var exact = new List<(AutomationElement, AutomationElement)>();
+        var fuzzy = new List<(AutomationElement, AutomationElement)>();
         var core = TitleCore(title);
-        if (core.Length > 0)
+
+        foreach (AutomationElement window in windows)
         {
+            var tabs = window.FindAll(
+                TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem));
+
             foreach (AutomationElement tab in tabs)
             {
+                if (String.Equals(tab.Current.Name, title, StringComparison.Ordinal))
+                {
+                    exact.Add((window, tab));
+                    continue;
+                }
+
                 var name = TitleCore(tab.Current.Name);
-                if (name.Length > 0 &&
+                if (core.Length > 0 && name.Length > 0 &&
                     (String.Equals(name, core, StringComparison.Ordinal)
                      || core.StartsWith(name.TrimEnd('…'), StringComparison.Ordinal)
                      || name.StartsWith(core, StringComparison.Ordinal)))
                 {
-                    return tab;
+                    fuzzy.Add((window, tab));
                 }
             }
         }
 
-        return null;
+        return exact.Count > 0 ? exact : fuzzy;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void Select(AutomationElement window, AutomationElement tab)
+    {
+        if (tab.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var pattern))
+        {
+            ((SelectionItemPattern)pattern).Select();
+        }
+        Raise(window);
+    }
+
+    /// <summary>
+    /// Selection by identity for duplicate labels: retitle the TARGET's console to a nonce,
+    /// select the one tab that repaints to it, restore the original title. ConPTY forwards a
+    /// SetConsoleTitle to the terminal as an OSC title sequence, so the tab label follows within
+    /// a repaint. The restore is in a finally — a helper that leaves a nonce on a user's tab has
+    /// turned a cosmetic miss into vandalism. False means the nonce never appeared (a terminal
+    /// that debounces titles, or an app that repaints its own immediately) — the caller falls
+    /// back to first-match, which was the old behavior.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static Boolean SelectByNonce(Int32 pid)
+    {
+        FreeConsole();
+        if (!AttachConsole((UInt32)pid))
+        {
+            return false;
+        }
+
+        String? original = null;
+        try
+        {
+            var sb = new StringBuilder(1024);
+            var len = GetConsoleTitleW(sb, (UInt32)sb.Capacity);
+            original = len > 0 ? sb.ToString(0, (Int32)len) : null;
+
+            var nonce = "cc-" + Guid.NewGuid().ToString("N")[..12];
+            if (!SetConsoleTitleW(nonce))
+            {
+                return false;
+            }
+
+            for (var i = 0; i < 8; i++)
+            {
+                Thread.Sleep(80);
+
+                var windows = AutomationElement.RootElement.FindAll(
+                    TreeScope.Children,
+                    new PropertyCondition(AutomationElement.ClassNameProperty, TerminalWindowClass));
+
+                foreach (AutomationElement window in windows)
+                {
+                    var tabs = window.FindAll(
+                        TreeScope.Descendants,
+                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem));
+
+                    foreach (AutomationElement tab in tabs)
+                    {
+                        if (String.Equals(tab.Current.Name, nonce, StringComparison.Ordinal))
+                        {
+                            Select(window, tab);
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+        finally
+        {
+            if (original != null)
+            {
+                try { SetConsoleTitleW(original); } catch { /* the app repaints its own soon */ }
+            }
+            FreeConsole();
+        }
     }
 
     /// <summary>
@@ -296,6 +384,9 @@ internal static class Program
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern UInt32 GetConsoleTitleW(StringBuilder title, UInt32 size);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern Boolean SetConsoleTitleW(String title);
 
     [DllImport("user32.dll")]
     private static extern Boolean SetForegroundWindow(IntPtr hwnd);

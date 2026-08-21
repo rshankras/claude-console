@@ -252,6 +252,113 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(2, ((System.Text.Json.Nodes.JsonArray)hooks["Stop"]).Count);
         }
 
+        // ---------------------------------------------------------------------------------------
+        // The CODEX verb — the Windows body of scripts/codex-hook.sh. Found missing on hardware
+        // 2026-08-20: the bridge wrote "/bin/sh …" into hooks.json on Windows, a command that can
+        // never run there, so no state ever arrived. These pin both sides of the fix.
+        // ---------------------------------------------------------------------------------------
+
+        [Fact]
+        public void The_codex_hook_command_is_the_exe_verb_on_windows_and_the_script_on_macos()
+        {
+            var bridge = new Agents.CodexStateBridge(codexHome: @"C:\Users\me\.codex") { HookExe = Exe };
+
+            Assert.Equal($"\"{Exe}\" codex SessionStart", bridge.HookCommand("SessionStart", windows: true));
+            Assert.Contains("/bin/sh '", bridge.HookCommand("SessionStart", windows: false));
+            Assert.Contains("codex-hook.sh' SessionStart", bridge.HookCommand("SessionStart", windows: false));
+        }
+
+        [Fact]
+        public void The_shim_dispatches_the_codex_verb()
+        {
+            var src = ReadShimSource();
+
+            Assert.Contains("args[0] == \"codex\" => Codex(args[1])", src);
+        }
+
+        [Fact]
+        public void The_codex_verb_writes_to_the_codex_products_ipc_root()
+        {
+            // Two consoles must never share an IPC root — each reaps sessions it can't see.
+            var src = ReadShimSource();
+
+            Assert.Contains("Path.Combine(Path.GetTempPath(), \"codex-console\")", src);
+            Assert.Contains("Path.Combine(CodexRoot, \"sessions\")", src);
+        }
+
+        [Fact]
+        public void The_codex_verb_writes_the_scripts_envelope()
+        {
+            // Field-for-field the envelope scripts/codex-hook.sh writes and CodexStateReader parses.
+            var src = ReadShimSource();
+
+            Assert.Contains("\\\"schema\\\":1,\\\"agent\\\":\\\"codex-cli\\\",\\\"event\\\":", src);
+            Assert.Contains("\\\"ts\\\":{ts},\\\"payload\\\":{body}", src);
+        }
+
+        /// <summary>
+        /// Codex surfaces a nonzero hook exit to the USER ("hook exited with code 1" appeared in
+        /// the TUI on Windows hardware, 2026-08-20), so the codex verb must be structurally unable
+        /// to produce one: every statement, including the final {} write, is inside a guard, and
+        /// failures leave a breadcrumb file instead of an exit code.
+        /// </summary>
+        [Fact]
+        public void The_codex_verb_cannot_exit_nonzero_and_never_fails_silently()
+        {
+            var src = ReadShimSource();
+
+            Assert.Contains("try { Console.Write(\"{}\"); } catch (Exception ex) { Breadcrumb(ex, eventName); }", src);
+            Assert.Contains("hook-error.log", src);
+        }
+
+        /// <summary>
+        /// Codex TERMINATES a hook that outlives its timeout — exit code 1, no exception, no
+        /// breadcrumb — which is exactly what hardware showed while parent lookups spawned
+        /// PowerShell (seconds of cold start per hop). Two defenses, both pinned: the shared
+        /// state file is written BEFORE any process walking, and parent lookups go through the
+        /// kernel before ever considering a PowerShell spawn.
+        /// </summary>
+        [Fact]
+        public void The_codex_verb_writes_evidence_before_walking_and_walks_without_powershell()
+        {
+            var src = ReadShimSource();
+
+            var sharedWrite = src.IndexOf(
+                "WriteAtomic(Path.Combine(CodexSessionsDir, SharedName + \".json\"), envelope)",
+                StringComparison.Ordinal);
+            var climb = src.IndexOf("SessionKeyTopmost(IsCodex)", StringComparison.Ordinal);
+
+            Assert.True(sharedWrite >= 0, "the codex verb must write the shared file");
+            Assert.True(climb > sharedWrite, "the shared write must come BEFORE the ancestor climb");
+            Assert.Contains("NtQueryInformationProcess", src);
+        }
+
+        /// <summary>
+        /// The codex verb must never read stdin unbounded. On Windows the hook's stdin can fail
+        /// to deliver EOF even after the payload is fully written (inherited pipe write handles),
+        /// so a bare ReadToEnd hangs until codex kills the hook at its timeout — kill code 1,
+        /// nothing written, no exception to breadcrumb. The bounded read forfeits the payload on
+        /// timeout but always records the event.
+        /// </summary>
+        [Fact]
+        public void The_codex_verb_reads_stdin_with_a_time_bound()
+        {
+            var src = ReadShimSource();
+
+            Assert.Contains("ReadStdinBounded(", src);
+            Assert.Contains("read.Wait(ms) ? read.Result : \"\"", src);
+        }
+
+        [Fact]
+        public void The_codex_verb_resolves_the_codex_process_not_claude()
+        {
+            var src = ReadShimSource();
+
+            Assert.Contains("SessionKeyTopmost(IsCodex)", src);
+            Assert.Contains("name.Equals(\"codex\", StringComparison.OrdinalIgnoreCase)", src);
+            Assert.Contains("@openai\\codex", src);
+        }
+
         private static String ReadShimSource()
         {
             var dir = AppContext.BaseDirectory;
