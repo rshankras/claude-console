@@ -73,10 +73,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         private void WireRolloutBridge()
         {
-            // Lay down the sandbox grants now, so the day codex's hook runner is fixed the hooks
-            // can both LAUNCH and WRITE without a plugin update. Best effort: the sandbox group
-            // exists only after codex's own setup has run (Platform.CodexSandboxAccess).
-            Platform.CodexSandboxAccess.EnsureGranted();
+            // Lay down the sandbox grants, so the day codex's hook runner is fixed the hooks can
+            // both LAUNCH and WRITE without a plugin update. Best effort: the sandbox group
+            // exists only after codex's own setup has run (Platform.CodexSandboxAccess). Off the
+            // Load path: the service fails a Load that exceeds 10s, and ACL propagation across
+            // the Logi tree ate that whole budget on hardware — the 1.5.0 install failure.
+            // Nothing in Load depends on these grants; they are for a future codex.
+            _ = System.Threading.Tasks.Task.Run(Platform.CodexSandboxAccess.EnsureGranted);
 
             var bridge = new CodexRolloutBridge();
             var manager = BridgeManager.Instance;

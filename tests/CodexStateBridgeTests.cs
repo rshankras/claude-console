@@ -76,8 +76,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         /// <summary>
-        /// Every event we rely on must be subscribed, and each must invoke the launcher with its own
-        /// name — that argument is the only thing telling the hook which event it is handling.
+        /// Every event we rely on must be subscribed, and each must carry EXACTLY the command
+        /// HookCommand builds, ending in its own event name — that argument is the only thing
+        /// telling the hook which event it is handling. The command's per-OS SHAPE (exe verb on
+        /// Windows, sh script elsewhere) is pinned separately in WindowsHookTests via the OS-free
+        /// overload; this test is the wiring: the file contains what the builder built, on
+        /// whichever OS the test runs.
         /// </summary>
         [Fact]
         public void Every_event_is_subscribed_and_passes_its_own_name()
@@ -91,7 +95,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 Assert.True(hooks.ContainsKey(evt), $"missing subscription: {evt}");
                 var command = hooks[evt][0]["hooks"][0]["command"].GetValue<String>();
-                Assert.Contains(b.HookScript, command);
+                Assert.Equal(b.HookCommand(evt), command);
                 Assert.EndsWith(" " + evt, command);
             }
         }
@@ -99,7 +103,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         /// <summary>
         /// A home directory with a space in it is ordinary on macOS, and an unquoted path would
         /// split into two arguments — the hook would then run with the wrong event name, or not
-        /// at all.
+        /// at all. The single-quoting is a POSIX-shape property, so it is asserted through the
+        /// OS-free overload and holds from any machine; the file itself carries the running OS's
+        /// shape, which the wiring assertion covers.
         /// </summary>
         [Fact]
         public void The_script_path_is_quoted_so_a_space_cannot_split_it()
@@ -111,7 +117,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var command = JsonNode.Parse(File.ReadAllText(b.HooksFile))
                 ["hooks"]["Stop"][0]["hooks"][0]["command"].GetValue<String>();
 
-            Assert.Contains($"'{b.HookScript}'", command);
+            Assert.Equal(b.HookCommand("Stop"), command);
+            Assert.Contains($"'{b.HookScript}'", b.HookCommand("Stop", windows: false));
         }
 
         /// <summary>

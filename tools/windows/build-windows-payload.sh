@@ -8,6 +8,7 @@
 #   claude-console-hook.exe     statusline + activity hooks (Phase 4)
 #   claude-console-focus.exe    selects the Windows Terminal tab for a session (Phase 3)
 #   claude-console-voice.exe    microphone capture + whisper transcription (Phase 5)
+#   claude-console-shot.exe     interactive region capture -> PNG (ms-screenclip: + clipboard)
 #
 # Usage: tools/windows/build-windows-payload.sh [Release|Debug] [win-x64|win-arm64] [product]
 set -euo pipefail
@@ -29,7 +30,7 @@ mkdir -p "$DEST"
 # WPF's UI Automation client cannot be trimmed. On a machine without the .NET Desktop runtime it
 # simply doesn't run and tab-focus degrades to raising the window — everything else is unaffected,
 # which is why it is a separate exe rather than a verb on inject.
-for proj in ClaudeConsoleInject ClaudeConsoleHook ClaudeConsoleVoice ClaudeConsoleFocus; do
+for proj in ClaudeConsoleInject ClaudeConsoleHook ClaudeConsoleVoice ClaudeConsoleFocus ClaudeConsoleShot; do
   [ -d "$ROOT/tools/windows/$proj" ] || { echo ">>>   $proj (absent — skipped)"; continue; }
   echo ">>>   $proj"
   # Each csproj decides self-contained vs framework-dependent (see their comments); don't
