@@ -1,9 +1,9 @@
-# Vizhi for Codex 1.5.2 — preview notes
+# Vizhi for Codex 1.5.3 — preview notes
 
 *For initial review. Not yet on the Marketplace; Claude Console 2.0.1 is in Marketplace review
 separately.*
 
-*1.5.2 rolls up the Windows hardware-verification fixes on top of 1.5.0 (which never installed
+*1.5.3 rolls up the Windows hardware-verification fixes on top of 1.5.0 (which never installed
 cleanly on Windows and was not re-released):*
 
 - *Install fixed: 1.5.0's sandbox ACL grants ran on the plugin's Load path and their recursive
@@ -12,6 +12,9 @@ cleanly on Windows and was not re-released):*
   let NTFS inheritance do the propagation.*
 - *Session keys show the project's folder name: the rollout transport now carries the session's
   cwd in its state envelope, where 1.5.0 wrote none and every key could only say "Codex".*
+- *Context percent fills on Windows: the rollout envelope now names the transcript the context
+  reader sizes the window from — the file the transport is already tailing — where before it
+  named none and the context key stayed blank however much the session had used.*
 - *Tab switching selects by identity: two sessions started in the same directory share a tab
   label, and the switcher used to take the first match — it now briefly retitles the target's
   own console to a nonce, selects the tab that repaints, and restores the title.*
@@ -98,7 +101,7 @@ runner, hooks light up with no plugin update needed.
 > (Options+ → Plugins) or use a different machine.
 
 1. Logi Options+ **6.4+**, MX Creative Keypad, [Codex CLI](https://developers.openai.com/codex/cli) installed natively.
-2. Double-click `VizhiCodex_1.5.2.lplug4` → install via Options+.
+2. Double-click `VizhiCodex_1.5.3.lplug4` → install via Options+.
 3. Wait ~1 minute: the plugin self-registers its application + layout and restarts the plugin
    service once (Options+ blinks and returns on its own).
 4. **Trust the hooks.** At your next Codex session start you'll see **"Hooks need review — 7
