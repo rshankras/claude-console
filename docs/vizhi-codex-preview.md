@@ -1,12 +1,22 @@
-# Vizhi for Codex 1.5.1 — preview notes
+# Vizhi for Codex 1.5.2 — preview notes
 
 *For initial review. Not yet on the Marketplace; Claude Console 2.0.1 is in Marketplace review
 separately.*
 
-*1.5.1 fixes the Windows install failure in 1.5.0: the sandbox ACL grants ran on the plugin's
-Load path and their recursive `icacls /T` walk of the Logi tree ate the service's 10-second
-Load budget, so Options+ showed the plugin stuck "waiting" and the install failed. The grants
-now run in the background and let NTFS inheritance do the propagation.*
+*1.5.2 rolls up the Windows hardware-verification fixes on top of 1.5.0 (which never installed
+cleanly on Windows and was not re-released):*
+
+- *Install fixed: 1.5.0's sandbox ACL grants ran on the plugin's Load path and their recursive
+  `icacls /T` walk of the Logi tree ate the service's 10-second Load budget — Options+ showed
+  the plugin stuck "waiting" and the install failed. The grants now run in the background and
+  let NTFS inheritance do the propagation.*
+- *Session keys show the project's folder name: the rollout transport now carries the session's
+  cwd in its state envelope, where 1.5.0 wrote none and every key could only say "Codex".*
+- *Tab switching selects by identity: two sessions started in the same directory share a tab
+  label, and the switcher used to take the first match — it now briefly retitles the target's
+  own console to a nonce, selects the tab that repaints, and restores the title.*
+- *The Screenshot key works on Windows: a new `claude-console-shot.exe` helper drives the
+  ms-screenclip: overlay and lands the snip as a PNG (Esc detected within ~2s).*
 
 ## What this is
 
@@ -88,7 +98,7 @@ runner, hooks light up with no plugin update needed.
 > (Options+ → Plugins) or use a different machine.
 
 1. Logi Options+ **6.4+**, MX Creative Keypad, [Codex CLI](https://developers.openai.com/codex/cli) installed natively.
-2. Double-click `VizhiCodex_1.5.1.lplug4` → install via Options+.
+2. Double-click `VizhiCodex_1.5.2.lplug4` → install via Options+.
 3. Wait ~1 minute: the plugin self-registers its application + layout and restarts the plugin
    service once (Options+ blinks and returns on its own).
 4. **Trust the hooks.** At your next Codex session start you'll see **"Hooks need review — 7
