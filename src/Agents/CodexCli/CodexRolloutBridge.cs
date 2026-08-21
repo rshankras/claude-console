@@ -319,12 +319,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// </summary>
         private Boolean WriteState(String rolloutPath, String activityEvent)
         {
-            // The cwd is the one payload field this transport can honestly supply — it is what
-            // lets the key show the project's folder name instead of a generic label. Absent,
-            // the payload stays null: the reader treats both identically except for the name.
-            var payload = this._cwds.TryGetValue(rolloutPath, out var cwd)
-                ? "{\"cwd\":\"" + JsonEscape(cwd) + "\"}"
-                : "null";
+            // Two payload fields this transport can honestly supply, and the reader wants both:
+            // cwd names the key with the project folder instead of a generic label, and
+            // transcript_path points the context reader at the file to size the window from —
+            // which on this platform IS this rollout, the very file we are tailing. The macOS
+            // hook supplies the same two; without transcript_path the context key stays blank on
+            // Windows no matter how much the session has used (seen on hardware 2026-08-21).
+            var fields = new List<String>
+            {
+                "\"transcript_path\":\"" + JsonEscape(rolloutPath) + "\"",
+            };
+            if (this._cwds.TryGetValue(rolloutPath, out var cwd))
+            {
+                fields.Add("\"cwd\":\"" + JsonEscape(cwd) + "\"");
+            }
+            var payload = "{" + String.Join(",", fields) + "}";
 
             var envelope =
                 "{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"" + activityEvent + "\",\"ts\":" +

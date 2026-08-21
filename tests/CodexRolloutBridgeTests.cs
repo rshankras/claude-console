@@ -142,8 +142,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(@"C:\Users\me\proj", snap.ProjectDir);
         }
 
+        /// <summary>
+        /// Even with no cwd yet, the payload still carries transcript_path — it is the file being
+        /// tailed, always known — so the context key can size the window from the first state
+        /// write. The cwd is simply absent until a record reports one, never guessed.
+        /// </summary>
         [Fact]
-        public void Without_a_cwd_the_payload_stays_null_rather_than_guessed()
+        public void Without_a_cwd_the_payload_still_carries_the_transcript_but_no_cwd()
         {
             var path = this.Rollout("a", Today, TaskStarted);
             var bridge = this.New();
@@ -152,7 +157,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             this.Append(path, TaskComplete);
             bridge.Poll();
 
-            Assert.Contains("\"payload\":null", this.SharedState());
+            var state = this.SharedState();
+            Assert.Contains("\"transcript_path\":", state);
+            Assert.DoesNotContain("\"cwd\":", state);
+
+            // And the reader turns it into the transcript the context percent is read from.
+            Assert.Equal(path, CodexStateReader.Parse(state).TranscriptPath);
         }
 
         private const String TurnContext =
