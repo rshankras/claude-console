@@ -1,141 +1,122 @@
-# Handoff — multi-agent work (branch `feat/multi-agent`)
+# Handoff — multi-agent work
 
-State as of 2026-08-18. Read [docs/multi-agent-architecture.md](multi-agent-architecture.md) for the
+State as of **2026-08-21**. Read [multi-agent-architecture.md](multi-agent-architecture.md) for the
 design and the reasoning; this is where things stand and what to do next.
 
 ## Where it stands
 
-One repo now builds a package per agent from a shared engine. Both were verified on real hardware
-today, not just in tests.
+**The branch landed.** `feat/multi-agent` merged to `main` (87 commits, merge `c27a69f`). One repo
+builds a package per agent from a shared engine, and both products live on `main`.
 
 | | |
 |---|---|
-| Branch | `feat/multi-agent`, **unpushed** (`git log --oneline origin/main..HEAD`) |
-| `main` | untouched at `0472f03` — the shipped 2.0.1 |
-| Claude Console | **2.1.0** (was 2.0.1) |
-| Vizhi for Codex | **1.5.0** (new product; hook-free Windows transport) |
-| Tests | 598 C# + 47 shell, green, deterministic |
+| `main` | merged, pushed, clean |
+| Claude Console | **2.1.0** in `main` — **untagged, and never hardware-tested on this engine** |
+| Vizhi for Codex | **1.5.3** — released, hardware-verified on macOS *and* Windows |
+| Tests | 605 C# + 47 shell, green on both platforms |
+| Tags | per product: `vizhi-codex/v1.5.3`. Bare `v…` tags are Claude Console's history |
 
-**Verified working on hardware (Codex):** session discovery, the hook state bridge, live
-busy/waiting/ready, project name from `cwd`, focus tracking and tab switching, risk-graded
-approvals, model, and context percentage. Prompts, git and navigation keys all fire.
+### What works, per platform
 
-**Voice ships in both products.** It was briefly excluded from Codex on the reasoning that the
-package carried no payload — true of the package, false of the feature: voice is agent-neutral, and
-it had been working on the dev machine all along because the runtime home
-(`~/.claude/claude-console`, a shared literal in `BridgeManager.cs:47`) already held Claude
-Console's notarized helper. `pack-release.sh` now embeds the payload for `VizhiCodex` too. Sharing
-that home is deliberate — one bundle id, one Microphone grant, one 141 MB model — but note it also
-means both products read the same `prompts.json` (`PromptCommand.cs:23`), which nobody has decided
-on. Only Tab and Cost stay dropped from the Codex profile; those are capability gaps, not
-packaging ones.
+**macOS — everything.** Session grid with project/state/context, risk-graded approvals (amber/red),
+focus and tab switching, model, best-effort context, offline voice + Voice Draft, screenshot into
+the running conversation, native `/review`, prompts, git, navigation.
 
-**Windows:** first hardware attempt 2026-08-20 found the Codex adapter dead there — profile
-visible, no keys firing — from two more unwired seams (bugs six and seven of the shape): discovery
-(`WindowsProcessWatcher` carried hardcoded claude names; now matcher-driven like macOS) and the
-state bridge (`hooks.json` got `/bin/sh …` on Windows, which can never run; the packaged hook exe
-grew a `codex <event>` verb that writes the same envelope as codex-hook.sh to the codex-console
-IPC root). Fixed and unit-pinned in 1.4.5, NOT yet re-verified on the Windows box. Claude Console
-2.0 remains Windows-verified.
+**Windows — everything except approval LIGHTING.** Sessions, project, busy/done/ready, context,
+tab focus by identity, screenshot, prompts, git, nav, voice. Yes/No keys still *answer* (they
+type); they just don't *glow* when Codex is waiting. That gap is upstream and deliberate — see
+Still open.
 
-## What is on this machine right now
+## The Marketplace, right now
 
-Checked 2026-08-18, after the hardware session:
+**Claude Console 2.0.1 — in review, and the review is stuck.** QA re-sent the *same* rejection
+("your submission includes PluginApi.dll") that 2.0.1 already fixed on 2026-08-13. Verified from
+the submitted artifact: `ClaudeConsole_2.0.1.lplug4` contains exactly one DLL and no PluginApi. So
+either the resubmission never reached their queue, or they re-reviewed 2.0.0.
+**Pending action: check which version the contribute portal lists, then send the drafted reply.**
+Evidence file for the attachment: `~/Downloads/ClaudeConsole_2.0.1-contents.txt` — the full archive
+listing with its SHA-256, so QA can match bytes against their copy.
 
-- **Vizhi for Codex 1.4.0 is installed; Claude Console is not.** Both were uninstalled during
-  testing and only Codex was put back.
-- Its registration `@_codexconsole` and `~/.codex/hooks.json` are present and correct — written by
-  the plugin, not leftovers. A reinstall recreates the hooks file, which then needs `/hooks` → trust
-  inside Codex before any key shows live state.
-- No orphaned registrations. `~/.codex/config.toml` is untouched: the 12 Vizhi hook lines from July
-  2026 are still there and are not ours.
+**Vizhi for Codex 1.5.3 — submission form filled, NOT submitted.** The package uploaded and all
+three text fields are in; [marketplace-listing-vizhi.md](marketplace-listing-vizhi.md) holds the
+exact copy, counts verified against the form's own counters (104/120, 478/500, 977/1000). Left
+deliberately undone, both requiring a human: the **Developer Agreement checkbox** and the **Submit
+button**. If the browser session is gone, re-upload `VizhiCodex_1.5.3.lplug4` and re-paste from the
+listing doc.
+
+Notable: the form had **no artwork/screenshot field**, so that open checklist item never blocked
+submission.
+
+## What is on this machine (macOS) right now
+
+- **Vizhi for Codex 1.5.3 is installed; Claude Console is not.** Verified from a genuine from-zero
+  install: registration recreated, layout imported, `~/.codex/hooks.json` rewritten by the plugin.
+- Two consoles cannot coexist (below), so testing Claude Console means uninstalling Vizhi first.
+- `~/.claude/claude-console/` holds the shared voice runtime (notarized helper, 141 MB model) and
+  `prompts.json`. **Both products use it** — never delete it while cleaning up one of them.
+- Uninstalling a plugin leaves its registration behind; `scripts/uninstall-registration.sh
+  --remove` is the cleanup, and it needs the service stopped.
 
 ## The finding that shapes the product
 
 **Two Terminal-bound plugins cannot coexist.** Both register `processOrBundleName =
-com.apple.Terminal`, one wins activation, and the other is unreachable — selecting it in Options+
-does not survive switching to Terminal, and its actions sidebar shows the winner's actions. The
-registration document has no priority field to arbitrate with.
-
-Decision taken: **keep shipping two products.** It only affects users running both agents, and two
-focused packages serve everyone else better. But it creates an obligation — a user who installs both
-sees one plugin silently stop working. **Each README and listing must say: install one.** Not
-written yet.
-
-The unified plugin (one binding, mixed grid, per-session agent) remains the answer for dual-agent
-users and is additive — a third folder under `src/Products/`.
+com.apple.Terminal`; one wins activation and the other is unreachable, with no priority field to
+arbitrate. Decision: **keep shipping two products**, and say "install one" everywhere — both
+READMEs, the preview notes, and the Marketplace release notes now lead with it. The unified plugin
+(one binding, mixed grid, per-session agent) remains the answer for dual-agent users, and is
+additive: a third folder under `src/Products/`.
 
 ## Read this before writing code
 
-Three bugs this session shared one shape: **a component built correctly, tested in isolation, and
-never wired to anything.** Each passed its unit tests and each was found only on hardware.
+**Test through the seam production uses.** Eight bugs on this branch shared one shape: a component
+built correctly, unit-tested in isolation, and never wired to anything. Every one was found on
+hardware, not by the suite. The last and deepest: the Windows process scan's *name filter* still
+listed only `claude`, so a matcher-driven watcher was correct and never received a codex row to
+inspect — **a seam is only as honest as its narrowest layer.**
 
-1. `AgentProcessMatcher` was correct; `BridgeManager` built its bridge in the constructor, before
-   the product declared its agent — so the Codex keypad discovered `claude` processes.
-2. The fix for that didn't work either: the public constructor delegated to the internal
-   test-injection one, marking every bridge as caller-supplied so the rebuild never ran. The tests
-   asked the *adapter* for its matcher, which passes happily while the manager ignores it.
-3. `CodexStateReader` was correct and **nothing called it**. The grid deserialised every state file
-   as Claude's statusline, which a Codex envelope satisfies with all fields null — so sessions sat
-   at "ready" forever wearing a project name they never reported.
+**When a constructor takes a value, grep for the literal it replaces.** `MacPlatformBridge` took
+`cliCommand` and used it on every path except two `const` scripts hardcoding `do script "claude"` —
+so "New Codex" opened a Claude session, under a label that also hardcoded "New Claude", with a unit
+test that pinned the bug by asserting the literal.
 
-The lesson, and it cost most of an afternoon: **test through the seam that production uses**, not
-the component beside it. A test that constructs the collaborator itself proves nothing about
-whether the system connects them.
+**A capability describes what the agent can honestly report HERE** — not what the CLI can do, but
+what this platform's transport actually delivers. Codex reports no cost → no Cost key. Its hooks
+never spawn on Windows → `ApprovalSignal = false` *there*, and the lighting disappears rather than
+lying. Both are the rule that forbids a `$0.00`.
 
-A fourth, different in kind: gating an action in code while the profile still binds it does not
-remove the key — it becomes an unresolvable binding. **The profile and the product must agree.**
+**The CLI is not the only door into an agent.** Twice a feature looked impossible from `--help` and
+was reachable another way: screenshots into a live conversation (the model opens a path with its
+own image tool) and `/review` (a TUI command, not only a subcommand). Check the TUI and the model's
+tools before declaring something unsupported.
 
-A fifth surfaced 2026-08-19, same shape as the first three: `MacPlatformBridge` took `cliCommand`
-at construction and used it on every launch path EXCEPT the two `Navigate` scripts, which were
-consts hardcoding `do script "claude"` — so the Codex keypad's "New Codex" key opened a claude
-session. `NavCommand.GetCommandDisplayName` hardcoded the "New Claude" label two lines below a
-comment warning against exactly that, and a test PINNED the bug by asserting the literal
-(`Assert.Contains("do script \"claude\"")` for every product). Found because a user read a key
-label. When a constructor takes a value, grep for the literal it replaces — every remaining
-occurrence is this bug waiting.
+**When hardening produces no change in symptoms, the failure is upstream of your code** — and prove
+it with a probe the failing system cannot distinguish from your real binary. Four rounds of
+hardening the Windows hook exe changed nothing, because codex never spawned it.
+
+**The profile and the product must agree.** Gating an action in code while the profile still binds
+it leaves a key that looks live and cannot fire.
 
 ## Next, in the order I would do it
 
-1. **Land the branch.** Claude Console 2.1.0 fixes orphaned registrations, which affects users on
-   2.0.1 today: uninstalling leaves an entry that claims the terminal and shows nine warning keys
-   with no explanation. That is a real bug-fix release independent of any Codex work. Land as the
-   no-op-for-Claude refactor release the architecture doc describes, then tag per product
-   (`claude-console/v2.1.0`) since bare `v…` tags are now ambiguous.
-2. ~~Write the "install one" note~~ — DONE 2026-08-19 in the root README and the new
-   src/Products/VizhiCodex/README.md (plus docs/vizhi-codex-preview.md, the note that travels
-   with the preview build). Still owed to the two Marketplace LISTINGS when they exist.
-3. **Long press.** The keypad delivers only Press/Release (`PressDuration` is always 0), so hold
-   detection has to be timed locally — Vizhi does this in `VoiceCommand.cs:57-86`. Nine keys is this
-   product's binding constraint and this doubles them. Highest value per unit of work.
-4. **Codex's own verbs** — STARTED 2026-08-19: Review landed. `/review` is a first-class TUI
-   command (review_popups.rs), not subcommand-only as the adapter first recorded — the same
-   CLI-is-not-the-only-door trap as images. `AgentVerb.Review` now maps to "/review" on Codex and
-   stays null on Claude Code (there it is a prompt, and the key hides). It holds page 2 slot 1;
-   Clear demoted to page 2's far corner. Still open: `resume --last`, `fork`, `apply` — genuinely
-   launch-path verbs (`LaunchAgentSession` is the machinery to reuse).
-5. ~~Screenshot key~~ — DONE 2026-08-19, corrected same day. `ScreenshotCommand` in Core:
-   `screencapture -i` (the system picker) → the path is TYPED into the CURRENT conversation with
-   Vizhi's proven instruction sentence, no Return — the user appends their question. This item's
-   original premise ("Codex only at launch via `-i`") was true of the CLI flag and WRONG about
-   the workflow: Codex's model opens a file mid-session with its image-viewing tool when told the
-   path, which the July Vizhi plugin proved on hardware (VizhiActionRouter.cs:444-448). The trap,
-   for next time: the CLI is not the only door into an agent — the model's own tools are another.
-   First press cost a one-time Screen Recording grant for LogiPluginService (granted on this
-   machine; verified capturing real files). `ImageAtLaunch`/`LaunchAgentSession("-i", path)`
-   survives as the tested fallback for a genuinely launch-only agent. On the Codex profile the
-   key holds page 1 slot 4; Clear moved to page 2 beside Compact. Claude Console's profile does
-   NOT bind it (its page 1 is full) — the action registers there, bindable from the sidebar.
-   Windows capture is an honest unsupported-stub. (Clipboard remains not worth it — duplicates
-   ⌘V, and Vizhi's version clobbers the clipboard without restoring it.)
-6. **Windows** — Claude Console is verified; Vizhi's port landed 2026-08-20 with a hook-free
-   state transport (1.5.0, see docs/windows-hookless-bridge-plan.md). Awaiting the hardware pass;
-   tab-switching and the Store-codex shape are the tracked tails.
+1. **Finish the Vizhi submission** — checkbox + Submit. Everything else is ready.
+2. **Unstick the Claude Console 2.0.1 review** — portal check, then the drafted reply + evidence.
+3. **Hardware-test Claude Console 2.1.0, then tag `claude-console/v2.1.0`.** It carries a week of
+   engine changes it has never run: the Mac launch scripts were rewritten (now built from
+   `_cliCommand`) and Windows discovery became matcher-driven. Test **New Claude** and session
+   discovery specifically — those are the rewritten paths. 2.1.0 also fixes orphaned
+   registrations, which 2.0.1 users hit today.
+4. **File the upstream codex hooks issue** — evidence-complete in
+   [spike-windows-codex-hooks.md](spike-windows-codex-hooks.md), never filed.
+5. **Long press.** The keypad delivers only Press/Release (`PressDuration` is always 0), so hold
+   detection has to be timed locally — the old Vizhi plugin did it in `VoiceCommand.cs:57-86`.
+   Nine keys is this product's binding constraint and this doubles them.
+6. **Codex's remaining verbs** — `resume --last`, `fork`, `apply`. Genuinely launch-path verbs;
+   `LaunchAgentSession` is the machinery to reuse.
 
 ## Commands
 
 ```bash
-bash tests/run-all.sh                                    # 598 C# + 47 shell
+bash tests/run-all.sh                                    # 605 C# + 47 shell
 dotnet build src/Products/<Product> -t:Compile           # compile-check only
 
 DOTNET_ROLL_FORWARD=LatestMajor \
@@ -145,105 +126,57 @@ python3 tools/make-codex-profile.py                      # regenerate the Codex 
 bash scripts/uninstall-registration.sh [--remove]        # clean orphaned registrations
 ```
 
-Version lives in **two** files per product (csproj + `LoupedeckPackage.yaml`) and `ProductVersionTests`
-enforces that they agree. The assembly version is what the crash-disable marker keys on.
+Version lives in **two** files per product (csproj + `LoupedeckPackage.yaml`); `ProductVersionTests`
+enforces agreement. The assembly version is what the crash-disable marker keys on.
 
 ## Still open
 
-- **Windows: codex tab-switching lands on the first tab** (hardware, 2026-08-20, 1.4.8). The
-  focus helper identifies a tab by its console TITLE (the only process→tab mapping Windows
-  offers); codex tabs likely share one title, so UI Automation's first match always wins. Needs a
-  hardware-in-the-loop investigation: confirm the title collision (read the tab labels of two
-  codex sessions), then either find a second discriminator or degrade honestly to raising the
-  window. Injection is unaffected — it addresses console handles, not tabs.
-- **Windows: a Microsoft Store-installed codex CLI would be invisible.** The desktop-app
-  exclusion drops any process under WindowsApps — right for the OpenAI desktop app's bundled
-  codex.exe, wrong if a user's ONLY codex is the Store one run via an app-execution alias.
-  Distinguish the desktop app by its own resources path, not by WindowsApps wholesale, when this
-  shape shows up in the field.
-- ~~Windows codex hooks: "exited with code 1"~~ — CLOSED 2026-08-20 after the on-hardware spike
-  run ([spike-windows-codex-hooks.md](spike-windows-codex-hooks.md) has the full table): upstream
-  codex bug, but the earlier "sandbox fails to start, unelevated fixes it" record was
-  INCOMPLETE. The failure has three layers. (1) The standalone 0.148.0 install never puts its
-  sandbox helpers (`codex-windows-sandbox-setup.exe`, `codex-command-runner.exe`) where codex
-  looks — beside the launcher exe — so no sandboxed process of any kind could spawn; copying
-  both from the release's `codex-resources\` into `…\Programs\OpenAI\Codex\bin\` repairs codex's
-  own tools. (2) The Logi installer disables ACL inheritance on `%LOCALAPPDATA%\Logi`, so
-  codex's `CodexSandboxUsers` read ACE never reaches our hook exe — spawn dies with
-  `CreateProcessAsUserW failed: 5`; `icacls … /grant "CodexSandboxUsers:(OI)(CI)RX"` repairs it,
-  and the same command line then runs fine via `codex sandbox`. (3) With BOTH repaired, codex's
-  hook-runner path still spawns nothing: a swapped-in probe exe (logs every invocation, cannot
-  exit nonzero) was never invoked while every hook reported `hook exited with code 1` in ~400 ms
-  — the exit-1 belongs to codex's own wrapper chain, elevated AND unelevated (the unelevated
-  fallback does NOT fix hooks; preview note corrected). Two diagnostic instruments are invalid
-  under a working sandbox: the spawn-proof breadcrumb (exe dir is RX-only to the sandbox user)
-  and the IPC state files (`%TEMP%\codex-console` is not sandbox-writable — when OpenAI fixes
-  the runner, the plugin must also grant CodexSandboxUsers write on the IPC root). Upstream
-  cluster: openai/codex #17478, #27052, #26158, #24098, #20346. The 1.4.7–1.4.11 hardening all
-  remains, and the lesson stands: when hardening produces no change in symptoms, the failure is
-  upstream of your code — and the second lesson from this run: prove it with a probe the failing
-  system cannot distinguish from your real binary. SAME-DAY POSTSCRIPT: Windows live state does
-  NOT have to wait on OpenAI — two hook-free channels verified on hardware: `notify` spawns its
-  program UNSANDBOXED with an `agent-turn-complete` JSON payload (thread-id + cwd + last
-  message; single config slot, so chain the desktop app's existing notify command like
-  statusline-chain), and the live rollout JSONL carries `task_started`/`task_complete` event
-  msgs (CodexContextReader already tails rollouts under the best-effort contract). Together:
-  busy→done→ready without hooks. Only approval events are unverified in the rollout stream —
-  if absent, amber/red approval keys alone wait upstream. Details in the spike doc postscript.
-  LATER SAME DAY, approvals settled BOTH ways on hardware: (1) the rollout records NOTHING at
-  the moment an approval is pending (captured a live `item/commandExecution/requestApproval`
-  over the app-server protocol while the rollout tail stayed silent; the state DB row carries no
-  flag either) — so no file-based transport can ever light amber/red, confirmed empirically,
-  not assumed. (2) BUT a workaround exists and was PROVEN end-to-end: `codex app-server
-  --listen ws://127.0.0.1:<port>` runs a multi-client server on Windows (the `daemon` wrapper
-  is Unix-only; the raw listener is not), and a second, purely passive client that merely
-  `thread/read`s a thread RECEIVES `thread/status/changed` with
-  `activeFlags:["waitingOnApproval"]` when the driving client's turn hits an approval, clearing
-  on resolution. The pending command for risk grading is fetchable via `thread/items/list`.
-  The deployment shape: plugin (or user) runs the listener, sessions launch as
-  `codex --remote ws://127.0.0.1:<port>`, plugin observes. Costs to weigh before building: the
-  surface is EXPERIMENTAL (could shift any release), plain `codex` sessions stay invisible
-  (every session must carry --remote, e.g. via the New Codex key), and TUI-over-remote behavior
-  (approval prompt still lands in the TUI beside a passive observer) is the one link not yet
-  verified with a real TUI. Reproduction scripts from the session: scratchpad ws_probe.py
-  pattern — hand-rolled ws client, driver + observer, deny-and-cleanup. The live-TUI attempt
-  (tools/windows/approval-observer-prototype.py) surfaced three lessons before the account's
-  codex usage limit ended it: (1) per-thread status events are TARGETED — an observer must
-  thread/read (subscribe) each thread, including ids returned as BARE strings by
-  thread/loaded/list, or it hears nothing; (2) the grid discovers the `codex app-server`
-  process as a phantom session — the real bridge must exclude helper codex processes from
-  discovery (command-line check); (3) the user's trusted-project profile grants write to all
-  of C:\Users\<user>, so approval bait must target truly read-only paths (C:\ root), not the
-  Desktop. The remote-TUI approval link REMAINS unverified — the session that would have
-  proven it died on "You've hit your usage limit", not on the mechanism.
-  DECISION 2026-08-21: approval lighting on Windows is DEFERRED — documented here rather than
-  built. The workaround works but carries a structural cost users would feel: every session
-  must be launched with `--remote` (keypad-launched sessions could get it invisibly; a
-  hand-typed `codex` never would), and it rides an API OpenAI marks experimental. Meanwhile
-  the upstream hook-runner fix would light approvals for every session with zero plumbing,
-  and this plugin is already pre-positioned for it (ACL grants, hook exe, readers). Revisit if
-  the upstream fix stalls AND approval lighting becomes a top user ask; when revisiting, start
-  from tools/windows/approval-observer-prototype.py PLUS the fixes recorded above
-  (subscribe-per-thread, bare-id thread lists, exclude app-server from discovery).
+- **Windows: approval lighting is DEFERRED, not broken** (decided 2026-08-21). Codex's hook runner
+  spawns no process on Windows (upstream: openai/codex #17478, #27052, #26158, #24098, #20346), and
+  hardware proved no file-based channel carries the signal either — the rollout records *nothing*
+  while an approval is pending. A workaround was proven end to end: `codex app-server --listen
+  ws://127.0.0.1:<port>` plus a passive observer client receives `thread/status/changed` with
+  `activeFlags:["waitingOnApproval"]`, clearing on resolution, with the pending command fetchable
+  via `thread/items/list`. Not built, because every session would need `--remote` (a hand-typed
+  `codex` never would) and the API is experimental — while the upstream fix would light every
+  session with zero plumbing, and this plugin is already pre-positioned for it (ACL grants, hook
+  exe, readers). Revisit if upstream stalls *and* users ask; start from
+  `tools/windows/approval-observer-prototype.py` plus its three recorded lessons: subscribe per
+  thread, thread ids come back as bare strings, and exclude the `app-server` process from
+  discovery or it appears as a phantom session.
+- **Windows: a Store-installed codex CLI would be invisible.** The desktop-app exclusion drops
+  anything under `WindowsApps` — right for the OpenAI desktop app's bundled codex.exe, wrong if a
+  user's only codex is the Store one. Distinguish by the desktop app's own resources path when
+  this shape turns up in the field.
+- **A shipped profile never updates an existing install.** Import dedupes by profile GUID, so a
+  package update leaves whatever was imported first. The only refresh today is losing the
+  registration entirely, after which `SelfRegistration` rewrites it from the packaged lp5. A
+  version-aware heal belongs next to `RegistrationHeal.cs`; until then, layout changes reach new
+  installs only.
+- **EULA legal review** — still carries its template notice. Both legal docs now cover both
+  products and both platforms, including screenshots, transcript reading, and the Windows ACL
+  grants ([PRIVACY.md](../PRIVACY.md), [EULA.md](../EULA.md)).
+- **Repo rename** to something neutral, once 2.0.1 clears review. Both packages carry
+  `github.com/rshankras/claude-console` URLs; redirects would cover it, but there is no reason to
+  make QA look twice mid-review. `main`'s README now explains the name in its first paragraph.
+- **Per-product CHANGELOG split** — one file still tells Claude Console's story only.
+- **Trademark search for "Vizhi"** before the paid Apple app ships. The hackathon gate is settled
+  (Devpost §8: submissions stay entrant property; sponsor gets judging plus three years' promotional
+  use, no commercialization restriction), so the name is clear to use — the brand step was always
+  trademark, never Devpost.
+- **`prompts.json` is shared by both products** (`PromptCommand.cs:23`, under the shared runtime
+  home). Editing prompts for one changes the other. Nobody has decided whether that is right.
 
-- **A shipped profile never updates on an existing install.** Import dedupes by profile GUID, so a
-  package update leaves whatever was imported first — a dev machine ran the fixed 1.4.0 package for
-  a day while the keypad still rendered the layout imported ten days earlier, warning triangle and
-  all. The only path that refreshes it today is losing the registration entirely, which makes
-  `SelfRegistration.RegisterIfMissing()` rewrite it from the packaged lp5 (verified: delete
-  `Applications/Loupedeck70/@_<slug>/Profiles/<GUID>/` with the service stopped, and the service
-  reaps the empty registration; the plugin recreates it on next load). A version-aware heal belongs
-  next to `RegistrationHeal.cs`. Until it exists, any layout change we ship reaches new installs
-  only.
+## Two Windows repairs worth remembering
 
-- ~~The Vizhi name gate~~ — RESOLVED 2026-08-19: the hackathon's published rules (OpenAI Devpost,
-  Section 8) keep submissions entrant property; the sponsor's only rights are judging plus three
-  years of hackathon-promotion use. No commercialization restriction, so "Vizhi for Codex" is
-  clear to use — unless a separate signed prize agreement exists, which would control. The real
-  brand step was never Devpost: a trademark search + registration for "Vizhi" before the paid
-  Apple app ships.
-- Repo rename (to something neutral) once 2.0.1 clears review; the submitted package carries GitHub
-  URLs, and redirects would cover it, but there is no reason to make QA look twice.
-- Per-product CHANGELOG split — one file currently tells Claude Console's story only.
-- The Codex plugin icon is generated (teal terminal, no vendor mark). The Logitech asset set is
-  Claude Console branding — all eight carry Anthropic's sunburst — so it cannot be reused here.
+Not our bugs, but they cost a day to find and any Windows user may need them:
+
+1. **Codex's own sandbox helpers are misplaced by its installer.** `codex-windows-sandbox-setup.exe`
+   and `codex-command-runner.exe` ship inside the release's `codex-resources\`, but codex looks for
+   them beside its launcher. Copy both to `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\` and codex's
+   own tooling starts working ("the local command sandbox failed to start" disappears).
+2. **The Logi installer disables ACL inheritance on its directory**, so codex's `CodexSandboxUsers`
+   grant never reaches our files. The plugin now lays both grants down itself, in the background —
+   `Platform/CodexSandboxAccess.cs`. Doing it on the Load path once cost a failed install: the
+   service kills a `Load` that exceeds 10 seconds, and `icacls /T` across the Logi tree took
+   exactly that long.
