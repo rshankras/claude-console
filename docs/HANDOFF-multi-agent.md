@@ -216,6 +216,15 @@ enforces that they agree. The assembly version is what the crash-disable marker 
   of C:\Users\<user>, so approval bait must target truly read-only paths (C:\ root), not the
   Desktop. The remote-TUI approval link REMAINS unverified — the session that would have
   proven it died on "You've hit your usage limit", not on the mechanism.
+  DECISION 2026-08-21: approval lighting on Windows is DEFERRED — documented here rather than
+  built. The workaround works but carries a structural cost users would feel: every session
+  must be launched with `--remote` (keypad-launched sessions could get it invisibly; a
+  hand-typed `codex` never would), and it rides an API OpenAI marks experimental. Meanwhile
+  the upstream hook-runner fix would light approvals for every session with zero plumbing,
+  and this plugin is already pre-positioned for it (ACL grants, hook exe, readers). Revisit if
+  the upstream fix stalls AND approval lighting becomes a top user ask; when revisiting, start
+  from tools/windows/approval-observer-prototype.py PLUS the fixes recorded above
+  (subscribe-per-thread, bare-id thread lists, exclude app-server from discovery).
 
 - **A shipped profile never updates on an existing install.** Import dedupes by profile GUID, so a
   package update leaves whatever was imported first — a dev machine ran the fixed 1.4.0 package for
