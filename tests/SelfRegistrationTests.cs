@@ -273,21 +273,53 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         /// The profile above is only honest because the packer embeds the payload for both products.
         /// </summary>
         [Fact]
-        public void Pack_release_ships_voice_for_both_products()
+        public void Pack_release_ships_voice_for_every_product()
         {
             var script = File.ReadAllText(RepoFile("tools", "voice", "pack-release.sh"));
 
-            Assert.Contains("ClaudeConsole|VizhiCodex) SHIPS_VOICE=1", script);
+            Assert.Contains("ClaudeConsole|VizhiCodex|VizhiDesktop) SHIPS_VOICE=1", script);
         }
 
-        /// <summary>The voice actions must be compiled INTO the Codex product, not excluded from it.</summary>
+        /// <summary>
+        /// The voice actions must be compiled INTO the Codex product, not excluded from it.
+        /// (The blanket no-Compile-Remove form of this test died when the desktop surface
+        /// arrived: every product now carves out the OTHER surface's actions, which is correct —
+        /// what must never be carved out of a terminal product is its own action set.)
+        /// </summary>
         [Fact]
         public void The_codex_build_includes_the_voice_actions()
         {
             var csproj = File.ReadAllText(
                 RepoFile("src", "Products", "VizhiCodex", "VizhiCodexPlugin.csproj"));
 
-            Assert.DoesNotContain("Compile Remove", csproj);
+            Assert.DoesNotContain(@"Compile Remove=""..\..\Core\Actions", csproj);
+        }
+
+        /// <summary>
+        /// The carve-outs, both directions: terminal products must not compile the desktop
+        /// surface (the SDK auto-discovers every command in the assembly — they'd grow GUI keys
+        /// for an app they don't drive), and the desktop product must not compile the terminal
+        /// actions. One product, one surface, enforced by the compiler.
+        /// </summary>
+        [Theory]
+        [InlineData("ClaudeConsole", "ClaudeConsolePlugin.csproj")]
+        [InlineData("VizhiCodex", "VizhiCodexPlugin.csproj")]
+        public void Terminal_products_carve_out_the_desktop_surface(String product, String csprojName)
+        {
+            var csproj = File.ReadAllText(RepoFile("src", "Products", product, csprojName));
+
+            Assert.Contains(@"Compile Remove=""..\..\Core\Desktop\**\*.cs""", csproj);
+            Assert.Contains(@"Compile Remove=""..\..\Core\DesktopActions\**\*.cs""", csproj);
+        }
+
+        [Fact]
+        public void The_desktop_product_carves_out_the_terminal_actions()
+        {
+            var csproj = File.ReadAllText(
+                RepoFile("src", "Products", "VizhiDesktop", "VizhiDesktopPlugin.csproj"));
+
+            Assert.Contains(@"Compile Remove=""..\..\Core\Actions\**\*.cs""", csproj);
+            Assert.DoesNotContain(@"Compile Remove=""..\..\Core\DesktopActions", csproj);
         }
 
         /// <summary>Walks up from the test binary to a repo-relative file.</summary>
