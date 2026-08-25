@@ -148,24 +148,115 @@ Codex's unstable rollout format, and it gets the same `BestEffort` treatment.
 - **The state-bridge scripts** — nothing to install into, which also means: no install-time
   settings mutation at all. The desktop product's install is *clean* — a genuine listing point.
 
-## Phases
+## Design review round — external feedback, 2026-08-25
 
-- **Phase 0 — gates (mac, this machine + the Windows laptop).** Re-run D1–D5 against
-  `com.openai.codex` (`probe.swift --app` is ready); add **D6: detect + read the approval card**
-  via AXObserver, measure latency and cost. Run W1–W6 on Windows (`spikes/desktop-plugin/windows/`
-  has never been executed). **W0:** how does the app ship on Windows — one package or two?
-  Verify the `codex` basename matcher collision with the app running (issue #19 checklist).
-  *Everything below is contingent on D2/W2 passing on this bundle.*
-- **Phase 1 — mac, page 1.** The two seams, the OpenAI adapter, Approve/Deny/Stop/New/Voice/
-  Focus/Prev/Next. Product scaffold under `src/Products/` with its own namespaces (IPC root,
-  `@_` registration, profile GUID, runtime home, versions in two files). This alone is a
-  demoable, sellable product.
-- **Phase 2 — mac, pages 2–3.** Companion keys + prompt library + screenshot-attach. Detection
-  (Status key) lands here if D6 passed.
-- **Phase 3 — Windows.** UIA implementation of `IDesktopAutomation`; voice + screenshot reuse
-  the Windows pieces the terminal port already built.
-- **Phase 4 — polish.** Localization-resilient control maps, `codex://` resume, listing copy,
-  Claude Desktop as adapter #2 if/when we choose.
+Phase 1 + the appendix pages shipped and were reviewed by an experienced user ("Codex companion
+8/10, ChatGPT companion 6/10; stable key placement and defensive approval semantics are the two
+things I'd scrutinize before trusting it daily"). Disposition of every substantive point, so the
+reasoning survives:
+
+### Accepted — the review found real defects
+
+1. **Moving conversation keys are the product's worst UX defect.** Slots currently mirror sidebar
+   order, which is recency — so sending a message to conversation B reshuffles every key,
+   including between a user's glance and their press-to-jump. *Live information is good; live
+   remapping of physical controls is not.* Fix: **stable slot assignment in the monitor** —
+   a title→slot map, new conversations fill empty slots, existing ones KEEP their slot across
+   reorders, age out only when they leave the sidebar entirely. This is `SessionRegistry`'s
+   model (the terminal grid solved the identical problem for TTYs); reuse the design, not the
+   TTY-keyed code. App-side pins ride along free: a pinned chat never ages out.
+
+2. **Approval needs identity, and the mechanics need stating.** A mechanical fact the review
+   surfaced by asking: the approval card only exists in the OPEN conversation's view — background
+   conversations show only the sidebar "Awaiting approval" badge. So Approve can only ever press
+   the visible card (a real safety property) and can also approve the wrong conversation's card
+   if the user thinks a different one is open (the real hazard). Fixes:
+   - The waiting Approve face names its target: the OPEN conversation's short title (active
+     conversation detection = new helper field; the sidebar's selected row or the content
+     heading). Within the two-words-per-key law the hardware taught — title on the face, full
+     card wording one press away via Show ChatGPT.
+   - **Expected-card guard**: the approve press carries the card text the monitor last showed
+     (`press --expect-near "<text>"`); the helper refuses when the visible card no longer
+     matches. Closes the glance-to-press race where card A resolves and card B appears — the
+     press fails with "card changed, look" instead of approving the unseen one. (Double-press
+     is already safe: the press verb re-finds the control at press time; a second press finds
+     no card and no-ops.)
+   - **Red means two-step**: first press arms (face flips to "Press again"), ~3 s to confirm,
+     second press fires. Implementable with plain presses + a timer today; upgrade to
+     press-and-hold if an SDK spike shows the keypad exposes hold events. Amber stays
+     one-press — the risk grade is an extra warning, not the security boundary, exactly as the
+     review says.
+
+3. **Fail closed, and say why.** `Unavailable` currently collapses five different truths. The
+   helper already distinguishes them (exit codes: not-trusted / app-not-running; label
+   no-match); surface them as distinct states — **Hidden** (screen locked/window gone),
+   **No permission** (Accessibility lost), **Not running**, **Unrecognized** (attention marker
+   present but no approve/deny match — the app-update drift case). Approve/Deny disable in every
+   one of them. Never guess.
+
+4. **Adaptive cadence.** 1 s polling is ~130 ms of helper wall-clock per tick — fine, but wasted
+   while idle or hidden. Poll 1 s while Working/Waiting, ~3 s when Ready, ~5 s when Hidden;
+   any state change snaps back to 1 s. (Event-driven is NOT available — see pushback below.)
+
+5. **Draft keys must look like drafts.** Review PR and Debug draft rather than send; the key
+   face should say so — the label gains a trailing "…" (the writing convention for "more
+   needed"), and Options+ descriptions already spell it out.
+
+6. **Voice needs a draft variant.** `Voice Draft` key: transcribe → composer → focus the app,
+   no send — the terminal products' VoiceDraft, one sink swap away. (Transcription-confidence
+   display is a whisper-pipeline change; candidate, not this round.)
+
+7. **Current-task controls beat generic prompts for Codex users.** The AX tree already exposes
+   the Review surface (`Toggle file diff`, `Jump to file`, `Show files` — captured in the
+   button inventory). Page 2 grows **Show Diff** (and friends as verified live). "Run tests" /
+   "stop after current" stay workflow-brief territory; "notify me when finished" is a candidate
+   (macOS notification off the monitor's state edge).
+
+8. **Non-color state distinction**: audit the waiting/unread/running glyphs for shape
+   distinctness at key size (the keypad-icon lesson: differentiate by inner mark, not container).
+
+### Pushed back — with evidence
+
+- **"Event-driven updates would be preferable where possible."** They would; they aren't
+  possible. AXObserver accepted all eight notification types on this app and delivered zero
+  events in 300 s of visible UI change (spike, 2026-08-24). Polling is not the fallback here —
+  it is the only mechanism this app offers. Adaptive cadence (above) is the honest response to
+  the battery concern.
+- **The wholesale 3-page restructure (Tasks / Current task / Create).** The current page
+  structure is Appendix D — the design the customer was sold. Its substance is absorbed
+  (stable slots, current-task keys on page 2, Create ≈ Workflows + New chat); its structure
+  stays until Logitech agrees to revise the appendix, not before.
+- **"Globally active Deny is risky."** Deny is dark and inert unless a card is pending — the
+  accident window is exactly the approval window. Keeping it global; the two-step rule guards
+  the red case on both keys.
+- **The review's "global keys" section** (Attention / Voice / Approve / Show) is the
+  default-profile set this product already documents as setup step one — independently
+  reinvented, which is decent evidence the design is right.
+
+### The ChatGPT half — elevated from "deferred" to a named phase
+
+The review's verdict — strong Codex companion, partial ChatGPT companion — is fair, and its
+ChatGPT list maps closely onto this plan's original page 2 (Quick Ask, screenshot→ask, copy
+last answer, search chats, model, temp chat) which Phase 1 deferred. Feasibility notes from the
+live tree: per-message **Copy message** buttons exist (copy-latest = press the LAST match — the
+helper grows a `--last` flag); **Stop** exists; screenshot capture ships in the engine already.
+Regenerate / read-aloud / temporary chat need a recon pass over the message-actions popup.
+
+## Phases (revised)
+
+- **Phase 1 — DONE, hardware-verified 2026-08-25.** Seams, adapter, monitor, the three appendix
+  pages (Conversations+answers / Actions / Workflows), voice, registration, packaging hooks.
+- **Phase 1.5 — hardening (next; all items from the review round above).** Stable slots ·
+  approval identity + expected-card guard + two-step red · explicit unavailable reasons ·
+  adaptive cadence · draft markers · Voice Draft · Show Diff · glyph audit. This is the "trust
+  it daily" gap and it precedes new surface area.
+- **Phase 2 — the ChatGPT companion set** (list above, feasibility-gated per key).
+- **Phase 3 — Claude Desktop as adapter #2.** The contractual Deliverable 3; spike passed
+  2026-08-12; costs an `IDesktopAppAdapter` + its label recon, on the engine Phase 1 proved.
+- **Phase 4 — Windows.** W0 recon, then the UIA `IDesktopAutomation`; voice + screenshot reuse
+  the terminal port's Windows pieces.
+- **Phase 5 — polish + release.** Localization-resilient control maps, notarized helper,
+  listing copy, `codex://` resume.
 
 ## Open questions
 
