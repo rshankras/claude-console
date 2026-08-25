@@ -22,6 +22,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         public String DisplayName => "ChatGPT (Codex)";
 
+        public String ShortName => "ChatGPT";
+
         public String BundleId => "com.openai.codex";
 
         public String MacProcessName => "ChatGPT";

@@ -106,6 +106,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.All(bound, a => Assert.StartsWith("$VizhiDesktop___", a));
         }
 
+        [Fact]
+        public void The_app_bound_page_carries_no_approval_keys()
+        {
+            // This profile is only ACTIVE WHILE THE APP IS FRONTMOST, so it can never be where
+            // answering-from-elsewhere happens — that set belongs on the user's default profile
+            // (see the product README). Duplicating Approve/Deny here would put them on screen
+            // exactly when the card is already in front of the user, teaching the wrong model.
+            using var zip = System.IO.Compression.ZipFile.OpenRead(DesktopLp5());
+            using var reader = new StreamReader(zip.GetEntry("ProfileInfo.json").Open());
+            var profile = JsonNode.Parse(reader.ReadToEnd());
+
+            var bound = profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"][0]["controls"]
+                .AsArray().Select(c => (String)c["pressAction"]).Where(a => a != null).ToList();
+
+            Assert.DoesNotContain(bound, a => a.Contains("DesktopApprovalCommand"));
+            // ...and the escape hatch is pointless here too: you are already looking at the app.
+            Assert.DoesNotContain(bound, a => a.EndsWith("___focus"));
+        }
+
         private static String RepoFile(params String[] parts)
         {
             var dir = AppContext.BaseDirectory;

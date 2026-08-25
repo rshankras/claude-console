@@ -35,6 +35,22 @@ isn't one.
 
 ## Page layout (9 LCD keys per page)
 
+> **Where these keys live — settled on hardware 2026-08-25.** A Logi application profile is only
+> ACTIVE WHILE ITS APP IS FRONTMOST. The terminal products get away with binding their keys to the
+> app they drive, because you are *in* the terminal while using them. This product is the opposite:
+> its whole promise is answering the agent while you are somewhere else, so an app-bound page
+> would show the approval keys exactly when you least need them — and would hide them the rest of
+> the time. The flagship set (**Activity, Approve, Deny, Show ChatGPT**) therefore belongs on the
+> user's **default profile**, which is active regardless of what is in front, and the product
+> README makes that placement step one. We cannot do it for them: the default profile is the
+> user's own configuration and importing over it would destroy whatever they had.
+>
+> The packaged, auto-imported page is consequently the *in-app* set only — Activity, Mode, New
+> Chat, Voice, Stop — and deliberately does not duplicate Approve/Deny/Show (pinned by a test).
+> This costs the product its "install and it lights up" story and replaces it with "install, place
+> four keys once". That is the honest trade, and it is worth it: the alternative is a headline
+> feature that only works in the one situation it was built to avoid.
+
 ### Page 1 — Codex operator (the flagship)
 
 | Key | Face behaviour | User value |

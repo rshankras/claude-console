@@ -26,6 +26,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void The_short_name_is_what_a_user_calls_the_app_and_fits_a_key()
+        {
+            // It renders as "Show {ShortName}" on a key face, so it must be the Dock name rather
+            // than our product name, and short enough to read at key size.
+            Assert.Equal("ChatGPT", _app.ShortName);
+            Assert.True(_app.ShortName.Length <= 12, "too long to read on a key");
+        }
+
+        [Fact]
         public void The_card_labels_are_the_ones_seen_on_the_live_card()
         {
             Assert.Contains("Allow once", _app.ApproveLabels);

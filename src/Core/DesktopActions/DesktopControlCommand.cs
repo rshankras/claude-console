@@ -48,8 +48,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                     .SetDescription("Switch between the app's modes (ChatGPT ⇄ Codex)");
             }
 
-            this.AddParameter(Focus, "Open App", "Agent")
-                .SetDescription("Bring the app's window to the front — for when you need to look");
+            // "Open" read as "launch it" — but the app is already running; this key GOES there.
+            // Most useful on an always-on profile: it is the escape hatch from the editor you
+            // were working in, and on the app-bound page it is redundant by definition.
+            this.AddParameter(Focus, $"Show {DesktopServices.App.ShortName}", "Agent")
+                .SetDescription($"Bring {DesktopServices.App.ShortName} to the front — for when you need to look before answering");
 
             DesktopServices.Monitor.OnChanged += _ => this.ActionImageChanged();
         }
@@ -114,7 +117,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 Stop => "Stop",
                 NewChat => "New Chat",
                 Mode => "Mode",
-                Focus => "Open App",
+                Focus => DesktopServices.Declared ? $"Show {DesktopServices.App.ShortName}" : "Show App",
                 _ => actionParameter,
             };
         }

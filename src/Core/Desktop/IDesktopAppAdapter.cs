@@ -20,8 +20,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Stable id for logs, e.g. "openai-desktop".</summary>
         String Id { get; }
 
-        /// <summary>Human name for key faces and logs.</summary>
+        /// <summary>Human name for logs and listings.</summary>
         String DisplayName { get; }
+
+        /// <summary>
+        /// The app's name as it should appear ON A KEY — short enough to read at key size, and
+        /// the name the user calls it in their Dock, not our product name. "Show ChatGPT" tells
+        /// you where the key takes you; "Show App" makes you guess.
+        /// </summary>
+        String ShortName { get; }
 
         /// <summary>macOS bundle id the helper attaches to, e.g. "com.openai.codex".</summary>
         String BundleId { get; }

@@ -48,18 +48,26 @@ def act(type_name, param=None):
     return f"{base}___{param}" if param else base
 
 
-# The nine keys of page 1 (controlId 0-8: top row first). Status glances, Approve/Deny answer,
-# the middle row controls, Voice speaks, Focus is the one deliberate window-bringer.
+# This profile is bound to the app, and a Logi application profile is only ACTIVE WHILE ITS APP IS
+# FRONTMOST. So this page can only ever be the "I am looking at the app" set — and the product's
+# headline feature is the opposite case, answering the agent while you are somewhere else entirely.
+#
+# Those keys (Activity, Approve, Deny, Show ChatGPT) therefore belong on the user's DEFAULT
+# profile, which is active no matter what is in front. We cannot place them there ourselves: the
+# default profile is the user's own configuration and writing it would be hostile. The product
+# README makes that placement step one, and this page deliberately does NOT duplicate them —
+# a key that appears only when you do not need it teaches the wrong model of where answering
+# happens.
 PAGE_ONE = [
-    act("DesktopStatusCommand"),                  # 0
-    act("DesktopApprovalCommand", "approve"),     # 1
-    act("DesktopApprovalCommand", "deny"),        # 2
-    act("DesktopControlCommand", "stop"),         # 3
-    act("DesktopControlCommand", "mode"),         # 4
-    act("DesktopControlCommand", "new_chat"),     # 5
-    act("DesktopVoiceCommand"),                   # 6
-    act("DesktopControlCommand", "focus"),        # 7
-    None,                                         # 8 spare
+    act("DesktopStatusCommand"),                  # 0  useful everywhere, so it earns a slot here too
+    act("DesktopControlCommand", "mode"),         # 1  ChatGPT <-> Codex
+    act("DesktopControlCommand", "new_chat"),     # 2
+    act("DesktopVoiceCommand"),                   # 3  dictate into the composer — best while in the app
+    act("DesktopControlCommand", "stop"),         # 4
+    None,                                         # 5
+    None,                                         # 6
+    None,                                         # 7
+    None,                                         # 8
 ]
 
 
