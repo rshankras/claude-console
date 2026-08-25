@@ -163,11 +163,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             var profileName = (String)appInfo["defaultProfileName"]
                 ?? throw new InvalidDataException("packaged ApplicationInfo has no defaultProfileName");
 
-            if (windows)
+            if (windows && (String)appInfo["processOrBundleName"] == "com.apple.Terminal")
             {
                 // The document in the package is authored for macOS; Windows binds the same
                 // layout to Windows Terminal (the shipped platform default). The description is
                 // rewritten rather than replaced so it keeps whatever the product called itself.
+                //
+                // TERMINAL products only — hence the guard on the packaged value. A product bound
+                // to a desktop app's bundle (Vizhi Desktop: com.openai.codex) must pass through
+                // untouched: rewriting it to WindowsTerminal here would silently rebind the whole
+                // registration to an app the product does not drive, the same class of quiet
+                // wrong-name failure as the 1.8.0 hardcoded "WindowsTerminal". Such products ship
+                // their real Windows identity in the package once it is known (recon W0).
                 appInfo["processOrBundleName"] = "WindowsTerminal";
                 var description = (String)appInfo["description"];
                 appInfo["description"] = String.IsNullOrEmpty(description)

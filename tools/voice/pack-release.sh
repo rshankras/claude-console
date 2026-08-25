@@ -30,9 +30,16 @@ WBIN="$HOME_DIR/whisper-bin"
 # runtime home shared by every product (~/.claude/claude-console) under one bundle id, so a user with
 # both packages gets one notarized helper, one Microphone grant and one 141 MB model download.
 case "$PRODUCT" in
-  ClaudeConsole|VizhiCodex) SHIPS_VOICE=1 ;;
-  *)                        SHIPS_VOICE=0 ;;
+  ClaudeConsole|VizhiCodex|VizhiDesktop) SHIPS_VOICE=1 ;;
+  *)                                     SHIPS_VOICE=0 ;;
 esac
+
+# Which products ship the desktop AX helper (drives a GUI agent app via Accessibility).
+case "$PRODUCT" in
+  VizhiDesktop) SHIPS_DESKTOP=1 ;;
+  *)            SHIPS_DESKTOP=0 ;;
+esac
+AXBRIDGE="$HOME_DIR/VizhiAxBridge"
 
 # --- preflight: the voice payload must exist and be notarized ------------------------------------
 if [ "$SHIPS_VOICE" = "1" ]; then
@@ -63,8 +70,8 @@ echo ">>> building plugin (Release)"
 ( cd "$ROOT/src/Products/$PRODUCT" && dotnet build -c Release -p:SkipPluginLink=true >/dev/null )
 
 # Belt and braces: if a .link is already lying around from an earlier dev build, it will collide
-# with the package we are about to install. Clear it now rather than debugging it later.
-LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/ClaudeConsolePlugin.link"
+# with the package we are about to install. Clear THIS product's link, not another's.
+LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/${PRODUCT}Plugin.link"
 [ -f "$LINK" ] && { rm -f "$LINK"; echo ">>> removed a stale dev .link (would have collided with the package)"; }
 
 # --- build the Windows helpers into the same bin/ (cross-compiled from macOS) ---------------------
@@ -86,6 +93,18 @@ else
   rm -rf "$PKG_VOICE"
 fi
 
+# --- embed the desktop AX helper next to the plugin DLL (bin/desktop/) ---------------------------
+PKG_DESKTOP="$BUILD_DIR/bin/desktop"
+if [ "$SHIPS_DESKTOP" = "1" ]; then
+  [ -f "$AXBRIDGE" ] || { echo "error: AX helper missing ($AXBRIDGE) — run tools/desktop/build.sh first." >&2; exit 1; }
+  echo ">>> embedding desktop AX helper -> $PKG_DESKTOP"
+  rm -rf "$PKG_DESKTOP"
+  mkdir -p "$PKG_DESKTOP"
+  ditto "$AXBRIDGE" "$PKG_DESKTOP/VizhiAxBridge"     # ditto preserves signature + exec bit
+else
+  rm -rf "$PKG_DESKTOP"
+fi
+
 # --- pack ----------------------------------------------------------------------------------------
 echo ">>> packing $OUT"
 rm -f "$OUT"
@@ -97,6 +116,10 @@ echo "   size: $(du -h "$OUT" | cut -f1)"
 if [ "$SHIPS_VOICE" = "1" ]; then
   echo "   voice payload in package:"
   unzip -l "$OUT" | grep -iE "voice/.*(ClaudeVoiceHelper|whisper-cli)" | sed 's/^/     /'
+fi
+if [ "$SHIPS_DESKTOP" = "1" ]; then
+  echo "   desktop payload in package:"
+  unzip -l "$OUT" | grep -iE "desktop/VizhiAxBridge" | sed 's/^/     /'
 fi
 echo
 if [ "$SHIPS_VOICE" = "1" ]; then
