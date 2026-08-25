@@ -22,7 +22,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     /// </summary>
     internal sealed class DesktopSlotMap
     {
-        public const Int32 SlotCount = 6;
+        // THREE, not the appendix's six — the product owner's revision after seeing the
+        // hardware (2026-08-25): six AI-titled conversations render as a wall of near-identical
+        // keys, and three is what one person actually juggles. Membership (top-N recency) and
+        // the visible window must be the SAME number, or "my new chat always appears" breaks —
+        // an eviction into an invisible slot reads as the chat not appearing at all.
+        public const Int32 SlotCount = 3;
 
         private readonly String[] _slots = new String[SlotCount];
 

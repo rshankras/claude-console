@@ -78,12 +78,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // NEW arrives at the sidebar top; T6 falls out of the top six. NEW takes T6's slot;
             // T1-T5 do not move. The user sees their new chat immediately and nothing shuffles.
             var map = new DesktopSlotMap();
-            map.Apply(Enumerable.Range(1, 6).Select(i => C($"T{i}")).ToArray());
+            map.Apply(Enumerable.Range(1, DesktopSlotMap.SlotCount).Select(i => C($"T{i}")).ToArray());
 
+            // NEW at the sidebar top pushes the last conversation out of the top-N; NEW takes
+            // exactly that slot and every survivor stays put.
             var slots = map.Apply(
-                new[] { C("NEW") }.Concat(Enumerable.Range(1, 5).Select(i => C($"T{i}"))).Concat(new[] { C("T6") }).ToArray());
+                new[] { C("NEW") }.Concat(Enumerable.Range(1, DesktopSlotMap.SlotCount - 1).Select(i => C($"T{i}")))
+                    .Concat(new[] { C($"T{DesktopSlotMap.SlotCount}") }).ToArray());
 
-            Assert.Equal(new[] { "T1", "T2", "T3", "T4", "T5", "NEW" }, slots.Select(s => s.Title));
+            Assert.Equal(new[] { "T1", "T2", "NEW" }, slots.Select(s => s.Title));
         }
 
         [Fact]

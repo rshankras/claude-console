@@ -109,12 +109,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Page_one_is_the_appendix_home_page()
         {
-            // The layout SENT TO LOGITECH (Appendix D · Codex Desktop · Page 1), reaffirmed by
-            // the user 2026-08-25 over an interim page that had dropped the approval keys: six
-            // conversations by name on rows 1-2, and the bottom row answers the one that's
-            // waiting — the same sessions-above/answers-below shape as the terminal products.
-            // (The default-profile placement for answering-from-anywhere is unchanged; this is
-            // the at-the-app home page.)
+            // The home page: conversations above, answers below — the appendix's shape, with
+            // the owner's post-hardware revision (2026-08-25) of six conversation keys down to
+            // three plus a glance-and-act middle row. Deviates from the appendix DRAWING; the
+            // shape and the bottom row are unchanged. (Default-profile placement for
+            // answering-from-anywhere is separate and unchanged.)
             using var zip = System.IO.Compression.ZipFile.OpenRead(DesktopLp5());
             using var reader = new StreamReader(zip.GetEntry("ProfileInfo.json").Open());
             var profile = JsonNode.Parse(reader.ReadToEnd());
@@ -125,11 +124,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var pageOne = pages[0]["controls"].AsArray()
                 .Select(c => (String)c["pressAction"]).ToList();
 
-            // Rows 1-2: the six conversation slots, in slot order.
-            for (var slot = 1; slot <= 6; slot++)
+            // Top row: three conversation slots (the owner's post-hardware revision of the
+            // appendix's six — three scannable identities beat six near-identical ones).
+            for (var slot = 1; slot <= 3; slot++)
             {
                 Assert.EndsWith($"DesktopConversationCommand___{slot}", pageOne[slot - 1]);
             }
+
+            // Middle row: glance + act — Activity, New Chat, Show Diff.
+            Assert.EndsWith("DesktopStatusCommand", pageOne[3]);
+            Assert.EndsWith("DesktopControlCommand___new_chat", pageOne[4]);
+            Assert.EndsWith("DesktopControlCommand___show_diff", pageOne[5]);
 
             // Bottom row: Approve / Deny / Voice.
             Assert.EndsWith("DesktopApprovalCommand___approve", pageOne[6]);

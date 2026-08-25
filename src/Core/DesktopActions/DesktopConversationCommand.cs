@@ -24,7 +24,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// </summary>
     public class DesktopConversationCommand : PluginDynamicCommand
     {
-        private const Int32 Slots = 6;
+        private const Int32 Slots = DesktopSlotMap.SlotCount;
 
         public DesktopConversationCommand()
             : base()

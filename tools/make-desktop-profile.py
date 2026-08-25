@@ -58,13 +58,17 @@ def act(type_name, param=None):
 # only active while its app is frontmost, so answering-from-anywhere still means placing
 # Activity/Approve/Deny/Show ChatGPT on the user's default profile (README step one). This page
 # is the "at the app" home; that placement is the "everywhere else" one.
+# Revised to THREE conversations by the product owner after seeing six on hardware
+# (2026-08-25): three larger, scannable identities beat six near-identical ones, and the
+# freed middle row makes page 1 a complete cockpit. Deviates from the appendix drawing —
+# flag in the next Logitech design update.
 PAGE_ONE = [
-    act("DesktopConversationCommand", "1"),       # 0  ┐
-    act("DesktopConversationCommand", "2"),       # 1  │ rows 1-2: live conversations,
-    act("DesktopConversationCommand", "3"),       # 2  │ recency order, state on each,
-    act("DesktopConversationCommand", "4"),       # 3  │ press to jump
-    act("DesktopConversationCommand", "5"),       # 4  │
-    act("DesktopConversationCommand", "6"),       # 5  ┘
+    act("DesktopConversationCommand", "1"),       # 0  ┐ top row: the three most recent
+    act("DesktopConversationCommand", "2"),       # 1  │ conversations, stable positions,
+    act("DesktopConversationCommand", "3"),       # 2  ┘ state faces, press to jump
+    act("DesktopStatusCommand"),                  # 3  ┐
+    act("DesktopControlCommand", "new_chat"),     # 4  │ the middle row: glance + act
+    act("DesktopControlCommand", "show_diff"),    # 5  ┘
     act("DesktopApprovalCommand", "approve"),     # 6  ┐
     act("DesktopApprovalCommand", "deny"),        # 7  │ the bottom row answers
     act("DesktopVoiceCommand"),                   # 8  ┘
@@ -72,12 +76,12 @@ PAGE_ONE = [
 
 # Page 2 · the session controls — the appendix's "Actions" page.
 PAGE_TWO = [
-    act("DesktopStatusCommand"),                  # 0
-    act("DesktopControlCommand", "mode"),         # 1
-    act("DesktopControlCommand", "new_chat"),     # 2
-    act("DesktopControlCommand", "stop"),         # 3
-    act("DesktopControlCommand", "show_diff"),    # 4  the current task's changes (review round)
-    act("DesktopVoiceDraftCommand"),              # 5  transcribe, review, send yourself
+    act("DesktopControlCommand", "mode"),         # 0
+    act("DesktopControlCommand", "stop"),         # 1
+    act("DesktopVoiceDraftCommand"),              # 2  transcribe, review, send yourself
+    None,                                         # 3
+    None,                                         # 4
+    None,                                         # 5
     None,                                         # 6
     None,                                         # 7
     None,                                         # 8
