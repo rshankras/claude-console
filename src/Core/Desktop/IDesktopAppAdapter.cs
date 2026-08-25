@@ -1,0 +1,74 @@
+namespace Loupedeck.ClaudeConsolePlugin.Desktop
+{
+    using System;
+
+    /// <summary>
+    /// Everything the plugin needs to know about the DESKTOP APP it is driving, and nothing it
+    /// doesn't. The third seam: <c>IPlatformBridge</c> hides the OS, <c>IAgentAdapter</c> hides
+    /// the terminal agent, this hides *which GUI app* — the AX helper itself is app-agnostic and
+    /// receives every one of these strings as arguments. A second desktop app (Claude Desktop is
+    /// the expected one) must cost an adapter, never a helper fork.
+    ///
+    /// The values here are UI copy read off a living app, not API contracts. They WILL drift
+    /// with app updates and they differ per localization. The rules for implementers:
+    /// label arrays list candidates (match is contains, case-insensitive, first wins), and a
+    /// label that stops matching must degrade to a hidden/grey key — never to pressing whatever
+    /// matched something else.
+    /// </summary>
+    internal interface IDesktopAppAdapter
+    {
+        /// <summary>Stable id for logs, e.g. "openai-desktop".</summary>
+        String Id { get; }
+
+        /// <summary>Human name for key faces and logs.</summary>
+        String DisplayName { get; }
+
+        /// <summary>macOS bundle id the helper attaches to, e.g. "com.openai.codex".</summary>
+        String BundleId { get; }
+
+        /// <summary>macOS process name, for the Options+ application binding.</summary>
+        String MacProcessName { get; }
+
+        /// <summary>Approval card: labels that mean "approve this once".</summary>
+        String[] ApproveLabels { get; }
+
+        /// <summary>Approval card: labels that mean "deny".</summary>
+        String[] DenyLabels { get; }
+
+        /// <summary>Labels that stop/interrupt the running task.</summary>
+        String[] StopLabels { get; }
+
+        /// <summary>The composer's submit control.</summary>
+        String SendLabel { get; }
+
+        /// <summary>Starts a fresh conversation.</summary>
+        String NewChatLabel { get; }
+
+        /// <summary>
+        /// Substring that appears somewhere in the UI exactly when the app wants the user —
+        /// the cheap single-label poll the whole approval light rides on.
+        /// </summary>
+        String AttentionMarker { get; }
+
+        /// <summary>
+        /// Prefix of the mode switcher's label; what follows it is the current mode name.
+        /// Empty when the app has no mode concept.
+        /// </summary>
+        String ModePrefix { get; }
+
+        /// <summary>The mode switcher control itself.</summary>
+        String ModeSwitcherLabel { get; }
+
+        /// <summary>
+        /// Menu item labels per mode, keyed by the mode name the switcher reports. Pressing the
+        /// switcher opens a menu; pressing one of these selects that mode.
+        /// </summary>
+        String ModeMenuLabel(String modeName);
+
+        /// <summary>The mode names this app can switch between, in toggle order.</summary>
+        String[] ModeNames { get; }
+
+        /// <summary>What this app's UI honestly exposes. Keys hide where a capability is false.</summary>
+        DesktopCapabilities Capabilities { get; }
+    }
+}
