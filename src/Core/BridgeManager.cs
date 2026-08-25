@@ -1231,6 +1231,12 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Stop voice capture and use the transcript to OPEN a project (new tab + cd + claude).
         public void StopVoiceCaptureForProject() => StopVoiceCaptureThen(NavigateToProjectByVoice);
 
+        // Desktop products: the transcript goes to a caller-supplied sink (a GUI app's composer),
+        // not the terminal. Same capture pipeline, same empty-transcript handling, different
+        // destination — the pipeline was always parameterized on the handler; this only makes
+        // that seam public for products whose target isn't a TTY.
+        public void StopVoiceCaptureTo(Action<String> sink) => StopVoiceCaptureThen(sink);
+
         // Shared: signal the helper to stop, then wait for the transcript off the UI thread and run
         // <paramref name="handler"/> with it. An empty transcript (silence / mic denied) is ignored.
         private void StopVoiceCaptureThen(Action<String> handler)
