@@ -72,16 +72,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void A_full_map_leaves_newcomers_waiting_rather_than_evicting()
+        public void A_new_chat_appears_at_once_taking_only_the_stalest_slot()
         {
+            // The hardware-feedback refinement: membership is recency, positions are sticky.
+            // NEW arrives at the sidebar top; T6 falls out of the top six. NEW takes T6's slot;
+            // T1-T5 do not move. The user sees their new chat immediately and nothing shuffles.
             var map = new DesktopSlotMap();
             map.Apply(Enumerable.Range(1, 6).Select(i => C($"T{i}")).ToArray());
 
-            // Seventh conversation arrives; all six slots are held. Nobody is evicted for it.
             var slots = map.Apply(
-                new[] { C("NEW") }.Concat(Enumerable.Range(1, 6).Select(i => C($"T{i}"))).ToArray());
+                new[] { C("NEW") }.Concat(Enumerable.Range(1, 5).Select(i => C($"T{i}"))).Concat(new[] { C("T6") }).ToArray());
 
-            Assert.Equal(Enumerable.Range(1, 6).Select(i => $"T{i}"), slots.Select(s => s.Title));
+            Assert.Equal(new[] { "T1", "T2", "T3", "T4", "T5", "NEW" }, slots.Select(s => s.Title));
         }
 
         [Fact]

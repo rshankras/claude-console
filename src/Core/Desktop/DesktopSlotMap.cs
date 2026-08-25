@@ -32,31 +32,36 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// </summary>
         public DesktopConversation[] Apply(IReadOnlyList<DesktopConversation> sidebar)
         {
-            var byTitle = new Dictionary<String, DesktopConversation>(StringComparer.Ordinal);
+            // Membership = the sidebar's top-N distinct titles (recency, the app's own order).
+            var membership = new Dictionary<String, DesktopConversation>(StringComparer.Ordinal);
             foreach (var c in sidebar ?? Array.Empty<DesktopConversation>())
             {
-                if (!String.IsNullOrEmpty(c.Title) && !byTitle.ContainsKey(c.Title))
+                if (membership.Count == SlotCount)
                 {
-                    byTitle[c.Title] = c;
+                    break;
+                }
+                if (!String.IsNullOrEmpty(c.Title) && !membership.ContainsKey(c.Title))
+                {
+                    membership[c.Title] = c;
                 }
             }
 
-            // Age out: a slot whose conversation left the sidebar frees up. Nothing else does.
+            // Evict what fell out of the top-N (or left the sidebar). This is the ONLY way a
+            // slot frees, and it is what makes room for the newcomer without moving survivors.
             for (var i = 0; i < SlotCount; i++)
             {
-                if (_slots[i] != null && !byTitle.ContainsKey(_slots[i]))
+                if (_slots[i] != null && !membership.ContainsKey(_slots[i]))
                 {
                     _slots[i] = null;
                 }
             }
 
-            // Fill: unassigned conversations take the lowest empty slot, in sidebar order —
-            // so on a FRESH map the keys match the sidebar top-to-bottom, and only diverge
-            // from it later, which is exactly the stability being bought.
+            // Fill: new members take the lowest empty slot, in sidebar order — a fresh map
+            // matches the sidebar top-to-bottom and only diverges later, which is the point.
             var assigned = new HashSet<String>(_slots.Where(t => t != null), StringComparer.Ordinal);
-            foreach (var c in sidebar ?? Array.Empty<DesktopConversation>())
+            foreach (var c in membership.Values)
             {
-                if (String.IsNullOrEmpty(c.Title) || assigned.Contains(c.Title))
+                if (assigned.Contains(c.Title))
                 {
                     continue;
                 }
@@ -64,14 +69,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 var empty = Array.IndexOf(_slots, null);
                 if (empty < 0)
                 {
-                    break;   // all six taken; the rest wait for a slot to age out
+                    break;
                 }
 
                 _slots[empty] = c.Title;
                 assigned.Add(c.Title);
             }
 
-            return _slots.Select(t => t != null && byTitle.TryGetValue(t, out var c) ? c : null).ToArray();
+            return _slots.Select(t => t != null && membership.TryGetValue(t, out var c) ? c : null).ToArray();
         }
 
         /// <summary>Forget everything — used when the surface goes away entirely.</summary>

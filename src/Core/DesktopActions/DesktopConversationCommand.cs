@@ -76,6 +76,17 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             PluginLog.Info($"DesktopConversationCommand: jumped to “{conv.Title}”");
         }
 
+        // THE LAYOUT LAW, learned by the terminal session grid over three hardware photo
+        // iterations (see KeyImage.RenderSessionSlot's history): the service reserves the
+        // key's bottom strip for the label, and that strip's single-line font is the largest,
+        // crispest text a key can carry — while in-bitmap text at comparable size clips. The
+        // first cut of these keys ignored that and drew the title INSIDE the bitmap too, so
+        // every key showed its title twice, small and mangled above, truncated below.
+        //
+        // So identity goes where the platform is strongest: the TITLE is the service label,
+        // once; the bitmap carries only STATE — amber-badged waiting glyph, green check for
+        // unread, hourglass while running, plain dark for idle. Same design language as the
+        // terminal grid, which is the family promise.
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
         {
             var conv = Slot(actionParameter);
@@ -87,24 +98,21 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             var conv = Slot(actionParameter);
             if (conv == null)
             {
-                return KeyImage.Render(imageSize, "—", KeyImage.Slate, null);
+                return KeyImage.RenderSessionSlot(imageSize, null, null, selected: false);
             }
 
             var (icon, risk) = conv.State switch
             {
                 ConversationState.Awaiting => ("waiting", ApprovalRisk.Normal),   // the amber badge
-                ConversationState.Unread => ("done", ApprovalRisk.Normal),        // finished, unseen — badge too
+                ConversationState.Unread => ("done", ApprovalRisk.None),          // green check: done, unseen
                 ConversationState.Running => ("busy0", ApprovalRisk.None),
                 _ => ((String)null, ApprovalRisk.None),
             };
 
-            return risk == ApprovalRisk.None
-                ? KeyImage.Render(imageSize, Trim(conv.Title), KeyImage.Slate, icon)
-                : KeyImage.RenderWithApprovalBadge(imageSize, Trim(conv.Title), KeyImage.Orange, icon, risk);
+            return KeyImage.RenderSessionSlot(imageSize, icon, null, selected: false, risk);
         }
 
-        // Key faces hold roughly two short words; the hardware taught us what a sentence looks
-        // like up there (see DesktopApprovalCommand).
+        // The label strip is single-line; past ~24 characters the service shrinks it to mush.
         private static String Trim(String title) =>
             title.Length <= 24 ? title : title.Substring(0, 23) + "…";
     }
