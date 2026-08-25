@@ -196,7 +196,16 @@ case "status":
     if let approve = approve, let idx = nodes.firstIndex(where: { $0.el === approve.el }) {
         let windowStart = max(0, idx - 20)
         let statics = nodes[windowStart..<idx].filter { $0.role == "AXStaticText" && !$0.text.isEmpty }
-        cardText = statics.suffix(3).map { $0.text }.joined(separator: " ")
+        // Collapse ALL whitespace — the card's text is laid out for a window, so it arrives with
+        // newlines and runs of spaces in it. Anything the consumer can't render (the keypad's LCD
+        // font turns a stray control character into "?") is a defect we ship downstream, and the
+        // risk classifier reads this string too: it should be one clean line either way.
+        cardText = statics.suffix(3)
+            .map { $0.text }
+            .joined(separator: " ")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
         if cardText.count > CARD_TEXT_CAP { cardText = String(cardText.prefix(CARD_TEXT_CAP)) }
     }
 

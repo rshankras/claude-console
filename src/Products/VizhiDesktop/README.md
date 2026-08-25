@@ -39,7 +39,7 @@ active no matter what you are looking at:
 | Key | What it gives you |
 |---|---|
 | **Activity** | Working / Waiting / Ready at a glance — and *Hidden* when the app's window is locked or gone, because "cannot see" is not the same as "nothing to do" |
-| **Approve** | Answers the pending request. Shows the card's own text, amber for routine, **red** when the command looks destructive |
+| **Approve** | Answers the pending request. Amber for routine, **red** when the command looks destructive — press **Show ChatGPT** if you want the exact wording before deciding |
 | **Deny** | The other half. Lit only while something is actually pending |
 | **Show ChatGPT** | The escape hatch: brings the app forward when you want to look before deciding |
 

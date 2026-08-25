@@ -60,16 +60,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             PluginLog.Info($"DesktopApprovalCommand: pressed “{matched}”");
         }
 
-        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
-        {
-            var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
-            if (actionParameter == Approve && state.Activity == DesktopActivity.WaitingApproval)
-            {
-                return Marquee(state.CardText, fallback: "Approve");
-            }
-
-            return actionParameter == Approve ? "Approve" : "Deny";
-        }
+        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
+            actionParameter == Approve ? "Approve" : "Deny";
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
@@ -79,9 +71,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
             if (actionParameter == Approve && pending)
             {
-                // The badge is the risk light; the label is the card's own words.
-                return KeyImage.RenderWithApprovalBadge(
-                    imageSize, Marquee(state.CardText, "Approve"), KeyImage.Green, icon, state.Risk);
+                return KeyImage.RenderWithApprovalBadge(imageSize, "Approve", KeyImage.Green, icon, state.Risk);
             }
 
             if (actionParameter == Deny && pending)
@@ -92,16 +82,14 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             return KeyImage.Render(imageSize, actionParameter == Approve ? "Approve" : "Deny", KeyImage.Slate, icon);
         }
 
-        // A key face holds a phrase, not a paragraph: lead of the card text, hard-capped.
-        private static String Marquee(String cardText, String fallback)
-        {
-            var text = (cardText ?? "").Trim();
-            if (text.Length == 0)
-            {
-                return fallback;
-            }
-
-            return text.Length <= 42 ? text : text.Substring(0, 41) + "…";
-        }
+        // WHY THE CARD TEXT IS NOT ON THE KEY. It was, until hardware said otherwise: the card's
+        // own sentence rendered as three lines of unreadable micro-type, and any character the
+        // LCD's font lacks comes out as "?". Every key that reads at arm's length is one or two
+        // words — Waiting, Codex, Deny.
+        //
+        // So the division of labour is: the BADGE carries the judgement (amber routine, red when
+        // RiskClassifier flags the visible text), and anyone who needs the exact wording presses
+        // Show ChatGPT, which exists for precisely that. The card text still earns its keep — it
+        // is what the classifier grades and what the log records — it just isn't key material.
     }
 }
