@@ -67,6 +67,33 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void A_dev_linked_plugin_is_installed_too()
+        {
+            // A development build installs as "<AssemblyName>.link", not a directory. Reading only
+            // directories, a packaged product judged a dev-linked product's registration an orphan
+            // and deleted it — the dev-linked product then rewrote it and restarted the service to
+            // adopt it, which handed the packaged one another boot to delete it again. That loop
+            // thrashed Options+ every few seconds on hardware (2026-08-25).
+            var live = this.Register("@_vizhidesktop", "VizhiDesktop");
+            File.WriteAllText(Path.Combine(this.Plugins, "VizhiDesktopPlugin.link"), "/some/build/tree");
+
+            Assert.Equal(0, RegistrationCleanup.RemoveOrphans(this.Apps, this.Plugins, "VizhiCodex"));
+            Assert.True(Directory.Exists(live));
+        }
+
+        [Fact]
+        public void A_link_for_a_different_plugin_does_not_rescue_an_orphan()
+        {
+            // The prefix match must not become "any .link file will do" — an orphan next to some
+            // other product's dev link is still an orphan.
+            var orphan = this.Register("@_vizhidesktop", "VizhiDesktop");
+            File.WriteAllText(Path.Combine(this.Plugins, "ClaudeConsolePlugin.link"), "/some/build/tree");
+
+            Assert.Equal(1, RegistrationCleanup.RemoveOrphans(this.Apps, this.Plugins, "VizhiCodex"));
+            Assert.False(Directory.Exists(orphan));
+        }
+
+        [Fact]
         public void An_entry_whose_plugin_is_still_installed_stays()
         {
             var live = this.Register("@_claudeconsole", "ClaudeConsole", installed: true);

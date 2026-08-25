@@ -98,12 +98,47 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 }
 
                 // Orphaned = the plugin it names is not installed.
-                return !Directory.Exists(Path.Combine(pluginsRoot, plugin));
+                return !IsInstalled(pluginsRoot, plugin);
             }
             catch (Exception)
             {
                 // Unreadable is not "ours" — leave it alone.
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Is this plugin installed, in EITHER of the two shapes the service accepts? A packaged
+        /// install is a directory; a development build is a `&lt;AssemblyName&gt;.link` file pointing at
+        /// a build tree. Both are installations, and only the first was recognised here.
+        ///
+        /// The gap was not theoretical. With one product installed as a package and another
+        /// dev-linked, the packaged one saw no directory for the dev-linked one, judged its
+        /// registration an orphan and deleted it; the dev-linked product reloaded, found no
+        /// registration, wrote one and restarted the service to adopt it — which handed the
+        /// packaged product another boot in which to delete it again. The result was a service
+        /// restart loop that thrashed Options+ every few seconds (observed on hardware,
+        /// 2026-08-25). SelfRegistration's loop-safety rests on "the first thing a success does is
+        /// create the registration"; that invariant only holds if nobody else deletes it.
+        /// </summary>
+        private static Boolean IsInstalled(String pluginsRoot, String plugin)
+        {
+            if (Directory.Exists(Path.Combine(pluginsRoot, plugin)))
+            {
+                return true;
+            }
+
+            try
+            {
+                // The link is named for the ASSEMBLY (VizhiDesktopPlugin.link), the registration
+                // for the PLUGIN (VizhiDesktop) — hence the prefix match rather than an exact name.
+                return Directory.GetFiles(pluginsRoot, plugin + "*.link").Length > 0;
+            }
+            catch (Exception)
+            {
+                // Cannot enumerate: assume installed. Deleting a live product's registration is
+                // far worse than leaving a stale one for the next sweep.
+                return true;
             }
         }
     }
