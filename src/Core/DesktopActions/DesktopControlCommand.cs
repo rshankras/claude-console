@@ -21,6 +21,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         private const String NewChat = "new_chat";
         private const String Mode = "mode";
         private const String Focus = "focus";
+        private const String ShowDiff = "show_diff";
 
         public DesktopControlCommand()
             : base()
@@ -41,6 +42,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
             this.AddParameter(NewChat, "New Chat", "Agent")
                 .SetDescription("Start a fresh conversation");
+
+            if (DesktopServices.App.ShowDiffLabels.Length > 0)
+            {
+                this.AddParameter(ShowDiff, "Show Diff", "Agent")
+                    .SetDescription("Open the current task's changes/review view");
+            }
 
             if (caps.ModeSwitch)
             {
@@ -95,6 +102,13 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                     auto.SwitchMode(target);
                     break;
 
+                case ShowDiff:
+                    // The Review-surface controls exist in the tree ("Toggle file diff",
+                    // "Show files" — captured in the button inventory); first match wins and a
+                    // no-match logs rather than guesses.
+                    auto.Press(app.ShowDiffLabels, out _);
+                    break;
+
                 case Focus:
                     auto.FocusApp();
                     break;
@@ -117,6 +131,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 Stop => "Stop",
                 NewChat => "New Chat",
                 Mode => "Mode",
+                ShowDiff => "Show Diff",
                 Focus => DesktopServices.Declared ? $"Show {DesktopServices.App.ShortName}" : "Show App",
                 _ => actionParameter,
             };
@@ -130,6 +145,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 Stop => "esc",
                 NewChat => "new_claude",
                 Mode => "model",
+                ShowDiff => "diff",
                 Focus => "terminal",
                 _ => null,
             };

@@ -69,9 +69,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             return DesktopSnapshot.Parse(this.Runner(args, 2500));
         }
 
-        public Boolean Press(String[] labels, out String matched)
+        public Boolean Press(String[] labels, out String matched) =>
+            this.PressGuarded(labels, expectCard: null, out matched, out _);
+
+        public Boolean PressGuarded(String[] labels, String expectCard, out String matched, out String error)
         {
             matched = null;
+            error = null;
             if (labels == null || labels.Length == 0)
             {
                 return false;
@@ -79,11 +83,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
             var args = new List<String> { "press", "--app", _app.BundleId };
             AddEach(args, "--label", labels);
+            if (!String.IsNullOrWhiteSpace(expectCard))
+            {
+                args.Add("--expect-near");
+                args.Add(expectCard);
+            }
 
             var json = this.Runner(args, 4000);
             if (!TryParseOk(json, out var root))
             {
-                PluginLog.Warning($"MacDesktopAutomation.Press({String.Join("|", labels)}): {Describe(json)}");
+                error = Describe(json);
+                PluginLog.Warning($"MacDesktopAutomation.Press({String.Join("|", labels)}): {error}");
                 return false;
             }
 

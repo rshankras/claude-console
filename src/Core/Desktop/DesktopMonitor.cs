@@ -17,12 +17,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public String Mode { get; init; } = "";
         public Boolean Attention { get; init; }
 
-        /// <summary>Sidebar conversations, recency first — what the slot keys render.</summary>
+        /// <summary>Sidebar conversations, raw, in the app's own order (recency first).</summary>
         public IReadOnlyList<DesktopConversation> Conversations { get; init; } = Array.Empty<DesktopConversation>();
+
+        /// <summary>What the six conversation KEYS render: stable slots (null = empty), assigned
+        /// by <see cref="DesktopSlotMap"/> so a key never moves under the user's fingers.</summary>
+        public IReadOnlyList<DesktopConversation> Slots { get; init; } = new DesktopConversation[DesktopSlotMap.SlotCount];
+
+        /// <summary>
+        /// The conversation the visible approval card belongs to, when that is KNOWABLE: the
+        /// app's own selection marker if it ever reports one, else the single conversation in
+        /// Awaiting state while a card shows (card visible => the open conversation has the
+        /// pending approval). Empty when ambiguous — the Approve face falls back to "Approve"
+        /// rather than guessing which of several waiting conversations is open.
+        /// </summary>
+        public String ActiveTitle { get; init; } = "";
+
+        /// <summary>Why Unavailable, when Unavailable: hidden / no-permission / not-running / no-signal.</summary>
+        public String Reason { get; init; } = "";
 
         public Boolean Available => this.Activity != DesktopActivity.Unavailable;
 
-        public static DesktopState Unavailable => new DesktopState { Activity = DesktopActivity.Unavailable };
+        public static DesktopState Unavailable => new DesktopState { Activity = DesktopActivity.Unavailable, Reason = "no-signal" };
     }
 
     internal enum DesktopActivity
@@ -55,6 +71,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         private const Int32 PollMs = 1000;
 
         private readonly IDesktopAutomation _automation;
+        private readonly DesktopSlotMap _slotMap = new DesktopSlotMap();
         private Timer _timer;
 
         /// <summary>Fires on every material change (activity, risk, attention, mode, card text).</summary>
@@ -87,7 +104,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             try
             {
-                this.Apply(Map(_automation.Status()));
+                this.Apply(Map(_automation.Status(), _slotMap));
             }
             catch (Exception ex)
             {
@@ -97,8 +114,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             }
             finally
             {
-                // Re-arm only after this tick fully finished — ticks can never overlap or pile up.
-                try { _timer?.Change(PollMs, Timeout.Infinite); } catch (ObjectDisposedException) { }
+                // Re-arm only after this tick fully finished — ticks can never overlap or pile
+                // up — at a cadence matched to what's happening (review round: adaptive polling).
+                try { _timer?.Change(NextDelayMs(this.Current.Activity), Timeout.Infinite); } catch (ObjectDisposedException) { }
             }
         }
 
@@ -114,12 +132,26 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             catch (Exception ex) { PluginLog.Warning(ex, "DesktopMonitor: OnChanged handler failed"); }
         }
 
+        /// <summary>
+        /// Hot while something is happening, relaxed while nothing is: 1s when Working/Waiting,
+        /// 3s at Ready, 5s when the surface is gone. Any state change re-enters through a tick,
+        /// so the next tick after a wake is at the new state's cadence.
+        /// </summary>
+        internal static Int32 NextDelayMs(DesktopActivity activity) => activity switch
+        {
+            DesktopActivity.Working or DesktopActivity.WaitingApproval => PollMs,
+            DesktopActivity.Ready => 3000,
+            _ => 5000,
+        };
+
         /// <summary>Pure snapshot→state mapping. Approval outranks Working: a card means the task is parked on you.</summary>
-        internal static DesktopState Map(DesktopSnapshot snap)
+        internal static DesktopState Map(DesktopSnapshot snap, DesktopSlotMap slotMap = null)
         {
             if (snap == null || !snap.SurfaceAvailable)
             {
-                return DesktopState.Unavailable;
+                // The slot map is deliberately NOT cleared: a locked screen comes back with the
+                // same sidebar, and the keys must come back in the same places.
+                return new DesktopState { Activity = DesktopActivity.Unavailable, Reason = snap?.UnavailableReason ?? "no-signal" };
             }
 
             var activity = snap.ApprovalPresent ? DesktopActivity.WaitingApproval
@@ -133,6 +165,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 ? Max(RiskClassifier.Classify("Bash", snap.CardText), ApprovalRisk.Normal)
                 : ApprovalRisk.None;
 
+            var conversations = snap.Conversations ?? Array.Empty<DesktopConversation>();
+
+            // Approval identity, from verified signals only (the app exposes no selection today).
+            var active = conversations.FirstOrDefault(c => c.Selected)?.Title;
+            if (active == null && snap.ApprovalPresent)
+            {
+                var awaiting = conversations.Where(c => c.State == ConversationState.Awaiting).Take(2).ToList();
+                active = awaiting.Count == 1 ? awaiting[0].Title : null;
+            }
+
             return new DesktopState
             {
                 Activity = activity,
@@ -140,7 +182,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 CardText = snap.CardText ?? "",
                 Mode = snap.Mode ?? "",
                 Attention = snap.Attention,
-                Conversations = snap.Conversations ?? Array.Empty<DesktopConversation>(),
+                Conversations = conversations,
+                Slots = slotMap != null ? slotMap.Apply(conversations) : conversations.Take(DesktopSlotMap.SlotCount).ToArray(),
+                ActiveTitle = active ?? "",
             };
         }
 
@@ -152,7 +196,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             || a.Attention != b.Attention
             || !String.Equals(a.Mode, b.Mode, StringComparison.Ordinal)
             || !String.Equals(a.CardText, b.CardText, StringComparison.Ordinal)
-            || !SameConversations(a.Conversations, b.Conversations);
+            || !String.Equals(a.ActiveTitle, b.ActiveTitle, StringComparison.Ordinal)
+            || !String.Equals(a.Reason, b.Reason, StringComparison.Ordinal)
+            || !SameConversations(a.Conversations, b.Conversations)
+            || !SameSlots(a.Slots, b.Slots);
+
+        private static Boolean SameSlots(IReadOnlyList<DesktopConversation> a, IReadOnlyList<DesktopConversation> b) =>
+            a.Count == b.Count
+            && a.Zip(b).All(p =>
+                (p.First == null) == (p.Second == null)
+                && (p.First == null || (p.First.State == p.Second.State
+                    && String.Equals(p.First.Title, p.Second.Title, StringComparison.Ordinal))));
 
         private static Boolean SameConversations(
             IReadOnlyList<DesktopConversation> a, IReadOnlyList<DesktopConversation> b) =>

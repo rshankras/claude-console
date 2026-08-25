@@ -47,6 +47,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("Codex", snap.Mode);
         }
 
+        [Theory]
+        [InlineData("{\"ok\":false,\"error\":\"not-trusted\"}", "no-permission")]
+        [InlineData("{\"ok\":false,\"error\":\"app-not-running\"}", "not-running")]
+        [InlineData("{\"ok\":true,\"surface\":false}", "hidden")]
+        [InlineData("", "no-signal")]
+        [InlineData("garbage{{", "no-signal")]
+        public void Each_way_of_not_seeing_keeps_its_own_name(String json, String reason)
+        {
+            // Distinct truths get distinct faces (unlock / grant / launch / wait) — collapsing
+            // them into one grey "Unavailable" was the review round's fail-closed finding.
+            var snap = DesktopSnapshot.Parse(json);
+
+            Assert.False(snap.SurfaceAvailable);
+            Assert.Equal(reason, snap.UnavailableReason);
+        }
+
         [Fact]
         public void Conversations_parse_with_states_and_order_preserved()
         {

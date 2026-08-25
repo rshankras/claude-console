@@ -132,8 +132,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             PluginLog.Info($"DesktopWorkflowCommand: {(w.Submits ? "sent" : "drafted")} '{w.Id}'");
         }
 
+        // A draft key looks like a draft: the trailing ellipsis is writing's own mark for
+        // "more needed here" (review round: the face should say whether a press sends).
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
-            => _workflows.TryGetValue(actionParameter, out var w) ? (w.Label ?? actionParameter) : actionParameter;
+            => _workflows.TryGetValue(actionParameter, out var w)
+                ? (w.Label ?? actionParameter) + (w.Submits ? "" : "…")
+                : actionParameter;
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {

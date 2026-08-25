@@ -9,16 +9,24 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// agent app, pressed without the app ever gaining focus (the D2 property, proven on
     /// hardware-free spike 2026-08-24).
     ///
-    /// Honesty rules, in order: when no card is pending both keys are visibly idle and a press
-    /// is a logged no-op (never a blind press that might hit a stale tree); when a card is
-    /// pending the Approve face carries the CARD'S OWN TEXT and the risk badge —
-    /// amber for routine, red when RiskClassifier flags the visible text — so the decision is
-    /// readable from the key before the thumb lands. "Always allow" is deliberately not a key.
+    /// Honesty rules, in order: with nothing pending both keys are visibly idle and a press is
+    /// a logged no-op; when a card is pending the Approve face names the conversation it will
+    /// answer (when knowable) and the badge carries the judgement — amber routine, red when
+    /// RiskClassifier flags the visible text. Red takes TWO presses. Every approval press
+    /// carries the expected-card guard, so a card that changed between the glance and the thumb
+    /// is refused, never approved unseen. "Always allow" is deliberately not a key.
     /// </summary>
     public class DesktopApprovalCommand : PluginDynamicCommand
     {
         private const String Approve = "approve";
         private const String Deny = "deny";
+
+        // Two-step red (review round): a High-risk card takes TWO presses — the first arms
+        // (face flips to "Press again"), the second within the window fires. Amber stays
+        // one-press; the risk grade is an extra warning, not the security boundary.
+        private static readonly TimeSpan ArmWindow = TimeSpan.FromSeconds(3);
+        private DateTime _armedUntil = DateTime.MinValue;
+        private String _armedFor;
 
         public DesktopApprovalCommand()
             : base()
@@ -49,11 +57,32 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 return;
             }
 
+            if (state.Risk == ApprovalRisk.High)
+            {
+                var armed = DateTime.UtcNow < _armedUntil && _armedFor == actionParameter;
+                if (!armed)
+                {
+                    _armedUntil = DateTime.UtcNow + ArmWindow;
+                    _armedFor = actionParameter;
+                    this.ActionImageChanged();
+                    PluginLog.Info($"DesktopApprovalCommand({actionParameter}): red — armed, press again to confirm");
+                    return;
+                }
+            }
+
+            _armedUntil = DateTime.MinValue;
+            _armedFor = null;
+
             var app = DesktopServices.App;
             var labels = actionParameter == Approve ? app.ApproveLabels : app.DenyLabels;
-            if (!DesktopServices.Automation.Press(labels, out var matched))
+
+            // The expected-card guard: press only the card the keypad RENDERED. If it changed
+            // between the glance and the thumb, the helper refuses and the honest outcome is
+            // "look at the screen", not a silent approval of something unseen.
+            if (!DesktopServices.Automation.PressGuarded(labels, state.CardText, out var matched, out var error))
             {
-                PluginLog.Warning($"DesktopApprovalCommand({actionParameter}): press failed");
+                PluginLog.Warning($"DesktopApprovalCommand({actionParameter}): {error ?? "press failed"}");
+                this.ActionImageChanged();
                 return;
             }
 
@@ -61,7 +90,30 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            actionParameter == Approve ? "Approve" : "Deny";
+            this.FaceLabel(actionParameter);
+
+        // The face carries IDENTITY when it is knowable: the open conversation's short title
+        // over the generic verb, so "Approve" always refers to one nameable request. When
+        // several conversations wait and the open one is not knowable, the generic verb plus
+        // the badge is the honest maximum. Armed red overrides everything: "Press again".
+        private String FaceLabel(String actionParameter)
+        {
+            var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
+            var pending = state.Activity == DesktopActivity.WaitingApproval;
+
+            if (pending && DateTime.UtcNow < _armedUntil && _armedFor == actionParameter)
+            {
+                return "Press again";
+            }
+
+            if (actionParameter == Approve && pending && !String.IsNullOrEmpty(state.ActiveTitle))
+            {
+                var t = state.ActiveTitle;
+                return t.Length <= 18 ? t : t.Substring(0, 17) + "…";
+            }
+
+            return actionParameter == Approve ? "Approve" : "Deny";
+        }
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
@@ -69,14 +121,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             var pending = state.Activity == DesktopActivity.WaitingApproval;
             var icon = actionParameter == Approve ? "yes" : "no";
 
-            if (actionParameter == Approve && pending)
+            if (pending)
             {
-                return KeyImage.RenderWithApprovalBadge(imageSize, "Approve", KeyImage.Green, icon, state.Risk);
-            }
-
-            if (actionParameter == Deny && pending)
-            {
-                return KeyImage.RenderWithApprovalBadge(imageSize, "Deny", KeyImage.Red, icon, state.Risk);
+                return KeyImage.RenderWithApprovalBadge(
+                    imageSize, this.FaceLabel(actionParameter),
+                    actionParameter == Approve ? KeyImage.Green : KeyImage.Red, icon, state.Risk);
             }
 
             return KeyImage.Render(imageSize, actionParameter == Approve ? "Approve" : "Deny", KeyImage.Slate, icon);

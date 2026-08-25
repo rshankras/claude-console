@@ -76,8 +76,8 @@ PAGE_TWO = [
     act("DesktopControlCommand", "mode"),         # 1
     act("DesktopControlCommand", "new_chat"),     # 2
     act("DesktopControlCommand", "stop"),         # 3
-    None,                                         # 4
-    None,                                         # 5
+    act("DesktopControlCommand", "show_diff"),    # 4  the current task's changes (review round)
+    act("DesktopVoiceDraftCommand"),              # 5  transcribe, review, send yourself
     None,                                         # 6
     None,                                         # 7
     None,                                         # 8

@@ -24,6 +24,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         Boolean Press(String[] labels, out String matched);
 
         /// <summary>
+        /// Press with the expected-card guard: <paramref name="expectCard"/> is the card text
+        /// the keypad RENDERED; the press is refused ("card-changed") when the card beside the
+        /// control no longer matches — closing the race where the seen card resolves and a new
+        /// one appears between the glance and the thumb.
+        /// </summary>
+        Boolean PressGuarded(String[] labels, String expectCard, out String matched, out String error);
+
+        /// <summary>
         /// Put <paramref name="text"/> into the app's composer and optionally submit it.
         /// The desktop injection law: the text lands in the composer of the conversation the
         /// user targeted, or nowhere, and the failure is reported.

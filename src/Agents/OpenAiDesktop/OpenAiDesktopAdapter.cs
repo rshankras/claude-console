@@ -54,6 +54,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         public String ConversationUnreadText => "Unread";
 
+        // The Review surface, from the live button inventory; first match wins. Verify on
+        // hardware which of these opens vs toggles — fails safe (logged no-match) either way.
+        public String[] ShowDiffLabels => new[] { "Toggle file diff", "Show files" };
+
         // The menu items pair each mode name with its tagline; match on the distinctive full
         // label, not the bare mode word — "Codex" alone would also match the switcher itself.
         public String ModeMenuLabel(String modeName) => modeName switch

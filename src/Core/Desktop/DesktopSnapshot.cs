@@ -27,8 +27,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Sidebar conversations in the app's own order (recency first).</summary>
         public IReadOnlyList<DesktopConversation> Conversations { get; init; } = Array.Empty<DesktopConversation>();
 
+        /// <summary>Why the surface is unavailable — distinct truths deserve distinct faces
+        /// (review round: fail closed, and say why). Empty when the surface is up.</summary>
+        public String UnavailableReason { get; init; } = "";
+
         /// <summary>The reading when the helper failed, timed out, or returned junk.</summary>
-        public static DesktopSnapshot Unavailable => new DesktopSnapshot();
+        public static DesktopSnapshot Unavailable => new DesktopSnapshot { UnavailableReason = "no-signal" };
+
+        private static DesktopSnapshot UnavailableBecause(String reason) =>
+            new DesktopSnapshot { UnavailableReason = reason };
 
         /// <summary>
         /// Parse the helper's one-line JSON. Anything unparseable degrades to
@@ -39,7 +46,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             if (String.IsNullOrWhiteSpace(json))
             {
-                return Unavailable;
+                return Unavailable;   // helper never ran, timed out, or was killed
             }
 
             try
@@ -47,9 +54,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 using var doc = JsonDocument.Parse(json);
                 var root = doc.RootElement;
 
-                if (!ReadBool(root, "ok") || !ReadBool(root, "surface"))
+                if (!ReadBool(root, "ok"))
                 {
-                    return Unavailable;
+                    // The helper said WHY (its fail() always names the error) — keep the truth.
+                    return ReadString(root, "error") switch
+                    {
+                        "not-trusted" => UnavailableBecause("no-permission"),
+                        "app-not-running" => UnavailableBecause("not-running"),
+                        _ => Unavailable,
+                    };
+                }
+
+                if (!ReadBool(root, "surface"))
+                {
+                    return UnavailableBecause("hidden");   // screen locked / window gone
                 }
 
                 return new DesktopSnapshot
@@ -89,6 +107,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 list.Add(new DesktopConversation
                 {
                     Title = title,
+                    Selected = String.Equals(ReadString(item, "selected"), "true", StringComparison.Ordinal),
                     State = ReadString(item, "state") switch
                     {
                         "awaiting" => ConversationState.Awaiting,

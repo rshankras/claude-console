@@ -2,6 +2,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
     using System.Collections.Generic;
+    using System.Linq;
 
     using Loupedeck.ClaudeConsolePlugin.Desktop;
 
@@ -22,6 +23,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             public DesktopSnapshot Status() => this.Next;
             public Boolean Press(String[] labels, out String matched) { matched = null; return false; }
+            public Boolean PressGuarded(String[] labels, String expectCard, out String matched, out String error) { matched = null; error = null; return false; }
             public Boolean WriteComposer(String text, Boolean send, out String error) { error = null; return true; }
             public Boolean SwitchMode(String modeName) => true;
             public Boolean FocusApp() => true;
@@ -116,6 +118,77 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void The_cadence_is_hot_only_while_something_is_happening()
+        {
+            Assert.Equal(1000, DesktopMonitor.NextDelayMs(DesktopActivity.Working));
+            Assert.Equal(1000, DesktopMonitor.NextDelayMs(DesktopActivity.WaitingApproval));
+            Assert.Equal(3000, DesktopMonitor.NextDelayMs(DesktopActivity.Ready));
+            Assert.Equal(5000, DesktopMonitor.NextDelayMs(DesktopActivity.Unavailable));
+        }
+
+        [Fact]
+        public void The_approve_face_learns_its_target_only_when_one_conversation_awaits()
+        {
+            var one = new DesktopSnapshot
+            {
+                SurfaceAvailable = true,
+                ApprovalPresent = true,
+                CardText = "Run npm install",
+                Conversations = new[]
+                {
+                    new DesktopConversation { Title = "backend", State = ConversationState.Awaiting },
+                    new DesktopConversation { Title = "frontend", State = ConversationState.Running },
+                },
+            };
+
+            Assert.Equal("backend", DesktopMonitor.Map(one).ActiveTitle);
+
+            var two = new DesktopSnapshot
+            {
+                SurfaceAvailable = true,
+                ApprovalPresent = true,
+                Conversations = new[]
+                {
+                    new DesktopConversation { Title = "backend", State = ConversationState.Awaiting },
+                    new DesktopConversation { Title = "frontend", State = ConversationState.Awaiting },
+                },
+            };
+
+            // Two waiting: which one is open is not knowable — empty, never a guess.
+            Assert.Equal("", DesktopMonitor.Map(two).ActiveTitle);
+        }
+
+        [Fact]
+        public void The_unavailable_reason_reaches_the_state()
+        {
+            var state = DesktopMonitor.Map(new DesktopSnapshot { UnavailableReason = "hidden" });
+
+            Assert.Equal(DesktopActivity.Unavailable, state.Activity);
+            Assert.Equal("hidden", state.Reason);
+        }
+
+        [Fact]
+        public void Slots_stay_put_across_polls_while_the_sidebar_reorders()
+        {
+            var fake = new FakeAutomation();
+            using var monitor = new DesktopMonitor(fake);
+
+            DesktopSnapshot With(params String[] titles) => new DesktopSnapshot
+            {
+                SurfaceAvailable = true,
+                Conversations = titles.Select(x => new DesktopConversation { Title = x }).ToList(),
+            };
+
+            fake.Next = With("A", "B", "C");
+            monitor.PollOnce();
+            fake.Next = With("C", "B", "A");   // full reorder
+            monitor.PollOnce();
+
+            Assert.Equal(new[] { "A", "B", "C" },
+                monitor.Current.Slots.Take(3).Select(s => s.Title));
+        }
+
+        [Fact]
         public void A_throwing_automation_degrades_to_unavailable_instead_of_crashing_the_tick()
         {
             var monitor = new DesktopMonitor(new ThrowingAutomation());
@@ -129,6 +202,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             public DesktopSnapshot Status() => throw new InvalidOperationException("boom");
             public Boolean Press(String[] labels, out String matched) => throw new InvalidOperationException();
+            public Boolean PressGuarded(String[] labels, String expectCard, out String matched, out String error) => throw new InvalidOperationException();
             public Boolean WriteComposer(String text, Boolean send, out String error) => throw new InvalidOperationException();
             public Boolean SwitchMode(String modeName) => throw new InvalidOperationException();
             public Boolean FocusApp() => throw new InvalidOperationException();

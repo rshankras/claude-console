@@ -40,6 +40,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("--label")]
         [InlineData("--text")]
         [InlineData("--send-label")]
+        [InlineData("--expect-near")]
         public void The_argument_names_match_what_the_client_sends(String arg)
         {
             Assert.Contains($"\"{arg}\"", Source());
@@ -56,6 +57,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("conversations")]
         [InlineData("title")]
         [InlineData("state")]
+        [InlineData("selected")]
         public void The_status_json_keys_match_what_the_snapshot_parses(String key)
         {
             Assert.Contains($"\"{key}\"", Source());
@@ -71,6 +73,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.DoesNotContain("Allow once", source);
             Assert.DoesNotContain("needs attention", source);
             Assert.DoesNotContain("Switch mode", source);
+        }
+
+        [Fact]
+        public void The_expected_card_guard_refuses_with_its_own_error()
+        {
+            // "card-changed" is what makes the user LOOK — the whole point of the guard. The
+            // C# side logs it verbatim; both sides of that string live here.
+            Assert.Contains("\"card-changed\"", Source());
         }
 
         [Fact]

@@ -9,7 +9,10 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// it wants from you. This is the argument for an LCD keypad over a glowing one, made
     /// physical: "Q3 report · needs input", not "amber means something, somewhere".
     ///
-    /// Slots follow the app's own sidebar order (recency), read live each poll. Press = jump:
+    /// Slots are STABLE (review round, 2026-08-25): a conversation claims a key on first sight
+    /// and keeps it through reorders until it leaves the sidebar — DesktopSlotMap, the terminal
+    /// grid's model. A hardware key that remaps under the fingers breaks the muscle memory a
+    /// keypad exists to serve. Press = jump:
     /// open that conversation AND bring the app forward — the one action here that is SUPPOSED
     /// to focus, because "take me to it" is what a press on a named thing means. An empty slot
     /// renders dim and a press on it does nothing.
@@ -47,8 +50,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 return null;
             }
 
-            var list = DesktopServices.Monitor.Current.Conversations;
-            return n >= 1 && n <= list.Count ? list[n - 1] : null;
+            var slots = DesktopServices.Monitor.Current.Slots;
+            return n >= 1 && n <= slots.Count ? slots[n - 1] : null;   // null = empty slot
         }
 
         protected override void RunCommand(String actionParameter)

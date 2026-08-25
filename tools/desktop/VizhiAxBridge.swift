@@ -163,6 +163,24 @@ func firstPressable(matching labels: [String], in nodes: [Node]) -> Node? {
     }
 }
 
+// Whitespace-collapse: the card is laid out for a window (newlines, runs of spaces); consumers
+// get one clean line. Also what makes card-text comparison stable across reads.
+func collapse(_ s: String) -> String {
+    s.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " ")
+}
+
+// The card's description: AXStaticText nodes directly BEFORE an anchor button in tree order
+// (verified live). One definition, used by status (to report) and press (to verify) — the
+// expected-card guard is only sound if both sides compute the same string.
+func cardText(before anchor: Node, in nodes: [Node]) -> String {
+    guard let idx = nodes.firstIndex(where: { $0.el === anchor.el }) else { return "" }
+    let windowStart = max(0, idx - 20)
+    let statics = nodes[windowStart..<idx].filter { $0.role == "AXStaticText" && !$0.text.isEmpty }
+    var text = collapse(statics.suffix(3).map { $0.text }.joined(separator: " "))
+    if text.count > CARD_TEXT_CAP { text = String(text.prefix(CARD_TEXT_CAP)) }
+    return text
+}
+
 // MARK: - verbs
 
 switch verb {
@@ -190,25 +208,8 @@ case "status":
         }
     }
 
-    // The card's description renders as AXStaticText nodes directly BEFORE the approve button
-    // in tree order (verified in the spike dump). Positional heuristic, capped; empty when the
-    // layout surprises us — an honest "" beats a guessed string.
-    var cardText = ""
-    if let approve = approve, let idx = nodes.firstIndex(where: { $0.el === approve.el }) {
-        let windowStart = max(0, idx - 20)
-        let statics = nodes[windowStart..<idx].filter { $0.role == "AXStaticText" && !$0.text.isEmpty }
-        // Collapse ALL whitespace — the card's text is laid out for a window, so it arrives with
-        // newlines and runs of spaces in it. Anything the consumer can't render (the keypad's LCD
-        // font turns a stray control character into "?") is a defect we ship downstream, and the
-        // risk classifier reads this string too: it should be one clean line either way.
-        cardText = statics.suffix(3)
-            .map { $0.text }
-            .joined(separator: " ")
-            .components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        if cardText.count > CARD_TEXT_CAP { cardText = String(cardText.prefix(CARD_TEXT_CAP)) }
-    }
+    // The card's description — empty when the layout surprises us; an honest "" beats a guess.
+    let card = approve.map { cardText(before: $0, in: nodes) } ?? ""
 
     // Sidebar conversations — a pressable button whose SUBTREE contains the item marker (the
     // app-specific per-row control, e.g. a pin button, passed as --conv-marker so this stays
@@ -242,7 +243,17 @@ case "status":
 
             if hasMarker {
                 if state == "idle" && images > 2 { state = "running" }   // pin + archive own two
-                conversations.append(["title": n.text, "state": state])
+                // Which conversation is OPEN matters to approval identity: the card only ever
+                // belongs to the open one. AXSelected is the app's own answer — carried by the
+                // row's container, not the button (checked live), so climb a couple of parents.
+                var selected = (attr(n.el, "AXSelected" as String) as? Bool) ?? false
+                var cur: AXUIElement = n.el
+                for _ in 0..<2 where !selected {
+                    guard let p = attr(cur, kAXParentAttribute as String) else { break }
+                    cur = p as! AXUIElement
+                    selected = (attr(cur, "AXSelected" as String) as? Bool) ?? false
+                }
+                conversations.append(["title": n.text, "state": state, "selected": selected ? "true" : "false"])
                 i = j          // skip the subtree so row controls never read as items
             } else {
                 i += 1
@@ -256,7 +267,7 @@ case "status":
         "approvalPresent": approve != nil,
         "denyPresent": deny != nil,
         "stopPresent": stop != nil,
-        "cardText": cardText,
+        "cardText": card,
         "mode": mode,
         "conversations": conversations,
     ], code: 0)
@@ -266,9 +277,22 @@ case "press":
     if labels.isEmpty { fail("no --label given", 4) }
     if !waitForWebContent(seconds: 2) { fail("surface-unavailable", 5) }
     let before = frontmostName()
-    guard let target = firstPressable(matching: labels, in: scanWindows().nodes) else {
+    let pressScan = scanWindows().nodes
+    guard let target = firstPressable(matching: labels, in: pressScan) else {
         fail("no-match", 4)
     }
+
+    // The expected-card guard: the caller names the card text it SAW; if what is beside the
+    // button now is a different card (the old one resolved, a new one appeared between the
+    // keypad's render and the thumb), refuse — "card-changed" makes the user look, which is
+    // the entire point. Containment either way absorbs the report-side length cap.
+    if let expect = argValue("--expect-near").map(collapse), !expect.isEmpty {
+        let seen = cardText(before: target, in: pressScan)
+        if seen.isEmpty || !(seen.contains(expect) || expect.contains(seen)) {
+            fail("card-changed", 6)
+        }
+    }
+
     if hasFlag("--dry") {
         emit(["matched": target.text, "dry": true], code: 0)
     }

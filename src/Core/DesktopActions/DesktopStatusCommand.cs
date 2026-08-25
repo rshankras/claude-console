@@ -83,7 +83,15 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 DesktopActivity.Working => ("Working", "busy0"),
                 DesktopActivity.WaitingApproval => ("Waiting", "waiting"),
                 DesktopActivity.Ready => ("Ready", "done"),
-                _ => ("Hidden", "status"),
+                // Distinct truths, distinct faces (review round: fail closed and say why) —
+                // each names the user's own next action: unlock, grant, launch, or wait.
+                _ => state.Reason switch
+                {
+                    "hidden" => ("Hidden", "status"),
+                    "no-permission" => ("No Access", "esc"),
+                    "not-running" => ("App Off", "terminal"),
+                    _ => ("No Signal", "status"),
+                },
             };
         }
     }

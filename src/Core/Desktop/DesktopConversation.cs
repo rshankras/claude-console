@@ -11,6 +11,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     {
         public String Title { get; init; } = "";
         public ConversationState State { get; init; }
+
+        /// <summary>The app's own selection marker, when it exposes one. The current OpenAI app
+        /// build reports none (checked live: button and two ancestors all false) — kept because
+        /// it costs nothing and an app update could start answering.</summary>
+        public Boolean Selected { get; init; }
     }
 
     /// <summary>
