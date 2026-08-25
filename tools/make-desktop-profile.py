@@ -83,6 +83,20 @@ PAGE_TWO = [
     None,                                         # 8
 ]
 
+# Page 3 · Workflows (appendix Codex Desktop · Page 2's nine, one press = one Codex task brief).
+# Ids must match DesktopWorkflowCommand.Defaults — bindings name parameters, not labels.
+PAGE_THREE = [
+    act("DesktopWorkflowCommand", "review_pr"),   # 0
+    act("DesktopWorkflowCommand", "debug"),       # 1
+    act("DesktopWorkflowCommand", "refactor"),    # 2
+    act("DesktopWorkflowCommand", "write_tests"), # 3
+    act("DesktopWorkflowCommand", "explain_diff"),# 4
+    act("DesktopWorkflowCommand", "fix_ci"),      # 5
+    act("DesktopWorkflowCommand", "security"),    # 6
+    act("DesktopWorkflowCommand", "update_deps"), # 7
+    act("DesktopWorkflowCommand", "continue"),    # 8
+]
+
 
 def main() -> None:
     donor = zipfile.ZipFile(DONOR)
@@ -100,17 +114,18 @@ def main() -> None:
     for mode in profile["layout"]["layoutModes"]:
         for ws in mode["workspaces"]:
             pages = ws["pressPages"]
-            if len(pages) < 2:
-                sys.exit("donor has fewer than 2 press pages — wrong donor?")
+            layout_pages = [("Conversations", PAGE_ONE), ("Actions", PAGE_TWO), ("Workflows", PAGE_THREE)]
+            if len(pages) < len(layout_pages):
+                sys.exit(f"donor has fewer than {len(layout_pages)} press pages — wrong donor?")
             kept = []
-            for page, (name, bindings) in zip(pages, [("Conversations", PAGE_ONE), ("Actions", PAGE_TWO)]):
+            for page, (name, bindings) in zip(pages, layout_pages):
                 page["displayName"] = name
                 if len(page["controls"]) != len(bindings):
                     sys.exit(f"donor page has {len(page['controls'])} controls, expected {len(bindings)}")
                 for control, binding in zip(page["controls"], bindings):
                     control["pressAction"] = binding
                 kept.append(page)
-            ws["pressPages"] = kept        # donor pages 3-5: dropped, not blanked
+            ws["pressPages"] = kept        # remaining donor pages: dropped, not blanked
 
     entries["ProfileInfo.json"] = json.dumps(profile, indent=2).encode()
 
@@ -148,8 +163,8 @@ def main() -> None:
             z.writestr(name, data)
     OUT.write_bytes(buf.getvalue())
 
-    bound = sum(1 for b in PAGE_ONE + PAGE_TWO if b)
-    print(f"wrote {OUT.relative_to(ROOT)}: 2 pages, {bound} bound keys, GUID {GUID}")
+    bound = sum(1 for b in PAGE_ONE + PAGE_TWO + PAGE_THREE if b)
+    print(f"wrote {OUT.relative_to(ROOT)}: 3 pages, {bound} bound keys, GUID {GUID}")
 
 
 if __name__ == "__main__":

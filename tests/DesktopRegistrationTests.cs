@@ -120,7 +120,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var profile = JsonNode.Parse(reader.ReadToEnd());
 
             var pages = profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"].AsArray();
-            Assert.Equal(2, pages.Count);
+            Assert.Equal(3, pages.Count);   // Conversations · Actions · Workflows
 
             var pageOne = pages[0]["controls"].AsArray()
                 .Select(c => (String)c["pressAction"]).ToList();
