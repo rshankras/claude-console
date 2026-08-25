@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Desktop
 {
     using System;
+    using System.Collections.Generic;
     using System.Text.Json;
 
     /// <summary>
@@ -22,6 +23,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public Boolean StopPresent { get; init; }
         public String CardText { get; init; } = "";
         public String Mode { get; init; } = "";
+
+        /// <summary>Sidebar conversations in the app's own order (recency first).</summary>
+        public IReadOnlyList<DesktopConversation> Conversations { get; init; } = Array.Empty<DesktopConversation>();
 
         /// <summary>The reading when the helper failed, timed out, or returned junk.</summary>
         public static DesktopSnapshot Unavailable => new DesktopSnapshot();
@@ -57,12 +61,45 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                     StopPresent = ReadBool(root, "stopPresent"),
                     CardText = ReadString(root, "cardText"),
                     Mode = ReadString(root, "mode"),
+                    Conversations = ReadConversations(root),
                 };
             }
             catch (JsonException)
             {
                 return Unavailable;
             }
+        }
+
+        private static IReadOnlyList<DesktopConversation> ReadConversations(JsonElement root)
+        {
+            if (!root.TryGetProperty("conversations", out var arr) || arr.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<DesktopConversation>();
+            }
+
+            var list = new List<DesktopConversation>();
+            foreach (var item in arr.EnumerateArray())
+            {
+                var title = ReadString(item, "title");
+                if (String.IsNullOrEmpty(title))
+                {
+                    continue;
+                }
+
+                list.Add(new DesktopConversation
+                {
+                    Title = title,
+                    State = ReadString(item, "state") switch
+                    {
+                        "awaiting" => ConversationState.Awaiting,
+                        "unread" => ConversationState.Unread,
+                        "running" => ConversationState.Running,
+                        _ => ConversationState.Idle,   // unknown state words degrade to idle, never to a guess
+                    },
+                });
+            }
+
+            return list;
         }
 
         private static Boolean ReadBool(JsonElement root, String name) =>

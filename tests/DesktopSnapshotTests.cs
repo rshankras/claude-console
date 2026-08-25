@@ -48,6 +48,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Conversations_parse_with_states_and_order_preserved()
+        {
+            var snap = DesktopSnapshot.Parse(
+                "{\"ok\":true,\"surface\":true,\"conversations\":[" +
+                "{\"title\":\"Q3 report\",\"state\":\"awaiting\"}," +
+                "{\"title\":\"Bug triage\",\"state\":\"unread\"}," +
+                "{\"title\":\"API redesign\",\"state\":\"running\"}," +
+                "{\"title\":\"Blog draft\",\"state\":\"idle\"}," +
+                "{\"title\":\"Odd one\",\"state\":\"someday-new-state\"}," +
+                "{\"state\":\"awaiting\"}]}");   // no title: dropped, not rendered blank
+
+            Assert.Equal(5, snap.Conversations.Count);
+            Assert.Equal("Q3 report", snap.Conversations[0].Title);
+            Assert.Equal(ConversationState.Awaiting, snap.Conversations[0].State);
+            Assert.Equal(ConversationState.Unread, snap.Conversations[1].State);
+            Assert.Equal(ConversationState.Running, snap.Conversations[2].State);
+            Assert.Equal(ConversationState.Idle, snap.Conversations[3].State);
+            // A state word this build doesn't know degrades to idle — never to a guess.
+            Assert.Equal(ConversationState.Idle, snap.Conversations[4].State);
+        }
+
+        [Fact]
         public void Missing_fields_default_to_absent_not_to_error()
         {
             // A newer C# against an older helper: unknown state reads as "nothing present",

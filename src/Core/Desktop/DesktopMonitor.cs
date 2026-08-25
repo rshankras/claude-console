@@ -1,6 +1,8 @@
 namespace Loupedeck.ClaudeConsolePlugin.Desktop
 {
     using System;
+    using System.Collections.Generic;
+    using System.Linq;
     using System.Threading;
 
     /// <summary>
@@ -14,6 +16,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public String CardText { get; init; } = "";
         public String Mode { get; init; } = "";
         public Boolean Attention { get; init; }
+
+        /// <summary>Sidebar conversations, recency first — what the slot keys render.</summary>
+        public IReadOnlyList<DesktopConversation> Conversations { get; init; } = Array.Empty<DesktopConversation>();
 
         public Boolean Available => this.Activity != DesktopActivity.Unavailable;
 
@@ -135,6 +140,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 CardText = snap.CardText ?? "",
                 Mode = snap.Mode ?? "",
                 Attention = snap.Attention,
+                Conversations = snap.Conversations ?? Array.Empty<DesktopConversation>(),
             };
         }
 
@@ -145,6 +151,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             || a.Risk != b.Risk
             || a.Attention != b.Attention
             || !String.Equals(a.Mode, b.Mode, StringComparison.Ordinal)
-            || !String.Equals(a.CardText, b.CardText, StringComparison.Ordinal);
+            || !String.Equals(a.CardText, b.CardText, StringComparison.Ordinal)
+            || !SameConversations(a.Conversations, b.Conversations);
+
+        private static Boolean SameConversations(
+            IReadOnlyList<DesktopConversation> a, IReadOnlyList<DesktopConversation> b) =>
+            a.Count == b.Count
+            && a.Zip(b).All(p =>
+                p.First.State == p.Second.State
+                && String.Equals(p.First.Title, p.Second.Title, StringComparison.Ordinal));
     }
 }

@@ -50,22 +50,19 @@ onto whichever keys you like.
 imported itself over it would wipe whatever you already had there, so this product doesn't. It is
 one placement, once.
 
-## The auto-imported page
+## The auto-imported pages
 
-Bound to the app, so it appears while ChatGPT is frontmost — the keys that only make sense when
-you are actually looking at it:
+Bound to the app, so they appear while ChatGPT is frontmost.
 
-| Key | Action |
-|---|---|
-| **Activity** | Same status face as above |
-| **Mode** | Switch between ChatGPT and Codex. The key shows the mode you are in; pressing moves to the other |
-| **New Chat** | Fresh conversation |
-| **Voice** | Hold a thought, speak it, and it lands in the composer and sends. Fully offline (whisper.cpp), no cloud, no API key |
-| **Stop** | Interrupt the running task |
+**Page 1 · Conversations — the home page.** Six keys are your six most recent conversations, by
+name, each carrying its live state: **Awaiting approval** (amber badge), **Unread** (finished,
+result unseen), a spinner while running. Press one to jump — the app comes forward with that
+conversation open. The bottom row answers the one that's waiting: **Approve · Deny · Voice** —
+the same sessions-above/answers-below shape as the terminal consoles, so one muscle memory
+covers the whole family.
 
-Approve and Deny are deliberately **not** duplicated here. If you are looking at the app, the card
-is on your screen — a key that appears only when you do not need it teaches the wrong idea of
-where answering happens.
+**Page 2 · Actions.** **Activity** (same status face as above), **Mode** (ChatGPT ⇄ Codex — the
+key shows the mode you're in), **New Chat**, **Stop**.
 
 ## What it will not do
 

@@ -34,6 +34,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("--stop")]
         [InlineData("--attention")]
         [InlineData("--mode-prefix")]
+        [InlineData("--conv-marker")]
+        [InlineData("--state-awaiting")]
+        [InlineData("--state-unread")]
         [InlineData("--label")]
         [InlineData("--text")]
         [InlineData("--send-label")]
@@ -50,6 +53,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("stopPresent")]
         [InlineData("cardText")]
         [InlineData("mode")]
+        [InlineData("conversations")]
+        [InlineData("title")]
+        [InlineData("state")]
         public void The_status_json_keys_match_what_the_snapshot_parses(String key)
         {
             Assert.Contains($"\"{key}\"", Source());

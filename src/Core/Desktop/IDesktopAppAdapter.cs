@@ -75,6 +75,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>The mode names this app can switch between, in toggle order.</summary>
         String[] ModeNames { get; }
 
+        /// <summary>
+        /// The per-row control whose presence identifies a sidebar CONVERSATION (e.g. "Pin chat")
+        /// — how the helper tells conversation rows from every other button. Empty disables
+        /// conversation reading entirely.
+        /// </summary>
+        String ConversationItemMarker { get; }
+
+        /// <summary>The literal row text meaning "this conversation awaits your approval".</summary>
+        String ConversationAwaitingText { get; }
+
+        /// <summary>The literal row text meaning "finished, result unseen".</summary>
+        String ConversationUnreadText { get; }
+
         /// <summary>What this app's UI honestly exposes. Keys hide where a capability is false.</summary>
         DesktopCapabilities Capabilities { get; }
     }

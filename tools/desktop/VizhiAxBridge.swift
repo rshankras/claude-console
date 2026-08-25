@@ -120,6 +120,7 @@ struct Node {
     let role: String
     let text: String
     let pressable: Bool
+    let depth: Int      // DFS depth — what lets a flat scan recover subtree boundaries
 }
 
 // One DFS over the app's WINDOWS (never the menu bar — thousands of AXMenuItems of pure noise).
@@ -134,7 +135,7 @@ func scanWindows() -> (nodes: [Node], webArea: Bool) {
         let role = str(el, kAXRoleAttribute as String) ?? "?"
         if role == "AXWebArea" { webArea = true }
         nodes.append(Node(el: el, role: role, text: displayText(el),
-                          pressable: actionNames(el).contains(kAXPressAction as String)))
+                          pressable: actionNames(el).contains(kAXPressAction as String), depth: depth))
         for c in children(el) { rec(c, depth + 1) }
     }
     for w in (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? [] { rec(w, 0) }
@@ -209,6 +210,46 @@ case "status":
         if cardText.count > CARD_TEXT_CAP { cardText = String(cardText.prefix(CARD_TEXT_CAP)) }
     }
 
+    // Sidebar conversations — a pressable button whose SUBTREE contains the item marker (the
+    // app-specific per-row control, e.g. a pin button, passed as --conv-marker so this stays
+    // app-agnostic). DFS order is the sidebar's own order, i.e. recency. State, verified live
+    // 2026-08-25: "awaiting"/"unread" are literal static texts on the row; "running" has NO text,
+    // only an extra activity image beyond the two the row controls always carry — a heuristic,
+    // and the reason it ranks below the text states.
+    var conversations: [[String: String]] = []
+    if let convMarker = argValue("--conv-marker"), !convMarker.isEmpty {
+        let awaiting = argValue("--state-awaiting") ?? ""
+        let unread = argValue("--state-unread") ?? ""
+        var i = 0
+        while i < nodes.count && conversations.count < 8 {
+            let n = nodes[i]
+            guard n.pressable && !n.text.isEmpty else { i += 1; continue }
+
+            var j = i + 1
+            var hasMarker = false
+            var state = "idle"
+            var images = 0
+            while j < nodes.count && nodes[j].depth > n.depth {
+                let m = nodes[j]
+                if m.pressable && m.text == convMarker { hasMarker = true }
+                if m.role == "AXStaticText" {
+                    if !awaiting.isEmpty && m.text.contains(awaiting) { state = "awaiting" }
+                    else if !unread.isEmpty && m.text == unread && state == "idle" { state = "unread" }
+                }
+                if m.role == "AXImage" && m.text.isEmpty { images += 1 }
+                j += 1
+            }
+
+            if hasMarker {
+                if state == "idle" && images > 2 { state = "running" }   // pin + archive own two
+                conversations.append(["title": n.text, "state": state])
+                i = j          // skip the subtree so row controls never read as items
+            } else {
+                i += 1
+            }
+        }
+    }
+
     emit([
         "surface": true,
         "attention": attention,
@@ -217,6 +258,7 @@ case "status":
         "stopPresent": stop != nil,
         "cardText": cardText,
         "mode": mode,
+        "conversations": conversations,
     ], code: 0)
 
 case "press":

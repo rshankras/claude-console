@@ -46,6 +46,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         public String[] ModeNames => new[] { "ChatGPT", "Codex" };
 
+        // Sidebar rows: every conversation carries a "Pin chat" control; the state texts are the
+        // ones observed ON the row during the 2026-08-25 lifecycle recon (task running → card up).
+        public String ConversationItemMarker => "Pin chat";
+
+        public String ConversationAwaitingText => "Awaiting approval";
+
+        public String ConversationUnreadText => "Unread";
+
         // The menu items pair each mode name with its tagline; match on the distinctive full
         // label, not the bare mode word — "Codex" alone would also match the switcher itself.
         public String ModeMenuLabel(String modeName) => modeName switch

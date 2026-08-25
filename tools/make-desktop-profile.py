@@ -48,22 +48,35 @@ def act(type_name, param=None):
     return f"{base}___{param}" if param else base
 
 
-# This profile is bound to the app, and a Logi application profile is only ACTIVE WHILE ITS APP IS
-# FRONTMOST. So this page can only ever be the "I am looking at the app" set — and the product's
-# headline feature is the opposite case, answering the agent while you are somewhere else entirely.
+# Page 1 is the appendix's home page, as sent to Logitech (Appendix D, Codex Desktop · Page 1):
+# six conversations by name on rows 1-2, and the bottom row answers the one that's waiting —
+# the same sessions-above/answers-below shape as the shipped terminal products, so one muscle
+# memory covers the whole family. The user reaffirmed this layout on 2026-08-25, reversing an
+# interim page that had dropped Approve/Deny from the app-bound profile.
 #
-# Those keys (Activity, Approve, Deny, Show ChatGPT) therefore belong on the user's DEFAULT
-# profile, which is active no matter what is in front. We cannot place them there ourselves: the
-# default profile is the user's own configuration and writing it would be hostile. The product
-# README makes that placement step one, and this page deliberately does NOT duplicate them —
-# a key that appears only when you do not need it teaches the wrong model of where answering
-# happens.
+# The default-profile guidance still stands and is unchanged by this: an application profile is
+# only active while its app is frontmost, so answering-from-anywhere still means placing
+# Activity/Approve/Deny/Show ChatGPT on the user's default profile (README step one). This page
+# is the "at the app" home; that placement is the "everywhere else" one.
 PAGE_ONE = [
-    act("DesktopStatusCommand"),                  # 0  useful everywhere, so it earns a slot here too
-    act("DesktopControlCommand", "mode"),         # 1  ChatGPT <-> Codex
+    act("DesktopConversationCommand", "1"),       # 0  ┐
+    act("DesktopConversationCommand", "2"),       # 1  │ rows 1-2: live conversations,
+    act("DesktopConversationCommand", "3"),       # 2  │ recency order, state on each,
+    act("DesktopConversationCommand", "4"),       # 3  │ press to jump
+    act("DesktopConversationCommand", "5"),       # 4  │
+    act("DesktopConversationCommand", "6"),       # 5  ┘
+    act("DesktopApprovalCommand", "approve"),     # 6  ┐
+    act("DesktopApprovalCommand", "deny"),        # 7  │ the bottom row answers
+    act("DesktopVoiceCommand"),                   # 8  ┘
+]
+
+# Page 2 · the session controls — the appendix's "Actions" page.
+PAGE_TWO = [
+    act("DesktopStatusCommand"),                  # 0
+    act("DesktopControlCommand", "mode"),         # 1
     act("DesktopControlCommand", "new_chat"),     # 2
-    act("DesktopVoiceCommand"),                   # 3  dictate into the composer — best while in the app
-    act("DesktopControlCommand", "stop"),         # 4
+    act("DesktopControlCommand", "stop"),         # 3
+    None,                                         # 4
     None,                                         # 5
     None,                                         # 6
     None,                                         # 7
@@ -87,15 +100,17 @@ def main() -> None:
     for mode in profile["layout"]["layoutModes"]:
         for ws in mode["workspaces"]:
             pages = ws["pressPages"]
-            if not pages:
-                sys.exit("donor has no press pages — wrong donor?")
-            page = pages[0]
-            page["displayName"] = "Agent"
-            if len(page["controls"]) != len(PAGE_ONE):
-                sys.exit(f"donor page 1 has {len(page['controls'])} controls, expected {len(PAGE_ONE)}")
-            for control, binding in zip(page["controls"], PAGE_ONE):
-                control["pressAction"] = binding
-            ws["pressPages"] = [page]      # pages 2-5: dropped, not blanked
+            if len(pages) < 2:
+                sys.exit("donor has fewer than 2 press pages — wrong donor?")
+            kept = []
+            for page, (name, bindings) in zip(pages, [("Conversations", PAGE_ONE), ("Actions", PAGE_TWO)]):
+                page["displayName"] = name
+                if len(page["controls"]) != len(bindings):
+                    sys.exit(f"donor page has {len(page['controls'])} controls, expected {len(bindings)}")
+                for control, binding in zip(page["controls"], bindings):
+                    control["pressAction"] = binding
+                kept.append(page)
+            ws["pressPages"] = kept        # donor pages 3-5: dropped, not blanked
 
     entries["ProfileInfo.json"] = json.dumps(profile, indent=2).encode()
 
@@ -133,8 +148,8 @@ def main() -> None:
             z.writestr(name, data)
     OUT.write_bytes(buf.getvalue())
 
-    bound = sum(1 for b in PAGE_ONE if b)
-    print(f"wrote {OUT.relative_to(ROOT)}: 1 page, {bound} bound keys, GUID {GUID}")
+    bound = sum(1 for b in PAGE_ONE + PAGE_TWO if b)
+    print(f"wrote {OUT.relative_to(ROOT)}: 2 pages, {bound} bound keys, GUID {GUID}")
 
 
 if __name__ == "__main__":

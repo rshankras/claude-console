@@ -56,6 +56,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 args.Add("--mode-prefix");
                 args.Add(_app.ModePrefix);
             }
+            if (!String.IsNullOrEmpty(_app.ConversationItemMarker))
+            {
+                args.Add("--conv-marker");
+                args.Add(_app.ConversationItemMarker);
+                AddEach(args, "--state-awaiting", new[] { _app.ConversationAwaitingText });
+                AddEach(args, "--state-unread", new[] { _app.ConversationUnreadText });
+            }
 
             // 2.5s budget: the walk measured ~130ms end-to-end; the margin covers a cold
             // Chromium tree, not a hung one — BoundedProcess kills anything slower.

@@ -95,9 +95,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var profile = JsonNode.Parse(reader.ReadToEnd());
 
             var pages = profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"].AsArray();
-            var page = Assert.Single(pages);   // one page; donor pages dropped, not blanked
 
-            var bound = page["controls"].AsArray()
+            var bound = pages
+                .SelectMany(p => p["controls"].AsArray())
                 .Select(c => (String)c["pressAction"])
                 .Where(a => a != null)
                 .ToList();
@@ -107,22 +107,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void The_app_bound_page_carries_no_approval_keys()
+        public void Page_one_is_the_appendix_home_page()
         {
-            // This profile is only ACTIVE WHILE THE APP IS FRONTMOST, so it can never be where
-            // answering-from-elsewhere happens — that set belongs on the user's default profile
-            // (see the product README). Duplicating Approve/Deny here would put them on screen
-            // exactly when the card is already in front of the user, teaching the wrong model.
+            // The layout SENT TO LOGITECH (Appendix D · Codex Desktop · Page 1), reaffirmed by
+            // the user 2026-08-25 over an interim page that had dropped the approval keys: six
+            // conversations by name on rows 1-2, and the bottom row answers the one that's
+            // waiting — the same sessions-above/answers-below shape as the terminal products.
+            // (The default-profile placement for answering-from-anywhere is unchanged; this is
+            // the at-the-app home page.)
             using var zip = System.IO.Compression.ZipFile.OpenRead(DesktopLp5());
             using var reader = new StreamReader(zip.GetEntry("ProfileInfo.json").Open());
             var profile = JsonNode.Parse(reader.ReadToEnd());
 
-            var bound = profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"][0]["controls"]
-                .AsArray().Select(c => (String)c["pressAction"]).Where(a => a != null).ToList();
+            var pages = profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"].AsArray();
+            Assert.Equal(2, pages.Count);
 
-            Assert.DoesNotContain(bound, a => a.Contains("DesktopApprovalCommand"));
-            // ...and the escape hatch is pointless here too: you are already looking at the app.
-            Assert.DoesNotContain(bound, a => a.EndsWith("___focus"));
+            var pageOne = pages[0]["controls"].AsArray()
+                .Select(c => (String)c["pressAction"]).ToList();
+
+            // Rows 1-2: the six conversation slots, in slot order.
+            for (var slot = 1; slot <= 6; slot++)
+            {
+                Assert.EndsWith($"DesktopConversationCommand___{slot}", pageOne[slot - 1]);
+            }
+
+            // Bottom row: Approve / Deny / Voice.
+            Assert.EndsWith("DesktopApprovalCommand___approve", pageOne[6]);
+            Assert.EndsWith("DesktopApprovalCommand___deny", pageOne[7]);
+            Assert.EndsWith("DesktopVoiceCommand", pageOne[8]);
         }
 
         private static String RepoFile(params String[] parts)
