@@ -1437,11 +1437,25 @@ namespace Loupedeck.ClaudeConsolePlugin
                     }
 
                     TryDelete(VoiceTranscriptFile);
-                    if (!String.IsNullOrWhiteSpace(text))
+
+                    // Whisper labels sounds it could not read as speech: "(gunshot)", "(static)",
+                    // "[BLANK_AUDIO]". They are descriptions of noise, not words anyone said, and
+                    // acting on one is acting on a failed dictation. Untreated, "(gunshot)" fuzzy-
+                    // matched a project called SafeShot and OPENED it, and "(static)" opened
+                    // StatementSense — a wrong project launched from across the room. The same text
+                    // would otherwise be typed into a session by the Voice keys.
+                    var spoken = CleanTranscript(text);
+                    if (!String.IsNullOrWhiteSpace(spoken))
                     {
-                        PluginLog.Info($"BridgeManager: transcript ({text.Length} chars): {text}");
-                        try { handler(text); }
+                        PluginLog.Info($"BridgeManager: transcript ({spoken.Length} chars): {spoken}");
+                        try { handler(spoken); }
                         catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: transcript handler failed"); }
+                    }
+                    else if (!String.IsNullOrWhiteSpace(text))
+                    {
+                        // Nothing survived the strip: whisper heard a noise and named it.
+                        PluginLog.Info($"BridgeManager: no speech — whisper reported \"{text}\", nothing to act on");
+                        _platform.Alert();
                     }
                     else
                     {
@@ -1452,6 +1466,43 @@ namespace Loupedeck.ClaudeConsolePlugin
                 PluginLog.Warning("BridgeManager: transcript not produced within 20s");
             })
             { IsBackground = true, Name = "claude-voice-transcript" }.Start();
+        }
+
+        /// <summary>
+        /// Remove whisper's non-speech annotations — anything inside (…) or […] — and collapse the
+        /// whitespace left behind. What remains is what the user actually said, which may be nothing.
+        ///
+        /// This lives in the engine rather than in a helper because BOTH helpers feed it and they
+        /// disagreed: the Windows one stripped these, the macOS one matched three exact literals
+        /// ("[BLANK_AUDIO]", "(silence)", "[ Silence ]") and let every other annotation through.
+        /// One place, one rule, every key that consumes a transcript.
+        /// </summary>
+        internal static String CleanTranscript(String text)
+        {
+            if (String.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            var sb = new StringBuilder(text.Length);
+            var depth = 0;
+            foreach (var ch in text)
+            {
+                if (ch == '[' || ch == '(')
+                {
+                    depth++;
+                }
+                else if ((ch == ']' || ch == ')') && depth > 0)
+                {
+                    depth--;
+                }
+                else if (depth == 0)
+                {
+                    sb.Append(ch);
+                }
+            }
+
+            return String.Join(" ", sb.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries)).Trim();
         }
 
         // Projects the plugin already knows are real, because a session reported working in one.
@@ -1539,10 +1590,16 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (f.StartsWith(t) || t.StartsWith(f)) return 700 + Math.Min(t.Length, f.Length);
             if (f.Contains(t) || t.Contains(f)) return 500 + Math.Min(t.Length, f.Length);
 
-            // Fuzzy fallback: longest contiguous overlap, ≥4 chars and ≥50% of the shorter name.
+            // Fuzzy fallback: longest contiguous overlap, ≥5 chars and ≥50% of the shorter name.
+            //
+            // Four was too generous, and it launched the wrong projects: "gunshot" reached SafeShot
+            // on "shot", "static" reached StatementSense on "stat". Whisper's noise annotations are
+            // now stripped before matching, which is the real fix — this is the second line of
+            // defence, since a four-letter overlap is thin evidence that a mishearing meant THIS
+            // project. Genuine near-misses keep matching: "tailor"/"sailor" share five.
             var lcs = LongestCommonSubstringLength(t, f);
             var shorter = Math.Min(t.Length, f.Length);
-            if (lcs >= 4 && shorter > 0 && lcs * 2 >= shorter)
+            if (lcs >= 5 && shorter > 0 && lcs * 2 >= shorter)
             {
                 return 300 + lcs;
             }

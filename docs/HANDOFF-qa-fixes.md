@@ -8,8 +8,8 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 | | |
 |---|---|
 | Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
-| Suite | 669 C# + 47 shell, green |
-| Issues | 25 filed (#20–#44) plus #45, #46, #47 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
+| Suite | 687 C# + 47 shell, green |
+| Issues | 25 filed (#20–#44) plus #45, #46, #47, #48 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
 ### The four P0s
@@ -135,6 +135,22 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   `LoupedeckService.dll`), which this Mac no longer captures — the Logi launch agents were removed
   during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
   comparable metric.
+
+## #48: hardware testing found what the suite could not
+
+Testing #26 by voice from across the room, whisper emitted `(gunshot)` and `(static)` — its labels
+for a noise — and the plugin fuzzy-matched them to SafeShot and StatementSense and **opened both**.
+A failed dictation did the wrong thing rather than nothing.
+
+- The two helpers disagreed and macOS was wrong: Windows stripped bracketed runs, macOS matched
+  three exact literals (`[BLANK_AUDIO]`, `(silence)`, `[ Silence ]`) and let everything else pass.
+- Fixed in the ENGINE, not the helper — one rule for both platforms and every key that consumes a
+  transcript, and it avoids re-signing ClaudeVoiceHelper, which would reset its Microphone grant.
+- The Voice/Voice Draft keys had the same exposure: `(gunshot)` would have been typed into a session.
+- Fuzzy threshold raised from a 4- to a 5-character overlap. Four let `gunshot`→`SafeShot` through on
+  "shot" and `static`→`StatementSense` on "stat".
+- **The lesson: this was invisible to 669 green tests.** It needed a real microphone, a real room,
+  and standing too far away. Test voice features at the distance a user actually sits.
 
 ## Traps and findings worth not rediscovering
 

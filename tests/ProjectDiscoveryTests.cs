@@ -296,8 +296,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var result = ProjectDiscovery.Candidates(
                 this._home, Path.Combine(this._home, "absent"), new[] { both });
 
-            Assert.Single(result.Paths.Where(p =>
-                String.Equals(p.TrimEnd(Path.DirectorySeparatorChar), both, StringComparison.OrdinalIgnoreCase)));
+            Assert.Single(result.Paths, p =>
+                String.Equals(p.TrimEnd(Path.DirectorySeparatorChar), both, StringComparison.OrdinalIgnoreCase));
         }
 
         // -----------------------------------------------------------------------------------------
