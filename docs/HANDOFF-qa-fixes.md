@@ -9,7 +9,7 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 |---|---|
 | Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
 | Suite | 630 C# + 47 shell, green |
-| Issues | 25 filed (#20–#44) plus #45, #46 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
+| Issues | 25 filed (#20–#44) plus #45, #46, #47 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
 ### The four P0s
@@ -88,7 +88,7 @@ the same `<transcript>.error` sidecar. The plugin's reader was already platform-
 Windows half had been inert. The sidecar must be written BEFORE the transcript: the poll loop checks
 for it first, and an empty transcript arriving earlier would be read as silence.
 
-**STILL OPEN — a laptop task, not a Mac one.** `pack-release.sh` on this branch packs only the macOS
+**STILL OPEN — issue #47, a laptop task, not a Mac one.** `pack-release.sh` on this branch packs only the macOS
 `whisper-bin`. `EnsureVoiceRuntimeInstalledWindows` looks for `voice/whisper-bin-win/`, which no
 package has ever contained, so **voice on a packaged Windows install fails with "whisper-cli.exe
 missing"** and has only ever worked where whisper was placed by hand (this laptop).
