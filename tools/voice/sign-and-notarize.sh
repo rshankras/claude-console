@@ -65,6 +65,17 @@ xcrun stapler validate "$APP" 2>&1 || true
 if [ -d "$WBIN" ]; then
   echo ">>> verifying whisper-cli signature"
   codesign -dvvv "$WBIN/whisper-cli" 2>&1 | grep -E "Authority|TeamIdentifier|Runtime" || true
+  # The compute backends are dlopened, so Gatekeeper meets them at RUNTIME rather than at launch:
+  # an ad-hoc leftover here is a voice failure on the user's machine, not a notarization error
+  # here. Verify each one really carries the Developer ID (#24).
+  for so in "$WBIN"/*.so; do
+    [ -e "$so" ] || continue
+    if ! codesign -v "$so" 2>/dev/null || ! codesign -dvvv "$so" 2>&1 | grep -q "$SIGN_IDENTITY"; then
+      echo "error: $(basename "$so") is not signed with $SIGN_IDENTITY" >&2
+      exit 1
+    fi
+  done
+  echo ">>> ggml backends signed: $(ls "$WBIN"/*.so 2>/dev/null | wc -l | tr -d ' ')"
 fi
 
 echo "✅ Developer-ID signed + notarized. Helper stapled."

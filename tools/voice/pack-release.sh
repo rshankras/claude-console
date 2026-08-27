@@ -38,11 +38,21 @@ esac
 if [ "$SHIPS_VOICE" = "1" ]; then
   [ -d "$APP" ]  || { echo "error: helper missing ($APP) — run sign-and-notarize.sh first." >&2; exit 1; }
   [ -d "$WBIN" ] || { echo "error: whisper bundle missing ($WBIN) — run sign-and-notarize.sh first." >&2; exit 1; }
+  # A whisper bundle that has never transcribed anything must not ship. 2.0.1 went out with a
+  # bundle carrying no compute backends: it aborted on every user machine and passed every check
+  # here, because this machine's Homebrew supplied the backends it was missing (#24). The marker
+  # is written by bundle-whisper.sh only after a real transcription with Homebrew unreachable.
+  if [ ! -f "$WBIN/TRANSCRIPTION_SMOKE_OK" ]; then
+    echo "error: $WBIN has not passed the transcription smoke test." >&2
+    echo "       Re-run tools/voice/bundle-whisper.sh (it needs a speech model; see" >&2
+    echo "       WHISPER_SMOKE_MODEL) — an unverified bundle is how the voice regression shipped." >&2
+    exit 1
+  fi
   if ! xcrun stapler validate "$APP" >/dev/null 2>&1; then
     echo "error: $APP is not stapled/notarized — run tools/voice/sign-and-notarize.sh first." >&2
     exit 1
   fi
-  echo ">>> voice payload OK (helper notarized + stapled)"
+  echo ">>> voice payload OK (helper notarized + stapled, bundle transcription-verified)"
 else
   echo ">>> $PRODUCT ships no voice payload — skipping the notarization preflight"
 fi
