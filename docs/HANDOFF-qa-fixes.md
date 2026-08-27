@@ -8,7 +8,7 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 | | |
 |---|---|
 | Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
-| Suite | 647 C# + 47 shell, green |
+| Suite | 669 C# + 47 shell, green |
 | Issues | 25 filed (#20–#44) plus #45, #46, #47 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
@@ -23,7 +23,13 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 
 ## What is NOT done
 
-- **#25 sticky pin, #26 project roots** — P1, untouched.
+- **#25 sticky pin** — P1, untouched, and it needs a design decision before code.
+- **#26 project roots + leaked build path: DONE.** Discovery replaced the hardcoded `~/Work` pair;
+  Release builds set `PathMap` so no DLL names the build machine, gated in `pack-release.sh`.
+  **The trap worth keeping:** requiring `.git` on every candidate was a silent regression — 38
+  folders under the author's own roots have no `.git` and were matchable in 2.0.1. Hence inferred
+  roots (a folder holding 2+ repos is where projects live, and so is one level above it, never
+  home). Verified against the real home: 0 lost against the old behaviour, 41 gained, 11 ms.
 - **#27 redraw storm: fixed and measured, one number still owed.** Change-driven state event, guarded
   Status/Model repaints, idle backoff (500 ms → 2 s → 5 s, only with no live session). Every fixed CPU
   sample beat every pre-fix sample, but all were taken with a busy session on the machine (the one

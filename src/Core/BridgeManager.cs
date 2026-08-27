@@ -1454,28 +1454,39 @@ namespace Loupedeck.ClaudeConsolePlugin
             { IsBackground = true, Name = "claude-voice-transcript" }.Start();
         }
 
-        // Roots scanned (live) for voice project navigation — newly-added folders work with no code change.
-        private static readonly String[] ProjectRoots =
-        {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Work", "MyApps"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Work"),
-        };
+        // Projects the plugin already knows are real, because a session reported working in one.
+        // These count wherever they live, which is the point — they need no root to be under (#26).
+        private IReadOnlyList<String> KnownProjectDirs() =>
+            Grid.Sessions.Values
+                .Select(s => s.ProjectDir)
+                .Where(d => !String.IsNullOrEmpty(d))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
         // Match a spoken phrase to a project folder, then open it (new Terminal tab + cd + claude).
         private void NavigateToProjectByVoice(String transcript)
         {
-            var match = MatchProject(transcript);
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var candidates = ProjectDiscovery.Candidates(
+                home, ProjectDiscovery.DefaultRootsFile(home), this.KnownProjectDirs());
+
+            var match = MatchProject(transcript, candidates.Paths);
             if (match == null)
             {
-                PluginLog.Warning($"NavigateToProjectByVoice: no project matched \"{transcript}\"");
+                // Say what was searched. The whole of #26 reached us as "it does nothing" — a line
+                // naming the candidate count and where they came from would have diagnosed itself.
+                PluginLog.Warning(
+                    $"NavigateToProjectByVoice: no project matched \"{transcript}\" among "
+                    + $"{candidates.Paths.Count} candidate(s) — {candidates.Source}. If your projects "
+                    + $"live elsewhere, list their roots in {ProjectDiscovery.DefaultRootsFile(home)}");
                 _platform.Alert(); // audible "didn't catch a project" feedback
                 return;
             }
-            PluginLog.Info($"NavigateToProjectByVoice: \"{transcript}\" -> {match}");
+            PluginLog.Info($"NavigateToProjectByVoice: \"{transcript}\" -> {match} (of {candidates.Paths.Count} candidates)");
             LaunchClaudeInProject(match);
         }
 
-        private static String MatchProject(String transcript)
+        internal static String MatchProject(String transcript, IEnumerable<String> candidates)
         {
             var t = NormalizeForMatch(transcript);
             if (t.Length < 2)
@@ -1485,25 +1496,25 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             String best = null;
             var bestScore = 0;
-            foreach (var root in ProjectRoots)
+            foreach (var dir in candidates ?? Enumerable.Empty<String>())
             {
-                if (!Directory.Exists(root))
+                if (String.IsNullOrEmpty(dir))
                 {
                     continue;
                 }
-                foreach (var dir in Directory.GetDirectories(root))
+
+                // Match on the folder NAME, so a trailing separator can't reduce it to nothing.
+                var name = Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                var f = NormalizeForMatch(name);
+                if (f.Length == 0)
                 {
-                    var f = NormalizeForMatch(Path.GetFileName(dir));
-                    if (f.Length == 0)
-                    {
-                        continue;
-                    }
-                    var score = MatchScore(t, f);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        best = dir;
-                    }
+                    continue;
+                }
+                var score = MatchScore(t, f);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = dir;
                 }
             }
 

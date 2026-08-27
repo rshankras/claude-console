@@ -72,6 +72,26 @@ rm -rf "$BUILD_DIR"
 echo ">>> building plugin (Release)"
 ( cd "$ROOT/src/Products/$PRODUCT" && dotnet build -c Release -p:SkipPluginLink=true >/dev/null )
 
+# A shipped binary must not name the machine it was built on. Release builds set PathMap
+# (src/Directory.Build.props) so the recorded PDB path becomes /src/... instead of the author's
+# home directory, which 2.0.1 disclosed to anyone running `strings` on the plugin (#26). Verify it
+# here rather than trusting the property: this is the only place a Release DLL actually exists.
+echo ">>> checking the Release DLL for build-machine paths"
+LEAKED="$(python3 - "$BUILD_DIR" <<'PY'
+import pathlib, re, sys
+pat = re.compile(rb'(?:/Users/|[A-Za-z]:\\\\Users\\\\)[^\x00]{0,160}')
+for dll in pathlib.Path(sys.argv[1]).rglob('*.dll'):
+    for hit in pat.findall(dll.read_bytes()):
+        print(f"{dll.name}: {hit.decode(errors='replace')}")
+PY
+)"
+if [ -n "$LEAKED" ]; then
+  echo "error: the Release build embeds build-machine paths:" >&2
+  printf '%s\n' "$LEAKED" | head -10 >&2
+  echo "       PathMap in src/Directory.Build.props should prevent this — check it applied." >&2
+  exit 1
+fi
+
 # Belt and braces: if a .link is already lying around from an earlier dev build, it will collide
 # with the package we are about to install. Clear it now rather than debugging it later.
 LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/ClaudeConsolePlugin.link"

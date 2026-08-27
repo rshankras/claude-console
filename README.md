@@ -175,6 +175,8 @@ Notes:
 - **Voice Draft key** — same flow, but the transcript is only **typed, not sent**: it sits in Claude's input box so you can fix anything whisper misheard, then submit with **Return** (keyboard or the keypad's Return key). Use Voice for quick prompts, Voice Draft for anything long enough to mis-transcribe.
 - **Go to Project** — press, say a project name (e.g. *"indie app autopilot"*), press again. Opens a new tab in that project running `claude`; reuses an idle shell tab, or opens a new one if `claude` is already running.
 
+  **Where it looks:** projects any session is already open in, plus every git repository within three levels of your home folder — and, once a folder is seen to hold several repositories, its other subfolders too (so a checkout-in-progress next to your repos still matches). Nothing needs configuring for a normal layout. If your projects live somewhere unusual, list the folders that contain them in `~/.claude/claude-console/project-roots`, one per line (`~` allowed, `#` for comments); every subfolder of those becomes matchable and the automatic search is skipped. When nothing matches, the plugin log names how many candidates it searched and where they came from.
+
 Start and stop a recording with the **same** key — each voice key is its own start/stop toggle.
 
 First use prompts once for **Microphone** permission (granted to the helper, not the daemon). The plugin also needs **Accessibility** permission for the Logi Plugin Service (to type into the terminal).
