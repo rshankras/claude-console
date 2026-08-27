@@ -91,7 +91,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         private String NewAgentTabScript() =>
             "tell application \"Terminal\"\n" +
             "  activate\n" +
-            "  tell application \"System Events\" to keystroke \"t\" using command down\n" +
+            "  tell application \"System Events\" to key code 17 using command down\n" +
             "  delay 0.5\n" +
             "  do script \"" + this._cliCommand + "\" in front window\n" +
             "end tell";
@@ -180,6 +180,46 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// transcript can't break (or extend) the script. Newlines are flattened to spaces so a
         /// multi-line transcript doesn't submit early.
         /// </summary>
+        /// <summary>
+        /// Deliver the text (argv item 2) through the clipboard rather than System Events'
+        /// `keystroke`.
+        ///
+        /// WHY. `keystroke` does not send characters — it asks macOS to press the keys that WOULD
+        /// PRODUCE those characters under the CURRENT input source. On a non-US layout the terminal
+        /// therefore receives something else entirely, silently: reproduced on hardware 2026-08-27
+        /// with the Russian layout selected, where "the quick brown fox 123" arrived as
+        /// "ффф ффффф ффффф ффф 123" — every letter collapsed to ф, digits and spaces intact. Every
+        /// text-carrying action was affected: prompts, git, slash commands, voice transcripts and
+        /// the Yes/No badges (QA retest of 2.0.1, finding 4; #22).
+        ///
+        /// A clipboard paste carries the characters themselves, so it is layout-independent and
+        /// Unicode-safe — the same path a human uses. The text still travels as an osascript
+        /// ARGUMENT, never interpolated into the script source, so quotes and backslashes in a
+        /// transcript still cannot break out.
+        ///
+        /// The clipboard is saved and restored as a RECORD, which preserves every flavour the user
+        /// had (an image, styled text) rather than flattening it to a string. Both halves are
+        /// wrapped in try blocks: failing to save must not stop the injection, and failing to
+        /// restore must not fail an injection that has already landed.
+        ///
+        /// The delay before restoring is not optional — Terminal reads the pasteboard when Cmd+V is
+        /// handled, so restoring too early pastes the OLD clipboard.
+        /// </summary>
+        private const String PasteTextBody =
+            "set savedClipboard to missing value\n" +
+            "try\n" +
+            "  set savedClipboard to (the clipboard as record)\n" +
+            "end try\n" +
+            "set the clipboard to (item 2 of argv)\n" +
+            "delay 0.05\n" +
+            "tell application \"System Events\" to key code 9 using command down\n" +   // Cmd+V
+            "delay 0.2\n" +
+            "if savedClipboard is not missing value then\n" +
+            "  try\n" +
+            "    set the clipboard to savedClipboard\n" +
+            "  end try\n" +
+            "end if\n";
+
         public InjectionOutcome InjectText(String sessionKey, String text, Boolean pressEnter)
         {
             if (String.IsNullOrEmpty(text))
@@ -193,7 +233,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
 
             var flattened = text.Replace("\r", " ").Replace("\n", " ");
-            var body = "tell application \"System Events\" to keystroke (item 2 of argv)\n";
+            var body = PasteTextBody;
             if (pressEnter)
             {
                 // A leading "/" opens Claude Code's slash-command autocomplete. Pressing Return
@@ -331,7 +371,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             var script = action switch
             {
                 TerminalAction.Activate => "tell application \"Terminal\" to activate",
-                TerminalAction.NewTab => ActivateThen + "keystroke \"t\" using {command down}",           // Cmd+T
+                TerminalAction.NewTab => ActivateThen + "key code 17 using {command down}",                // Cmd+T (key code, not "t" — see KeyCodeT)
                 TerminalAction.NewClaudeTab => this.NewAgentTabScript(),
                 TerminalAction.NextTab => ActivateThen + "key code 48 using {control down}",              // Ctrl+Tab
                 TerminalAction.PreviousTab => ActivateThen + "key code 48 using {control down, shift down}",
@@ -388,7 +428,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 "    if isIdle then\n" +
                 "      do script \"" + cmd + "\" in front window\n" +   // reuses the idle tab (NOT 'selected tab of' — that form no-ops)
                 "    else\n" +
-                "      tell application \"System Events\" to keystroke \"t\" using command down\n" +
+                "      tell application \"System Events\" to key code 17 using command down\n" +
                 "      delay 0.5\n" +
                 "      do script \"" + cmd + "\" in front window\n" +
                 "    end if\n" +

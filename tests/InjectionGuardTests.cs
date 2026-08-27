@@ -120,7 +120,45 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Equal(nasty, capture.ScriptArgv[1]);
             Assert.DoesNotContain(nasty, capture.Script);
-            Assert.Contains("keystroke (item 2 of argv)", capture.Script);
+
+            // Still argv item 2 — the delivery mechanism changed from `keystroke` to a clipboard
+            // paste (#22, layout-independence), but the text must never enter the script source.
+            Assert.Contains("set the clipboard to (item 2 of argv)", capture.Script);
+        }
+
+        [Fact]
+        public void Text_is_never_typed_with_keystroke___it_is_layout_dependent()
+        {
+            // The 2.0.1 defect (#22). System Events' `keystroke` does not send characters: it
+            // presses the keys that WOULD PRODUCE them under the current input source. Reproduced
+            // on hardware 2026-08-27 with the Russian layout selected — "the quick brown fox 123"
+            // arrived as "ффф ффффф ффффф ффф 123". A clipboard paste carries the characters.
+            var capture = new Capture();
+
+            capture.Bridge("ttys001").InjectText("the quick brown fox 123", pressEnter: true);
+
+            Assert.DoesNotContain("keystroke", capture.Script);
+            Assert.Contains("key code 9 using command down", capture.Script);   // Cmd+V
+        }
+
+        [Fact]
+        public void The_users_clipboard_is_saved_and_restored_around_the_paste()
+        {
+            // Pasting through the clipboard is only acceptable if it gives the clipboard back.
+            // Saved as a RECORD so an image or styled text survives rather than being flattened.
+            var capture = new Capture();
+
+            capture.Bridge("ttys001").InjectText("hello", pressEnter: false);
+
+            var script = capture.Script;
+            Assert.Contains("the clipboard as record", script);
+            Assert.Contains("set the clipboard to savedClipboard", script);
+
+            // Restore must come AFTER the paste — restoring first pastes the old clipboard.
+            Assert.InRange(
+                script.IndexOf("key code 9 using command down", StringComparison.Ordinal),
+                0,
+                script.IndexOf("set the clipboard to savedClipboard", StringComparison.Ordinal) - 1);
         }
 
         [Fact]
