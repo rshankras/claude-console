@@ -24,7 +24,10 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 ## What is NOT done
 
 - **#25 sticky pin** — P1, untouched, and it needs a design decision before code.
-- **#26 project roots + leaked build path: DONE.** Discovery replaced the hardcoded `~/Work` pair;
+- **#26 project roots + leaked build path: DONE, hardware-verified 2026-08-27** — "Life" opened
+  `~/Life` from the keypad, a project the hardcoded roots could never reach. **Still unverified on
+  hardware: the inferred-roots case** — say "Sailor" (a folder under `~/Work/MyApps` with no `.git`),
+  which is the half that would have silently regressed. Discovery replaced the hardcoded `~/Work` pair;
   Release builds set `PathMap` so no DLL names the build machine, gated in `pack-release.sh`.
   **The trap worth keeping:** requiring `.git` on every candidate was a silent regression — 38
   folders under the author's own roots have no `.git` and were matchable in 2.0.1. Hence inferred
@@ -137,6 +140,8 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   comparable metric.
 
 ## #48: hardware testing found what the suite could not
+
+**Fixed and hardware-verified 2026-08-27**: after the fix, the same key correctly picked `~/Life`.
 
 Testing #26 by voice from across the room, whisper emitted `(gunshot)` and `(static)` — its labels
 for a noise — and the plugin fuzzy-matched them to SafeShot and StatementSense and **opened both**.
