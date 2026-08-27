@@ -14,7 +14,12 @@ import AppKit
 
 let repo = FileManager.default.currentDirectoryPath
 let srcDir = repo + "/assets/designer-icons/Colours"
-let outDir = repo + "/src/Resources/icons"
+let outDir = repo + "/src/Core/Resources/icons"   // moved here by the multi-agent refactor
+guard FileManager.default.fileExists(atPath: outDir) else {
+    print("error: output directory does not exist: \(outDir)")
+    print("       (run from the repo root; the embedded icons moved to src/Core/Resources in the multi-agent refactor)")
+    exit(1)
+}
 
 // Designer palette (sampled from the pack itself).
 let GREEN = "#7FC17A", RED = "#CE655C", AMBER = "#DFA658", BLUE = "#81A8ED", PURPLE = "#A194EB"
@@ -81,7 +86,10 @@ func renderSvg(_ svgText: String, to path: String) -> Bool {
     guard let tiff = target.tiffRepresentation,
           let rep = NSBitmapImageRep(data: tiff),
           let png = rep.representation(using: .png, properties: [:]) else { return false }
-    try? png.write(to: URL(fileURLWithPath: path))
+    // Report the write. This used to be `try?` followed by an unconditional `return true`, so a
+    // bad output path printed OK(38) while writing nothing — which is how the path below survived
+    // the multi-agent refactor unnoticed.
+    do { try png.write(to: URL(fileURLWithPath: path)) } catch { return false }
     return true
 }
 
@@ -119,7 +127,10 @@ func renderVoiceDraft(micSvg: String, to path: String) -> Bool {
     guard let tiff = target.tiffRepresentation,
           let rep = NSBitmapImageRep(data: tiff),
           let png = rep.representation(using: .png, properties: [:]) else { return false }
-    try? png.write(to: URL(fileURLWithPath: path))
+    // Report the write. This used to be `try?` followed by an unconditional `return true`, so a
+    // bad output path printed OK(38) while writing nothing — which is how the path below survived
+    // the multi-agent refactor unnoticed.
+    do { try png.write(to: URL(fileURLWithPath: path)) } catch { return false }
     return true
 }
 
@@ -145,3 +156,4 @@ for (svg, name, hex) in recolors {
 }
 print("OK(\(ok.count)): \(ok.joined(separator: ", "))")
 print("FAIL(\(fail.count)): \(fail.joined(separator: ", "))")
+if !fail.isEmpty { exit(1) }
