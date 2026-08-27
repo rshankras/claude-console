@@ -44,8 +44,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             DateTime serviceStartUtc,
             DateTime payloadWrittenUtc,
             DateTime? registrationWrittenUtc,
-            Boolean alreadyHealedThisPayload)
+            Boolean alreadyHealedThisPayload,
+            Boolean automaticRestartAllowed = true)
         {
+            // Marketplace-managed products must not infer a broken live registration from file
+            // timestamps. Marketplace can preserve an older ApplicationInfo timestamp while
+            // correctly adopting the registration in memory, so restarting here is a disruptive
+            // false positive. Such products may still use SelfRegistration when the entry is
+            // genuinely absent; they simply opt out of this stale-timestamp recovery path.
+            if (!automaticRestartAllowed)
+            {
+                return false;
+            }
+
             if (alreadyHealedThisPayload)
             {
                 return false;
@@ -75,10 +86,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// load; never throws. macOS only — the Windows service's reinstall behaviour is
         /// unverified, and the restart command is platform-specific.
         /// </summary>
-        internal static void HealIfNeeded()
+        internal static void HealIfNeeded(Boolean automaticRestartAllowed = true)
         {
             try
             {
+                if (!automaticRestartAllowed)
+                {
+                    PluginLog.Info("RegistrationHeal: automatic stale-registration restart disabled for this product");
+                    return;
+                }
+
                 if (!OperatingSystem.IsMacOS() && !OperatingSystem.IsWindows())
                 {
                     return;
@@ -98,7 +115,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 var alreadyHealed = File.Exists(marker) && File.ReadAllText(marker).Trim() == markerValue;
 
                 var serviceStart = Process.GetCurrentProcess().StartTime.ToUniversalTime();
-                if (!ShouldHeal(serviceStart, payloadWritten, registrationWritten, alreadyHealed))
+                if (!ShouldHeal(serviceStart, payloadWritten, registrationWritten, alreadyHealed, automaticRestartAllowed))
                 {
                     return;
                 }

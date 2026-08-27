@@ -11,7 +11,7 @@
 # un-notarized helper.
 #
 # Usage: bash tools/voice/pack-release.sh [version] [product]
-#        product = ClaudeConsole (default) | VizhiCodex — one repo, one package per run.
+#        product = ClaudeConsole (default) | VizhiCodex | VizhiDesktop
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -24,6 +24,10 @@ BUILD_DIR="$ROOT/bin/$PRODUCT/Release"
 HOME_DIR="$HOME/.claude/claude-console"
 APP="$HOME_DIR/ClaudeVoiceHelper.app"
 WBIN="$HOME_DIR/whisper-bin"
+# A Windows whisper.cpp bundle prepared and smoke-tested on Windows. Keep it separate from the
+# macOS bundle: both contain a whisper-cli with platform-specific dependencies and cannot safely
+# share one directory in the package.
+WIN_WBIN="${WINDOWS_WHISPER_DIR:-$HOME_DIR/whisper-bin-win}"
 
 # Which products ship offline voice. Both do: voice is agent-neutral — it records, transcribes and
 # injects into the focused session without asking which agent runs there. The payload installs to a
@@ -41,10 +45,22 @@ case "$PRODUCT" in
 esac
 AXBRIDGE="$HOME_DIR/VizhiAxBridge"
 
+# Terminal products have both platform backends. VizhiDesktop is intentionally macOS-only until
+# a real Windows app identity and UI Automation backend exist, so its package must carry neither
+# a Windows folder declaration nor inert Windows helper executables.
+case "$PRODUCT" in
+  ClaudeConsole|VizhiCodex) SHIPS_WINDOWS=1 ;;
+  *)                        SHIPS_WINDOWS=0 ;;
+esac
+
 # --- preflight: the voice payload must exist and be notarized ------------------------------------
 if [ "$SHIPS_VOICE" = "1" ]; then
   [ -d "$APP" ]  || { echo "error: helper missing ($APP) — run sign-and-notarize.sh first." >&2; exit 1; }
   [ -d "$WBIN" ] || { echo "error: whisper bundle missing ($WBIN) — run sign-and-notarize.sh first." >&2; exit 1; }
+  [ -f "$WBIN/TRANSCRIPTION_SMOKE_OK" ] || {
+    echo "error: whisper bundle has not passed a real transcription smoke test — rerun bundle-whisper.sh with WHISPER_SMOKE_MODEL set." >&2
+    exit 1
+  }
   if ! xcrun stapler validate "$APP" >/dev/null 2>&1; then
     echo "error: $APP is not stapled/notarized — run tools/voice/sign-and-notarize.sh first." >&2
     exit 1
@@ -74,12 +90,25 @@ echo ">>> building plugin (Release)"
 LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/${PRODUCT}Plugin.link"
 [ -f "$LINK" ] && { rm -f "$LINK"; echo ">>> removed a stale dev .link (would have collided with the package)"; }
 
-# --- build the Windows helpers into the same bin/ (cross-compiled from macOS) ---------------------
-# One .lplug4 serves both platforms: LoupedeckPackage.yaml points pluginFolderMac AND
-# pluginFolderWin at bin/, so these two exes ride along beside the plugin DLL and are simply
-# never launched on macOS.
-echo ">>> building Windows helper payload"
-bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64 "$PRODUCT"
+# --- build Windows helpers for products that actually advertise Windows support -----------------
+if [ "$SHIPS_WINDOWS" = "1" ]; then
+  [ -d "$WIN_WBIN" ] || {
+    echo "error: Windows whisper bundle missing ($WIN_WBIN) — set WINDOWS_WHISPER_DIR to a smoke-tested Windows bundle." >&2
+    exit 1
+  }
+  [ -f "$WIN_WBIN/whisper-cli.exe" ] || {
+    echo "error: Windows whisper bundle has no whisper-cli.exe ($WIN_WBIN)." >&2
+    exit 1
+  }
+  [ -f "$WIN_WBIN/TRANSCRIPTION_SMOKE_OK" ] || {
+    echo "error: Windows whisper bundle has not passed a real transcription smoke test on Windows." >&2
+    exit 1
+  }
+  echo ">>> building Windows helper payload"
+  bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64 "$PRODUCT"
+else
+  echo ">>> $PRODUCT is macOS-only — skipping Windows helper payload"
+fi
 
 # --- embed the notarized voice payload next to the plugin DLL (bin/voice/) ------------------------
 PKG_VOICE="$BUILD_DIR/bin/voice"
@@ -89,6 +118,9 @@ if [ "$SHIPS_VOICE" = "1" ]; then
   mkdir -p "$PKG_VOICE"
   ditto "$APP"  "$PKG_VOICE/ClaudeVoiceHelper.app"   # ditto preserves signature + exec bits
   ditto "$WBIN" "$PKG_VOICE/whisper-bin"
+  if [ "$SHIPS_WINDOWS" = "1" ]; then
+    ditto "$WIN_WBIN" "$PKG_VOICE/whisper-bin-win"
+  fi
 else
   rm -rf "$PKG_VOICE"
 fi

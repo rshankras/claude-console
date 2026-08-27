@@ -246,10 +246,15 @@ Regenerate / read-aloud / temporary chat need a recon pass over the message-acti
 
 - **Phase 1 — DONE, hardware-verified 2026-08-25.** Seams, adapter, monitor, the three appendix
   pages (Conversations+answers / Actions / Workflows), voice, registration, packaging hooks.
-- **Phase 1.5 — hardening (next; all items from the review round above).** Stable slots ·
+- **Phase 1.5 — hardening (DONE 2026-08-25; all items from the review round above).** Stable slots ·
   approval identity + expected-card guard + two-step red · explicit unavailable reasons ·
   adaptive cadence · draft markers · Voice Draft · Show Diff · glyph audit. This is the "trust
   it daily" gap and it precedes new surface area.
+- **Phase 1.6 — hardware/design convergence (IMPLEMENTED; regression pending).** Three stable, readable
+  conversations on the home row plus a paged **All Chats** dynamic folder for overflow; blue for
+  neutral/working state, amber for attention, green for complete, red for destructive/error.
+  Approval positions and meanings remain fixed even when their faces animate. The revised profile,
+  dynamic folder, and repaired voice-runtime path still require the macOS hardware regression pass.
 - **Phase 2 — the ChatGPT companion set** (list above, feasibility-gated per key).
 - **Phase 3 — Claude Desktop as adapter #2.** The contractual Deliverable 3; spike passed
   2026-08-12; costs an `IDesktopAppAdapter` + its label recon, on the engine Phase 1 proved.

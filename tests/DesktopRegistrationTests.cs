@@ -47,6 +47,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Confirmed_windows_process_replaces_the_packaged_mac_bundle_in_registration()
+        {
+            var winRoot = Path.Combine(this._root, "win-confirmed");
+
+            SelfRegistration.CreateRegistration(
+                DesktopLp5(), null, winRoot, windows: true, windowsProcessName: "ChatGPT-confirmed");
+
+            Assert.Equal("ChatGPT-confirmed", (String)Registered(winRoot)["processOrBundleName"]);
+        }
+
+        [Fact]
         public void The_packaged_identity_is_the_desktop_products_own()
         {
             var macRoot = Path.Combine(this._root, "mac");
@@ -107,6 +118,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Desktop_package_is_mac_only_until_a_windows_automation_backend_exists()
+        {
+            var yaml = File.ReadAllText(RepoFile(
+                "src", "Products", "VizhiDesktop", "package", "metadata", "LoupedeckPackage.yaml"));
+
+            Assert.Contains("pluginFolderMac: bin", yaml);
+            Assert.DoesNotContain("pluginFolderWin:", yaml);
+        }
+
+        [Fact]
         public void Page_one_is_the_appendix_home_page()
         {
             // The home page: conversations above, answers below — the appendix's shape, with
@@ -131,15 +152,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Assert.EndsWith($"DesktopConversationCommand___{slot}", pageOne[slot - 1]);
             }
 
-            // Middle row: glance + act — Activity, New Chat, Show Diff.
-            Assert.EndsWith("DesktopStatusCommand", pageOne[3]);
-            Assert.EndsWith("DesktopControlCommand___new_chat", pageOne[4]);
+            // Middle row: overflow + glance + act — All Chats, Activity, Show Diff.
+            Assert.Equal("$VizhiDesktop___#DynamicFolder___DynamicFolder#Loupedeck.ClaudeConsolePlugin.DesktopActions.AllChatsDynamicFolder", pageOne[3]);
+            Assert.EndsWith("DesktopStatusCommand", pageOne[4]);
             Assert.EndsWith("DesktopControlCommand___show_diff", pageOne[5]);
 
             // Bottom row: Approve / Deny / Voice.
             Assert.EndsWith("DesktopApprovalCommand___approve", pageOne[6]);
             Assert.EndsWith("DesktopApprovalCommand___deny", pageOne[7]);
             Assert.EndsWith("DesktopVoiceCommand", pageOne[8]);
+
+            // New Chat remains available on Actions after All Chats takes its home-page slot.
+            var pageTwo = pages[1]["controls"].AsArray()
+                .Select(c => (String)c["pressAction"]).ToList();
+            Assert.EndsWith("DesktopControlCommand___new_chat", pageTwo[3]);
         }
 
         private static String RepoFile(params String[] parts)

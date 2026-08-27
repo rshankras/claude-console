@@ -43,6 +43,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static String VoiceStopFile => IpcPaths.VoiceStopFile;
         private static String VoiceTranscriptFile => IpcPaths.VoiceTranscriptFile;
         private static String VoiceWavFile => IpcPaths.VoiceWavFile;
+        private static String VoiceErrorFile => VoiceTranscriptFile + ".error";
 
         // Runtime home shared with the voice helper: ~/.claude/claude-console/
         private static readonly String ClaudeConsoleHome = Path.Combine(
@@ -89,6 +90,17 @@ namespace Loupedeck.ClaudeConsolePlugin
         private String _activeTty;   // opaque id of the frontmost session (macOS: "ttys003"); null until known
         private String _pinnedTty;   // session PINNED by a session-key press; outranks _activeTty (see TargetTty)
         private Int32 _pollTick;     // drives the ~1s cadence of the frontmost-tab check
+
+        // One recorder, one WAV, one stop flag and one transcript are shared by every voice key.
+        // The UI faces are intentionally per-key, so they cannot be the concurrency authority.
+        // 0 = idle, 1 = recording/reserved, 2 = stopping/transcribing.
+        private Int32 _voiceCaptureState;
+        private Int32 _voiceRuntimeChecked;
+
+        // Test seam for the fail-closed boundary between runtime validation and recorder launch.
+        // Production always points at EnsureVoiceRuntimeInstalled; tests can force a repair
+        // failure without touching the user's shared ~/.claude runtime.
+        internal Func<Boolean> VoiceRuntimeInstaller { get; set; }
 
         // Everything OS-specific lives behind this seam: session discovery, injection, focus, nav.
         // See IPlatformBridge — above it, neither AppleScript nor TTYs nor consoles are visible.
@@ -202,6 +214,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             this._platform = platform ?? new UnsupportedPlatformBridge();
             this._platformInjected = injected;
+            this.VoiceRuntimeInstaller = this.EnsureVoiceRuntimeInstalled;
         }
 
         // Test seam: the pinned session, so a test can assert the pin was set/released without
@@ -629,33 +642,70 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal static Boolean VoiceSupported =>
             OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
 
-        public void StartVoiceCapture()
+        public Boolean StartVoiceCapture()
+        {
+            if (!this.TryReserveVoiceCapture())
+            {
+                PluginLog.Info("BridgeManager.StartVoiceCapture: another voice capture is already active");
+                return false;
+            }
+
+            var started = false;
+            try
+            {
+                started = this.StartVoiceCaptureReserved();
+                return started;
+            }
+            finally
+            {
+                if (!started)
+                {
+                    this.ReleaseVoiceCapture();
+                }
+            }
+        }
+
+        /// <summary>Whether recording or transcription owns the shared voice IPC files.</summary>
+        internal Boolean VoiceCaptureActive => Volatile.Read(ref _voiceCaptureState) != 0;
+
+        /// <summary>Atomic ownership seam, internal so concurrency is testable without launching a recorder.</summary>
+        internal Boolean TryReserveVoiceCapture() =>
+            Interlocked.CompareExchange(ref _voiceCaptureState, 1, 0) == 0;
+
+        internal void ReleaseVoiceCapture() => Interlocked.Exchange(ref _voiceCaptureState, 0);
+
+        private Boolean StartVoiceCaptureReserved()
         {
             if (OperatingSystem.IsWindows())
             {
-                this.StartVoiceCaptureWindows();
-                return;
+                return this.StartVoiceCaptureWindows();
             }
 
             if (!OperatingSystem.IsMacOS())
             {
                 PluginLog.Info("BridgeManager.StartVoiceCapture: unsupported platform");
-                return;
+                return false;
             }
 
             // Install the helper + whisper from the plugin package if this is a package-only install
             // (no-op for dev builds, where tools/voice/build.sh already placed them in the runtime home).
-            EnsureVoiceRuntimeInstalled();
+            if (!this.VoiceRuntimeInstaller())
+            {
+                PluginLog.Warning("BridgeManager.StartVoiceCapture: packaged voice runtime validation failed");
+                _platform.Alert();
+                return false;
+            }
 
             // Clear any stale transcript/flag so we never type a previous result.
             EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
             TryDelete(VoiceStopFile);
+            TryDelete(VoiceErrorFile);
 
             if (!Directory.Exists(VoiceHelperApp))
             {
                 PluginLog.Warning($"BridgeManager.StartVoiceCapture: helper missing at {VoiceHelperApp} (run tools/voice/build.sh, or reinstall the plugin)");
-                return;
+                return false;
             }
 
             // Make sure the speech model is present. If it's still downloading, skip this capture
@@ -665,7 +715,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
                 _platform.Alert();
-                return;
+                return false;
             }
 
             // Launch via LaunchServices (open) so the helper is its own TCC subject. Detached.
@@ -684,8 +734,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                 args.Add("--whisper");
                 args.Add(BundledWhisperCli);
             }
-            RunDetached("open", args);
+            if (!RunDetached("open", args))
+            {
+                return false;
+            }
+
             PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+            return true;
         }
 
         // Windows whisper-cli lives in the same runtime-home dir as the macOS bundle, with the
@@ -697,36 +752,42 @@ namespace Loupedeck.ClaudeConsolePlugin
         // plain exe launched directly (no LaunchServices, no TCC — Windows mic permission is a
         // Settings toggle the helper documents), and whisper is REQUIRED up front — the Windows
         // helper has no embedded fallback, so recording without it would always type nothing.
-        private void StartVoiceCaptureWindows()
+        private Boolean StartVoiceCaptureWindows()
         {
-            EnsureVoiceRuntimeInstalled();
+            if (!this.VoiceRuntimeInstaller())
+            {
+                PluginLog.Warning("BridgeManager.StartVoiceCapture: packaged Windows voice runtime validation failed");
+                _platform.Alert();
+                return false;
+            }
 
             EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
             TryDelete(VoiceStopFile);
+            TryDelete(VoiceErrorFile);
 
             var helper = PluginPaths.PackagedFile("claude-console-voice.exe");
             if (helper == null)
             {
                 PluginLog.Warning("BridgeManager.StartVoiceCapture: claude-console-voice.exe not found in the plugin package");
-                return;
+                return false;
             }
 
             if (!File.Exists(WindowsWhisperCli))
             {
                 PluginLog.Warning($"BridgeManager.StartVoiceCapture: whisper-cli.exe missing at {WhisperBinDir} — voice needs the whisper bundle installed");
                 _platform.Alert();
-                return;
+                return false;
             }
 
             if (!EnsureVoiceModel())
             {
                 PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
                 _platform.Alert();
-                return;
+                return false;
             }
 
-            RunDetached(helper, new List<String>
+            if (!RunDetached(helper, new List<String>
             {
                 "--maxsec", "60",
                 "--out", VoiceWavFile,
@@ -734,8 +795,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                 "--transcript", VoiceTranscriptFile,
                 "--model", VoiceModelFile,
                 "--whisper", WindowsWhisperCli,
-            });
+            }))
+            {
+                return false;
+            }
             PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+            return true;
         }
 
         // ------------------------------------------------------------------------------------------
@@ -744,12 +809,21 @@ namespace Loupedeck.ClaudeConsolePlugin
         // unpacked from a downloaded .lplug4 carry com.apple.quarantine, so strip it after copying.
         // For dev builds the package has no voice/ payload and the runtime files already exist — no-op.
         // ------------------------------------------------------------------------------------------
-        private void EnsureVoiceRuntimeInstalled()
+        internal Boolean EnsureVoiceRuntimeInstalled()
         {
+            if (Volatile.Read(ref _voiceRuntimeChecked) != 0)
+            {
+                return true;
+            }
+
             if (OperatingSystem.IsWindows())
             {
-                this.EnsureVoiceRuntimeInstalledWindows();
-                return;
+                if (this.EnsureVoiceRuntimeInstalledWindows())
+                {
+                    Interlocked.Exchange(ref _voiceRuntimeChecked, 1);
+                    return true;
+                }
+                return false;
             }
 
             try
@@ -765,31 +839,44 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (String.IsNullOrEmpty(pkgDir))
                 {
                     PluginLog.Info("BridgeManager.EnsureVoiceRuntimeInstalled: plugin dir unknown — skipping");
-                    return;
+                    return true;
                 }
                 var pkgVoice = Path.Combine(pkgDir, "voice");
                 PluginLog.Verbose($"BridgeManager.EnsureVoiceRuntimeInstalled: pkgVoice={pkgVoice} exists={Directory.Exists(pkgVoice)}");
 
                 var pkgHelper = Path.Combine(pkgVoice, "ClaudeVoiceHelper.app");
-                if (Directory.Exists(pkgHelper) && !Directory.Exists(VoiceHelperApp))
+                if (Directory.Exists(pkgHelper) && !RuntimeTreeMatchesPackage(pkgHelper, VoiceHelperApp))
                 {
-                    PluginLog.Info($"BridgeManager: installing voice helper from package -> {VoiceHelperApp}");
+                    PluginLog.Info($"BridgeManager: installing/repairing voice helper from package -> {VoiceHelperApp}");
                     Directory.CreateDirectory(ClaudeConsoleHome);
                     RunSync("/usr/bin/ditto", pkgHelper, VoiceHelperApp);
                     RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", VoiceHelperApp);
+                    if (!RuntimeTreeMatchesPackage(pkgHelper, VoiceHelperApp))
+                    {
+                        throw new InvalidDataException("voice helper repair did not produce the packaged file tree");
+                    }
                 }
 
                 var pkgWhisper = Path.Combine(pkgVoice, "whisper-bin");
-                if (Directory.Exists(pkgWhisper) && !Directory.Exists(WhisperBinDir))
+                if (Directory.Exists(pkgWhisper) && !RuntimeTreeMatchesPackage(pkgWhisper, WhisperBinDir))
                 {
-                    PluginLog.Info($"BridgeManager: installing whisper bundle from package -> {WhisperBinDir}");
+                    PluginLog.Info($"BridgeManager: installing/repairing whisper bundle from package -> {WhisperBinDir}");
                     RunSync("/usr/bin/ditto", pkgWhisper, WhisperBinDir);
                     RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", WhisperBinDir);
+                    if (!RuntimeTreeMatchesPackage(pkgWhisper, WhisperBinDir))
+                    {
+                        throw new InvalidDataException("whisper repair did not produce the packaged file tree");
+                    }
                 }
+
+                Interlocked.Exchange(ref _voiceRuntimeChecked, 1);
+                return true;
             }
             catch (Exception ex)
             {
+                Interlocked.Exchange(ref _voiceRuntimeChecked, 0);
                 PluginLog.Warning(ex, "BridgeManager.EnsureVoiceRuntimeInstalled failed");
+                return false;
             }
         }
 
@@ -798,33 +885,35 @@ namespace Loupedeck.ClaudeConsolePlugin
         // holds the macOS dylibs), and it is copied into the runtime home on first use. Plain
         // managed copy: no quarantine to strip, nothing to chmod. A dev machine where whisper-bin
         // was placed by hand is left alone.
-        private void EnsureVoiceRuntimeInstalledWindows()
+        private Boolean EnsureVoiceRuntimeInstalledWindows()
         {
             try
             {
-                if (File.Exists(WindowsWhisperCli))
-                {
-                    return;   // already installed (by a previous run, or by hand)
-                }
-
                 var pkgDir = PluginPaths.PluginDirectory;
                 if (String.IsNullOrEmpty(pkgDir))
                 {
-                    return;
+                    return true;
                 }
 
                 var pkgWhisper = Path.Combine(pkgDir, "voice", "whisper-bin-win");
                 if (!Directory.Exists(pkgWhisper))
                 {
-                    return;   // dev build — nothing packaged
+                    return true;   // dev build — nothing packaged
                 }
 
-                PluginLog.Info($"BridgeManager: installing whisper bundle from package -> {WhisperBinDir}");
+                if (RuntimeTreeMatchesPackage(pkgWhisper, WhisperBinDir))
+                {
+                    return true;
+                }
+
+                PluginLog.Info($"BridgeManager: installing/repairing whisper bundle from package -> {WhisperBinDir}");
                 CopyTree(pkgWhisper, WhisperBinDir);
+                return RuntimeTreeMatchesPackage(pkgWhisper, WhisperBinDir);
             }
             catch (Exception ex)
             {
                 PluginLog.Warning(ex, "BridgeManager.EnsureVoiceRuntimeInstalledWindows failed");
+                return false;
             }
         }
 
@@ -839,6 +928,44 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 File.Copy(file, Path.Combine(to, Path.GetRelativePath(from, file)), overwrite: true);
             }
+        }
+
+        /// <summary>
+        /// A runtime directory is healthy only when every packaged file is present and identical.
+        /// Checking the tree rather than the directory itself repairs interrupted installs and old
+        /// whisper bundles whose CLI exists but one or more backend dylibs or linkage differ.
+        /// </summary>
+        internal static Boolean RuntimeTreeMatchesPackage(String packageRoot, String runtimeRoot)
+        {
+            if (String.IsNullOrEmpty(packageRoot) || String.IsNullOrEmpty(runtimeRoot)
+                || !Directory.Exists(packageRoot) || !Directory.Exists(runtimeRoot))
+            {
+                return false;
+            }
+
+            var packagedFiles = Directory.GetFiles(packageRoot, "*", SearchOption.AllDirectories);
+            if (packagedFiles.Length == 0)
+            {
+                return false;
+            }
+
+            foreach (var source in packagedFiles)
+            {
+                var relative = Path.GetRelativePath(packageRoot, source);
+                var installed = Path.Combine(runtimeRoot, relative);
+                if (!File.Exists(installed)
+                    || new FileInfo(source).Length != new FileInfo(installed).Length)
+                {
+                    return false;
+                }
+
+                if (!String.Equals(HashFileSha256(source), HashFileSha256(installed), StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         // Run a process and wait for it (ditto/xattr install steps must finish before launching).
@@ -1246,6 +1373,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
+            if (Interlocked.CompareExchange(ref _voiceCaptureState, 2, 1) != 1)
+            {
+                PluginLog.Info("BridgeManager.StopVoiceCapture: no active recording — ignored");
+                return;
+            }
+
             try
             {
                 File.WriteAllText(VoiceStopFile, "");
@@ -1253,6 +1386,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             catch (Exception ex)
             {
                 PluginLog.Warning(ex, "BridgeManager.StopVoiceCapture: failed to write stop flag");
+                this.ReleaseVoiceCapture();
                 return;
             }
 
@@ -1262,6 +1396,19 @@ namespace Loupedeck.ClaudeConsolePlugin
                 while (DateTime.UtcNow < deadline)
                 {
                     Thread.Sleep(150);
+                    if (File.Exists(VoiceErrorFile))
+                    {
+                        String error;
+                        try { error = File.ReadAllText(VoiceErrorFile).Trim(); }
+                        catch { continue; }
+
+                        TryDelete(VoiceErrorFile);
+                        PluginLog.Warning($"BridgeManager: voice transcription failed — {error}");
+                        _platform.Alert();
+                        this.ReleaseVoiceCapture();
+                        return;
+                    }
+
                     if (!File.Exists(VoiceTranscriptFile))
                     {
                         continue;
@@ -1288,9 +1435,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         PluginLog.Info("BridgeManager: empty transcript (silence or mic denied)");
                     }
+                    this.ReleaseVoiceCapture();
                     return;
                 }
                 PluginLog.Warning("BridgeManager: transcript not produced within 20s");
+                this.ReleaseVoiceCapture();
             })
             { IsBackground = true, Name = "claude-voice-transcript" }.Start();
         }
@@ -1418,7 +1567,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             try { File.Delete(path); } catch { /* best effort */ }
         }
 
-        private void RunDetached(String file, List<String> args)
+        private Boolean RunDetached(String file, List<String> args)
         {
             try
             {
@@ -1432,11 +1581,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     psi.ArgumentList.Add(a);
                 }
-                Process.Start(psi);
+                return Process.Start(psi) != null;
             }
             catch (Exception ex)
             {
                 PluginLog.Warning(ex, $"BridgeManager.RunDetached: failed to launch {file}");
+                return false;
             }
         }
 

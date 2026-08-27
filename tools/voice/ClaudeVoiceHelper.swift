@@ -105,12 +105,16 @@ let attrs = try? fm.attributesOfItem(atPath: outWav)
 let size = (attrs?[.size] as? Int) ?? 0
 log(String(format: "recorded %.1fs, %d bytes", dur, size))
 
-// 4) Transcribe with whisper.cpp. stderr -> /dev/null (progress noise); stdout = transcription.
+// 4) Transcribe with whisper.cpp. Preserve stderr and status: a missing backend must be reported
+// to the plugin, never disguised as a successful empty transcript.
+let surfacedErrorPath = transcriptPath + ".error"
 guard let whisper = findWhisper() else {
+    try? "whisper-cli not found".write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
     log("whisper-cli not found — install with: brew install whisper-cpp")
     exit(4)
 }
 guard fm.fileExists(atPath: modelPath) else {
+    try? "speech model not found at \(modelPath)".write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
     log("model not found at \(modelPath)")
     exit(5)
 }
@@ -119,16 +123,40 @@ let p = Process()
 p.executableURL = URL(fileURLWithPath: whisper)
 p.arguments = ["-m", modelPath, "-f", outWav, "-nt"]
 let outPipe = Pipe()
+let whisperErrorPath = transcriptPath + ".whisper-stderr"
+fm.createFile(atPath: whisperErrorPath, contents: nil)
+guard let whisperError = FileHandle(forWritingAtPath: whisperErrorPath) else {
+    try? "cannot capture whisper diagnostics".write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
+    log("cannot create whisper stderr file")
+    exit(6)
+}
 p.standardOutput = outPipe
-p.standardError = FileHandle.nullDevice
+p.standardError = whisperError
 do {
     try p.run()
 } catch {
+    try? whisperError.close()
+    try? "whisper launch failed: \(error)".write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
     log("whisper launch failed: \(error)")
     exit(6)
 }
 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
 p.waitUntilExit()
+try? whisperError.close()
+let stderr = (try? String(contentsOfFile: whisperErrorPath, encoding: .utf8)) ?? ""
+try? fm.removeItem(atPath: whisperErrorPath)
+
+guard p.terminationStatus == 0 else {
+    let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+    let message = detail.isEmpty
+        ? "whisper-cli exited with status \(p.terminationStatus)"
+        : "whisper-cli exited with status \(p.terminationStatus): \(detail.suffix(1200))"
+    try? message.write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
+    log(message)
+    exit(7)
+}
+
+try? fm.removeItem(atPath: surfacedErrorPath)
 
 var text = String(data: data, encoding: .utf8) ?? ""
 text = text.replacingOccurrences(of: "\n", with: " ")

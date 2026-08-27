@@ -134,7 +134,7 @@ if otool -L "$OUT/$CLI_BASE" "$OUT"/*.dylib | grep -q "/opt/homebrew"; then
   exit 1
 fi
 
-# Smoke test: launch with Homebrew off PATH; if dyld can't resolve the closure it says so on stderr.
+# Smoke test 1: launch with Homebrew off PATH; catches eagerly loaded dependency failures.
 echo ">>> smoke test (Homebrew not on PATH)"
 err="$(PATH=/usr/bin:/bin "$OUT/$CLI_BASE" --help 2>&1 >/dev/null || true)"
 case "$err" in
@@ -143,6 +143,28 @@ case "$err" in
     printf '%s\n' "$err" >&2
     exit 1 ;;
 esac
+
+# Smoke test 2: process a real WAV with the model. Some whisper backends are loaded only when
+# transcription begins, so --help can pass while the first recording fails. Release packaging
+# requires the marker produced here; a bundle that was never exercised cannot ship.
+SMOKE_MODEL="${WHISPER_SMOKE_MODEL:-$HOME/.claude/claude-console/whisper/ggml-base.en.bin}"
+SMOKE_MARKER="$OUT/TRANSCRIPTION_SMOKE_OK"
+rm -f "$SMOKE_MARKER"
+if [ -f "$SMOKE_MODEL" ]; then
+  SMOKE_WAV="$OUT/.whisper-smoke.wav"
+  /usr/bin/perl -e '$n=32000; print pack("A4VA4A4VvvVVvvA4V", "RIFF", 36+$n, "WAVE", "fmt ", 16, 1, 1, 16000, 32000, 2, 16, "data", $n), "\0" x $n' > "$SMOKE_WAV"
+  echo ">>> transcription smoke test"
+  if ! PATH=/usr/bin:/bin "$OUT/$CLI_BASE" -m "$SMOKE_MODEL" -f "$SMOKE_WAV" -nt >/dev/null 2>"$OUT/.whisper-smoke.err"; then
+    echo "error: whisper bundle could not transcribe a real WAV:" >&2
+    tail -40 "$OUT/.whisper-smoke.err" >&2
+    rm -f "$SMOKE_WAV" "$OUT/.whisper-smoke.err"
+    exit 1
+  fi
+  rm -f "$SMOKE_WAV" "$OUT/.whisper-smoke.err"
+  printf 'model=%s\n' "$(basename "$SMOKE_MODEL")" > "$SMOKE_MARKER"
+else
+  echo "warning: transcription smoke skipped; set WHISPER_SMOKE_MODEL (release packaging will refuse this bundle)" >&2
+fi
 
 echo "✅ self-contained whisper-cli -> $OUT"
 if [ "$SIGN_IDENTITY" = "-" ]; then

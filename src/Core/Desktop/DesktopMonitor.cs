@@ -20,7 +20,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Sidebar conversations, raw, in the app's own order (recency first).</summary>
         public IReadOnlyList<DesktopConversation> Conversations { get; init; } = Array.Empty<DesktopConversation>();
 
-        /// <summary>What the six conversation KEYS render: stable slots (null = empty), assigned
+        /// <summary>What the three home-page conversation keys render: stable slots (null = empty), assigned
         /// by <see cref="DesktopSlotMap"/> so a key never moves under the user's fingers.</summary>
         public IReadOnlyList<DesktopConversation> Slots { get; init; } = new DesktopConversation[DesktopSlotMap.SlotCount];
 

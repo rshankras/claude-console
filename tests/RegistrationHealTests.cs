@@ -119,5 +119,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.False(heal);
         }
+
+        [Fact]
+        public void Marketplace_managed_product_never_restarts_from_timestamp_evidence_alone()
+        {
+            // Marketplace may preserve an older registration timestamp while the running service
+            // has already adopted it. Desktop opts out of timestamp healing and relies only on
+            // SelfRegistration's stronger "entry is absent" signal.
+            var heal = RegistrationHeal.ShouldHeal(
+                serviceStartUtc: ServiceStart,
+                payloadWrittenUtc: ServiceStart.AddHours(3),
+                registrationWrittenUtc: ServiceStart.AddDays(-2),
+                alreadyHealedThisPayload: false,
+                automaticRestartAllowed: false);
+
+            Assert.False(heal);
+        }
     }
 }

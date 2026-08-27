@@ -5,8 +5,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     using Loupedeck.ClaudeConsolePlugin.Desktop;
 
     /// <summary>
-    /// The home page's top two rows: six keys, each ONE conversation by name — title plus what
-    /// it wants from you. This is the argument for an LCD keypad over a glowing one, made
+    /// The home page's top row: three keys, each ONE conversation by name — title plus what
+    /// it wants from you. All Chats carries the overflow without shrinking these identities.
+    /// This is the argument for an LCD keypad over a glowing one, made
     /// physical: "Q3 report · needs input", not "amber means something, somewhere".
     ///
     /// Slots are STABLE (review round, 2026-08-25): a conversation claims a key on first sight

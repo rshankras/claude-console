@@ -153,5 +153,77 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             Assert.Equal(expected, BridgeManager.LongestCommonSubstringLength(a, b));
         }
+
+        // -------------------------------------------------------------------------------------
+        // Voice runtime/capture ownership — every voice key shares the same IPC files.
+        // -------------------------------------------------------------------------------------
+
+        [Fact]
+        public void Only_one_voice_action_can_own_the_shared_capture_pipeline()
+        {
+            var bridge = new BridgeManager(new PlatformSeamTests.FakePlatformBridge());
+
+            Assert.True(bridge.TryReserveVoiceCapture());
+            Assert.True(bridge.VoiceCaptureActive);
+            Assert.False(bridge.TryReserveVoiceCapture());
+
+            bridge.ReleaseVoiceCapture();
+
+            Assert.False(bridge.VoiceCaptureActive);
+            Assert.True(bridge.TryReserveVoiceCapture());
+            bridge.ReleaseVoiceCapture();
+        }
+
+        [Fact]
+        public void Voice_capture_fails_closed_when_runtime_validation_fails()
+        {
+            if (!BridgeManager.VoiceSupported)
+            {
+                return;
+            }
+
+            var platform = new PlatformSeamTests.FakePlatformBridge();
+            var bridge = new BridgeManager(platform)
+            {
+                VoiceRuntimeInstaller = () => false,
+            };
+
+            Assert.False(bridge.StartVoiceCapture());
+            Assert.False(bridge.VoiceCaptureActive);
+            Assert.Equal(1, platform.Alerts);
+        }
+
+        [Fact]
+        public void Voice_runtime_match_requires_every_packaged_file_at_the_same_length()
+        {
+            var package = Path.Combine(_root, "package");
+            var runtime = Path.Combine(_root, "runtime");
+            Directory.CreateDirectory(Path.Combine(package, "backends"));
+            Directory.CreateDirectory(Path.Combine(runtime, "backends"));
+            File.WriteAllText(Path.Combine(package, "whisper-cli"), "cli-v2");
+            File.WriteAllText(Path.Combine(package, "backends", "libggml.dylib"), "backend");
+            File.WriteAllText(Path.Combine(runtime, "whisper-cli"), "cli-v2");
+
+            Assert.False(BridgeManager.RuntimeTreeMatchesPackage(package, runtime));
+
+            File.WriteAllText(Path.Combine(runtime, "backends", "libggml.dylib"), "backend");
+            Assert.True(BridgeManager.RuntimeTreeMatchesPackage(package, runtime));
+
+            // Same length, different content: catches a stale CLI whose broken linkage changed
+            // without changing the executable size.
+            File.WriteAllText(Path.Combine(runtime, "whisper-cli"), "old-v2");
+            Assert.False(BridgeManager.RuntimeTreeMatchesPackage(package, runtime));
+        }
+
+        [Fact]
+        public void Empty_voice_package_is_never_considered_a_valid_runtime()
+        {
+            var package = Path.Combine(_root, "empty-package");
+            var runtime = Path.Combine(_root, "empty-runtime");
+            Directory.CreateDirectory(package);
+            Directory.CreateDirectory(runtime);
+
+            Assert.False(BridgeManager.RuntimeTreeMatchesPackage(package, runtime));
+        }
     }
 }

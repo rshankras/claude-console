@@ -2,6 +2,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
     using System.IO;
+    using System.Linq;
 
     using Xunit;
 
@@ -83,12 +84,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("CleanTranscript", source);
         }
 
+        [Fact]
+        public void Desktop_windows_payload_includes_voice_and_requires_whisper_runtime()
+        {
+            var builder = ReadRepoFile("tools", "windows", "build-windows-payload.sh");
+            var packer = ReadRepoFile("tools", "voice", "pack-release.sh");
+
+            Assert.Contains("PROJECTS=(VizhiDesktopUia ClaudeConsoleVoice)", builder);
+            Assert.Contains("WINDOWS_WHISPER_DIR", packer);
+            Assert.Contains("$PKG_VOICE/whisper-bin-win", packer);
+            Assert.Contains("$WIN_WBIN/whisper-cli.exe", packer);
+        }
+
         private static String ReadHelperSource()
+            => ReadRepoFile("tools", "windows", "ClaudeConsoleVoice", "Program.cs");
+
+        private static String ReadRepoFile(params String[] parts)
         {
             var dir = AppContext.BaseDirectory;
             for (var i = 0; i < 8 && dir != null; i++)
             {
-                var candidate = Path.Combine(dir, "tools", "windows", "ClaudeConsoleVoice", "Program.cs");
+                var candidate = Path.Combine(new[] { dir }.Concat(parts).ToArray());
                 if (File.Exists(candidate))
                 {
                     return File.ReadAllText(candidate);

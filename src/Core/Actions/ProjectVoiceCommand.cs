@@ -30,8 +30,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             var bridge = BridgeManager.Instance;
             if (!_face.IsActive)
             {
-                bridge.StartVoiceCapture();
-                _face.Start();
+                if (bridge.StartVoiceCapture())
+                {
+                    _face.Start();
+                }
             }
             else
             {

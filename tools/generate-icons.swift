@@ -17,6 +17,9 @@ let icons: [(String, String, String)] = [
     ("deploy", "shippingbox.fill", G),               // 10th prompt key — absent from the pack
     ("terminal", "terminal.fill", Y),
     ("screenshot", "camera.viewfinder", B),          // Screenshot key — capture region → agent
+    // Desktop navigation: blue is the neutral/action colour in Logitech's Codex layout.
+    // State colours remain reserved for working/attention/complete/risk.
+    ("all_chats", "bubble.left.and.bubble.right.fill", B),
     // ControlCommand's Core keys wear the Core purple (the model/compact/arrows family).
     // review_core is distinct from the designer's blue review.png on BOTH color and glyph —
     // that file belongs to the Prompts family and is still bound on the prompts page.

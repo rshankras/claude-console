@@ -30,7 +30,15 @@ mkdir -p "$DEST"
 # WPF's UI Automation client cannot be trimmed. On a machine without the .NET Desktop runtime it
 # simply doesn't run and tab-focus degrades to raising the window — everything else is unaffected,
 # which is why it is a separate exe rather than a verb on inject.
-for proj in ClaudeConsoleInject ClaudeConsoleHook ClaudeConsoleVoice ClaudeConsoleFocus ClaudeConsoleShot; do
+if [ "$PRODUCT" = "VizhiDesktop" ]; then
+  # Desktop uses the same agent-neutral WinMM recorder as the terminal products. Shipping only
+  # the UIA helper would leave its visible Voice keys pointing at a missing executable.
+  PROJECTS=(VizhiDesktopUia ClaudeConsoleVoice)
+else
+  PROJECTS=(ClaudeConsoleInject ClaudeConsoleHook ClaudeConsoleVoice ClaudeConsoleFocus ClaudeConsoleShot)
+fi
+
+for proj in "${PROJECTS[@]}"; do
   [ -d "$ROOT/tools/windows/$proj" ] || { echo ">>>   $proj (absent — skipped)"; continue; }
   echo ">>>   $proj"
   # Each csproj decides self-contained vs framework-dependent (see their comments); don't

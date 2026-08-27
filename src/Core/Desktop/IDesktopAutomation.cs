@@ -4,8 +4,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
     /// <summary>
     /// The platform half of the desktop seam: how we read and actuate a GUI app's controls.
-    /// macOS implements it over the AX helper (<see cref="MacDesktopAutomation"/>); Windows will
-    /// implement it over UIA. Nothing above this interface may know which.
+    /// macOS implements it over the AX helper (<see cref="MacDesktopAutomation"/>); Windows uses
+    /// the UIA helper through <see cref="WindowsDesktopAutomation"/>. Nothing above this interface
+    /// may know which.
     ///
     /// Every method is synchronous and bounded — implementations run one short-lived helper
     /// invocation per call under a kill-on-timeout budget, so a caller can never be wedged by a

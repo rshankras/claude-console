@@ -28,6 +28,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         public String MacProcessName => "ChatGPT";
 
+        // Window-title discovery is deliberately weaker than an Options+ application binding,
+        // but safe for reconnaissance and dev testing: the helper refuses ambiguous matches.
+        // Replace/augment with the confirmed executable identity after the Windows capture.
+        public String[] WindowsWindowTitles => new[] { "ChatGPT", "Codex" };
+
+        public String[] WindowsProcessNames => Array.Empty<String>(); // filled from W0 inspect output
+
         public String[] ApproveLabels => new[] { "Allow once" };
 
         public String[] DenyLabels => new[] { "Deny" };

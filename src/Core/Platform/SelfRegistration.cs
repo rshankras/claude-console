@@ -38,7 +38,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// load; never throws. Returns true when it registered — the caller should then skip
         /// RegistrationHeal (this load's restart already covers it).
         /// </summary>
-        internal static Boolean RegisterIfMissing()
+        internal static Boolean RegisterIfMissing(String windowsProcessName = null)
         {
             try
             {
@@ -76,7 +76,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 }
 
                 var icon = Path.Combine(payloadRoot, "metadata", "Icon256x256.png");
-                CreateRegistration(lp5, File.Exists(icon) ? icon : null, appsRoot, OperatingSystem.IsWindows());
+                CreateRegistration(
+                    lp5, File.Exists(icon) ? icon : null, appsRoot, OperatingSystem.IsWindows(), windowsProcessName);
 
                 PluginLog.Info(
                     "SelfRegistration: no application registration on disk (sideloaded installs never create one) — " +
@@ -147,7 +148,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// working registration. Throws on any failure after removing the partial directory, so
         /// a later load retries from scratch rather than the service adopting half an entry.
         /// </summary>
-        internal static void CreateRegistration(String lp5Path, String iconPath, String appsRoot, Boolean windows)
+        internal static void CreateRegistration(
+            String lp5Path, String iconPath, String appsRoot, Boolean windows, String windowsProcessName = null)
         {
             using var zip = ZipFile.OpenRead(lp5Path);
 
@@ -180,6 +182,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 appInfo["description"] = String.IsNullOrEmpty(description)
                     ? "Controls for Windows Terminal."
                     : description.Replace("Terminal.app", "Windows Terminal");
+            }
+            else if (windows && !String.IsNullOrWhiteSpace(windowsProcessName))
+            {
+                // Desktop products package their macOS bundle id in the shared profile. Once W0
+                // has proven the real Windows executable identity, write that identity into the
+                // Windows registration instead of silently binding com.openai.codex as a process.
+                appInfo["processOrBundleName"] = windowsProcessName;
             }
 
             var appName = (String)appInfo["name"]

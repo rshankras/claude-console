@@ -48,11 +48,15 @@ def act(type_name, param=None):
     return f"{base}___{param}" if param else base
 
 
-# Page 1 is the appendix's home page, as sent to Logitech (Appendix D, Codex Desktop · Page 1):
-# six conversations by name on rows 1-2, and the bottom row answers the one that's waiting —
-# the same sessions-above/answers-below shape as the shipped terminal products, so one muscle
-# memory covers the whole family. The user reaffirmed this layout on 2026-08-25, reversing an
-# interim page that had dropped Approve/Deny from the app-bound profile.
+def folder(type_name):
+    """The SDK's reserved binding shape for a PluginDynamicFolder command."""
+    full_name = f"{NS}.{type_name}"
+    return f"${PLUGIN}___#DynamicFolder___DynamicFolder#{full_name}"
+
+
+# Page 1 began as the appendix's six-conversation layout. Hardware review reduced it to three
+# larger conversation keys and moved overflow into All Chats; the approval row remains fixed so
+# the terminal and desktop products keep the same muscle memory.
 #
 # The default-profile guidance still stands and is unchanged by this: an application profile is
 # only active while its app is frontmost, so answering-from-anywhere still means placing
@@ -66,8 +70,8 @@ PAGE_ONE = [
     act("DesktopConversationCommand", "1"),       # 0  ┐ top row: the three most recent
     act("DesktopConversationCommand", "2"),       # 1  │ conversations, stable positions,
     act("DesktopConversationCommand", "3"),       # 2  ┘ state faces, press to jump
-    act("DesktopStatusCommand"),                  # 3  ┐
-    act("DesktopControlCommand", "new_chat"),     # 4  │ the middle row: glance + act
+    folder("AllChatsDynamicFolder"),              # 3  ┐ overflow: every AX-visible conversation
+    act("DesktopStatusCommand"),                  # 4  │ the middle row: browse + glance + act
     act("DesktopControlCommand", "show_diff"),    # 5  ┘
     act("DesktopApprovalCommand", "approve"),     # 6  ┐
     act("DesktopApprovalCommand", "deny"),        # 7  │ the bottom row answers
@@ -79,7 +83,7 @@ PAGE_TWO = [
     act("DesktopControlCommand", "mode"),         # 0
     act("DesktopControlCommand", "stop"),         # 1
     act("DesktopVoiceDraftCommand"),              # 2  transcribe, review, send yourself
-    None,                                         # 3
+    act("DesktopControlCommand", "new_chat"),     # 3  moved here to make room for All Chats
     None,                                         # 4
     None,                                         # 5
     None,                                         # 6

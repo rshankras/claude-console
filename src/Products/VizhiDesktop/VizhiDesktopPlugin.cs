@@ -28,6 +28,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         public override Boolean HasNoApplication => true;
 
         private readonly DesktopMonitor _monitor;
+        private readonly IDesktopAppAdapter _app;
 
         public VizhiDesktopPlugin()
         {
@@ -37,15 +38,37 @@ namespace Loupedeck.ClaudeConsolePlugin
             // Before any action is constructed — actions resolve IPC paths and DesktopServices.
             IpcPaths.UseProduct("vizhi-desktop");
 
-            var app = new OpenAiDesktopAdapter();
-            var automation = new MacDesktopAutomation(app);
+            _app = new OpenAiDesktopAdapter();
+            IDesktopAutomation automation = OperatingSystem.IsWindows()
+                ? new WindowsDesktopAutomation(_app)
+                : new MacDesktopAutomation(_app);
             _monitor = new DesktopMonitor(automation);
-            DesktopServices.Declare(app, automation, _monitor);
+            DesktopServices.Declare(_app, automation, _monitor);
         }
 
         public override void Load()
         {
+            if (!OperatingSystem.IsMacOS() && !OperatingSystem.IsWindows())
+            {
+                PluginLog.Warning("VizhiDesktopPlugin: unsupported platform");
+                return;
+            }
+
             BridgeManager.Instance.PluginAssemblyFilePath = this.AssemblyFilePath;
+
+            if (OperatingSystem.IsWindows() && !WindowsDesktopAutomation.IsPackaged)
+            {
+                PluginLog.Warning("VizhiDesktopPlugin: Windows UIA helper missing — desktop keys will report No Signal");
+            }
+
+            if (OperatingSystem.IsWindows() && _app.WindowsProcessNames.Length == 0)
+            {
+                // Do not start polling or self-register a guessed application. The standalone
+                // helper's inspect verb is the only enabled Windows path until W0 supplies the
+                // real executable name.
+                PluginLog.Warning("VizhiDesktopPlugin: Windows app identity unconfirmed — run vizhi-desktop-uia inspect; plugin remains disabled");
+                return;
+            }
 
             // Package-only installs: copy the AX helper out of the .lplug4 (dev builds already
             // have it from tools/desktop/build.sh). Voice installs itself lazily on first press.
@@ -61,9 +84,14 @@ namespace Loupedeck.ClaudeConsolePlugin
                 Platform.PluginPaths.PluginsRoot,
                 "VizhiDesktop");
 
-            if (!Platform.SelfRegistration.RegisterIfMissing())
+            var windowsProcess = OperatingSystem.IsWindows() ? _app.WindowsProcessNames[0] : null;
+            if (!Platform.SelfRegistration.RegisterIfMissing(windowsProcess))
             {
-                Platform.RegistrationHeal.HealIfNeeded();
+                // Marketplace installs can retain an older ApplicationInfo timestamp even after
+                // correctly adopting it. The shared timestamp heuristic would then restart LPS
+                // during a healthy install. Desktop still self-registers a genuinely missing
+                // sideload entry above, but never restarts merely because timestamps differ.
+                Platform.RegistrationHeal.HealIfNeeded(automaticRestartAllowed: false);
             }
 
             PluginLog.Info("VizhiDesktopPlugin: Loaded — driving the ChatGPT/Codex desktop app");

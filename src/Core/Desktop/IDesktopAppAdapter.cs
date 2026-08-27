@@ -36,6 +36,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>macOS process name, for the Options+ application binding.</summary>
         String MacProcessName { get; }
 
+        /// <summary>
+        /// Visible top-level window titles used to discover the app on Windows without guessing
+        /// an executable identity. The UIA reconnaissance verb reports the real process name;
+        /// packaging remains Windows-disabled until that identity is confirmed on hardware.
+        /// </summary>
+        String[] WindowsWindowTitles { get; }
+
+        /// <summary>
+        /// Confirmed Windows executable names without .exe. Empty until reconnaissance proves
+        /// them; the helper then uses visible titles and refuses ambiguity instead of guessing.
+        /// </summary>
+        String[] WindowsProcessNames { get; }
+
         /// <summary>Approval card: labels that mean "approve this once".</summary>
         String[] ApproveLabels { get; }
 

@@ -1,7 +1,6 @@
 namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 {
     using System;
-    using System.Threading;
 
     using Loupedeck.ClaudeConsolePlugin.Desktop;
 
@@ -13,16 +12,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// Hidden is a real state on a GUI surface and must look different from Ready — a grey
     /// "can't see" is honest, a green "Ready" over a locked screen is a lie.
     ///
-    /// Display-only; the hourglass animates while Working so the key reads as alive.
+    /// Display-only. Working uses a static hourglass: the monitor already refreshes on material
+    /// state changes, and a display key must not create a permanent LCD redraw loop off-profile.
     /// </summary>
     public class DesktopStatusCommand : PluginDynamicCommand
     {
-        private static readonly String[] BusyFrames = { "busy0", "busy1" };
-
-        private Timer _animTimer;
-        private Int32 _frame;
-        private Boolean _busy;
-
         public DesktopStatusCommand()
             : base(displayName: "Activity", description: "Whether the agent is working, waiting on you, ready — or hidden", groupName: "Agent")
         {
@@ -34,28 +28,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         private void Refresh()
         {
-            this.SetBusy(DesktopServices.Monitor.Current.Activity == DesktopActivity.Working);
             this.ActionImageChanged();
-        }
-
-        private void SetBusy(Boolean busy)
-        {
-            if (busy == _busy)
-            {
-                return;
-            }
-
-            _busy = busy;
-            if (busy)
-            {
-                _frame = 0;
-                _animTimer = new Timer(_ => { _frame++; this.ActionImageChanged(); }, null, 400, 400);
-            }
-            else
-            {
-                _animTimer?.Dispose();
-                _animTimer = null;
-            }
         }
 
         protected override void RunCommand(String actionParameter) =>
@@ -67,11 +40,6 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var (label, icon) = Face();
-            if (_busy)
-            {
-                icon = BusyFrames[_frame % BusyFrames.Length];
-            }
-
             return KeyImage.Render(imageSize, label, KeyImage.Dark, icon);
         }
 

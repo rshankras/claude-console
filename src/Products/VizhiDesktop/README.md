@@ -20,11 +20,13 @@ product. *(Not an OpenAI product; ChatGPT and Codex are trademarks of OpenAI.)*
 
 ## Status
 
-**Preview, macOS only.** The Accessibility mechanism is verified end to end on a live app:
+**Preview, macOS package only.** The core Accessibility mechanism is verified end to end on a live app:
 reading the approval card unfocused, pressing Allow/Deny with another app frontmost and no focus
 theft, writing and submitting the composer, and switching the app between its ChatGPT and Codex
-modes — all while the app sat in the background. Windows needs a different mechanism (UI
-Automation) and its recon has not been run.
+modes — all while the app sat in the background. The revised three-chat/All Chats profile and
+voice-runtime repair still need a macOS hardware regression pass. A fail-closed Windows UI
+Automation foundation exists, but application-identity reconnaissance and live validation have
+not been run, so Windows packaging remains deliberately disabled.
 
 ## Setup — the part that matters
 
@@ -54,15 +56,17 @@ one placement, once.
 
 Bound to the app, so they appear while ChatGPT is frontmost.
 
-**Page 1 · Conversations — the home page.** Six keys are your six most recent conversations, by
-name, each carrying its live state: **Awaiting approval** (amber badge), **Unread** (finished,
-result unseen), a spinner while running. Press one to jump — the app comes forward with that
-conversation open. The bottom row answers the one that's waiting: **Approve · Deny · Voice** —
-the same sessions-above/answers-below shape as the terminal consoles, so one muscle memory
-covers the whole family.
+**Page 1 · Conversations — the home page.** Three large, readable keys are your three most recent
+conversations, each carrying its live state: **Awaiting approval** (amber badge), **Unread**
+(finished, result unseen), a blue spinner while running. Their positions stay stable while the
+sidebar reorders. The middle row is **All Chats · Activity · Show Diff**: All Chats opens a paged
+folder containing every conversation the app makes visible; press one to jump. The bottom row
+answers the one that's waiting: **Approve · Deny · Voice** — the same
+sessions-above/answers-below shape as the terminal consoles, so one muscle memory covers the
+whole family.
 
-**Page 2 · Actions.** **Activity** (same status face as above), **Mode** (ChatGPT ⇄ Codex — the
-key shows the mode you're in), **New Chat**, **Stop**.
+**Page 2 · Actions.** **Mode** (ChatGPT ⇄ Codex — the key shows the mode you're in), **Stop**,
+**Voice Draft**, and **New Chat**.
 
 ## What it will not do
 

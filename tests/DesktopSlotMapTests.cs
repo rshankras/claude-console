@@ -75,8 +75,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void A_new_chat_appears_at_once_taking_only_the_stalest_slot()
         {
             // The hardware-feedback refinement: membership is recency, positions are sticky.
-            // NEW arrives at the sidebar top; T6 falls out of the top six. NEW takes T6's slot;
-            // T1-T5 do not move. The user sees their new chat immediately and nothing shuffles.
+            // NEW arrives at the sidebar top; the oldest visible member falls out of the top N.
+            // NEW takes that slot; every survivor stays put.
             var map = new DesktopSlotMap();
             map.Apply(Enumerable.Range(1, DesktopSlotMap.SlotCount).Select(i => C($"T{i}")).ToArray());
 

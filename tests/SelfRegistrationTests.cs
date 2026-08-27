@@ -278,6 +278,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var script = File.ReadAllText(RepoFile("tools", "voice", "pack-release.sh"));
 
             Assert.Contains("ClaudeConsole|VizhiCodex|VizhiDesktop) SHIPS_VOICE=1", script);
+            Assert.Contains("ClaudeConsole|VizhiCodex) SHIPS_WINDOWS=1", script);
+            Assert.Contains("TRANSCRIPTION_SMOKE_OK", script);
+            Assert.Contains("WINDOWS_WHISPER_DIR", script);
+            Assert.Contains("whisper-bin-win", script);
         }
 
         /// <summary>

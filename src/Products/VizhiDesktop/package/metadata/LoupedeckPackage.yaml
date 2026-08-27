@@ -31,14 +31,6 @@ copyright: Copyright © 2026 S.Ravi Shankar. All rights reserved.
 # PLUGIN PROPERTIES
 # ==================================================================================================
 
-# Location of plugin files on Windows (relative to the plugin base directory).
-# This parameter is required to support Windows.
-# Same folder as pluginFolderMac: one bin/ holds the plugin assembly plus every platform's
-# payloads, and each OS ignores the other's — the layout the terminal products verified on
-# hardware. (This product is macOS-only until the W0 recon lands a real Windows app identity;
-# the folder declaration is inert until then.)
-pluginFolderWin: bin
-
 # Location of plugin files on macOS (relative to the plugin base directory).
 # This parameter is required to support Mac.
 pluginFolderMac: bin
