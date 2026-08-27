@@ -26,13 +26,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     ///   3. a marker keyed to the payload write time, so one payload heals at most once.
     /// The cold-start gate alone makes a restart loop impossible; the marker is belt and braces.
     ///
-    /// GATED BY PRODUCT. Signal 2 cannot tell a reinstall desync from a healthy MARKETPLACE
-    /// install, because that installer writes the registration before it finishes copying the
-    /// payload — so the registration is always older than the payload and the heal fires every
-    /// time. Marketplace-distributed products therefore pass automaticRestartAllowed: false and
-    /// opt out of this path entirely; SelfRegistration still writes a genuinely missing entry, and
-    /// a stale one is repaired by hand with scripts/repair-registration.sh. Sideloaded builds keep
-    /// the heal, because they really do desync and have no installer to put it right.
+    /// GATED BY INSTALL SOURCE, not by product. Signal 2 cannot tell a reinstall desync from a
+    /// healthy PACKAGE install, because the installer writes the registration before it finishes
+    /// copying the payload — so the registration is always older and the heal fires on every
+    /// install (#20). Products that ship as packages therefore pass automaticRestartAllowed: false.
+    ///
+    /// But that flag is a REQUEST, not the verdict. It was gated on the product at first and that
+    /// was wrong: it also silenced the heal for dev builds, where the desync is real and there is
+    /// no installer to repair it — caught on hardware the same afternoon, when the Options+ icon
+    /// vanished after an uninstall followed by a dev build, which is the very symptom this class
+    /// was written for. So HealIfNeeded asks where the payload actually came from: a package
+    /// install lives under the service's Plugins directory, a dev build is reached through a .link
+    /// pointing outside it. Packages skip the restart; dev builds keep it.
+    ///
+    /// Either way SelfRegistration still writes a genuinely ABSENT entry, and a stale one after a
+    /// package reinstall is repaired by hand with scripts/repair-registration.sh.
     /// </summary>
     internal static class RegistrationHeal
     {
@@ -94,6 +102,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         }
 
         /// <summary>
+        /// Is this payload a PACKAGE install (Marketplace or a hand-installed .lplug4), as opposed
+        /// to a dev build reached through a .link?
+        ///
+        /// Package installs live under the service's own Plugins directory; a .link points wherever
+        /// the developer built. The distinction matters because the two cases fail in opposite
+        /// directions: an installer writes the registration before it finishes copying the payload,
+        /// so the timestamps always look desynced and the heal fires on every healthy install (#20)
+        /// — while a dev reload genuinely can desync, with no installer to repair it.
+        /// </summary>
+        internal static Boolean IsPackagedInstall(String payloadRoot)
+        {
+            if (String.IsNullOrEmpty(payloadRoot))
+            {
+                return true;   // unknown: assume packaged, i.e. do not restart. Fail quiet.
+            }
+
+            var pluginsRoot = Path.Combine(Path.GetDirectoryName(ApplicationsRoot()) ?? "", "Plugins");
+            return payloadRoot.StartsWith(pluginsRoot, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// Detect the desync and schedule the one-shot service restart. Safe to call on every
         /// load; never throws. macOS only — the Windows service's reinstall behaviour is
         /// unverified, and the restart command is platform-specific.
@@ -102,12 +131,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         {
             try
             {
-                if (!automaticRestartAllowed)
-                {
-                    PluginLog.Info("RegistrationHeal: automatic stale-registration restart disabled for this product");
-                    return;
-                }
-
                 if (!OperatingSystem.IsMacOS() && !OperatingSystem.IsWindows())
                 {
                     return;
@@ -120,6 +143,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                     return;
                 }
 
+                // The opt-out is about the INSTALLER, not the product — so ask where the payload
+                // actually came from rather than trusting a per-product flag. A dev build loads
+                // through a .link that points OUTSIDE the service's Plugins directory; every
+                // package install (Marketplace or a hand-installed .lplug4) lives inside it. Only
+                // the latter has the write-order problem that makes the timestamps lie, and only
+                // the former has no installer to blame or repair script within easy reach.
+                var packaged = IsPackagedInstall(payloadRoot);
+                var restartAllowed = automaticRestartAllowed || !packaged;
+                if (!restartAllowed)
+                {
+                    PluginLog.Info("RegistrationHeal: packaged install — skipping the stale-timestamp restart");
+                    return;
+                }
+
                 var payloadWritten = Directory.GetLastWriteTimeUtc(payloadRoot);
                 var registrationWritten = NewestRegistrationWriteUtc();
                 var marker = MarkerPath();
@@ -127,7 +164,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 var alreadyHealed = File.Exists(marker) && File.ReadAllText(marker).Trim() == markerValue;
 
                 var serviceStart = Process.GetCurrentProcess().StartTime.ToUniversalTime();
-                if (!ShouldHeal(serviceStart, payloadWritten, registrationWritten, alreadyHealed, automaticRestartAllowed))
+                if (!ShouldHeal(serviceStart, payloadWritten, registrationWritten, alreadyHealed, restartAllowed))
                 {
                     return;
                 }

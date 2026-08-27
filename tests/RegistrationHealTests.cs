@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
+    using System.IO;
 
     using Loupedeck.ClaudeConsolePlugin.Platform;
 
@@ -20,6 +21,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     public class RegistrationHealTests
     {
         private static readonly DateTime ServiceStart = new DateTime(2026, 8, 8, 9, 0, 0, DateTimeKind.Utc);
+
+        [Fact]
+        public void A_dev_link_still_heals___the_opt_out_is_about_the_installer_not_the_product()
+        {
+            // The opt-out was too blunt at first: it disabled the heal for the DEV case too, where
+            // the desync is real and there is no installer to blame. Caught on hardware the same
+            // afternoon it landed — the icon vanished from Options+ after uninstall -> dev build,
+            // which is precisely what this class exists to repair.
+            var pluginsRoot = Path.Combine(
+                Path.GetDirectoryName(RegistrationHeal.ApplicationsRoot()) ?? "", "Plugins");
+
+            Assert.True(RegistrationHeal.IsPackagedInstall(Path.Combine(pluginsRoot, "ClaudeConsole")));
+            Assert.False(RegistrationHeal.IsPackagedInstall("/Users/someone/Work/claude-console/bin/ClaudeConsole/Debug"));
+        }
+
+        [Fact]
+        public void An_unknown_payload_location_is_treated_as_packaged()
+        {
+            // Fail quiet: if we cannot tell where the payload came from, do not restart the host.
+            Assert.True(RegistrationHeal.IsPackagedInstall(null));
+            Assert.True(RegistrationHeal.IsPackagedInstall(""));
+        }
 
         [Fact]
         public void A_marketplace_product_never_restarts_on_a_stale_timestamp()
