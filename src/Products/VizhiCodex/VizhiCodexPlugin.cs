@@ -56,7 +56,12 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             if (!Platform.SelfRegistration.RegisterIfMissing())
             {
-                Platform.RegistrationHeal.HealIfNeeded();
+                // Marketplace-distributed: never restart the service on a stale-timestamp guess.
+                // The installer writes the registration before it finishes copying the payload, so
+                // the timestamps ALWAYS look desynced on a healthy install (#20). A genuinely
+                // missing entry is still written by RegisterIfMissing above; a stale one is
+                // repaired by hand with scripts/repair-registration.sh.
+                Platform.RegistrationHeal.HealIfNeeded(automaticRestartAllowed: false);
             }
 
             PluginLog.Info("VizhiCodexPlugin: Loaded — driving Codex CLI");

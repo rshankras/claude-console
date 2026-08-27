@@ -25,6 +25,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     ///      writes the registration fresh, after extracting the payload, so it never triggers;
     ///   3. a marker keyed to the payload write time, so one payload heals at most once.
     /// The cold-start gate alone makes a restart loop impossible; the marker is belt and braces.
+    ///
+    /// GATED BY PRODUCT. Signal 2 cannot tell a reinstall desync from a healthy MARKETPLACE
+    /// install, because that installer writes the registration before it finishes copying the
+    /// payload — so the registration is always older than the payload and the heal fires every
+    /// time. Marketplace-distributed products therefore pass automaticRestartAllowed: false and
+    /// opt out of this path entirely; SelfRegistration still writes a genuinely missing entry, and
+    /// a stale one is repaired by hand with scripts/repair-registration.sh. Sideloaded builds keep
+    /// the heal, because they really do desync and have no installer to put it right.
     /// </summary>
     internal static class RegistrationHeal
     {
@@ -44,8 +52,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             DateTime serviceStartUtc,
             DateTime payloadWrittenUtc,
             DateTime? registrationWrittenUtc,
-            Boolean alreadyHealedThisPayload)
+            Boolean alreadyHealedThisPayload,
+            Boolean automaticRestartAllowed = true)
         {
+            // Marketplace-managed products must not infer a broken live registration from file
+            // timestamps. The installer writes the registration BEFORE it finishes copying the
+            // payload, so on a perfectly healthy Marketplace install the registration always looks
+            // stale against the payload and the desync check below fires every time — a forced
+            // service restart on every install (QA retest of 2.0.1, finding 1; reproduced on
+            // hardware 2026-08-27). Marketplace can also preserve an older ApplicationInfo
+            // timestamp while correctly adopting the registration in memory, so the timestamp is
+            // not evidence of a broken live entry at all. Such products still self-register when
+            // the entry is genuinely ABSENT; they opt out only of this recovery path.
+            if (!automaticRestartAllowed)
+            {
+                return false;
+            }
+
             if (alreadyHealedThisPayload)
             {
                 return false;
@@ -75,10 +98,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// load; never throws. macOS only — the Windows service's reinstall behaviour is
         /// unverified, and the restart command is platform-specific.
         /// </summary>
-        internal static void HealIfNeeded()
+        internal static void HealIfNeeded(Boolean automaticRestartAllowed = true)
         {
             try
             {
+                if (!automaticRestartAllowed)
+                {
+                    PluginLog.Info("RegistrationHeal: automatic stale-registration restart disabled for this product");
+                    return;
+                }
+
                 if (!OperatingSystem.IsMacOS() && !OperatingSystem.IsWindows())
                 {
                     return;
@@ -98,7 +127,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 var alreadyHealed = File.Exists(marker) && File.ReadAllText(marker).Trim() == markerValue;
 
                 var serviceStart = Process.GetCurrentProcess().StartTime.ToUniversalTime();
-                if (!ShouldHeal(serviceStart, payloadWritten, registrationWritten, alreadyHealed))
+                if (!ShouldHeal(serviceStart, payloadWritten, registrationWritten, alreadyHealed, automaticRestartAllowed))
                 {
                     return;
                 }

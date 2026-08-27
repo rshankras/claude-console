@@ -22,6 +22,40 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         private static readonly DateTime ServiceStart = new DateTime(2026, 8, 8, 9, 0, 0, DateTimeKind.Utc);
 
         [Fact]
+        public void A_marketplace_product_never_restarts_on_a_stale_timestamp()
+        {
+            // The exact shape that fired on every Marketplace install (#20): the installer writes
+            // the registration BEFORE it finishes copying the payload, so a perfectly healthy
+            // install looks identical to the reinstall desync. Same values as
+            // Reinstall_during_the_service_session_heals, which asserts True — the ONLY difference
+            // is the opt-out, so this pins the flag rather than some other gate doing the work.
+            var heal = RegistrationHeal.ShouldHeal(
+                serviceStartUtc: ServiceStart,
+                payloadWrittenUtc: ServiceStart.AddHours(3),
+                registrationWrittenUtc: ServiceStart.AddDays(-2),
+                alreadyHealedThisPayload: false,
+                automaticRestartAllowed: false);
+
+            Assert.False(heal);
+        }
+
+        [Fact]
+        public void Opting_out_is_the_only_change___sideloaded_products_still_heal()
+        {
+            // Guards against "fix" by neutering the detection for everyone: with the flag left at
+            // its default the same inputs must still heal, because a sideloaded install genuinely
+            // does desync and has no installer to repair it.
+            var heal = RegistrationHeal.ShouldHeal(
+                serviceStartUtc: ServiceStart,
+                payloadWrittenUtc: ServiceStart.AddHours(3),
+                registrationWrittenUtc: ServiceStart.AddDays(-2),
+                alreadyHealedThisPayload: false,
+                automaticRestartAllowed: true);
+
+            Assert.True(heal);
+        }
+
+        [Fact]
         public void Reinstall_during_the_service_session_heals()
         {
             // Service up since 09:00, payload extracted at 12:00, registration from days ago.
