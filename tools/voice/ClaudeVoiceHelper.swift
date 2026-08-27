@@ -105,30 +105,62 @@ let attrs = try? fm.attributesOfItem(atPath: outWav)
 let size = (attrs?[.size] as? Int) ?? 0
 log(String(format: "recorded %.1fs, %d bytes", dur, size))
 
-// 4) Transcribe with whisper.cpp. stderr -> /dev/null (progress noise); stdout = transcription.
+// 4) Transcribe with whisper.cpp. stdout = transcription.
+//
+// Every failure below writes a sidecar next to the transcript path. Discarding whisper's stderr
+// and exiting 0 without reading terminationStatus made a hard crash produce exactly what silence
+// produces — an empty transcript — so a bundle that could not transcribe at ALL was reported to
+// users as "didn't catch that", for every recording, for months (#24). A failure must be able to
+// say so.
+let surfacedErrorPath = transcriptPath + ".error"
+func fail(_ message: String, _ code: Int32) -> Never {
+    try? message.write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
+    log(message)
+    exit(code)
+}
+
 guard let whisper = findWhisper() else {
-    log("whisper-cli not found — install with: brew install whisper-cpp")
-    exit(4)
+    fail("whisper-cli not found — the voice bundle is missing or incomplete", 4)
 }
 guard fm.fileExists(atPath: modelPath) else {
-    log("model not found at \(modelPath)")
-    exit(5)
+    fail("speech model not found at \(modelPath)", 5)
 }
 
 let p = Process()
 p.executableURL = URL(fileURLWithPath: whisper)
 p.arguments = ["-m", modelPath, "-f", outWav, "-nt"]
 let outPipe = Pipe()
+// Capture stderr to a file rather than a Pipe: whisper is chatty, and a pipe nobody drains while
+// we block on readDataToEndOfFile() of stdout would deadlock once its buffer filled.
+let whisperErrorPath = transcriptPath + ".whisper-stderr"
+fm.createFile(atPath: whisperErrorPath, contents: nil)
+guard let whisperError = FileHandle(forWritingAtPath: whisperErrorPath) else {
+    fail("cannot capture whisper diagnostics at \(whisperErrorPath)", 6)
+}
 p.standardOutput = outPipe
-p.standardError = FileHandle.nullDevice
+p.standardError = whisperError
 do {
     try p.run()
 } catch {
-    log("whisper launch failed: \(error)")
-    exit(6)
+    try? whisperError.close()
+    try? fm.removeItem(atPath: whisperErrorPath)
+    fail("whisper launch failed: \(error)", 6)
 }
 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
 p.waitUntilExit()
+try? whisperError.close()
+let whisperStderr = (try? String(contentsOfFile: whisperErrorPath, encoding: .utf8)) ?? ""
+try? fm.removeItem(atPath: whisperErrorPath)
+
+// A crash (GGML_ASSERT aborts with SIGABRT -> 134) must not look like a quiet room.
+guard p.terminationStatus == 0 else {
+    let detail = whisperStderr.trimmingCharacters(in: .whitespacesAndNewlines)
+    fail(detail.isEmpty
+            ? "whisper-cli exited with status \(p.terminationStatus)"
+            : "whisper-cli exited with status \(p.terminationStatus): \(detail.suffix(1200))",
+         7)
+}
+try? fm.removeItem(atPath: surfacedErrorPath)
 
 var text = String(data: data, encoding: .utf8) ?? ""
 text = text.replacingOccurrences(of: "\n", with: " ")

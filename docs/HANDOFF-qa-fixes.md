@@ -7,8 +7,8 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 
 | | |
 |---|---|
-| Branch | `fix/qa-p0`, 4 commits, pushed, **no PR opened** |
-| Suite | 617 C# + 47 shell, green |
+| Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
+| Suite | 630 C# + 47 shell, green |
 | Issues | 25 filed (#20–#44) plus #45, #46 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
@@ -23,9 +23,12 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 
 ## What is NOT done
 
-- **#24 whisper, #25 sticky pin, #26 project roots, #27 redraw storm** — all P1, all untouched. #24 needs
-  the bundled binary rebuilt with its backend libraries and then re-signed and notarised, so it is the
-  long pole.
+- **#25 sticky pin, #26 project roots, #27 redraw storm** — all P1, all untouched.
+- **#24 whisper: code complete, RELEASE STEP OUTSTANDING.** The bundle now carries ggml's compute
+  backends and proves it (below). What remains is not code: `sign-and-notarize.sh` has to rebuild the
+  helper and re-sign the bundle with the Developer ID, and voice must be pressed on the keypad.
+  **Rebuilding the helper resets its Microphone grant** — expect empty transcripts and no re-prompt
+  until `tccutil reset Microphone com.rshankar.claudeconsole.voicehelper`.
 - **#25 needs a design decision before code.** The Session keys mean "the one I selected", the display
   keys mean "the one I'm looking at", and they cannot share one value. Three options in the issue.
   It is also the second half of the answer promised to Logitech about approval targeting, so it is the
@@ -47,6 +50,59 @@ would get none of them — and **11 of the 14 QA issues are shared-engine defect
 
 The objection is now largely answered in passing: the dev build driven all afternoon *is* 2.1.0 plus
 these fixes, and it behaved. That is not a full pass, but it is no longer untested.
+
+## #24, and the trap underneath it
+
+The defect: ggml 0.15 is a **dynamic-backend** build. `libggml.0.dylib` is a 78 KB registry that
+does no arithmetic; the CPU/Metal/BLAS engines are separate `.so` files it `dlopen`s at runtime.
+`dlopen` leaves nothing in the Mach-O load commands, so `bundle-whisper.sh` — which builds the
+payload by walking the link-time closure — could not see them and never shipped one. With no engine
+registered, whisper aborts on `GGML_ASSERT(device)` before reading a sample of audio.
+
+**The trap, and it is the whole reason this shipped green: on a dev machine the broken bundle works.**
+libggml has Homebrew's `libexec` compiled in as a fallback search path, and that directory exists
+here. Every voice test that ever passed on this Mac was borrowing Homebrew's engines — the bundle
+has never once loaded its own. So:
+
+- **A transcription smoke test is not enough.** QA's suggested fix (transcribe a fixture WAV) passes
+  on this machine with zero backends bundled. It has teeth only with the Homebrew prefix made
+  unreachable, which `bundle-whisper.sh` now does with `sandbox-exec`, asserting that a backend was
+  loaded **from `$OUT`**. Verified both ways: a backend-less bundle now exits 1, and `--help`
+  (the old smoke test) sails through it.
+- **Reproduce it with `spikes/whisper-24/repro-24.sh`** (gitignored). It runs the same binary twice,
+  once sandboxed, and prints the verdict.
+- **A file-existence guard cannot repair a broken install.** `~/.claude/claude-console/` outlives an
+  uninstall, so `!Directory.Exists(WhisperBinDir)` meant corrected files would have fixed nobody who
+  had ever pressed Voice. `RuntimeTreeMatchesPackage` compares every packaged file by size and
+  SHA-256 instead. Same fix applied to the Windows branch, which had the same shape.
+- **The `.error` sidecar is a contract between Swift and C#** that neither compiler checks, so
+  `VoiceRuntimeInstallTests` reads both source files and pins it. Reintroducing
+  `p.standardError = FileHandle.nullDevice` fails the suite — verified by doing it.
+
+## Windows voice: one gap closed, one still open (found while fixing #24)
+
+**Closed.** `tools/windows/ClaudeConsoleVoice/Program.cs` had the identical silent-failure defect to
+the macOS helper — every failure path returned `""` and exited 0, with stderr explicitly dropped
+(`content irrelevant on success`). It now checks `ExitCode`, keeps whisper's diagnosis, and writes
+the same `<transcript>.error` sidecar. The plugin's reader was already platform-neutral, so the
+Windows half had been inert. The sidecar must be written BEFORE the transcript: the poll loop checks
+for it first, and an empty transcript arriving earlier would be read as silence.
+
+**STILL OPEN — a laptop task, not a Mac one.** `pack-release.sh` on this branch packs only the macOS
+`whisper-bin`. `EnsureVoiceRuntimeInstalledWindows` looks for `voice/whisper-bin-win/`, which no
+package has ever contained, so **voice on a packaged Windows install fails with "whisper-cli.exe
+missing"** and has only ever worked where whisper was placed by hand (this laptop).
+`docs/windows-debug-handoff.md` flagged it in capitals and it was never done.
+
+`feat/vizhi-desktop` already implements it — `WINDOWS_WHISPER_DIR`, a Windows-side
+`TRANSCRIPTION_SMOKE_OK` marker, and a refusal to pack without one. **Cherry-pick that section
+rather than rewriting it.** It needs a Windows bundle that has actually transcribed on Windows,
+which cannot be produced or proven from the Mac.
+
+Worth knowing: #24's root cause is probably macOS-only. The Windows payload is whisper.cpp's own
+prebuilt `whisper-bin-x64.zip`, which ships its ggml backend DLLs beside the exe, rather than being
+hand-assembled from Homebrew the way the macOS bundle is. Probably — unverified from here, and
+there is no sandbox equivalent for a Windows bundle on this machine.
 
 ## Traps and findings worth not rediscovering
 

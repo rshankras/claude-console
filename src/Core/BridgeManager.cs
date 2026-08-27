@@ -43,6 +43,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static String VoiceStopFile => IpcPaths.VoiceStopFile;
         private static String VoiceTranscriptFile => IpcPaths.VoiceTranscriptFile;
         private static String VoiceWavFile => IpcPaths.VoiceWavFile;
+        // Written by the helper INSTEAD of a transcript when dictation failed outright. Its whole
+        // purpose is to make a failure distinguishable from silence — see the poll loop below.
+        private static String VoiceErrorFile => VoiceTranscriptFile + ".error";
 
         // Runtime home shared with the voice helper: ~/.claude/claude-console/
         private static readonly String ClaudeConsoleHome = Path.Combine(
@@ -650,6 +653,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             // Clear any stale transcript/flag so we never type a previous result.
             EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
+            TryDelete(VoiceErrorFile);
             TryDelete(VoiceStopFile);
 
             if (!Directory.Exists(VoiceHelperApp))
@@ -703,6 +707,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
+            TryDelete(VoiceErrorFile);
             TryDelete(VoiceStopFile);
 
             var helper = PluginPaths.PackagedFile("claude-console-voice.exe");
@@ -770,8 +775,14 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var pkgVoice = Path.Combine(pkgDir, "voice");
                 PluginLog.Verbose($"BridgeManager.EnsureVoiceRuntimeInstalled: pkgVoice={pkgVoice} exists={Directory.Exists(pkgVoice)}");
 
+                // The guard compares the TREE, not the directory. `Directory.Exists` meant a runtime
+                // copy was accepted forever once created: the 2.0.1 whisper bundle shipped without
+                // its compute backends, and because ~/.claude/claude-console/ outlives an uninstall,
+                // shipping corrected files would have repaired nobody who had ever pressed Voice —
+                // their broken copy still "existed" (#24). Comparing every packaged file by size and
+                // hash also repairs an install interrupted halfway.
                 var pkgHelper = Path.Combine(pkgVoice, "ClaudeVoiceHelper.app");
-                if (Directory.Exists(pkgHelper) && !Directory.Exists(VoiceHelperApp))
+                if (Directory.Exists(pkgHelper) && !RuntimeTreeMatchesPackage(pkgHelper, VoiceHelperApp))
                 {
                     PluginLog.Info($"BridgeManager: installing voice helper from package -> {VoiceHelperApp}");
                     Directory.CreateDirectory(ClaudeConsoleHome);
@@ -780,11 +791,15 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
 
                 var pkgWhisper = Path.Combine(pkgVoice, "whisper-bin");
-                if (Directory.Exists(pkgWhisper) && !Directory.Exists(WhisperBinDir))
+                if (Directory.Exists(pkgWhisper) && !RuntimeTreeMatchesPackage(pkgWhisper, WhisperBinDir))
                 {
                     PluginLog.Info($"BridgeManager: installing whisper bundle from package -> {WhisperBinDir}");
                     RunSync("/usr/bin/ditto", pkgWhisper, WhisperBinDir);
                     RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", WhisperBinDir);
+                    if (!RuntimeTreeMatchesPackage(pkgWhisper, WhisperBinDir))
+                    {
+                        PluginLog.Warning($"BridgeManager: whisper bundle at {WhisperBinDir} still differs from the package after install");
+                    }
                 }
             }
             catch (Exception ex)
@@ -802,11 +817,6 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             try
             {
-                if (File.Exists(WindowsWhisperCli))
-                {
-                    return;   // already installed (by a previous run, or by hand)
-                }
-
                 var pkgDir = PluginPaths.PluginDirectory;
                 if (String.IsNullOrEmpty(pkgDir))
                 {
@@ -816,7 +826,14 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var pkgWhisper = Path.Combine(pkgDir, "voice", "whisper-bin-win");
                 if (!Directory.Exists(pkgWhisper))
                 {
-                    return;   // dev build — nothing packaged
+                    return;   // dev build — nothing packaged; a hand-placed bundle is left alone
+                }
+
+                // Same rule as macOS: the presence of whisper-cli.exe says nothing about whether the
+                // rest of the bundle is the one we shipped (#24).
+                if (RuntimeTreeMatchesPackage(pkgWhisper, WhisperBinDir))
+                {
+                    return;
                 }
 
                 PluginLog.Info($"BridgeManager: installing whisper bundle from package -> {WhisperBinDir}");
@@ -839,6 +856,47 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 File.Copy(file, Path.Combine(to, Path.GetRelativePath(from, file)), overwrite: true);
             }
+        }
+
+        /// <summary>
+        /// A runtime directory is healthy only when every packaged file is present and identical.
+        /// Checking the tree rather than the directory itself is what repairs an existing broken
+        /// install: a whisper bundle whose CLI is present but whose compute backends are missing
+        /// looks installed to any existence test, and is exactly what shipped in 2.0.1 (#24).
+        /// </summary>
+        internal static Boolean RuntimeTreeMatchesPackage(String packageRoot, String runtimeRoot)
+        {
+            if (String.IsNullOrEmpty(packageRoot) || String.IsNullOrEmpty(runtimeRoot)
+                || !Directory.Exists(packageRoot) || !Directory.Exists(runtimeRoot))
+            {
+                return false;
+            }
+
+            var packagedFiles = Directory.GetFiles(packageRoot, "*", SearchOption.AllDirectories);
+            if (packagedFiles.Length == 0)
+            {
+                return false;
+            }
+
+            foreach (var source in packagedFiles)
+            {
+                var relative = Path.GetRelativePath(packageRoot, source);
+                var installed = Path.Combine(runtimeRoot, relative);
+                if (!File.Exists(installed)
+                    || new FileInfo(source).Length != new FileInfo(installed).Length)
+                {
+                    return false;
+                }
+
+                // Size alone would pass a same-size corruption, and these are signed Mach-O files
+                // where a re-sign changes content without changing length.
+                if (!String.Equals(HashFileSha256(source), HashFileSha256(installed), StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         // Run a process and wait for it (ditto/xattr install steps must finish before launching).
@@ -1256,6 +1314,24 @@ namespace Loupedeck.ClaudeConsolePlugin
                 while (DateTime.UtcNow < deadline)
                 {
                     Thread.Sleep(150);
+
+                    // A named failure beats a blank transcript. The helper writes this sidecar when
+                    // whisper could not run at all — missing backend, missing model, a crash — which
+                    // otherwise arrives here as an empty string, indistinguishable from silence, and
+                    // is reported to the user as "didn't catch that" for months (#24).
+                    if (File.Exists(VoiceErrorFile))
+                    {
+                        String error;
+                        try { error = File.ReadAllText(VoiceErrorFile).Trim(); }
+                        catch { continue; }
+
+                        TryDelete(VoiceErrorFile);
+                        TryDelete(VoiceTranscriptFile);
+                        PluginLog.Warning($"BridgeManager: voice transcription FAILED — {error}");
+                        _platform.Alert();
+                        return;
+                    }
+
                     if (!File.Exists(VoiceTranscriptFile))
                     {
                         continue;
