@@ -178,6 +178,10 @@ Notes:
   **Where it looks:** projects any session is already open in, plus every git repository within three levels of your home folder — and, once a folder is seen to hold several repositories, its other subfolders too (so a checkout-in-progress next to your repos still matches). Nothing needs configuring for a normal layout. If your projects live somewhere unusual, list the folders that contain them in `~/.claude/claude-console/project-roots`, one per line (`~` allowed, `#` for comments); every subfolder of those becomes matchable and the automatic search is skipped. When nothing matches, the plugin log names how many candidates it searched and where they came from.
 
 Start and stop a recording with the **same** key — each voice key is its own start/stop toggle.
+Pressing a *different* voice key while one is recording **stops** it rather than starting a second
+recording, and the transcript still goes where the key you started with intended: a dictation stopped
+with **Go to Project** is still sent to Claude, not treated as a project name. While a transcript is
+being produced, a further press is ignored with a beep rather than discarding the result.
 
 First use prompts once for **Microphone** permission (granted to the helper, not the daemon). The plugin also needs **Accessibility** permission for the Logi Plugin Service (to type into the terminal).
 

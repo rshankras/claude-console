@@ -8,7 +8,7 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 | | |
 |---|---|
 | Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
-| Suite | 687 C# + 47 shell, green |
+| Suite | 706 C# + 47 shell, green |
 | Issues | 25 filed (#20–#44) plus #45, #46, #47, #48 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
@@ -24,6 +24,14 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 ## What is NOT done
 
 - **#25 sticky pin** — P1, untouched, and it needs a design decision before code.
+- **#28 concurrent voice capture: DONE (code), hardware pass rides with #24.** One `VoiceCaptureState`
+  in the engine replaces three private per-key flags. The duplicate helper was the lesser half: because
+  each key both started AND routed, the destination was decided by whichever key you pressed *second*
+  — dictate a prompt, stop with Go to Project, and your prompt was fuzzy-matched to a project and
+  opened. Rule now: **intent is fixed at start; any voice key stops; a press while transcribing is
+  refused.** Every exit path clears the state via `finally`, and a capture older than 90s is treated
+  as dead — a flag that could not expire would leave the voice keys permanently dead after one
+  crashed helper, which is worse than the bug.
 - **#26 project roots + leaked build path: DONE, hardware-verified 2026-08-27** — "Life" opened
   `~/Life` from the keypad, a project the hardcoded roots could never reach. **Still unverified on
   hardware: the inferred-roots case** — say "Sailor" (a folder under `~/Work/MyApps` with no `.git`),
@@ -158,6 +166,11 @@ A failed dictation did the wrong thing rather than nothing.
   and standing too far away. Test voice features at the distance a user actually sits.
 
 ## Traps and findings worth not rediscovering
+
+**Never run `tests/run-all.sh` in the same shell invocation as a heredoc.** The bridge-script tests
+read JSON from stdin; a preceding `python3 - <<'PY'` consumes it, and the suite silently reports
+13 passed instead of 20 with a stray `^D` in the output. It looks exactly like tests disappearing.
+
 
 **The #20 fix was wrong once, and the second version matters.** Gating the heal per PRODUCT also
 silenced it for dev builds, where the desync is real. The Options+ icon vanished within the hour.

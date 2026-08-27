@@ -47,6 +47,12 @@ namespace Loupedeck.ClaudeConsolePlugin
         // purpose is to make a failure distinguishable from silence — see the poll loop below.
         private static String VoiceErrorFile => VoiceTranscriptFile + ".error";
 
+        /// <summary>
+        /// Is the microphone running, and where is the result going? Owned here rather than by the
+        /// keys, because three keys drive one microphone and one set of IPC files (#28).
+        /// </summary>
+        internal readonly VoiceCaptureState Voice = new VoiceCaptureState();
+
         // Runtime home shared with the voice helper: ~/.claude/claude-console/
         private static readonly String ClaudeConsoleHome = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "claude-console");
@@ -721,18 +727,21 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal static Boolean VoiceSupported =>
             OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
 
-        public void StartVoiceCapture()
+        /// <summary>
+        /// Launch the recorder. Returns false when nothing was started, so the caller can clear the
+        /// in-flight state rather than leaving the voice keys believing a capture is running (#28).
+        /// </summary>
+        public Boolean StartVoiceCapture()
         {
             if (OperatingSystem.IsWindows())
             {
-                this.StartVoiceCaptureWindows();
-                return;
+                return this.StartVoiceCaptureWindows();
             }
 
             if (!OperatingSystem.IsMacOS())
             {
                 PluginLog.Info("BridgeManager.StartVoiceCapture: unsupported platform");
-                return;
+                return false;
             }
 
             // Install the helper + whisper from the plugin package if this is a package-only install
@@ -748,7 +757,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (!Directory.Exists(VoiceHelperApp))
             {
                 PluginLog.Warning($"BridgeManager.StartVoiceCapture: helper missing at {VoiceHelperApp} (run tools/voice/build.sh, or reinstall the plugin)");
-                return;
+                return false;
             }
 
             // Make sure the speech model is present. If it's still downloading, skip this capture
@@ -758,7 +767,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
                 _platform.Alert();
-                return;
+                return false;
             }
 
             // Launch via LaunchServices (open) so the helper is its own TCC subject. Detached.
@@ -779,6 +788,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             RunDetached("open", args);
             PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+            return true;
         }
 
         // Windows whisper-cli lives in the same runtime-home dir as the macOS bundle, with the
@@ -790,7 +800,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // plain exe launched directly (no LaunchServices, no TCC — Windows mic permission is a
         // Settings toggle the helper documents), and whisper is REQUIRED up front — the Windows
         // helper has no embedded fallback, so recording without it would always type nothing.
-        private void StartVoiceCaptureWindows()
+        private Boolean StartVoiceCaptureWindows()
         {
             EnsureVoiceRuntimeInstalled();
 
@@ -803,21 +813,21 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (helper == null)
             {
                 PluginLog.Warning("BridgeManager.StartVoiceCapture: claude-console-voice.exe not found in the plugin package");
-                return;
+                return false;
             }
 
             if (!File.Exists(WindowsWhisperCli))
             {
                 PluginLog.Warning($"BridgeManager.StartVoiceCapture: whisper-cli.exe missing at {WhisperBinDir} — voice needs the whisper bundle installed");
                 _platform.Alert();
-                return;
+                return false;
             }
 
             if (!EnsureVoiceModel())
             {
                 PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
                 _platform.Alert();
-                return;
+                return false;
             }
 
             RunDetached(helper, new List<String>
@@ -830,6 +840,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 "--whisper", WindowsWhisperCli,
             });
             PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+            return true;
         }
 
         // ------------------------------------------------------------------------------------------
@@ -1378,6 +1389,60 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Stop voice capture and use the transcript to OPEN a project (new tab + cd + claude).
         public void StopVoiceCaptureForProject() => StopVoiceCaptureThen(NavigateToProjectByVoice);
 
+        /// <summary>
+        /// The one door every voice key goes through (#28). The key says what it WANTS the transcript
+        /// used for; the state machine decides whether this press starts, stops, or is refused —
+        /// and, crucially, where a stopped capture's transcript is routed.
+        ///
+        /// Each key used to hold its own "am I recording?" flag and both start and route on its own,
+        /// so a second key pressed mid-recording spawned a second helper against the same files, and
+        /// the destination was decided by whichever key you pressed second. Dictating a prompt and
+        /// pressing Go to Project to stop it would fuzzy-match your prompt to a project and open it.
+        /// </summary>
+        internal void ToggleVoice(VoiceIntent intent)
+        {
+            if (!VoiceSupported)
+            {
+                PluginLog.Info("BridgeManager.ToggleVoice: voice is not supported on this platform");
+                return;
+            }
+
+            var (action, routed) = Voice.Press(intent, DateTime.UtcNow);
+            switch (action)
+            {
+                case VoiceAction.Start:
+                    PluginLog.Info($"BridgeManager.ToggleVoice: starting capture for {intent}");
+                    if (!this.StartVoiceCapture())
+                    {
+                        // Missing helper, model still downloading, unsupported platform: nothing is
+                        // recording, so the state must not say otherwise or the keys lock up.
+                        Voice.Finish();
+                    }
+                    break;
+
+                case VoiceAction.Stop:
+                    // The STARTING key's intent, not the one just pressed.
+                    if (routed != intent)
+                    {
+                        PluginLog.Info($"BridgeManager.ToggleVoice: {intent} key stopped a {routed} capture — routing to {routed}");
+                    }
+                    switch (routed)
+                    {
+                        case VoiceIntent.Project: this.StopVoiceCaptureForProject(); break;
+                        case VoiceIntent.Draft: this.StopVoiceCapture(submit: false); break;
+                        default: this.StopVoiceCapture(submit: true); break;
+                    }
+                    break;
+
+                default:
+                    // Transcribing: a result is already in flight and starting again would delete
+                    // the file the waiting thread is about to read.
+                    PluginLog.Info($"BridgeManager.ToggleVoice: ignoring {intent} press — a {routed} transcript is still in flight");
+                    _platform.Alert();
+                    break;
+            }
+        }
+
         // Shared: signal the helper to stop, then wait for the transcript off the UI thread and run
         // <paramref name="handler"/> with it. An empty transcript (silence / mic denied) is ignored.
         private void StopVoiceCaptureThen(Action<String> handler)
@@ -1394,11 +1459,18 @@ namespace Loupedeck.ClaudeConsolePlugin
             catch (Exception ex)
             {
                 PluginLog.Warning(ex, "BridgeManager.StopVoiceCapture: failed to write stop flag");
+                Voice.Finish();
                 return;
             }
 
             new Thread(() =>
             {
+              // Whatever happens below — transcript, named failure, silence, timeout, an exception —
+              // the capture is over when this thread ends. A flag that could survive one crashed
+              // helper would leave every voice key dead until the plugin reloaded, which is a worse
+              // bug than the one being fixed (#28).
+              try
+              {
                 var deadline = DateTime.UtcNow.AddSeconds(20);
                 while (DateTime.UtcNow < deadline)
                 {
@@ -1464,6 +1536,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                     return;
                 }
                 PluginLog.Warning("BridgeManager: transcript not produced within 20s");
+              }
+              finally
+              {
+                Voice.Finish();
+              }
             })
             { IsBackground = true, Name = "claude-voice-transcript" }.Start();
         }

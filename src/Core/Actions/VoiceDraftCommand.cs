@@ -23,23 +23,29 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             : base(displayName: "Voice Draft", description: "Speak a prompt, then fix it before sending — types the transcript without submitting; press Return when it reads right", groupName: "Universal")
         {
             _face = new ListeningFace(() => this.ActionImageChanged());
+
+            // The engine owns "is the mic running, and for whom" (#28). This key only reflects it,
+            // so a capture stopped from ANOTHER voice key clears this face too — three keys used to
+            // hold three private flags and could all claim to be recording at once.
+            BridgeManager.Instance.Voice.Changed += () =>
+            {
+                if (BridgeManager.Instance.Voice.IsRecording(VoiceIntent.Draft))
+                {
+                    if (!_face.IsActive) { _face.Start(); }
+                }
+                else if (_face.IsActive)
+                {
+                    _face.Stop();
+                }
+                this.ActionImageChanged();
+            };
         }
 
         protected override void RunCommand(String actionParameter)
         {
-            var bridge = BridgeManager.Instance;
-            if (!_face.IsActive)
-            {
-                bridge.StartVoiceCapture();
-                _face.Start();
-            }
-            else
-            {
-                bridge.StopVoiceCapture(submit: false);
-                _face.Stop();
-            }
-
-            this.ActionImageChanged();
+            // One door for every voice key. Whether this press starts, stops, or is refused — and
+            // where a stopped capture's transcript is routed — is the engine's call, not this key's.
+            BridgeManager.Instance.ToggleVoice(VoiceIntent.Draft);
             PluginLog.Info($"VoiceDraftCommand: recording={_face.IsActive}");
         }
 
