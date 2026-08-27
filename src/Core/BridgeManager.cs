@@ -93,6 +93,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         private String _pinnedTty;   // session PINNED by a session-key press; outranks _activeTty (see TargetTty)
         private Int32 _pollTick;     // drives the ~1s cadence of the frontmost-tab check
 
+        // The state file's last-seen raw text. Held so a poll can answer "did anything change?" by
+        // comparing bytes instead of raising an event and letting every key repaint to find out (#27).
+        private String _lastStateText;
+
+        // Consecutive polls in which nothing changed and no session was live. Drives the cadence.
+        private Int32 _quietPolls;
+
         // Everything OS-specific lives behind this seam: session discovery, injection, focus, nav.
         // See IPlatformBridge — above it, neither AppleScript nor TTYs nor consoles are visible.
         // Not readonly: declaring the agent rebuilds it, because the product declares itself after
@@ -280,7 +287,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // Refresh the session grid. The `ps` scan runs on a DIFFERENT tick from the osascript
                 // frontmost probe above (2 vs 0) so the two subprocess calls never share a poll —
                 // stacking expensive calls on one tick is how the 1.3.1 thread leak began.
-                var liveTtys = _pollTick % 4 == 2 ? _platform.DiscoverSessions() : null;
+                // While backed off (below) the poll itself is rare, so scan every time instead: at a
+                // 5 s cadence, every 4th poll would mean 20 s before a new session appeared.
+                var liveTtys = _pollTick % 4 == 2 || _quietPolls >= QuietPollsBeforeSlow
+                    ? _platform.DiscoverSessions()
+                    : null;
                 Grid.Refresh(liveTtys);
 
                 // Where the agent cannot push state to us, pull it. Only Windows/Codex sets this
@@ -288,25 +299,50 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // files a hook would — so everything below this line is identical either way.
                 this.PullState?.Invoke();
 
-                var newState = ReadJsonWithRetry<ClaudeState>(ActiveStateFile());
+                // Compare the file's BYTES before doing anything with them. This event used to fire on
+                // every single poll for as long as the state file existed — twice a second, forever,
+                // whether or not one character had changed — and each subscriber then repainted its
+                // key. That is the redraw storm (#27): ~11 renders a second, each a full render plus
+                // an IPC push, continuing when no session was running and the keys were not even on
+                // screen. Byte equality is exact here because one writer rewrites the whole file.
+                var stateText = ReadTextWithRetry(ActiveStateFile());
+                var stateChanged = stateText != null
+                    && !String.Equals(stateText, _lastStateText, StringComparison.Ordinal);
 
-                if (newState != null)
+                if (stateChanged)
                 {
-                    _currentState = newState;
-                    OnStateChanged?.Invoke(_currentState);
+                    var newState = Deserialize<ClaudeState>(stateText);
+                    if (newState != null)
+                    {
+                        _lastStateText = stateText;
+                        _currentState = newState;
+                        OnStateChanged?.Invoke(_currentState);
+                    }
                 }
 
                 // Activity is pushed by the Claude Code hooks into a separate file; surface changes
                 // so the Status key can flip between working / waiting / idle — for the active tab.
                 var act = ReadActivity();
-                if (act?.State != _activity?.State)
+                var activityChanged = act?.State != _activity?.State;
+                if (activityChanged)
                 {
                     _activity = act;
                     OnActivityChanged?.Invoke(_activity);
                 }
 
-                // ~Every 60s, prune per-tab files from dead sessions so closed tabs don't
-                // accumulate state on disk forever.
+                // Nothing to watch, and nothing moved: earn a slower cadence. With no live session
+                // the only event that can occur is one APPEARING, which the grid scan above still
+                // catches every poll. Any change at all, or any session existing, snaps straight back
+                // to the fast cadence — so this can never slow down a keypad you are actually using.
+                _quietPolls = NextQuietCount(
+                    _quietPolls,
+                    anythingChanged: stateChanged || activityChanged,
+                    anyLiveSession: Grid.LiveSessions().Any());
+
+                // Every 120 polls, prune per-tab files from dead sessions so closed tabs don't
+                // accumulate state on disk forever. That was a fixed ~60s when every poll was 500ms;
+                // now it stretches with the cadence, which is the right way round — an idle machine
+                // has nothing accumulating to prune.
                 if (_pollTick % 120 == 1)
                 {
                     PruneStaleIpcFiles();
@@ -318,11 +354,47 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             finally
             {
-                // Re-arm the one-shot: the next poll fires 500ms AFTER this one returns, so polls
-                // never overlap. Swallow ObjectDisposedException from a concurrent StopPolling.
-                try { _pollTimer?.Change(500, Timeout.Infinite); }
+                // Re-arm the one-shot: the next poll fires AFTER this one returns, so polls never
+                // overlap. Swallow ObjectDisposedException from a concurrent StopPolling.
+                try { _pollTimer?.Change(this.NextPollDelayMs(), Timeout.Infinite); }
                 catch (ObjectDisposedException) { /* stopped */ }
             }
+        }
+
+        // Cadence. Fast whenever anything is happening; an idle machine with no session running has
+        // nothing to render and should not cost a laptop 8% of a core indefinitely (#27).
+        private const Int32 PollFastMs = 500;
+        private const Int32 PollSlowMs = 2000;
+        private const Int32 PollIdleMs = 5000;
+        private const Int32 QuietPollsBeforeSlow = 20;    // ~10 s of nothing
+        private const Int32 QuietPollsBeforeIdle = 60;    // ~2 min of nothing
+
+        private Int32 NextPollDelayMs() => PollDelayForQuietCount(_quietPolls);
+
+        /// <summary>
+        /// How long to wait before the next poll, given how many consecutive polls found nothing.
+        /// </summary>
+        internal static Int32 PollDelayForQuietCount(Int32 quietPolls) =>
+            quietPolls >= QuietPollsBeforeIdle ? PollIdleMs
+            : quietPolls >= QuietPollsBeforeSlow ? PollSlowMs
+            : PollFastMs;
+
+        /// <summary>
+        /// The quiet-poll counter. A quiet poll is one where nothing changed AND no session was
+        /// live — the only condition under which slowing down is safe, because the sole event that
+        /// can still occur is a session appearing, which the grid scan catches on every poll.
+        /// Anything else resets to zero, so an active keypad always runs at the fast cadence.
+        /// </summary>
+        internal static Int32 NextQuietCount(Int32 quietPolls, Boolean anythingChanged, Boolean anyLiveSession)
+        {
+            if (anythingChanged || anyLiveSession)
+            {
+                return 0;
+            }
+
+            // Saturate rather than overflow: a machine left alone all weekend must not wrap round to
+            // a negative count and silently return to polling twice a second.
+            return quietPolls >= QuietPollsBeforeIdle ? QuietPollsBeforeIdle : quietPolls + 1;
         }
 
         // Read the hook-written activity flag (busy/waiting/done). A "busy" with no Stop for a long
@@ -520,6 +592,17 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         private T ReadJsonWithRetry<T>(String filePath, Int32 maxAttempts = 3, Int32 backoffMs = 10) where T : class
         {
+            var json = ReadTextWithRetry(filePath, maxAttempts, backoffMs);
+            return json == null ? null : Deserialize<T>(json);
+        }
+
+        /// <summary>
+        /// The raw text of an IPC file, with the same size cap and retry-on-torn-write behaviour as
+        /// <see cref="ReadJsonWithRetry{T}"/>. Split out so a caller can ask "did this file change?"
+        /// by comparing bytes, which is both exact and cheaper than deserialising to find out (#27).
+        /// </summary>
+        private static String ReadTextWithRetry(String filePath, Int32 maxAttempts = 3, Int32 backoffMs = 10)
+        {
             for (var attempt = 0; attempt < maxAttempts; attempt++)
             {
                 try
@@ -536,13 +619,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                         return null;
                     }
 
-                    var json = File.ReadAllText(filePath);
-                    if (String.IsNullOrWhiteSpace(json))
+                    var text = File.ReadAllText(filePath);
+                    if (String.IsNullOrWhiteSpace(text))
                     {
                         continue;
                     }
 
-                    return JsonSerializer.Deserialize<T>(json);
+                    return text;
                 }
                 catch
                 {
@@ -554,6 +637,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             return null;
+        }
+
+        private static T Deserialize<T>(String json) where T : class
+        {
+            try { return JsonSerializer.Deserialize<T>(json); }
+            catch { return null; }
         }
 
         /// <summary>

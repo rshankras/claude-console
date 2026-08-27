@@ -27,8 +27,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 if (state.Model?.DisplayName != null)
                 {
                     // Shorten "Opus 4.8 (1M context)" -> "Opus" so it fits the key.
-                    _displayName = state.Model.DisplayName.Split(' ')[0];
-                    this.ActionImageChanged();
+                    var name = state.Model.DisplayName.Split(' ')[0];
+
+                    // Repaint only when the WORD on the key actually changes. The model changes a
+                    // handful of times a day, but this redrew on every state event — 1,642 renders
+                    // in 18 minutes, the second largest contributor to the redraw storm (#27).
+                    if (name != _displayName)
+                    {
+                        _displayName = name;
+                        this.ActionImageChanged();
+                    }
                 }
             };
         }

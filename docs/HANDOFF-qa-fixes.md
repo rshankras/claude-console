@@ -8,7 +8,7 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 | | |
 |---|---|
 | Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
-| Suite | 630 C# + 47 shell, green |
+| Suite | 647 C# + 47 shell, green |
 | Issues | 25 filed (#20–#44) plus #45, #46, #47 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
@@ -23,7 +23,14 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 
 ## What is NOT done
 
-- **#25 sticky pin, #26 project roots, #27 redraw storm** — all P1, all untouched.
+- **#25 sticky pin, #26 project roots** — P1, untouched.
+- **#27 redraw storm: fixed and measured, one number still owed.** Change-driven state event, guarded
+  Status/Model repaints, idle backoff (500 ms → 2 s → 5 s, only with no live session). Every fixed CPU
+  sample beat every pre-fix sample, but all were taken with a busy session on the machine (the one
+  doing the measuring). **The zero-session idle figure — QA's 8.1% — is unmeasured**: close every
+  Claude session and run `spikes/redraw-27/measure-27.sh 120` twice, Terminal frontmost and not. Two
+  gaps stated in the commit: no "keys off-screen" signal found in the SDK, and QA's duplicated-
+  subscription diagnosis is unconfirmed (handlers register once; likely SDK double-render).
 - **#24 whisper: code complete, RELEASE STEP OUTSTANDING.** The bundle now carries ggml's compute
   backends and proves it (below). What remains is not code: `sign-and-notarize.sh` has to rebuild the
   helper and re-sign the bundle with the Developer ID, and voice must be pressed on the keypad.
@@ -103,6 +110,25 @@ Worth knowing: #24's root cause is probably macOS-only. The Windows payload is w
 prebuilt `whisper-bin-x64.zip`, which ships its ggml backend DLLs beside the exe, rather than being
 hand-assembled from Homebrew the way the macOS bundle is. Probably — unverified from here, and
 there is no sandbox equivalent for a Windows bundle on this machine.
+
+## #27: measuring a CPU fix from inside the thing being measured
+
+- **The measurer is a session.** Anything Claude Code runs is a live, busy session, so the idle
+  backoff never engages during a measurement it takes, and both busy animations run throughout.
+  60 s windows swung 6.8%–11.4% on the same build from tool-call noise alone; 120 s windows with
+  no tool calls in flight settled to ±0.3. Launch measurements in the background and stay silent.
+- **A service restart drops the device to `@_defaultmac`** until the user focuses an app with a
+  profile, so a before/after pair taken across a rebuild lands in different display states unless
+  you re-focus Terminal first. `measure-27.sh` records the state from `LoupedeckSettings.ini` for
+  exactly this reason; the void rows in `results.tsv` are the ones it caught.
+- **`lsof` cannot see the plugin DLL** — the host loads assemblies from bytes. A dead-looking
+  plugin with a lovely CPU number is the trap; the `osascript` child the poll loop spawns is the
+  liveness signal. Sampling children every 500 ms also misses most ~200 ms probes, so don't infer
+  cadence from it (a claim made and retracted the same evening).
+- **QA's redraw counts come from LoupedeckService's own verbose log** (`SetDisplayImage` lives in
+  `LoupedeckService.dll`), which this Mac no longer captures — the Logi launch agents were removed
+  during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
+  comparable metric.
 
 ## Traps and findings worth not rediscovering
 

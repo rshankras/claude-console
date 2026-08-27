@@ -32,8 +32,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         // Map the activity flag to a face + word.
+        //
+        // This key is subscribed to BOTH the state and activity streams, and it used to repaint at
+        // the end of every Refresh whether or not the word or the icon had moved — 2,658 renders in
+        // 18 minutes, the largest single contributor to the redraw storm (#27). It is also why the
+        // same action appeared twice in the same millisecond: two streams, one unconditional
+        // repaint each. Comparing before painting collapses both, with no change in what is shown.
         private void Refresh()
         {
+            var previousStatus = _status;
+            var previousIcon = _icon;
             var activity = _bridge.CurrentActivity?.State;
 
             // Until 1.5.0 this also tested CurrentState.Status == "waiting_approval" as a
@@ -63,7 +71,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 this.SetBusy(false);
             }
 
-            this.ActionImageChanged();
+            // The busy animation drives its own repaints through _animTimer; it does not need one
+            // here, and a face that has not changed does not need one at all.
+            if (_status != previousStatus || _icon != previousIcon)
+            {
+                this.ActionImageChanged();
+            }
         }
 
         // Animate the "Working" face (~2.5 fps) only while busy; static otherwise.
