@@ -1,0 +1,63 @@
+namespace Loupedeck.ClaudeConsolePlugin
+{
+    using System;
+
+    /// <summary>
+    /// What a voice key says when a dictation fails (#18).
+    ///
+    /// A failed dictation used to look exactly like a successful one: green equaliser, key back to
+    /// "Voice", nothing typed, no beep. The only evidence was in the plugin log — and for the
+    /// commonest cause, a Microphone permission never granted, not even there: the helper wrote its
+    /// reason to stderr, and it is launched detached, so stderr went nowhere. Reported from the
+    /// field as "voice functionality is still not working".
+    ///
+    /// These are the words the key shows for a couple of seconds. They are chosen by what the USER
+    /// should do next, because that is what differs between cases — grant a permission, speak up,
+    /// wait for a download, reinstall — not by what went wrong internally, which is in the log.
+    /// Kept pure so the mapping from the helper's sidecar text is testable.
+    /// </summary>
+    internal static class VoiceFailure
+    {
+        /// <summary>The helper was refused the microphone. Grant it in System Settings.</summary>
+        internal const String MicDenied = "Mic denied";
+
+        /// <summary>Recorded fine, heard nothing usable. Speak up, or check the input device.</summary>
+        internal const String NoSpeech = "No speech";
+
+        /// <summary>The speech model is still downloading. Try again shortly.</summary>
+        internal const String ModelLoading = "Model loading";
+
+        /// <summary>ClaudeVoiceHelper.app is not where the plugin installed it. Reinstall.</summary>
+        internal const String NoHelper = "No helper";
+
+        /// <summary>The helper never produced a result within the wait. Check the log.</summary>
+        internal const String NoResponse = "No response";
+
+        /// <summary>Everything else — the log has the sidecar text.</summary>
+        internal const String Failed = "Voice failed";
+
+        /// <summary>
+        /// Map the helper's <c>.error</c> sidecar to the key's words. The sidecar carries a full
+        /// sentence for the log; the key gets the two words that tell the user what to do.
+        /// </summary>
+        internal static String FromSidecar(String sidecar)
+        {
+            if (String.IsNullOrWhiteSpace(sidecar))
+            {
+                return Failed;
+            }
+
+            if (sidecar.IndexOf("microphone permission", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return MicDenied;
+            }
+
+            if (sidecar.IndexOf("speech model", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return ModelLoading;
+            }
+
+            return Failed;
+        }
+    }
+}

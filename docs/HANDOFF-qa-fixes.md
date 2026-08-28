@@ -12,10 +12,11 @@ authority on status, not the issue state.**
 **Done and pushed:** #20 #21 #22 (P0s) · #24 whisper backends · #25 pin split · #26 project roots +
 leaked build path · #27 redraw storm · #28 voice lock · #48 noise annotations · #49 idle-session
 state + project-name memory · #51 badge inflation · #46 subprocess timeouts · #39 icon converter ·
-#30 interrupted-turn hourglass · #45 recovery scripts reach users. #50 closed wontfix.
+#30 interrupted-turn hourglass · #45 recovery scripts reach users · #18 silent voice failure.
+#50 closed wontfix.
 
 **Owed before release, and only these:**
-1. **One voice hardware pass covering #24 AND #28 together** — `sign-and-notarize.sh` →
+1. **One voice hardware pass covering #24, #28 AND #18 together** — `sign-and-notarize.sh` →
    `tccutil reset Microphone com.rshankar.claudeconsole.voicehelper` (re-signing the helper kills
    its mic grant; the symptom looks exactly like the bug you fixed) → `pack-release.sh` (it now
    refuses a bundle that has not transcribed) → install → press Voice, then press a DIFFERENT voice
@@ -36,10 +37,17 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
    thing QA files as a regression against the #20 fix if you do not raise it first.
 6. **#47** needs the Windows laptop. **#34 and #23** need Logitech.
 
-**Suggested next: #18 is superseded by #24** and should be closed as a duplicate so the list stops
-overstating what is left. Then a spike on whether the SDK's `IsApplicationActive` /
-`get_ApplicationActive` can replace the timestamp guess in `RegistrationHeal` (route 2 under "The #20
-trade"). #46, #39 and #30 were done on 2026-08-28 — see below.
+**Suggested next: #31** (settings.json rewrite + stale backup; uninstall leaves hooks behind — same
+theme as #45, and `uninstall.sh` is now the natural home for the leftover half), then **#29**. A spike
+on whether the SDK's `IsApplicationActive` / `get_ApplicationActive` can replace the timestamp guess
+in `RegistrationHeal` is worth doing ONLY if #23 does not go universal. #46, #39, #30, #45 and #18
+were done on 2026-08-28 — see below.
+
+**An earlier version of this file said "#18 is superseded by #24 — close as duplicate". That was
+wrong**, and it was checked before being acted on: #24 added the `.error` sidecar for WHISPER failures,
+but the helper's denied-microphone path exited before the sidecar writer was even defined. The field
+report behind #18 was exactly that case, and it was still silent. Read the class comment before
+closing an issue on the strength of a note.
 
 **Machine state right now:** the keypad runs a DEV build via a `.link` pointing at
 `claude-console-p0/bin/ClaudeConsole/Debug` (DLL of 2026-08-28 10:46, ~1.04 MB — a healthy one is
@@ -207,6 +215,48 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   `LoupedeckService.dll`), which this Mac no longer captures — the Logi launch agents were removed
   during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
   comparable metric.
+
+## #18: a failed dictation now says so — reproduced on the device first
+
+Reproduced 2026-08-28 with `tccutil reset Microphone com.rshankar.claudeconsole.voicehelper` and
+**Don't Allow** on the prompt. What the log showed, against the handoff's claim that #24 had covered it:
+
+| | |
+|---|---|
+| 14:08:54 | helper launched; denied; exited with status 2 having written **nothing** |
+| 14:09:07 | the STOP press was refused — "a Send transcript is still in flight" — so the key was dead for 20s |
+| 14:09:14 | `transcript not produced within 20s` — the only evidence, 20s later |
+| 14:09:16 → 14:09:46 | third press: no prompt (TCC remembers the denial), instant silent failure, same 20s |
+
+`/tmp/claude-console/voice/` held one empty `stop` flag. No transcript, no `.error` sidecar: the
+denial path ran BEFORE the sidecar writer #24 added was defined. And the helper's own
+"microphone permission DENIED" went to **stderr of a process launched detached via `open`** — nowhere.
+The one program that knew why it failed said so to nobody.
+
+- **Swift:** `fail()` and `surfacedErrorPath` now sit above the permission check; denial and both
+  recorder failures write the sidecar. No raw `exit(2)`/`exit(3)` remains (pinned by test). A stale
+  sidecar is cleared at start alongside the stale transcript.
+- **C#:** one `ReportVoiceFailure(intent, keyText, detail)` — log, beep, then `OnVoiceFailed`. Reached
+  by every way a wait can end without text: sidecar (mapped by `VoiceFailure.FromSidecar`), noise-only,
+  empty, timeout — plus the two START failures (helper missing, model downloading). The intent is read
+  from `Voice.Intent` before anything can `Finish()` it, so the face lands on the key that was pressed.
+- **Keys:** each voice key owns a `FailureFace` (companion to `ListeningFace`): red, the key's own icon,
+  two words chosen by what the user should DO — "Mic denied", "No speech", "Model loading",
+  "No helper", "No response" — held 2.5s, then gone. Listening wins over a stale failure.
+- **Not changed:** the helper still logs to stderr. Its sidecar is now the record; a log file would be
+  a separate, small change.
+- **The 20s dead-key window is NOT fixed by this.** With a sidecar the wait ends in ~1s, so the window
+  closes for the denied case in practice. A helper that dies without writing still costs 20s.
+
+**Hardware pass owed, and it rides with #24/#28:** rebuilding the helper resets its mic grant (dev
+path; the shipped helper is Developer-ID signed so its hash is stable). Press Voice → Don't Allow →
+expect a beep AND "Mic denied" in red on the Voice key within ~1s, key usable immediately after. Then
+`tccutil reset` → Allow → dictation works. Also press Voice, say nothing, stop → "No speech".
+
+**Bonus from the repro: #46's slow line fired for real.** `osascript took 1271ms of its 2000ms budget`
+at 14:09:07 — during the TCC permission dialog. A system modal inflates the frontmost probe ~9x. That
+is the first observed member of the class of event that pushes it toward the budget, which the four
+load experiments could not produce. Still not an overrun; still consistent with "rare stall, not creep".
 
 ## #30: two thresholds for one question, and the one in the report was never consulted
 

@@ -130,6 +130,25 @@ namespace Loupedeck.ClaudeConsolePlugin
         public event Action OnStateUnavailable;
         public event Action<ActivityState> OnActivityChanged;
 
+        /// <summary>
+        /// A dictation failed: which key's capture it was, and the words that key should show (#18).
+        /// Raised from whichever thread learns of the failure — the keys repaint from timer threads
+        /// already, so that is safe — and always AFTER the beep, so sound and face agree.
+        /// </summary>
+        internal event Action<VoiceIntent, String> OnVoiceFailed;
+
+        // The single exit for a dictation that did not produce text: log the detail, beep, and put
+        // the user-facing words on the key that was pressed. Before this, three of the four ways a
+        // capture could end badly ended in a log line and nothing else — and the fourth (a denied
+        // microphone) did not even reach the log (#18).
+        private void ReportVoiceFailure(VoiceIntent intent, String keyText, String detail)
+        {
+            PluginLog.Warning($"BridgeManager: voice {keyText} — {detail}");
+            _platform.Alert();
+            try { OnVoiceFailed?.Invoke(intent, keyText); }
+            catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: OnVoiceFailed handler failed"); }
+        }
+
         /// <summary>The session grid — one row per live Claude Code session. See SessionRegistry.</summary>
         /// <remarks>Settable internally so tests can inject a registry rooted in a temp directory.</remarks>
         public SessionRegistry Grid { get; internal set; } = new SessionRegistry();
@@ -879,19 +898,21 @@ namespace Loupedeck.ClaudeConsolePlugin
             TryDelete(VoiceErrorFile);
             TryDelete(VoiceStopFile);
 
+            // Voice.Press has already recorded the pressed key's intent by the time we are here, so
+            // a failure to START can be shown on the right key too.
             if (!Directory.Exists(VoiceHelperApp))
             {
-                PluginLog.Warning($"BridgeManager.StartVoiceCapture: helper missing at {VoiceHelperApp} (run tools/voice/build.sh, or reinstall the plugin)");
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.NoHelper,
+                    $"helper missing at {VoiceHelperApp} (run tools/voice/build.sh, or reinstall the plugin)");
                 return false;
             }
 
             // Make sure the speech model is present. If it's still downloading, skip this capture
-            // (an audible beep tells the user to try again once it's ready) rather than record audio
-            // the helper can't transcribe yet.
+            // and say so, rather than record audio the helper can't transcribe yet.
             if (!EnsureVoiceModel())
             {
-                PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
-                _platform.Alert();
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.ModelLoading,
+                    "speech model not ready (downloading) — try again shortly");
                 return false;
             }
 
@@ -1593,7 +1614,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // Shared: signal the helper to stop, then wait for the transcript off the UI thread and run
-        // <paramref name="handler"/> with it. An empty transcript (silence / mic denied) is ignored.
+        // <paramref name="handler"/> with it. Every way the wait can end WITHOUT text — a named
+        // failure, a blank transcript, a timeout — is reported to the key (#18); a denied
+        // microphone arrives as a named failure now, not as silence.
         private void StopVoiceCaptureThen(Action<String> handler)
         {
             if (!VoiceSupported)
@@ -1618,6 +1641,9 @@ namespace Loupedeck.ClaudeConsolePlugin
               // the capture is over when this thread ends. A flag that could survive one crashed
               // helper would leave every voice key dead until the plugin reloaded, which is a worse
               // bug than the one being fixed (#28).
+              // Read before anything can Finish() it: the intent of the capture this thread is
+              // waiting on, so a failure lands on the key that was pressed.
+              var intent = Voice.Intent;
               try
               {
                 var deadline = DateTime.UtcNow.AddSeconds(20);
@@ -1637,8 +1663,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                         TryDelete(VoiceErrorFile);
                         TryDelete(VoiceTranscriptFile);
-                        PluginLog.Warning($"BridgeManager: voice transcription FAILED — {error}");
-                        _platform.Alert();
+                        this.ReportVoiceFailure(intent, VoiceFailure.FromSidecar(error), error);
                         return;
                     }
 
@@ -1675,16 +1700,19 @@ namespace Loupedeck.ClaudeConsolePlugin
                     else if (!String.IsNullOrWhiteSpace(text))
                     {
                         // Nothing survived the strip: whisper heard a noise and named it.
-                        PluginLog.Info($"BridgeManager: no speech — whisper reported \"{text}\", nothing to act on");
-                        _platform.Alert();
+                        this.ReportVoiceFailure(intent, VoiceFailure.NoSpeech, $"whisper reported \"{text}\", nothing to act on");
                     }
                     else
                     {
-                        PluginLog.Info("BridgeManager: empty transcript (silence or mic denied)");
+                        // Genuinely empty. This used to be "silence or mic denied" with no way to
+                        // tell which; a denial now arrives as a sidecar above, so this IS silence.
+                        this.ReportVoiceFailure(intent, VoiceFailure.NoSpeech, "empty transcript (silence)");
                     }
                     return;
                 }
-                PluginLog.Warning("BridgeManager: transcript not produced within 20s");
+                // The helper died without writing anything — the denied-microphone case before the
+                // sidecar covered it, or a helper killed mid-run. Nothing will arrive; say so.
+                this.ReportVoiceFailure(intent, VoiceFailure.NoResponse, "transcript not produced within 20s");
               }
               finally
               {

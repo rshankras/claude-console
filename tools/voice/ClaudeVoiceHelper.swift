@@ -39,6 +39,22 @@ let transcriptPath = argValue("--transcript") ?? "/tmp/claude-console-voice-tran
 let stopFlag = argValue("--stopflag") ?? "/tmp/claude-console-voice.stop"
 let maxSec = Double(argValue("--maxsec") ?? "30") ?? 30
 
+// Every failure writes a sidecar next to the transcript path, and the plugin reads it before it
+// looks for a transcript. This is defined FIRST, ahead of the permission check, because the
+// commonest failure of all — a Microphone grant never given — used to exit with status 2 before the sidecar
+// writer existed. That failure wrote its reason to stderr, which for a process launched detached
+// via `open` is nowhere: not the plugin log, not a file. Reported from the field as "voice
+// functionality is still not working", with no way for anyone to learn why (#18).
+//
+// Discarding whisper's stderr and exiting 0 without reading terminationStatus had the same effect
+// one stage later — a hard crash produced exactly what silence produces, an empty transcript (#24).
+let surfacedErrorPath = transcriptPath + ".error"
+func fail(_ message: String, _ code: Int32) -> Never {
+    try? message.write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
+    log(message)
+    exit(code)
+}
+
 func findWhisper() -> String? {
     if let w = argValue("--whisper") { return w }
     // Prefer the self-contained bundle (no Homebrew needed); fall back to a system install.
@@ -52,8 +68,10 @@ func findWhisper() -> String? {
 
 let fm = FileManager.default
 
-// Fresh start: clear any stale transcript so the plugin never types a previous result.
+// Fresh start: clear any stale transcript so the plugin never types a previous result, and any
+// stale sidecar so a previous failure is never reported as this run's.
 try? fm.removeItem(atPath: transcriptPath)
+try? fm.removeItem(atPath: surfacedErrorPath)
 try? fm.removeItem(atPath: stopFlag)
 
 // 1) Microphone permission — this triggers the TCC prompt (attributed to THIS bundle).
@@ -62,8 +80,7 @@ var granted = false
 AVCaptureDevice.requestAccess(for: .audio) { ok in granted = ok; sem.signal() }
 sem.wait()
 if !granted {
-    log("microphone permission DENIED")
-    exit(2)
+    fail("microphone permission denied — allow ClaudeVoiceHelper in System Settings › Privacy & Security › Microphone", 2)
 }
 log("microphone permission granted")
 
@@ -80,13 +97,11 @@ let settings: [String: Any] = [
 ]
 
 guard let recorder = try? AVAudioRecorder(url: url, settings: settings) else {
-    log("failed to create AVAudioRecorder")
-    exit(3)
+    fail("failed to create AVAudioRecorder", 3)
 }
 recorder.isMeteringEnabled = true
 guard recorder.record() else {
-    log("recorder.record() returned false")
-    exit(3)
+    fail("recorder.record() returned false — is an input device connected?", 3)
 }
 NSSound(named: "Tink")?.play()  // audible "speak now" cue (also the product's recording-started feedback)
 log("recording -> \(outWav)  (touch \(stopFlag) to stop, max \(maxSec)s)")
@@ -105,19 +120,7 @@ let attrs = try? fm.attributesOfItem(atPath: outWav)
 let size = (attrs?[.size] as? Int) ?? 0
 log(String(format: "recorded %.1fs, %d bytes", dur, size))
 
-// 4) Transcribe with whisper.cpp. stdout = transcription.
-//
-// Every failure below writes a sidecar next to the transcript path. Discarding whisper's stderr
-// and exiting 0 without reading terminationStatus made a hard crash produce exactly what silence
-// produces — an empty transcript — so a bundle that could not transcribe at ALL was reported to
-// users as "didn't catch that", for every recording, for months (#24). A failure must be able to
-// say so.
-let surfacedErrorPath = transcriptPath + ".error"
-func fail(_ message: String, _ code: Int32) -> Never {
-    try? message.write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
-    log(message)
-    exit(code)
-}
+// 4) Transcribe with whisper.cpp. stdout = transcription. Failures go through fail() above.
 
 guard let whisper = findWhisper() else {
     fail("whisper-cli not found — the voice bundle is missing or incomplete", 4)

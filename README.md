@@ -187,7 +187,7 @@ being produced, a further press is ignored with a beep rather than discarding th
 
 First use prompts once for **Microphone** permission (granted to the helper, not the daemon). The plugin also needs **Accessibility** permission for the Logi Plugin Service (to type into the terminal).
 
-**Voice records but types nothing (empty transcript):** macOS ties the Microphone grant to the helper's code signature, so **re-signing or rebuilding the helper resets it** — and it fails *silently* (no re-prompt). Reset the permission and re-grant on the next press:
+**The Voice key flashes red "Mic denied" (with a beep):** the helper was refused the microphone. Allow **ClaudeVoiceHelper** in System Settings → Privacy & Security → Microphone, or reset the permission and re-grant on the next press. This is also what you'll see after re-signing or rebuilding the helper: macOS ties the grant to the code signature, so a rebuild resets it — and until 2.2.0 that failed *silently* (nothing typed, no beep, no prompt), which is why the key now says so. "No speech" means it recorded but heard nothing usable; "Model loading" means the speech model is still downloading — try again shortly.
 
 ```bash
 tccutil reset Microphone com.rshankar.claudeconsole.voicehelper
