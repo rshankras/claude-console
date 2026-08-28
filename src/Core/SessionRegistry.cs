@@ -523,6 +523,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             TryDelete(this.StateFor(tty));
             TryDelete(this.ActivityFor(tty));
             TryDelete(this.PendingFor(tty));
+            // The tty name will be handed to the next tab that opens; an interrupt we recorded
+            // against the old occupant must not follow it (#30). ActivityStall also guards this by
+            // timestamp — belt and braces, because the failure is a new session reading as idle.
+            lock (_lock) { _interrupts.Remove(tty); }
         }
 
         // Persist slot→tty so assignments survive a plugin reload (a rebuild shouldn't reshuffle your

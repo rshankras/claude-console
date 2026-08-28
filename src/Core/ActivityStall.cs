@@ -88,7 +88,16 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             // We pressed Escape, and nothing has been written since. Don't make the user watch an
             // hourglass for a minute and a half over a turn we ended ourselves.
+            //
+            // "Nothing since" is checked against BOTH files, and the activity file is the stronger
+            // of the two. UserPromptSubmit writes busy at T0 and our Escape lands at T1 >= T0, so a
+            // hint OLDER than the busy write cannot be about this turn: it is left over from a
+            // previous session on a recycled tty (macOS reuses ttys000... as tabs close and open),
+            // and honouring it would clear a brand-new session the instant it went busy. The same
+            // test also catches an Escape that merely dismissed a menu or rejected a tool — the
+            // turn carries on, PostToolUse rewrites busy with a newer stamp, and the hint expires.
             if (interruptedAtUnix.HasValue
+                && interruptedAtUnix.Value >= activityTsUnix
                 && (!transcriptMtimeUnix.HasValue || transcriptMtimeUnix.Value <= interruptedAtUnix.Value)
                 && nowUnix - interruptedAtUnix.Value > InterruptQuietFor.TotalSeconds)
             {

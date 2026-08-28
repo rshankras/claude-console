@@ -120,6 +120,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void AStaleEscapeFromARecycledTtyIsIgnored()
+        {
+            // Found in review. macOS reuses tty names as tabs close and open, and the interrupt
+            // map is keyed by tty. Without this guard an Escape sent to the PREVIOUS occupant of
+            // ttys012 would clear a brand-new session the instant it went busy — and on the
+            // no-transcript path it would do so immediately and on every poll.
+            var busyAt = Now - 10;      // the new session's UserPromptSubmit
+            var oldEsc = Now - 3600;    // an Escape sent an hour ago, to somebody else
+            Assert.False(ActivityStall.IsStalledBusy("busy", busyAt, null, Now, oldEsc));
+            Assert.False(ActivityStall.IsStalledBusy("busy", busyAt, Now - 8, Now, oldEsc));
+        }
+
+        [Fact]
+        public void AnEscapeInTheSameSecondAsTheBusyWriteStillCounts()
+        {
+            // Both stamps are whole seconds. Pressing Esc within the same second as the prompt
+            // went busy is unusual but legal, and must not fall on the wrong side of the guard.
+            Assert.True(ActivityStall.IsStalledBusy("busy", Now - 10, null, Now, Now - 10));
+        }
+
+        [Fact]
         public void AnEscapeSentToAnIdleSessionChangesNothing()
         {
             // Only "busy" can stall, hint or no hint.
