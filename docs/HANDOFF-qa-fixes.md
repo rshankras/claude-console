@@ -248,10 +248,13 @@ The one program that knew why it failed said so to nobody.
 - **The 20s dead-key window is NOT fixed by this.** With a sidecar the wait ends in ~1s, so the window
   closes for the denied case in practice. A helper that dies without writing still costs 20s.
 
-**Hardware pass owed, and it rides with #24/#28:** rebuilding the helper resets its mic grant (dev
-path; the shipped helper is Developer-ID signed so its hash is stable). Press Voice → Don't Allow →
-expect a beep AND "Mic denied" in red on the Voice key within ~1s, key usable immediately after. Then
-`tccutil reset` → Allow → dictation works. Also press Voice, say nothing, stop → "No speech".
+**Hardware-verified 2026-08-28 14:42, denied path:** Voice → Don't Allow → stop press at 14:42:32.531,
+`voice Mic denied — microphone permission denied…` logged at 14:42:32.691. **160 ms**, against 20 s of
+nothing the same morning. The beep and the red face come from the same call as that log line. Still
+owed on the device: "No speech" (record silence) and the post-Allow round-trip, and the RELEASE half —
+the shipped helper must be rebuilt by `sign-and-notarize.sh` (Developer-ID, stable hash) and packed;
+this verification was against an ad-hoc dev build of the helper, which is why `tccutil reset` was
+needed around it. Rides with the #24/#28 pass.
 
 **Bonus from the repro: #46's slow line fired for real.** `osascript took 1271ms of its 2000ms budget`
 at 14:09:07 — during the TCC permission dialog. A system modal inflates the frontmost probe ~9x. That
