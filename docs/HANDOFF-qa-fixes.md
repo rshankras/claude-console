@@ -9,7 +9,7 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 |---|---|
 | Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
 | Suite | 725 C# + 47 shell, green |
-| Issues | 25 filed (#20–#44) plus #45, #46, #47, #48, #49 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
+| Issues | 25 filed (#20–#44) plus #45, #46, #47, #48, #49, #50 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
 ### The four P0s
@@ -192,6 +192,27 @@ grid recreates the session as provisional with no project name.
   `OnStateUnavailable` once (not per poll — #27), and the display keys show a dash. `shared.json`
   survives only for the genuinely-unknown target, which is the single-session path.
 - Cost: a brand-new session shows dashes until its first turn instead of a plausible wrong number.
+
+## #50: read the class comment before "fixing" the slot grid
+
+Observed on the device: with three Session keys placed and four sessions running, exiting one leaves
+a blank key while the fourth session stays in slot 4, unreachable. Upward compaction was proposed,
+agreed, implemented — and it broke two existing tests, one of them commented **"THE important one"**:
+
+    Assert.Null(registry.SlotSession(2));                   // freed key stays empty
+    Assert.Equal("gamma", registry.SlotSession(3).Project); // gamma did NOT slide down
+
+Stable slots are a documented guarantee in `SessionRegistry`'s own class comment, ported deliberately
+from Vizhi, and they apply to visible keys too — shuffling a project out from under your fingers is
+worse than leaving a gap. A freed key is meant to be filled by the NEXT NEW session, which is the
+mechanism the companion test pins. Reverted; closed as wontfix with the reasoning on the issue.
+
+**Resolution taken (a): it is a layout matter.** Six slots and six Session actions exist; the shipped
+profile places three. Run more than three sessions and you place more keys. Documented in the README.
+
+The alternative, if it ever comes up repeatedly: make `SlotCount` match the number of keys placed, so
+a fourth session stays *unslotted* and the existing "newcomers fill the lowest free slot" path fills
+the gap — no shuffling, no new mechanism. Needs a setting, since the engine cannot see the profile.
 
 ## Traps and findings worth not rediscovering
 
