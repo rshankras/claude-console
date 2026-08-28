@@ -8,8 +8,8 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 | | |
 |---|---|
 | Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
-| Suite | 725 C# + 47 shell, green |
-| Issues | 25 filed (#20–#44) plus #45, #46, #47, #48, #49, #50 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
+| Suite | 731 C# + 47 shell, green |
+| Issues | 25 filed (#20–#44) plus #45, #46, #47, #48, #49, #50, #51 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
 ### The four P0s
@@ -213,6 +213,22 @@ profile places three. Run more than three sessions and you place more keys. Docu
 The alternative, if it ever comes up repeatedly: make `SlotCount` match the number of keys placed, so
 a fourth session stays *unslotted* and the existing "newcomers fill the lowest free slot" path fills
 the gap — no shuffling, no new mechanism. Needs a setting, since the engine cannot see the profile.
+
+## #51: the amber badge meant "some session might want something"
+
+From a photo of the device: three sessions, all three keys badged amber, Yes/No both lit. Not a
+spill — each key reads its own session. The cause is that Claude Code's `Notification` hook fires for
+an IDLE PROMPT as well as an approval, the activity hook maps it to `waiting`, and
+`ApplyPendingApproval` badged any waiting session even with no payload.
+
+- **The discriminator existed all along**: `permission` mode writes the pending payload AND the
+  state; `Notification` writes only the state. No payload = Claude wants input, not a blocked tool.
+- **A timeout on `waiting` is the wrong fix** (and was rejected): a real approval can sit for hours.
+  Note `busy` does expire after 45s — the asymmetry is deliberate now, not an oversight.
+- The old behaviour was pinned by a test whose comment justified it ("older Claude Code has no
+  PermissionRequest hook"). Rewritten to the new intent, with the accepted cost in the test body:
+  on a Claude Code too old for the hook, a real approval shows the waiting face without the badge.
+  The plugin wires that hook itself, so this only affects hand-configured installs.
 
 ## Traps and findings worth not rediscovering
 

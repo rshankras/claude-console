@@ -383,9 +383,15 @@ namespace Loupedeck.ClaudeConsolePlugin
             var pending = ReadPendingApproval(this.PendingFor(session.SessionKey));
             if (pending == null)
             {
-                // Waiting, but we don't know what for — an older Claude Code with no
-                // PermissionRequest hook, or an idle prompt. Still worth an "answer me" badge.
-                session.Risk = ApprovalRisk.Normal;
+                // Waiting, but nothing is pending — so this is Claude asking for input at an idle
+                // prompt (the Notification hook), not a tool blocked on approval. It used to take
+                // the amber "answer me" badge anyway, so every session left alone drifted into
+                // looking like it needed approving: with three sessions open, all three badged, and
+                // the badge stopped meaning anything (#51).
+                //
+                // The two are cleanly distinguishable and always were: `permission` mode writes the
+                // payload AND the waiting state, `Notification` writes only the state. The key still
+                // shows its waiting face; it just no longer claims an approval is pending.
                 return;
             }
 
