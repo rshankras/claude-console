@@ -51,6 +51,11 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         public const Int32 SlotCount = 6;
 
+        // When the plugin last sent Escape to a session (#30). Kept here rather than in BridgeManager
+        // because BOTH readers of activity need it — the grid for the session keys, the Status key
+        // for the hourglass — and they must not disagree about the same session again.
+        private readonly Dictionary<String, Int64> _interrupts = new Dictionary<String, Int64>(StringComparer.Ordinal);
+
         private readonly Object _lock = new Object();
         private RegistryRecord _registry = new RegistryRecord();
         private Dictionary<String, GridSession> _sessions = new Dictionary<String, GridSession>(StringComparer.Ordinal);
@@ -89,6 +94,37 @@ namespace Loupedeck.ClaudeConsolePlugin
             _sessionsDir = sessionsDir;
             _activityDir = activityDir;
             _registryFile = registryFile;
+        }
+
+        /// <summary>
+        /// Record that the plugin just sent Escape to <paramref name="tty"/>. The stall rule treats
+        /// this as corroboration and stops waiting the full quiet window — see ActivityStall.
+        /// </summary>
+        internal void NoteInterrupt(String tty)
+        {
+            if (String.IsNullOrEmpty(tty))
+            {
+                return;
+            }
+
+            lock (_lock)
+            {
+                _interrupts[tty] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            }
+        }
+
+        /// <summary>When the plugin last sent Escape to this session, or null.</summary>
+        internal Int64? InterruptedAt(String tty)
+        {
+            if (String.IsNullOrEmpty(tty))
+            {
+                return null;
+            }
+
+            lock (_lock)
+            {
+                return _interrupts.TryGetValue(tty, out var at) ? at : (Int64?)null;
+            }
         }
 
         private String StateFor(String tty) => Path.Combine(_sessionsDir, tty + ".json");
@@ -363,7 +399,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     activity.State,
                     activity.Ts,
                     ActivityStall.TranscriptMtime(transcriptPath),
-                    DateTimeOffset.UtcNow.ToUnixTimeSeconds()))
+                    DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    this.InterruptedAt(tty)))
             {
                 return "ready";
             }

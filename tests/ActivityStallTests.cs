@@ -79,6 +79,54 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         // -----------------------------------------------------------------------------------
+        // When the plugin sent the interrupt itself
+        // -----------------------------------------------------------------------------------
+
+        private static Boolean StalledAfterEsc(Int64 escAgeS, Int64? transcriptAgeS) =>
+            ActivityStall.IsStalledBusy(
+                "busy",
+                Now - 30,
+                transcriptAgeS.HasValue ? Now - transcriptAgeS.Value : (Int64?)null,
+                Now,
+                Now - escAgeS);
+
+        [Fact]
+        public void OurOwnEscapeClearsTheKeyInSecondsNotMinutes()
+        {
+            // Pressing Esc on the KEYPAD goes through the plugin, so this is not an inference — it
+            // is something the plugin did. Making the user watch an hourglass for 90s over a turn
+            // the plugin ended itself is the complaint that produced this path.
+            Assert.False(StalledAfterEsc(escAgeS: 5, transcriptAgeS: 20));
+            Assert.True(StalledAfterEsc(escAgeS: 6, transcriptAgeS: 20));
+        }
+
+        [Fact]
+        public void AnEscapeThatDidNotStopTheTurnIsIgnored()
+        {
+            // THE important one. Escape is not exclusively "interrupt": it exits a mode, dismisses a
+            // menu, and AnswerCommand sends it to REJECT a tool — after which the agent keeps going.
+            // The transcript moved AFTER our Escape, so the turn is alive and the hint must not
+            // clear the key. Without this guard, rejecting a tool would report the session idle
+            // while it was still working.
+            Assert.False(StalledAfterEsc(escAgeS: 60, transcriptAgeS: 2));
+        }
+
+        [Fact]
+        public void AfterAnIgnoredEscapeTheNormalWindowStillApplies()
+        {
+            // The hint is discarded, not sticky: the ordinary transcript rule takes over, so a
+            // session that later does stall still settles.
+            Assert.True(StalledAfterEsc(escAgeS: 300, transcriptAgeS: 120));
+        }
+
+        [Fact]
+        public void AnEscapeSentToAnIdleSessionChangesNothing()
+        {
+            // Only "busy" can stall, hint or no hint.
+            Assert.False(ActivityStall.IsStalledBusy("waiting", Now - 30, Now - 300, Now, Now - 300));
+        }
+
+        // -----------------------------------------------------------------------------------
         // With no transcript, fall back to age — but a patient one
         // -----------------------------------------------------------------------------------
 

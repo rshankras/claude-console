@@ -55,16 +55,44 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal static readonly TimeSpan NoTranscriptStallAfter = TimeSpan.FromSeconds(300);
 
         /// <summary>
+        /// How long to wait after WE sent the interrupt. Short, because this is no longer an
+        /// inference: the plugin pressed Escape into that session itself, so it is corroborating
+        /// evidence it already had rather than 90 seconds of silence it has to sit through.
+        ///
+        /// Not zero, and the reason matters. Escape is not exclusively "interrupt" — it also exits a
+        /// mode and dismisses a menu, and AnswerCommand sends it to REJECT a tool, after which the
+        /// turn carries on. So the transcript still has to agree: if it grew after the interrupt, the
+        /// agent kept working and this hint is discarded. The wait is what gives it time to say so.
+        /// </summary>
+        internal static readonly TimeSpan InterruptQuietFor = TimeSpan.FromSeconds(5);
+
+        /// <summary>
         /// True when <paramref name="state"/> claims busy but the evidence says the turn is over.
         ///
         /// Pure, so the policy can be tested without a clock or a filesystem.
         /// <paramref name="transcriptMtimeUnix"/> is null when there is no transcript to consult.
+        /// <paramref name="interruptedAtUnix"/> is when the plugin last sent Escape to this session,
+        /// or null if it never did.
         /// </summary>
-        internal static Boolean IsStalledBusy(String state, Int64 activityTsUnix, Int64? transcriptMtimeUnix, Int64 nowUnix)
+        internal static Boolean IsStalledBusy(
+            String state,
+            Int64 activityTsUnix,
+            Int64? transcriptMtimeUnix,
+            Int64 nowUnix,
+            Int64? interruptedAtUnix = null)
         {
             if (!String.Equals(state, "busy", StringComparison.Ordinal))
             {
                 return false;
+            }
+
+            // We pressed Escape, and nothing has been written since. Don't make the user watch an
+            // hourglass for a minute and a half over a turn we ended ourselves.
+            if (interruptedAtUnix.HasValue
+                && (!transcriptMtimeUnix.HasValue || transcriptMtimeUnix.Value <= interruptedAtUnix.Value)
+                && nowUnix - interruptedAtUnix.Value > InterruptQuietFor.TotalSeconds)
+            {
+                return true;
             }
 
             if (transcriptMtimeUnix.HasValue)

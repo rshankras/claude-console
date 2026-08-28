@@ -465,7 +465,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     a.State,
                     a.Ts,
                     ActivityStall.TranscriptMtime(transcript),
-                    DateTimeOffset.UtcNow.ToUnixTimeSeconds()))
+                    DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    this.Grid.InterruptedAt(routing)))
             {
                 a.State = "done";
             }
