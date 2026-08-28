@@ -106,6 +106,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Consecutive polls in which nothing changed and no session was live. Drives the cadence.
         private Int32 _quietPolls;
 
+        // False once we have told the keys that the display target reports nothing; set again by the
+        // next real state. Held so the announcement fires on the transition, not on every poll (#27).
+        private Boolean _displayStateKnown = true;
+
         // Everything OS-specific lives behind this seam: session discovery, injection, focus, nav.
         // See IPlatformBridge — above it, neither AppleScript nor TTYs nor consoles are visible.
         // Not readonly: declaring the agent rebuilds it, because the product declares itself after
@@ -113,6 +117,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         private IPlatformBridge _platform;
 
         public event Action<ClaudeState> OnStateChanged;
+
+        /// <summary>
+        /// The session the display keys describe has reported nothing at all — a tab whose Claude
+        /// has not yet run a turn, or one started before the status-line bridge was wired. The keys
+        /// show a dash: a plausible number belonging to a DIFFERENT session is worse than no number.
+        /// </summary>
+        public event Action OnStateUnavailable;
         public event Action<ActivityState> OnActivityChanged;
 
         /// <summary>The session grid — one row per live Claude Code session. See SessionRegistry.</summary>
@@ -311,7 +322,21 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // key. That is the redraw storm (#27): ~11 renders a second, each a full render plus
                 // an IPC push, continuing when no session was running and the keys were not even on
                 // screen. Byte equality is exact here because one writer rewrites the whole file.
-                var stateText = ReadTextWithRetry(ActiveStateFile());
+                var statePath = this.ActiveStateFile();
+                if (statePath == null)
+                {
+                    // Nothing reported for the session on the display keys. Announce it ONCE, so the
+                    // keys can show a dash instead of another session's numbers, and forget the last
+                    // text so the next real state always re-fires even if it is byte-identical.
+                    if (_displayStateKnown)
+                    {
+                        _displayStateKnown = false;
+                        _lastStateText = null;
+                        OnStateUnavailable?.Invoke();
+                    }
+                }
+
+                var stateText = statePath == null ? null : ReadTextWithRetry(statePath);
                 var stateChanged = stateText != null
                     && !String.Equals(stateText, _lastStateText, StringComparison.Ordinal);
 
@@ -322,6 +347,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         _lastStateText = stateText;
                         _currentState = newState;
+                        _displayStateKnown = true;
                         OnStateChanged?.Invoke(_currentState);
                     }
                 }
@@ -440,11 +466,15 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (!String.IsNullOrEmpty(tty))
             {
                 var p = Path.Combine(dir, tty + ".json");
-                if (File.Exists(p))
-                {
-                    return p;
-                }
+
+                // Known session, no file: it has reported NOTHING. Falling back to the shared file
+                // here would paint the last writer's cost onto a key describing this session —
+                // "a key must never show a value the agent did not report" (#49).
+                return File.Exists(p) ? p : null;
             }
+
+            // Target unknown (Terminal not frontmost, tty detection failed): the shared file, last
+            // writer, is the best guess available and is what single-session users have always seen.
             return shared;
         }
 
@@ -480,12 +510,25 @@ namespace Loupedeck.ClaudeConsolePlugin
         // refreshes on every assistant message, so anything this old belongs to a dead tab.
         private static readonly TimeSpan StaleIpcAge = TimeSpan.FromMinutes(10);
 
-        private static void PruneStaleIpcFiles() =>
-            PruneStaleFiles(new[] { SessionsDir, ActivityDir, VoiceDir }, DateTime.UtcNow - StaleIpcAge);
+        // The prune exists to clean up CLOSED tabs. It could not tell a closed tab from a quiet
+        // one, so a session you had not typed in for ten minutes had its state file deleted out
+        // from under it — and then the display fell back to shared.json (the last writer), putting
+        // ANOTHER session's cost on the key, while the grid recreated the session as provisional
+        // and its key lost the project name for the agent's name (#49). Live sessions are now
+        // exempt, however long they have been idle: the grid drops a session as soon as its process
+        // is gone, and only then does its file become prunable.
+        private void PruneStaleIpcFiles() =>
+            PruneStaleFiles(
+                new[] { SessionsDir, ActivityDir, VoiceDir },
+                DateTime.UtcNow - StaleIpcAge,
+                Grid.Sessions.Keys);
 
         // Split out so the tests can drive it against a temp root and a controlled cutoff.
-        internal static void PruneStaleFiles(IEnumerable<String> dirs, DateTime cutoff)
+        internal static void PruneStaleFiles(IEnumerable<String> dirs, DateTime cutoff, IEnumerable<String> keepKeys = null)
         {
+            // Names are "<tty>.json"; a live session's file is never stale, whatever its mtime says.
+            var keep = new HashSet<String>(keepKeys ?? Enumerable.Empty<String>(), StringComparer.Ordinal);
+
             foreach (var dir in dirs)
             {
                 try
@@ -498,6 +541,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         try
                         {
+                            if (keep.Contains(Path.GetFileNameWithoutExtension(f)))
+                            {
+                                continue;
+                            }
+
                             if (File.GetLastWriteTimeUtc(f) < cutoff)
                             {
                                 File.Delete(f);

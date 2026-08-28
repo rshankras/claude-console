@@ -8,8 +8,8 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 | | |
 |---|---|
 | Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
-| Suite | 715 C# + 47 shell, green |
-| Issues | 25 filed (#20–#44) plus #45, #46, #47, #48 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
+| Suite | 725 C# + 47 shell, green |
+| Issues | 25 filed (#20–#44) plus #45, #46, #47, #48, #49 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
 ### The four P0s
@@ -175,6 +175,23 @@ A failed dictation did the wrong thing rather than nothing.
   "shot" and `static`→`StatementSense` on "stat".
 - **The lesson: this was invisible to 669 green tests.** It needed a real microphone, a real room,
   and standing too far away. Test voice features at the distance a user actually sits.
+
+## #49: the plugin was deleting its own memory
+
+Reported from the device: an idle session's keys start showing ANOTHER session's cost, and its label
+changes to "Claude Code". Both from one cause — `PruneStaleIpcFiles` deleted any state file older
+than 10 minutes with no liveness check, and a session's file is only rewritten when it does
+something. Lose the file and the display falls back to `shared.json` (the last writer), while the
+grid recreates the session as provisional with no project name.
+
+- **The age-based prune was redundant as well as wrong.** `Refresh` already reaps closed tabs from
+  `ps` and calls `ReapFiles(dead)` within ~2s. Exempting live sessions therefore cannot leak files:
+  a closed tab is cleaned on the authoritative path, not by mtime.
+- **The second half is CLAUDE.md's own law.** "A key must never show a value the agent did not
+  report" — so `PerTty` returns null for a KNOWN session with no file, the engine raises
+  `OnStateUnavailable` once (not per poll — #27), and the display keys show a dash. `shared.json`
+  survives only for the genuinely-unknown target, which is the single-session path.
+- Cost: a brand-new session shows dashes until its first turn instead of a plausible wrong number.
 
 ## Traps and findings worth not rediscovering
 

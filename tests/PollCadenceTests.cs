@@ -168,7 +168,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var model = Source("src", "Core", "Actions", "ModelCycleCommand.cs");
 
-            Assert.Contains("if (name != _displayName)", model);
+            // The guard, not its exact wording: the key must compare before repainting. (It also
+            // repaints when coming back from "no data for this session" — #49.)
+            Assert.Contains("name != _displayName", model);
         }
 
         /// <summary>

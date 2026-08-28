@@ -30,11 +30,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                         : max > 0 ? (Int32)Math.Round(100.0 * used / max)
                         : 0;
 
-                if (pct != _percent || used != _usedTokens || max != _maxTokens)
+                if (pct != _percent || used != _usedTokens || max != _maxTokens || !_hasData)
                 {
                     _percent = pct;
                     _usedTokens = used;
                     _maxTokens = max;
+                    _hasData = true;
+                    this.ActionImageChanged();
+                }
+            };
+
+            // The session on the display keys has reported nothing — a tab whose Claude has not run
+            // a turn yet, or one started before the status-line bridge was wired. Show a dash rather
+            // than the last writer's numbers, which would be a different session's (#49).
+            _bridge.OnStateUnavailable += () =>
+            {
+                if (_hasData)
+                {
+                    _hasData = false;
                     this.ActionImageChanged();
                 }
             };
@@ -47,8 +60,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         // "33%" — plus "325k/1M" once the window size is known.
+        private Boolean _hasData = true;
+
         private String Label()
         {
+            if (!_hasData)
+            {
+                return "—";
+            }
+
             if (_maxTokens <= 0)
             {
                 return $"{_percent}%";

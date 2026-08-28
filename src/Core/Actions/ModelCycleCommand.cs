@@ -16,6 +16,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     {
         private readonly BridgeManager _bridge;
         private String _displayName = "Model";
+        private Boolean _hasData = true;
 
         public ModelCycleCommand()
             : base(displayName: "Model", description: "Current model; press to open the /model picker", groupName: "Core")
@@ -32,11 +33,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     // Repaint only when the WORD on the key actually changes. The model changes a
                     // handful of times a day, but this redrew on every state event — 1,642 renders
                     // in 18 minutes, the second largest contributor to the redraw storm (#27).
-                    if (name != _displayName)
+                    if (name != _displayName || !_hasData)
                     {
                         _displayName = name;
+                        _hasData = true;
                         this.ActionImageChanged();
                     }
+                }
+            };
+
+            // The session on the display keys has reported nothing — a tab whose Claude has not run
+            // a turn yet, or one started before the status-line bridge was wired. Show a dash rather
+            // than the last writer's numbers, which would be a different session's (#49).
+            _bridge.OnStateUnavailable += () =>
+            {
+                if (_hasData)
+                {
+                    _hasData = false;
+                    this.ActionImageChanged();
                 }
             };
         }
@@ -64,8 +78,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             // Brain tinted to the CURRENT model's colour; falls back to the neutral brain until the
-            // live model is known.
-            var key = (_displayName ?? "").ToLowerInvariant();
+            // live model is known — including when the session on the display keys has reported
+            // nothing, since the last writer's model would belong to a different session (#49).
+            var key = _hasData ? (_displayName ?? "").ToLowerInvariant() : "";
             var icon = key == "opus" || key == "sonnet" || key == "haiku" ? $"brain_{key}" : "brain";
             return KeyImage.Render(imageSize, "Model", KeyImage.Purple, icon);
         }
