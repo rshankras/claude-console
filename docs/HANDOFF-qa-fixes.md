@@ -11,7 +11,7 @@ authority on status, not the issue state.**
 
 **Done and pushed:** #20 #21 #22 (P0s) · #24 whisper backends · #25 pin split · #26 project roots +
 leaked build path · #27 redraw storm · #28 voice lock · #48 noise annotations · #49 idle-session
-state + project-name memory · #51 badge inflation. #50 closed wontfix.
+state + project-name memory · #51 badge inflation · #46 subprocess timeouts. #50 closed wontfix.
 
 **Owed before release, and only these:**
 1. **One voice hardware pass covering #24 AND #28 together** — `sign-and-notarize.sh` →
@@ -27,13 +27,10 @@ state + project-name memory · #51 badge inflation. #50 closed wontfix.
    session), then `spikes/redraw-27/measure-27.sh 120` twice: Terminal frontmost, and not.
 4. **#47** needs the Windows laptop. **#34 and #23** need Logitech.
 
-**Suggested next issue: #46 (subprocess timeouts).** Six `osascript exceeded 2000ms` warnings
-appeared in the plugin log during two minutes of work on 2026-08-27, so it is live and observable —
-but #27's adaptive cadence cut how often the frontmost probe runs, so **measure before coding**; it
-may already be largely fixed, which is a cheap close with evidence. Then **#39** (already fixed on
-`feat/vizhi-desktop` as `6726b51` — cherry-pick it) and **#30** (hourglass stuck after an interrupted
-turn, small and adjacent to the state work). **#18 is superseded by #24** and should be closed as a
-duplicate so the list stops overstating what is left.
+**Suggested next issue: #39** (already fixed on `feat/vizhi-desktop` as `6726b51` — cherry-pick it),
+then **#30** (hourglass stuck after an interrupted turn, small and adjacent to the state work).
+**#18 is superseded by #24** and should be closed as a duplicate so the list stops overstating what
+is left. #46 was done on 2026-08-28 — see below; measuring first was right and it half-closed itself.
 
 **Machine state right now:** the keypad runs a DEV build via a `.link` pointing at
 `claude-console-p0/bin/ClaudeConsole/Debug` (DLL of 2026-08-28 08:20, ~1.03 MB — a healthy one is
@@ -198,6 +195,48 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
   comparable metric.
 
+## #46: measure-before-coding paid, and then disproved everything
+
+**The instruction in this file was to measure first, and it half-closed the issue on its own.** The
+`ps` half is gone: #46's evidence was 7 x `/bin/ps` + 3 x `osascript` in 53 minutes; the same log on
+the post-#27 dev build showed **0 x ps + 3 x osascript in 43 minutes**. #27's adaptive cadence cured
+the `ps` overruns and left the frontmost probe untouched. Per-executable counters are now in the
+overrun message precisely so that split stays visible — one shared counter would have hidden it.
+
+**Then every candidate cause failed under measurement** (`spikes/subproc-46/`, gitignored):
+
+| Hypothesis | Result |
+|---|---|
+| The 2000ms budget is too tight | **No.** p50 = 140ms, p99 = 166ms. 13x headroom. |
+| Terminal's renderer blocks the Apple Event (the issue's own suspect) | **No.** Heavy output in a second window: 138ms idle vs 135ms busy. **1.0x.** |
+| The machine is CPU-starved | **No.** 16 spinners on 8 cores: p50 213ms, worst 515ms — 26% of budget. |
+| Apple Events serialise per target app | Real but mild. 16 concurrent probes: worst 596ms. |
+
+Nothing reachable by load gets within 1400ms of the budget, yet overruns happen ~3/hour. **So this is
+a rare episodic stall, not degradation** — which is why the fix is instrumentation and backoff, and
+explicitly **not** a bigger budget. If a future reader is tempted to widen it, those numbers are the
+thing to re-read first; they are recorded in `BoundedProcess`'s class comment for that reason.
+
+- **The old message named three causes and all three were false**, which is worse than saying less —
+  it sends the next reader after the wrong thing. Replaced by two facts: the overrun COUNT for that
+  executable since load (rate is the real question), and, for calls that survive, the real duration
+  whenever one eats half its budget. That is the cliff-or-creep test the issue asked for.
+- **Long budgets are exempt from the slow line.** `screencapture -i` waits on a human dragging a
+  selection and the whisper helper transcribes audio: both are MEANT to spend most of their budget,
+  and warning about them would bury the poll-path calls the line exists to surface.
+- **Backoff is bounded, and the bound is the point.** While skipping, the plugin holds a stale idea of
+  which tab is frontmost — the very harm #46 reports. An uncapped exponential would turn a momentary
+  stall into minutes of it, so it skips 1, 2, then 4 and clears on the first good answer.
+- **An empty probe result is not a failure.** It means Terminal isn't frontmost, which is routine.
+  Only a real overrun backs off — and separating the two needed the timeout signal plumbed out of
+  `BoundedProcess`, because both previously arrived as `null`.
+
+**NOT hardware-verified, and it cannot be today.** Normal is 140ms and the slow line fires at 1000ms,
+so neither new message appears on a healthy machine — confirming them means catching a real stall,
+which happens ~3 times an hour at random. The dev build has not been rebuilt with this change either
+(see the `-t:Compile` trap in CLAUDE.md before doing so). What IS verified: 748 C# + 47 shell green,
+and the measurements above, taken on this Mac with the plugin running.
+
 ## #48: hardware testing found what the suite could not
 
 **Fixed and hardware-verified 2026-08-27**: after the fix, the same key correctly picked `~/Life`.
@@ -290,9 +329,13 @@ looks wrong.** If a test asserts the opposite of your fix, find out why it was w
 decide which of you is mistaken.
 
 **Scripts left behind** (gitignored, recreate from the docs if lost):
-`spikes/whisper-24/repro-24.sh` (proves #24 both ways, sandboxing Homebrew away) and
+`spikes/whisper-24/repro-24.sh` (proves #24 both ways, sandboxing Homebrew away),
 `spikes/redraw-27/measure-27.sh` + `results.tsv` (CPU baselines, with the state check that catches a
-run taken in the wrong display state).
+run taken in the wrong display state), and `spikes/subproc-46/` — `measure-46.py` (probe duration
+distribution), `stress-46.py` (opens a heavy Terminal window and closes it again), `cpu-46.py`
+(saturates every core). All three print a verdict line. Time them in ONE process: an earlier shell
+version called `python3 -c perf_counter()` twice per sample, and perf_counter's origin is per
+process, so it produced negative durations that looked like a working measurement.
 
 ## Traps and findings worth not rediscovering
 
