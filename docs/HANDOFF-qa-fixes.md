@@ -11,8 +11,8 @@ authority on status, not the issue state.**
 
 **Done and pushed:** #20 #21 #22 (P0s) · #24 whisper backends · #25 pin split · #26 project roots +
 leaked build path · #27 redraw storm · #28 voice lock · #48 noise annotations · #49 idle-session
-state + project-name memory · #51 badge inflation · #46 subprocess timeouts · #39 icon converter.
-#50 closed wontfix.
+state + project-name memory · #51 badge inflation · #46 subprocess timeouts · #39 icon converter ·
+#30 interrupted-turn hourglass. #50 closed wontfix.
 
 **Owed before release, and only these:**
 1. **One voice hardware pass covering #24 AND #28 together** — `sign-and-notarize.sh` →
@@ -26,18 +26,30 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
    again to release.
 3. **#27's idle CPU number** — every Claude session closed (the measurer is otherwise a live busy
    session), then `spikes/redraw-27/measure-27.sh 120` twice: Terminal frontmost, and not.
-4. **#47** needs the Windows laptop. **#34 and #23** need Logitech.
+4. **#30's keyboard half** — the KEYPAD Esc is verified on the device (hourglass clears in ~5s).
+   Esc typed on the KEYBOARD is unverified: the plugin never sees it, so it runs on the 90s
+   transcript-quiet rule alone. Start a turn, press Esc on the keyboard, and time the clear. Also
+   unverified: whether Ctrl+C behaves the same as Esc (the issue flags them as different paths).
+5. **Decide the reinstall story before submitting** — see "The #20 trade" below. Install 2.2.0 OVER
+   an existing 2.0.1, the way QA will, and watch the Options+ strip: the icon vanishes, and the
+   README used to promise it would heal itself. Nothing hard-blocks the submission; this is the
+   thing QA files as a regression against the #20 fix if you do not raise it first.
+6. **#47** needs the Windows laptop. **#34 and #23** need Logitech.
 
-**Suggested next issue: #30** (hourglass stuck after an interrupted turn, small and adjacent to the
-state work). **#18 is superseded by #24** and should be closed as a duplicate so the list stops
-overstating what is left. #46 and #39 were done on 2026-08-28 — see below; on #46, measuring first
-was right and it half-closed itself.
+**Suggested next: #18 is superseded by #24** and should be closed as a duplicate so the list stops
+overstating what is left. Then a spike on whether the SDK's `IsApplicationActive` /
+`get_ApplicationActive` can replace the timestamp guess in `RegistrationHeal` (route 2 under "The #20
+trade"). #46, #39 and #30 were done on 2026-08-28 — see below.
 
 **Machine state right now:** the keypad runs a DEV build via a `.link` pointing at
-`claude-console-p0/bin/ClaudeConsole/Debug` (DLL of 2026-08-28 08:20, ~1.03 MB — a healthy one is
+`claude-console-p0/bin/ClaudeConsole/Debug` (DLL of 2026-08-28 10:46, ~1.04 MB — a healthy one is
 ~1 MB; ~140 KB means resources were dropped). There is no installed ClaudeConsole package, so no
 dev-link collision. **LogiPluginService is NOT supervised on this Mac** — see the trap below before
-running `killall`. The worktree directory is still called `claude-console-p0` although the
+running `killall`. **Rebuild with `bash tools/dev-reload.sh`, not bare `dotnet build`**: a bare
+build sends a plugin RELOAD, the service's live application list loses `@_claudeconsole`, and the
+icon vanishes from the Options+ strip while the plugin loads fine — it happened twice on 2026-08-28
+before the cause was found. The script builds, restarts the service (and STARTS it, since nothing
+else here will), and restarts the Options+ agent. The worktree directory is still called `claude-console-p0` although the
 branch is now `fix/qa-retest` — that mismatch is deliberate: the `.link` names the DIRECTORY,
 so renaming the folder to match would silently kill the running plugin. Leave it.
 
@@ -45,8 +57,8 @@ so renaming the folder to match would silently kill the running plugin. Leave it
 
 | | |
 |---|---|
-| Branch | `fix/qa-retest`, 21 commits, pushed, **no PR opened** |
-| Suite | 731 C# + 47 shell, green |
+| Branch | `fix/qa-retest`, 31 commits, pushed, **no PR opened** |
+| Suite | 768 C# + 47 shell, green |
 | Issues | 25 filed (#20–#44) plus #45, #46, #47, #48, #49, #50, #51 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
@@ -195,6 +207,69 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   `LoupedeckService.dll`), which this Mac no longer captures — the Logi launch agents were removed
   during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
   comparable metric.
+
+## #30: two thresholds for one question, and the one in the report was never consulted
+
+The issue's comment asked why the existing 45s `StalledBusyAfter` never resolved the stuck hourglass,
+and guessed the state file was being rewritten. **Neither was true.** There were TWO thresholds:
+`SessionRegistry` expired busy after 45s (the session-slot keys) while `BridgeManager` used a bare
+300s literal (the Status key — the one in the report). QA's stuck session sat at 114s: past the first,
+nowhere near the second. The refresh theory is ruled out by QA's own 114s-old state write.
+
+Both now ask one rule, `ActivityStall`, so the two keys cannot disagree about a session again.
+
+- **Age alone must not decide it.** A slow tool call and a dead turn are identical by age. The
+  transcript is the discriminator: Claude appends to it all turn and it stops when the turn dies.
+  Device numbers: busy 1s, stuck 113s. Live here: ~9s lag while working. Window: **90s**.
+- **`transcript_path` needed no script change** — the statusline handler writes Claude's payload
+  verbatim, so it was on disk all along. It reaches Core through `AgentSessionState`, not by parsing
+  Claude's JSON in the engine; the grid carries it so nothing re-reads a file the poll loop just parsed.
+- **The Status key reads the ROUTING session's transcript, not `CurrentState`'s.** With a pin set
+  those are different sessions (#25). Pairing one session's activity with another's transcript would
+  decide the hourglass from a tab nobody asked about.
+- **The 300s no-transcript fallback is BridgeManager's own number.** A 10-minute first attempt was
+  rejected by `A_session_stuck_on_busy_settles_back_to_ready` (600s must settle). That test's intent
+  is sound and it passes unmodified. In practice the path is near-unreachable: Claude always ships a
+  transcript, and Codex reports its own activity so it never enters `ReadActivityState`.
+- **Keypad Esc clears in ~5s, not 90.** Reported from the device the same hour: the transcript rule
+  was working (73s into the window) but making someone watch an hourglass over a turn the plugin
+  ended ITSELF is the same complaint with a timer on it. `ControlCommand`'s Esc case records the
+  interrupt against the routing session. Deliberately not inside `InjectKey`: `AnswerCommand` also
+  sends Escape, to REJECT a tool, after which the turn continues.
+- **Review found a real bug in that hint (fixed as `a7c4b51`).** The map is keyed by tty and macOS
+  recycles tty names. An Escape recorded against a tab's previous occupant survived into a new
+  session; on the no-transcript path it read as idle on every poll. The hint must now be at least as
+  new as the busy write it claims to end — which also expires it naturally when Esc only dismissed a
+  menu, since `PostToolUse` rewrites busy with a newer stamp. Reaping drops the entry too.
+- **Ready, not the bell.** The bell means a tool is blocked on approval; an interrupted turn is idle.
+  Badging idle sessions amber is what #51 just removed.
+
+## The #20 trade: the reinstall story is now worse, and the README lied about it
+
+Found because the icon vanished twice after rebuilds on 2026-08-28. `dotnet build` sends a plugin
+RELOAD; the service's live application list loses `@_claudeconsole`; the disk entry is still valid so
+`RegisterIfMissing` finds nothing missing; the list is only rebuilt from disk **at service startup**.
+`RegistrationHeal` exists for this and schedules a restart — but on a machine with no Logi launch
+agents nothing brings the service back, so the heal takes the keypad down and leaves it there.
+
+**It matters for Marketplace because #20 removed the automatic restart for packages** (correctly: the
+installer writes the registration before it finishes copying the payload, so the timestamp check fires
+on every healthy install). Consequence: **install-over-existing — QA's retest path — now leaves the
+icon missing until the service restarts**, and `README.md` promised "1.8.9 and later heal this
+automatically". Corrected in `a84336d`. A first install on a clean machine is unaffected (the entry is
+genuinely absent, so the plugin writes it and restarts once). The built package contains only `bin`,
+`metadata`, `profiles` — **`repair-registration.sh` does not reach users** (#45), which is now
+load-bearing rather than cosmetic. `repair-registration.sh` itself used to exit with an error if the
+service did not return on its own; it now starts it.
+
+Nothing here hard-blocks a submission (PluginApi not bundled, versions agree, no new data access — the
+transcript is `stat()`ed for mtime, never read). Routes, in order:
+1. **Ship `repair-registration.sh` in the package** and name it in the listing. An hour; do before submit.
+2. **Replace the timestamp guess with a real signal.** `PluginApi.dll` exports `IsApplicationActive`,
+   `get_ApplicationActive`, `get_ApplicationRunning` — the plugin uses none of them. Only the names are
+   confirmed; semantics need a spike before any heal is built on them.
+3. **A universal plugin (#23) has no application registration to lose** — this whole failure class
+   disappears. That is a reliability argument for QA's proposal, and belongs in the reply owed to Logitech.
 
 ## #39: cherry-picked from `feat/vizhi-desktop`, and reproduced afterwards
 
@@ -360,6 +435,8 @@ looks wrong.** If a test asserts the opposite of your fix, find out why it was w
 decide which of you is mistaken.
 
 **Scripts left behind** (gitignored, recreate from the docs if lost):
+`tools/dev-reload.sh` is IN the repo (build + real service restart + Options+ restart), as are the
+`spikes/subproc-46` findings in `BoundedProcess`'s class comment. Gitignored:
 `spikes/whisper-24/repro-24.sh` (proves #24 both ways, sandboxing Homebrew away),
 `spikes/redraw-27/measure-27.sh` + `results.tsv` (CPU baselines, with the state check that catches a
 run taken in the wrong display state), and `spikes/subproc-46/` — `measure-46.py` (probe duration
