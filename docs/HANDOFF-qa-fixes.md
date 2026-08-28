@@ -250,6 +250,9 @@ QA's three complaints and the comment's fourth, and what each got:
   would be opt-IN via a key, which ends zero-setup — still the PM's call, but "no prompt at all" is no
   longer the honest description. **An earlier note here said the plugin could only show key faces and
   a beep. That was wrong; the owner asked "are you sure?" and reflection said no.**
+  **Seen on the device 2026-08-28 18:05 (owner's screenshot):** the "!" on ALL ACTIONS, the full
+  message as an amber card under "Claude Console Actions", and the button "WHAT WAS CHANGED, AND HOW
+  TO UNDO IT". Clears on the next no-change load.
   Unknown still: whether Options+ renders a plugin SETTINGS page (`PluginSettingRequest` exists in
   the SDK; no shipped plugin uses it). If it does, the opt-out belongs there as a toggle.
 
