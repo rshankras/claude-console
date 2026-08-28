@@ -250,12 +250,19 @@ back as empty subclasses; `UniversalPluginTests` pins that they exist and overri
 the 1.5-era crash; under HasNoApplication the base's "" is correct). Side effect of E3 to know about:
 the old code re-wrote `@_claudeconsole` on load; it was removed again with the service stopped.
 
-**The downloads are the product now.** `profiles/ClaudeConsole-Keypad.lp5` was ALREADY the universal
-shape (bound to `com.apple.terminal`, `hasNativePlugin: false`, `ClaudeConsole` in
-`additionalNativePluginNames`) — it was the pre-1.7.1 fallback and needed no change.
-`ClaudeConsole-Windows.lp5` was NOT (it bound `@_claudeconsole`) and was regenerated;
-`VizhiCodex-Keypad.lp5` is new. Both generators now derive from the Keypad file and keep Terminal's
-binding, rewriting only the plugin prefix, the plugin list, the GUID and the dropped keys.
+**The downloads are the product now — and the first cut shipped the WRONG one.**
+`profiles/ClaudeConsole-Keypad.lp5` was already the universal SHAPE (bound to `com.apple.terminal`,
+`hasNativePlugin: false`) but it carried the pre-1.7.1 LAYOUT: page 1 was `Context | Status | Plan …`,
+no Session keys. The owner imported it and saw the old keypad. The current layout (Sessions ×3 /
+Clear / Voice / Esc / Yes / No / Tab, pages 2–5 unchanged) lived only in the packaged
+`DefaultProfile70.lp5` that was deleted. It was recovered from git (`4fb3554`) and converted: Terminal's
+own `ApplicationInfo`, `ProfileInfo` rebound to `com.apple.terminal` with `ClaudeConsole` in
+`additionalNativePluginNames`, GUID kept at `4146981D…` (the 2.0.x identity; the old download's
+`B399E0AB…` is what a stale import on this Mac carries — delete that one in Options+). **From here the
+download is canonical**: change the layout in Options+, export, replace the file, rerun
+`tools/make-codex-profile.py` and `tools/windows/make-windows-profile.sh`. Both derive from it and
+keep Terminal's binding, rewriting only the plugin prefix, the plugin list, the GUID and the dropped
+keys; the Codex `PLACE` table was written against exactly this layout and asserts it.
 
 **What this made moot:** #34, #45's orphan, the reinstall icon loss, the `IsApplicationActive` spike,
 the "install one console per machine" warning (they can coexist now), `dev-reload.sh`'s service
