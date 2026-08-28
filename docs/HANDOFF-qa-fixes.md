@@ -242,7 +242,7 @@ driver is a second predicate plus its own focus/type AppleScript. Ghostty, Warp,
 expose nothing addressable by TTY; a session in them can only ever be a key that does nothing, which
 is the bug. The README and listing now say "sessions in other terminals are not shown".
 
-**Verified on the device 2026-08-28 ~18:30** — the owner ran claude in iTerm: no Session key for it,
+**Verified on the device 2026-08-28 22:22** — the owner ran claude in iTerm: no Session key for it,
 the Terminal.app sessions kept theirs, and the plugin log carried the one WARN line naming the app.
 
 ## #31: the settings.json edit is now reversible, disclosed, and backed up honestly
