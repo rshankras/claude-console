@@ -1,6 +1,8 @@
 namespace Loupedeck.ClaudeConsolePlugin.Platform
 {
     using System;
+    using System.Linq;
+    using System.Text.Json.Nodes;
 
     /// <summary>
     /// How Claude Code is told to talk to the plugin — the `statusLine` handler and the activity
@@ -55,6 +57,94 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             command != null &&
             (command.Contains(MacActivityMarker, StringComparison.OrdinalIgnoreCase) ||
              command.Contains(WindowsMarker, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// Take our wiring back OUT of a settings document, and nothing else (#31).
+        ///
+        /// "Nothing else" is the whole point. The previous undo story was "restore the backup" — a
+        /// snapshot taken once on first load and never again, so on QA's machine it was a month
+        /// stale and restoring it would have rolled back every unrelated setting since. This is
+        /// surgical instead: it removes only hook entries whose command is ours, collapses only the
+        /// containers it emptied, and puts the status line back to what it chained (or removes it,
+        /// if there was nothing to chain). A user's own hooks in the same event survive.
+        /// </summary>
+        /// <param name="root">The parsed settings.json; mutated in place.</param>
+        /// <param name="chainedCommand">The status line command we chained, if any — recorded in the
+        /// chain file at wiring time.</param>
+        /// <returns>True when anything was removed, so the caller knows whether to write.</returns>
+        internal static Boolean Unwire(JsonObject root, String chainedCommand)
+        {
+            var changed = false;
+
+            if (root["hooks"] is JsonObject hooks)
+            {
+                foreach (var eventName in hooks.Select(kv => kv.Key).ToList())
+                {
+                    if (hooks[eventName] is not JsonArray entries)
+                    {
+                        continue;
+                    }
+
+                    var emptiedAnEntry = false;
+                    for (var i = entries.Count - 1; i >= 0; i--)
+                    {
+                        if (entries[i]?["hooks"] is not JsonArray inner)
+                        {
+                            continue;
+                        }
+
+                        var removedHere = false;
+                        for (var j = inner.Count - 1; j >= 0; j--)
+                        {
+                            if (IsOurHook(Str(inner[j]?["command"])))
+                            {
+                                inner.RemoveAt(j);
+                                removedHere = true;
+                                changed = true;
+                            }
+                        }
+
+                        // Collapse an entry only when WE emptied it; an entry that was already
+                        // empty is the user's oddity, not our leftover.
+                        if (removedHere && inner.Count == 0)
+                        {
+                            entries.RemoveAt(i);
+                            emptiedAnEntry = true;
+                        }
+                    }
+
+                    if (emptiedAnEntry && entries.Count == 0)
+                    {
+                        hooks.Remove(eventName);
+                    }
+                }
+
+                if (changed && hooks.Count == 0)
+                {
+                    root.Remove("hooks");
+                }
+            }
+
+            if (root["statusLine"] is JsonObject sl && IsOurs(Str(sl["command"])))
+            {
+                if (!String.IsNullOrWhiteSpace(chainedCommand))
+                {
+                    sl["command"] = chainedCommand;
+                    sl["type"] = "command";
+                }
+                else
+                {
+                    root.Remove("statusLine");
+                }
+                changed = true;
+            }
+
+            return changed;
+        }
+
+        // A command node that is not a string (a user's malformed entry) reads as "not ours".
+        private static String Str(JsonNode node) =>
+            node is JsonValue v && v.TryGetValue<String>(out var s) ? s : null;
 
         // Windows paths routinely contain spaces (the plugin lives under %LOCALAPPDATA%), and
         // Claude Code hands hook commands to a shell. Unquoted, "C:\Program Files\..." would run

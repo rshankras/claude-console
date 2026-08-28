@@ -142,6 +142,49 @@ else
   ok "creates and owns its root, or bails"
 fi
 
+# --- uninstall.sh --unwire: surgical, and only ours (#31) ------------------------------------------
+# HOME is already the temp root, so this never touches the real settings.json.
+echo
+echo "uninstall.sh --unwire"
+UNINSTALL="$REPO/scripts/uninstall.sh"
+mkdir -p "$HOME/.claude/claude-console"
+cat > "$HOME/.claude/settings.json" <<'JSON'
+{
+  "model": "opus",
+  "statusLine": { "type": "command", "command": "bash /tmp/x/.claude/claude-console/scripts/statusline-handler.sh" },
+  "hooks": {
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "bash /tmp/x/.claude/claude-console/scripts/activity-hook.sh busy" } ] } ],
+    "PostToolUse": [ { "matcher": "*", "hooks": [
+      { "type": "command", "command": "bash /tmp/x/.claude/claude-console/scripts/activity-hook.sh busy" },
+      { "type": "command", "command": "echo user-hook" } ] } ],
+    "SessionStart": [ { "hooks": [ { "type": "command", "command": "echo mine" } ] } ]
+  }
+}
+JSON
+printf 'my-status --flag' > "$HOME/.claude/claude-console/statusline-chain"
+
+# A dry run of the full cleanup must report the wiring and change nothing.
+BEFORE_SUM="$(cksum < "$HOME/.claude/settings.json")"
+DRY_OUT="$(bash "$UNINSTALL" --dry-run 2>&1)"
+check_eq "dry run reports the wiring it would remove" "1" "$(printf '%s' "$DRY_OUT" | grep -c 'would remove 2 claude-console hook')"
+check_eq "dry run changes nothing" "$BEFORE_SUM" "$(cksum < "$HOME/.claude/settings.json")"
+
+bash "$UNINSTALL" --unwire >/dev/null 2>&1
+check_eq "--unwire exits 0" "0" "$?"
+j() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(eval(sys.argv[2]))" "$HOME/.claude/settings.json" "$1" 2>/dev/null; }
+check_eq "our statusLine is replaced by the chained original" "my-status --flag" "$(j "d['statusLine']['command']")"
+check_eq "no claude-console reference survives" "0" "$(grep -c 'claude-console' "$HOME/.claude/settings.json")"
+check_eq "the event we owned outright is gone" "False" "$(j "'UserPromptSubmit' in d['hooks']")"
+check_eq "the user's hook sharing our entry survives, alone" "['echo user-hook']" "$(j "[h['command'] for h in d['hooks']['PostToolUse'][0]['hooks']]")"
+check_eq "the user's own event survives" "echo mine" "$(j "d['hooks']['SessionStart'][0]['hooks'][0]['command']")"
+check_eq "unrelated settings survive" "opus" "$(j "d['model']")"
+check_file "a rolling backup was written first" "$HOME/.claude/settings.json.claude-console.bak"
+check_eq "the backup is the pre-unwire state" "1" "$(grep -c 'statusline-handler' "$HOME/.claude/settings.json.claude-console.bak")"
+check_file "the opt-out is set so the plugin does not wire it back" "$HOME/.claude/claude-console/no-autowire"
+AFTER_SUM="$(cksum < "$HOME/.claude/settings.json")"
+bash "$UNINSTALL" --unwire >/dev/null 2>&1
+check_eq "a second --unwire is a no-op" "$AFTER_SUM" "$(cksum < "$HOME/.claude/settings.json")"
+
 echo
 printf 'bridge scripts: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

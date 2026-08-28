@@ -13,7 +13,7 @@ authority on status, not the issue state.**
 leaked build path · #27 redraw storm · #28 voice lock · #48 noise annotations · #49 idle-session
 state + project-name memory · #51 badge inflation · #46 subprocess timeouts · #39 icon converter ·
 #30 interrupted-turn hourglass · #45 recovery scripts reach users · #18 silent voice failure ·
-**#23 universal plugin (code + downloads done; on-device import owed)**. #50 closed wontfix.
+**#23 universal plugin (verified on device)** · #31 settings.json rewrite. #50 closed wontfix.
 
 **Owed before release, and only these:**
 1. **Voice release round: DONE 2026-08-28 16:20, on a real package install** (`ClaudeConsole_2.2.0.lplug4`,
@@ -47,9 +47,8 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
    thing QA files as a regression against the #20 fix if you do not raise it first.
 6. **#47** needs the Windows laptop. **#34 and #23** need Logitech.
 
-**Suggested next: #31** (settings.json rewrite + stale backup; uninstall leaves hooks behind — same
-theme as #45, and `uninstall.sh` is now the natural home for the leftover half), then **#29**, then
-the draft PR. The `IsApplicationActive` spike is DEAD — #23 went universal. #46, #39, #30, #45, #18
+**Suggested next: #29** (session keys silently no-op when another terminal owns the TTY), then the
+draft PR. #31 done 2026-08-28 — see below. The `IsApplicationActive` spike is DEAD — #23 went universal. #46, #39, #30, #45, #18
 and #23 were done on 2026-08-28 — see below.
 
 **An earlier version of this file said "#18 is superseded by #24 — close as duplicate". That was
@@ -224,6 +223,33 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   `LoupedeckService.dll`), which this Mac no longer captures — the Logi launch agents were removed
   during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
   comparable metric.
+
+## #31: the settings.json edit is now reversible, disclosed, and backed up honestly
+
+QA's three complaints and the comment's fourth, and what each got:
+
+- **Backup goes stale** → the backup is ROLLING: `WriteSettings` copies `settings.json` to
+  `settings.json.claude-console.bak` immediately before EVERY write (overwrite), so it is always the
+  state one change ago. The old "once, on first load" snapshot was a month stale on QA's machine and
+  on this one (26 June vs 28 August) — restoring it would have rolled back everything since. The README
+  now says plainly it is not a pre-install snapshot.
+- **No way to undo / uninstall leaves the hooks** → `BridgeWiring.Unwire(root, chained)` — pure,
+  surgical, unit-tested: removes only hook entries whose command is ours (same `IsOurs`/`IsOurHook`
+  markers as wiring), collapses only containers it emptied, restores a chained status line from the
+  chain file or removes ours if nothing was chained. The same rule is implemented in python inside
+  `uninstall.sh` (the plugin is gone by the time it runs), which now unwires BEFORE deleting the
+  runtime home (the chain file lives there) and reports it in `--dry-run`. Shell tests pin the script.
+- **Hidden opt-out** → it is now a two-way switch: with `no-autowire` present the plugin UNWIRES on
+  load if it finds its entries. `uninstall.sh --unwire` = remove the wiring + set the opt-out, and
+  the README's bridge section leads with "this edits your settings" and how to reverse it.
+- **"Prompt before modifying"** → NOT done, deliberately: a headless keypad plugin has no prompt. The
+  honest alternative is opt-IN via a key press, which ends the zero-setup install Logitech's own flow
+  assumes. Put to the PM as a product call; auto-wire stays on until they say otherwise.
+
+**Hardware pass owed**: `uninstall.sh --unwire` on this Mac with a real settings.json (the owner
+asked to test it) → live keys go dark on the next session → delete `no-autowire`, reload → wired
+again. Codex (Vizhi) is a separate issue: its hooks are trusted by hash, so the same edit has a
+user-visible cost there.
 
 ## #23: universal plugin — what changed, what it removed, what is unverified
 

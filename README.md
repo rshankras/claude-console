@@ -66,7 +66,7 @@ Download the latest `ClaudeConsole_<ver>.lplug4` from [**Releases**](https://git
 2. **Put the keys on Terminal.** The plugin is *universal*: it binds to no application and ships no layout of its own, so nothing appears on the keypad until you give it keys. The quickest way is the ready-made layout — see [Import the ready-made layout](#import-the-ready-made-layout) just below (two clicks). Or build your own: in Options+ add **Terminal** as an application, then drag any **Claude Console** actions onto its profile.
 3. On first use, grant **Accessibility** to the Logi Plugin Service (so it can type into your terminal). For **voice**, press the Voice key and grant **Microphone** when prompted — the helper and speech model install themselves on first use.
 
-> Everything works straight from the download — including the live **Model / Cost / Context / Activity** keys. On first load the plugin installs its status-line + hook scripts and wires them into `~/.claude/settings.json` for you, so the live keys light up on your **next Claude Code session** with no setup. (Details, and how to opt out, in [The live status bridge](#the-live-status-bridge) below.)
+> Everything works straight from the download — including the live **Model / Cost / Context / Activity** keys. On first load the plugin installs its status-line + hook scripts and **edits `~/.claude/settings.json`** to wire them in, so the live keys light up on your **next Claude Code session** with no setup. It only adds its own entries and backs the file up first; `uninstall.sh --unwire` takes them out again. (Details, and how to opt out, in [The live status bridge](#the-live-status-bridge) below.)
 
 ## Import the ready-made layout
 
@@ -121,7 +121,15 @@ A pre‑packaged install via the Logitech Marketplace is planned — see [SUBMIS
 
 The live keys read state files under a private `/tmp/claude-console/` directory that Claude Code writes via a status‑line handler (Cost / Model / Context ← `sessions/`) and four hooks (Activity ← `activity/`). Everything in it is owner‑only (0700 dirs / 0600 files), so your prompts and session state are never readable by other users on the Mac.
 
-**This is set up automatically — no action needed.** On first load the plugin writes both scripts to `~/.claude/claude-console/scripts/` and merges the `statusLine` + hooks into `~/.claude/settings.json` for you. It's careful about it: backs `settings.json` up first (`settings.json.claude-console.bak`), only **appends** a hook when it isn't already present, and **chains** an existing `statusLine` (records yours and runs it through, so your custom status bar still renders) rather than overwriting it. The live keys come alive on your **next Claude Code session** — Claude Code reads hooks/statusLine at session start, so a session already running won't pick them up. To opt out, create an empty file at `~/.claude/claude-console/no-autowire` before first load.
+**This is set up automatically — and it edits your Claude Code settings to do it.** On first load the plugin writes both scripts to `~/.claude/claude-console/scripts/` and merges a `statusLine` handler + five hooks into `~/.claude/settings.json`. It's careful about it: only **appends** a hook when it isn't already present, **chains** an existing `statusLine` (records yours and runs it through, so your custom status bar still renders) rather than overwriting it, and takes a **rolling backup** — `settings.json.claude-console.bak` is rewritten immediately before *every* change the plugin makes, so it is always the state one change ago, never a stale snapshot. The live keys come alive on your **next Claude Code session** — Claude Code reads hooks/statusLine at session start, so a session already running won't pick them up.
+
+**To take it back out, or to keep it out:**
+
+```bash
+bash ~/.claude/claude-console/scripts/uninstall.sh --unwire
+```
+
+That removes *only* the plugin's entries (your own hooks and status bar are left exactly as they were, a chained status line is put back), and sets the opt-out so the plugin doesn't wire it again. The Cost / Context / Activity keys show dashes from then on; everything else keeps working. To wire it again, delete `~/.claude/claude-console/no-autowire` and reload the plugin. To opt out *before* first load, create that file first.
 
 <details>
 <summary>Wire it by hand instead (e.g. if you opted out)</summary>
@@ -344,7 +352,7 @@ bash ~/.claude/claude-console/scripts/uninstall.sh --dry-run  # preview only
 
 It sweeps the orphaned registration (only entries whose plugin is gone, never another vendor's), then removes `~/.claude/claude-console/` (voice helper, whisper, the ~142 MB speech model, your `prompts.json`, and the auto-installed scripts — including itself), the `/tmp/claude-console` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present. It prints its targets and asks before deleting; **it never removes the plugin.** Then restart the service so Options+ forgets the entry: `killall LogiPluginService`.
 
-**3. Live‑status bridge (manual).** The plugin auto-wired a `statusLine` + four `claude-console` hooks into `~/.claude/settings.json` on first run. Restore your pre-install config from the backup it made — `~/.claude/settings.json.claude-console.bak` — or just delete the `statusLine` block and the four `claude-console` hook entries by hand. (Do this after step 2, since removing the scripts leaves those entries pointing at nothing.)
+**3. Live‑status bridge — done by step 2.** The cleanup script removes the plugin's `statusLine` + hook entries from `~/.claude/settings.json` surgically (your own entries stay; a chained status line is put back) before it deletes the scripts they point at. If you only want the wiring gone and the plugin kept, run it with `--unwire` instead. Don't restore `settings.json.claude-console.bak` by hand to undo the plugin — it is a rolling backup of the state one change ago, useful if a write went wrong, not a pre-install snapshot.
 
 For a **clean reinstall**, do 1–3, then reinstall from [Releases](https://github.com/rshankras/claude-console/releases) and re‑import the profile.
 

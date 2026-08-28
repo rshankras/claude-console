@@ -1193,7 +1193,10 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                     if (File.Exists(BridgeOptOutFile))
                     {
-                        PluginLog.Info("Bridge auto-wire: opt-out file present — skipping");
+                        // A switch, not a one-time skip (#31): a user who was wired on an earlier
+                        // load and opts out later gets settings.json put back — surgically, never
+                        // from a stale backup.
+                        this.UnwireIfWired();
                         return;
                     }
                     EnsureBridgeInstalled();
@@ -1295,49 +1298,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         // hook only if ours isn't already there, and chains (never clobbers) an existing statusLine.
         private void EnsureBridgeWired()
         {
-            // Refuse a symlinked settings.json — a planted link could redirect our atomic
-            // rename-over-write somewhere else entirely. (LinkTarget is null for a missing file.)
-            if (new FileInfo(SettingsFile).LinkTarget != null)
+            var root = ReadSettingsForRewrite();
+            if (root == null)
             {
-                PluginLog.Warning("Bridge auto-wire: settings.json is a symlink — leaving it untouched");
                 return;
-            }
-
-            JsonObject root;
-            if (File.Exists(SettingsFile))
-            {
-                var text = File.ReadAllText(SettingsFile);
-                if (String.IsNullOrWhiteSpace(text))
-                {
-                    root = new JsonObject();
-                }
-                else
-                {
-                    JsonNode parsed;
-                    try
-                    {
-                        parsed = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions
-                        {
-                            CommentHandling = JsonCommentHandling.Skip,
-                            AllowTrailingCommas = true,
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        PluginLog.Warning(ex, "Bridge auto-wire: settings.json isn't valid JSON — leaving it untouched");
-                        return;
-                    }
-                    root = parsed as JsonObject;
-                    if (root == null)
-                    {
-                        PluginLog.Warning("Bridge auto-wire: settings.json isn't a JSON object — leaving it untouched");
-                        return;
-                    }
-                }
-            }
-            else
-            {
-                root = new JsonObject();
             }
 
             var isWindows = OperatingSystem.IsWindows();
@@ -1400,12 +1364,93 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            // Back up once before the first write.
+            WriteSettings(root);
+            PluginLog.Info("Bridge auto-wire: wired live-status bridge into settings.json — start a NEW Claude Code session to activate Cost/Context/Activity");
+        }
+
+        // The opt-out's other direction (#31): take our wiring back out if it is there. Reads the
+        // chained status line we recorded so the user's own status bar comes back exactly as it was.
+        private void UnwireIfWired()
+        {
+            var root = ReadSettingsForRewrite();
+            if (root == null)
+            {
+                return;
+            }
+
+            String chained = null;
+            try { if (File.Exists(StatuslineChainFile)) { chained = File.ReadAllText(StatuslineChainFile).Trim(); } }
+            catch (Exception ex) { PluginLog.Warning(ex, "Bridge auto-wire: couldn't read the statusline chain file"); }
+
+            if (!BridgeWiring.Unwire(root, chained))
+            {
+                PluginLog.Info("Bridge auto-wire: opt-out file present — settings.json carries none of our wiring");
+                return;
+            }
+
+            WriteSettings(root);
+            TryDelete(StatuslineChainFile);
+            PluginLog.Info("Bridge auto-wire: opt-out file present — removed our statusLine + hooks from settings.json (your own entries were left alone)");
+        }
+
+        // settings.json as a document we may rewrite, or null when we must not touch it: a symlink
+        // (a planted link could redirect the rename-over-write), invalid JSON, or a non-object root.
+        // A missing or empty file is an empty object — wiring a fresh install is the common case.
+        private static JsonObject ReadSettingsForRewrite()
+        {
+            if (new FileInfo(SettingsFile).LinkTarget != null)
+            {
+                PluginLog.Warning("Bridge auto-wire: settings.json is a symlink — leaving it untouched");
+                return null;
+            }
+
+            if (!File.Exists(SettingsFile))
+            {
+                return new JsonObject();
+            }
+
+            var text = File.ReadAllText(SettingsFile);
+            if (String.IsNullOrWhiteSpace(text))
+            {
+                return new JsonObject();
+            }
+
+            JsonNode parsed;
             try
             {
-                if (File.Exists(SettingsFile) && !File.Exists(SettingsBackup))
+                parsed = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions
                 {
-                    File.Copy(SettingsFile, SettingsBackup);
+                    CommentHandling = JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "Bridge auto-wire: settings.json isn't valid JSON — leaving it untouched");
+                return null;
+            }
+
+            if (parsed is not JsonObject root)
+            {
+                PluginLog.Warning("Bridge auto-wire: settings.json isn't a JSON object — leaving it untouched");
+                return null;
+            }
+
+            return root;
+        }
+
+        // Back up, then write atomically. The backup is ROLLING — taken immediately before EVERY
+        // write, overwriting the last one (#31). It used to be taken once, on the first load, and
+        // never again: on QA's machine it was a month stale, so "restore the backup" would have
+        // rolled back every unrelated change the user had made since. A backup that is always the
+        // state one write ago is the only kind worth telling people about.
+        private static void WriteSettings(JsonObject root)
+        {
+            try
+            {
+                if (File.Exists(SettingsFile))
+                {
+                    File.Copy(SettingsFile, SettingsBackup, overwrite: true);
                 }
             }
             catch (Exception ex)
@@ -1419,7 +1464,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             var tmp = SettingsFile + ".cc.tmp";
             File.WriteAllText(tmp, json);
             File.Move(tmp, SettingsFile, overwrite: true);
-            PluginLog.Info("Bridge auto-wire: wired live-status bridge into settings.json — start a NEW Claude Code session to activate Cost/Context/Activity");
         }
 
         // Ensure a hook event's array contains an entry pointing at our activity handler; append if
