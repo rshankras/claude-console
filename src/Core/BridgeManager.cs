@@ -69,6 +69,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static readonly String ScriptsDir = Path.Combine(ClaudeConsoleHome, "scripts");
         private static readonly String StatuslineScript = Path.Combine(ScriptsDir, "statusline-handler.sh");
         private static readonly String ActivityScript = Path.Combine(ScriptsDir, "activity-hook.sh");
+        // Recovery scripts the user needs precisely when the package is gone (#45). Same directory,
+        // same refresh-on-load, but NOT behind the bridge opt-out: declining settings.json wiring
+        // must not cost anyone the uninstall remedy.
+        private static readonly String[] RecoveryScripts = { "uninstall-registration.sh", "repair-registration.sh", "uninstall.sh" };
         private static readonly String StatuslineChainFile = Path.Combine(ClaudeConsoleHome, "statusline-chain");
         private static readonly String BridgeOptOutFile = Path.Combine(ClaudeConsoleHome, "no-autowire");
 
@@ -1162,6 +1166,9 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 try
                 {
+                    // Before the opt-out, on purpose — see RecoveryScripts.
+                    EnsureRecoveryScriptsInstalled();
+
                     if (File.Exists(BridgeOptOutFile))
                     {
                         PluginLog.Info("Bridge auto-wire: opt-out file present — skipping");
@@ -1192,6 +1199,27 @@ namespace Loupedeck.ClaudeConsolePlugin
             Directory.CreateDirectory(ScriptsDir);
             ExtractEmbeddedScript("ClaudeConsole.statusline-handler.sh", StatuslineScript);
             ExtractEmbeddedScript("ClaudeConsole.activity-hook.sh", ActivityScript);
+        }
+
+        // Write the recovery scripts to ~/.claude/claude-console/scripts/ (#45). Uninstalling through
+        // Options+ deletes the package but leaves the application registration behind; when the
+        // uninstalled product was the LAST of ours there is no plugin left to sweep it, and the only
+        // remedy was a script in the repo. The runtime home outlives the package, so the remedy lives
+        // there, refreshed every load like the bridge scripts.
+        private static void EnsureRecoveryScriptsInstalled()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                // bash + `open -a` + tccutil: macOS scripts. Windows uninstall deletes the
+                // application data outright (README), so there is no orphan to sweep there.
+                return;
+            }
+
+            Directory.CreateDirectory(ScriptsDir);
+            foreach (var name in RecoveryScripts)
+            {
+                ExtractEmbeddedScript("ClaudeConsole." + name, Path.Combine(ScriptsDir, name));
+            }
         }
 
         /// <summary>

@@ -19,6 +19,7 @@ Path to a submittable `.lplug4` for the [Logitech Marketplace](https://marketpla
 - [x] Test on the supported hardware (MX Creative Keypad) and on a **clean Mac** (no dev tools) — the 2.0.0 release gate ran on a fresh macOS account (see [docs/clean-install-test.md](docs/clean-install-test.md)); it caught that sideloaded installs never self-register, fixed in 2.0.0.
 - [x] Accept the Logitech Marketplace Developer Agreement (part of the first submission at marketplace.logitech.com/contribute).
 - [x] Package as `ClaudeConsole_<ver>.lplug4` (`bash tools/voice/pack-release.sh <ver>`) and submit at marketplace.logitech.com/contribute — first submitted 2026‑08‑12 as 2.0.0.
+- [x] **The recovery scripts reach users without the repo** (#45). `uninstall-registration.sh`, `repair-registration.sh` and `uninstall.sh` are embedded in the DLL and installed to `~/.claude/claude-console/scripts/` on every load — the package directory is deleted on uninstall, so they cannot live there. Verify on the clean-machine pass: install, confirm the three files exist in the runtime home, uninstall the plugin in Options+, run `bash ~/.claude/claude-console/scripts/uninstall.sh --dry-run` and confirm it reports the orphaned `@_claudeconsole`. Also verify the 2.2.0 install-over-2.0.1 case: the icon leaves the Options+ strip until `repair-registration.sh` (or a service restart) — documented in the README, not self-healing since #20.
 
 ## Bundle whisper.cpp
 

@@ -306,7 +306,12 @@ File‑based IPC under a private `/tmp/claude-console/` root (0700 dirs / 0600 f
 killall LogiPluginService && sleep 5 && killall logioptionsplus_agent
 ```
 
-(A reboot does the same, and `bash scripts/repair-registration.sh` runs the whole recovery for you, with a sanity check first.)
+(A reboot does the same. The plugin installs a script that runs the whole recovery for you, with a sanity check first — it lives outside the package, so it's there even without the repo:
+
+```bash
+bash ~/.claude/claude-console/scripts/repair-registration.sh
+```
+)
 
 > **On a package install this does not heal itself, and it used to.** 1.8.9–2.1.0 restarted the service automatically after a reinstall, so the icon came back on its own. That restart was removed for packaged installs in 2.2.0: the installer writes the registration *before* it finishes copying the payload, so the timestamps always look desynced on a perfectly healthy install and the heal fired on every launch, restarting the service each time. It now runs only for builds reached through a dev `.link`. The trade is deliberate — a spurious restart on every start is worse than a manual recovery after a reinstall — but it means **a reinstall needs the command above.** A first install on a clean machine is unaffected: the registration is genuinely absent there, so the plugin writes it and restarts once, as described below.
 
@@ -349,16 +354,16 @@ Plugin Service.
 
 Claude Console's footprint spans Logi's store, `~/.claude/claude-console/` (incl. the ~142 MB speech model), `/tmp`, a Microphone permission, and — if you wired the live bridge — `~/.claude/settings.json`.
 
-**1. Remove the plugin + profile — this is the actual uninstall (Logi Options+).** In Logi Options+, **right‑click the Claude Console plugin → Uninstall** (or `logiplugintool uninstall ClaudeConsole`), and delete the imported **Claude Console — Keypad** profile. For most people — anyone who never used Voice — this is all you need.
+**1. Remove the plugin + profile — this is the actual uninstall (Logi Options+).** In Logi Options+, **right‑click the Claude Console plugin → Uninstall** (or `logiplugintool uninstall ClaudeConsole`), and delete the imported **Claude Console — Keypad** profile.
 
-**2. Clear the leftover app data — optional cleanup (scripted).** Step 1 does **not** remove the voice runtime, the ~142 MB speech model, or the Microphone permission — Logi Options+ can't see them, so they're left behind. This script clears exactly those leftovers; **it never removes the plugin.** It prints its targets and asks before deleting:
+**2. Run the cleanup script — not optional if this was the last Logitech plugin of ours.** Options+ removes the plugin but **leaves its application registration behind**, still claiming Terminal.app: Claude Console stays listed in Options+ as if the uninstall had failed, and opening Terminal switches the keypad to a layout whose keys point at actions that no longer exist (a keypad of exclamation marks). Another of our plugins sweeps that on its next load; if none is left, nothing does. The plugin installs this script *outside* the package precisely so it survives the uninstall — you don't need the repo:
 
 ```bash
-bash scripts/uninstall.sh            # confirm, then remove
-bash scripts/uninstall.sh --dry-run  # preview only
+bash ~/.claude/claude-console/scripts/uninstall.sh            # confirm, then remove
+bash ~/.claude/claude-console/scripts/uninstall.sh --dry-run  # preview only
 ```
 
-It removes `~/.claude/claude-console/` (voice helper, whisper, the speech model, your `prompts.json`, and the auto-installed bridge scripts), the `/tmp/claude-console` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present.
+It sweeps the orphaned registration (only entries whose plugin is gone, never another vendor's), then removes `~/.claude/claude-console/` (voice helper, whisper, the ~142 MB speech model, your `prompts.json`, and the auto-installed scripts — including itself), the `/tmp/claude-console` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present. It prints its targets and asks before deleting; **it never removes the plugin.** Then restart the service so Options+ forgets the entry: `killall LogiPluginService`.
 
 **3. Live‑status bridge (manual).** The plugin auto-wired a `statusLine` + four `claude-console` hooks into `~/.claude/settings.json` on first run. Restore your pre-install config from the backup it made — `~/.claude/settings.json.claude-console.bak` — or just delete the `statusLine` block and the four `claude-console` hook entries by hand. (Do this after step 2, since removing the scripts leaves those entries pointing at nothing.)
 

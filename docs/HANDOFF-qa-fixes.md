@@ -12,7 +12,7 @@ authority on status, not the issue state.**
 **Done and pushed:** #20 #21 #22 (P0s) · #24 whisper backends · #25 pin split · #26 project roots +
 leaked build path · #27 redraw storm · #28 voice lock · #48 noise annotations · #49 idle-session
 state + project-name memory · #51 badge inflation · #46 subprocess timeouts · #39 icon converter ·
-#30 interrupted-turn hourglass. #50 closed wontfix.
+#30 interrupted-turn hourglass · #45 recovery scripts reach users. #50 closed wontfix.
 
 **Owed before release, and only these:**
 1. **One voice hardware pass covering #24 AND #28 together** — `sign-and-notarize.sh` →
@@ -264,7 +264,20 @@ service did not return on its own; it now starts it.
 
 Nothing here hard-blocks a submission (PluginApi not bundled, versions agree, no new data access — the
 transcript is `stat()`ed for mtime, never read). Routes, in order:
-1. **Ship `repair-registration.sh` in the package** and name it in the listing. An hour; do before submit.
+1. **DONE — the recovery scripts reach users (#45).** Not via the package: the package directory is
+   DELETED on uninstall, so a script shipped there is gone at the exact moment the orphan sweep is
+   needed. They are embedded in the DLL and extracted to `~/.claude/claude-console/scripts/` on every
+   load — the same route as the bridge scripts, but deliberately BEFORE the bridge opt-out check, so
+   declining settings.json wiring cannot cost anyone the uninstall remedy (pinned by
+   `RecoveryScriptsTests`). `uninstall.sh` now runs the orphan sweep itself, before deleting the home
+   the sweep lives in (also pinned). `repair-registration.sh` takes the registration name so Vizhi can
+   use it. README and SUBMISSION.md point at the installed paths. **Vizhi does not embed them yet** —
+   `uninstall-registration.sh` is product-neutral and its csproj needs the same three resources plus
+   a call into whatever its runtime home is; not done here because that home's layout was not checked.
+   **Clean-machine verification owed**: install, confirm the three files in the runtime home, uninstall
+   in Options+, run `uninstall.sh --dry-run`, confirm it reports the orphan. Note the dev registration
+   on THIS Mac carries no `selfRegisteredBy` stamp, so the sweep correctly ignores it here — that is
+   why a dry run on this machine says "no orphaned registrations", not evidence the sweep is inert.
 2. **Replace the timestamp guess with a real signal.** `PluginApi.dll` exports `IsApplicationActive`,
    `get_ApplicationActive`, `get_ApplicationRunning` — the plugin uses none of them. Only the names are
    confirmed; semantics need a spike before any heal is built on them.

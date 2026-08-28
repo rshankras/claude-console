@@ -7,12 +7,20 @@
 # keypad drops to the default layout — while every file on disk is correct and the plugin loads
 # fine. The service rebuilds its application list from the disk scan at startup, so restarting
 # the service (and then the Options+ UI, so it reconnects) is the entire fix.
+#
+# This file is installed to ~/.claude/claude-console/scripts/ by the plugin on every load, so a
+# Marketplace user has it without the repo (#45):
+#
+#   bash ~/.claude/claude-console/scripts/repair-registration.sh
+#
+# Takes the registration name as its only argument for the other products (default: claudeconsole).
 set -euo pipefail
 
-APPDIR="$HOME/Library/Application Support/Logi/LogiPluginService/Applications/Loupedeck70/@_claudeconsole"
+NAME="${1:-claudeconsole}"
+APPDIR="$HOME/Library/Application Support/Logi/LogiPluginService/Applications/Loupedeck70/@_$NAME"
 
 if [ ! -d "$APPDIR" ]; then
-  echo "No Claude Console registration on disk ($APPDIR)." >&2
+  echo "No @_$NAME registration on disk ($APPDIR)." >&2
   echo "This script only fixes the vanished-icon-after-reinstall case. For other symptoms," >&2
   echo "see the Troubleshooting section of the README." >&2
   exit 1
@@ -46,4 +54,4 @@ killall logioptionsplus_agent 2>/dev/null || echo "    (Options+ UI was not runn
 sleep 5
 open "/Library/Application Support/Logitech.localized/LogiOptionsPlus/logioptionsplus_agent.app" 2>/dev/null || true
 
-echo "done — the Claude Console icon should be back in the Options+ top strip."
+echo "done — the @_$NAME icon should be back in the Options+ top strip."
