@@ -47,22 +47,8 @@ namespace Loupedeck.ClaudeConsolePlugin
             // is outstanding rather than leaving a keypad that just looks broken.
             this.WireStateBridge();
 
-            // Sweep orphans first: an entry whose plugin was uninstalled still holds the terminal
-            // and shows a keypad of unresolvable keys, which looks like THIS plugin being broken.
-            Platform.RegistrationCleanup.RemoveOrphans(
-                Platform.RegistrationHeal.ApplicationsRoot(),
-                Platform.PluginPaths.PluginsRoot,
-                "VizhiCodex");
-
-            if (!Platform.SelfRegistration.RegisterIfMissing())
-            {
-                // Marketplace-distributed: never restart the service on a stale-timestamp guess.
-                // The installer writes the registration before it finishes copying the payload, so
-                // the timestamps ALWAYS look desynced on a healthy install (#20). A genuinely
-                // missing entry is still written by RegisterIfMissing above; a stale one is
-                // repaired by hand with scripts/repair-registration.sh.
-                Platform.RegistrationHeal.HealIfNeeded(automaticRestartAllowed: false);
-            }
+            // No application registration to write, heal, or sweep: a universal plugin
+            // (HasNoApplication), same decision and same reasoning as ClaudeConsolePlugin (#23).
 
             PluginLog.Info("VizhiCodexPlugin: Loaded — driving Codex CLI");
         }

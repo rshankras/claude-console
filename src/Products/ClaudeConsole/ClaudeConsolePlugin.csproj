@@ -72,16 +72,10 @@
     <EmbeddedResource Include="..\..\..\scripts\activity-hook.sh">
       <LogicalName>ClaudeConsole.activity-hook.sh</LogicalName>
     </EmbeddedResource>
-    <!-- Recovery scripts (#45). The package directory is DELETED on uninstall, so a script shipped
-         only there is gone at the exact moment the orphaned-registration sweep is needed. The
-         runtime home survives an uninstall, so these go there by the same route as the bridge
-         scripts (BridgeManager.EnsureRecoveryScriptsInstalled). -->
-    <EmbeddedResource Include="..\..\..\scripts\uninstall-registration.sh">
-      <LogicalName>ClaudeConsole.uninstall-registration.sh</LogicalName>
-    </EmbeddedResource>
-    <EmbeddedResource Include="..\..\..\scripts\repair-registration.sh">
-      <LogicalName>ClaudeConsole.repair-registration.sh</LogicalName>
-    </EmbeddedResource>
+    <!-- The cleanup script (#45). The package directory is DELETED on uninstall, so a script shipped
+         only there is gone at the exact moment it is needed. The runtime home survives an uninstall,
+         so it goes there by the same route as the bridge scripts
+         (BridgeManager.EnsureRecoveryScriptsInstalled). -->
     <EmbeddedResource Include="..\..\..\scripts\uninstall.sh">
       <LogicalName>ClaudeConsole.uninstall.sh</LogicalName>
     </EmbeddedResource>

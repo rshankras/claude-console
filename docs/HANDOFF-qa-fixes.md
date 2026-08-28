@@ -12,8 +12,8 @@ authority on status, not the issue state.**
 **Done and pushed:** #20 #21 #22 (P0s) · #24 whisper backends · #25 pin split · #26 project roots +
 leaked build path · #27 redraw storm · #28 voice lock · #48 noise annotations · #49 idle-session
 state + project-name memory · #51 badge inflation · #46 subprocess timeouts · #39 icon converter ·
-#30 interrupted-turn hourglass · #45 recovery scripts reach users · #18 silent voice failure.
-#50 closed wontfix.
+#30 interrupted-turn hourglass · #45 recovery scripts reach users · #18 silent voice failure ·
+**#23 universal plugin (code + downloads done; on-device import owed)**. #50 closed wontfix.
 
 **Owed before release, and only these:**
 1. **Voice release round: DONE 2026-08-28 16:20, on a real package install** (`ClaudeConsole_2.2.0.lplug4`,
@@ -29,7 +29,15 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
    again to release.
 3. **#27's idle CPU number** — every Claude session closed (the measurer is otherwise a live busy
    session), then `spikes/redraw-27/measure-27.sh 120` twice: Terminal frontmost, and not.
-4. **#30's keyboard half** — the KEYPAD Esc is verified on the device (hourglass clears in ~5s).
+4. **#23 on the device — THE next thing.** The package on this Mac is still the app-bound 2.2.0 from
+   the voice round, and `@_claudeconsole` is still on disk, which would MASK the universal behaviour.
+   Sequence: uninstall Claude Console in Options+ (GUI; the CLI cannot) → `killall LogiPluginService`
+   (never delete registrations with it running) → `rm -rf …/Applications/Loupedeck70/@_claudeconsole`
+   → `bash tools/dev-reload.sh` → start the service → Options+ must show NO Claude Console tab, actions
+   under "Claude Console Actions" only, keypad on the universal layout → import
+   `profiles/ClaudeConsole-Keypad.lp5` → Terminal frontmost → the full layout, keys firing. Then the
+   clean-machine pass per docs/clean-install-test.md (updated for universal).
+5. **#30's keyboard half** — the KEYPAD Esc is verified on the device (hourglass clears in ~5s).
    Esc typed on the KEYBOARD is unverified: the plugin never sees it, so it runs on the 90s
    transcript-quiet rule alone. Start a turn, press Esc on the keyboard, and time the clear. Also
    unverified: whether Ctrl+C behaves the same as Esc (the issue flags them as different paths).
@@ -40,10 +48,9 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
 6. **#47** needs the Windows laptop. **#34 and #23** need Logitech.
 
 **Suggested next: #31** (settings.json rewrite + stale backup; uninstall leaves hooks behind — same
-theme as #45, and `uninstall.sh` is now the natural home for the leftover half), then **#29**. A spike
-on whether the SDK's `IsApplicationActive` / `get_ApplicationActive` can replace the timestamp guess
-in `RegistrationHeal` is worth doing ONLY if #23 does not go universal. #46, #39, #30, #45 and #18
-were done on 2026-08-28 — see below.
+theme as #45, and `uninstall.sh` is now the natural home for the leftover half), then **#29**, then
+the draft PR. The `IsApplicationActive` spike is DEAD — #23 went universal. #46, #39, #30, #45, #18
+and #23 were done on 2026-08-28 — see below.
 
 **An earlier version of this file said "#18 is superseded by #24 — close as duplicate". That was
 wrong**, and it was checked before being acted on: #24 added the `.error` sidecar for WHISPER failures,
@@ -218,6 +225,43 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
   comparable metric.
 
+## #23: universal plugin — what changed, what it removed, what is unverified
+
+Logitech's PM decided it by email on 2026-08-28: no app binding, no packaged profile, users drag
+actions onto their own Terminal profile; the redesigned layout is delivered separately as a download.
+
+**Removed** (13 files): `ClaudeConsoleApplication.cs`, `VizhiCodexApplication.cs`,
+`SelfRegistration.cs`, `RegistrationHeal.cs`, `RegistrationCleanup.cs`, both
+`package/profiles/DefaultProfile70.lp5`, `uninstall-registration.sh`, `repair-registration.sh`, and
+four test files (44 tests, all pinning behaviour that no longer exists). Both yamls:
+`HasApplication` → `HasNoApplication`. Both `Load()`s lose their registration block. The plugin class
+had declared `HasNoApplication => true` since the first commit — the yaml capability is what the
+service acts on.
+
+**The downloads are the product now.** `profiles/ClaudeConsole-Keypad.lp5` was ALREADY the universal
+shape (bound to `com.apple.terminal`, `hasNativePlugin: false`, `ClaudeConsole` in
+`additionalNativePluginNames`) — it was the pre-1.7.1 fallback and needed no change.
+`ClaudeConsole-Windows.lp5` was NOT (it bound `@_claudeconsole`) and was regenerated;
+`VizhiCodex-Keypad.lp5` is new. Both generators now derive from the Keypad file and keep Terminal's
+binding, rewriting only the plugin prefix, the plugin list, the GUID and the dropped keys.
+
+**What this made moot:** #34, #45's orphan, the reinstall icon loss, the `IsApplicationActive` spike,
+the "install one console per machine" warning (they can coexist now), `dev-reload.sh`'s service
+restart (a reload loses nothing), and the whole `@_` clause of CLAUDE.md's namespace rule.
+
+**Unverified, in order of risk:**
+1. **On this Mac** — see START HERE item 4. Not done yet because the app-bound package is installed.
+2. **`ClaudeConsole-Windows.lp5`** — the entry name `windowsterminal` and the default plugin
+   `DefaultWin` follow the mac pattern by analogy; one import on the laptop confirms or corrects.
+3. **Two products together** — claimed possible, never tried since the change.
+4. **Vizhi Desktop** (`feat/vizhi-desktop`) still uses `SelfRegistration` and binds the Claude
+   Desktop APP, where a binding may be the point. The PM's decision covers the terminal plugins;
+   Desktop needs its own answer before that branch merges onto this.
+
+**The onboarding cost is real**: a fresh install shows nothing until the user imports or drags. The
+README, the listing copy and the clean-install doc now lead with that. If QA files "installed and
+nothing happened", the answer is the first line of the install section.
+
 ## The 2.2.0 voice release round, and what it confirmed on the way
 
 - **The signing script's last check false-failed** on `libggml-blas.so` after every artifact was
@@ -318,6 +362,10 @@ Both now ask one rule, `ActivityStall`, so the two keys cannot disagree about a 
   Badging idle sessions amber is what #51 just removed.
 
 ## The #20 trade: the reinstall story is now worse, and the README lied about it
+
+> **SUPERSEDED the same day by #23** — there is no registration to lose any more. Kept because the
+> reasoning is the evidence for why universal was the right call, and because the package-install
+> reproduction below is exactly what a 2.2.0-over-2.0.1 QA install WOULD have shown.
 
 Found because the icon vanished twice after rebuilds on 2026-08-28. `dotnet build` sends a plugin
 RELOAD; the service's live application list loses `@_claudeconsole`; the disk entry is still valid so

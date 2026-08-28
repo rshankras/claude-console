@@ -2,18 +2,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
     using System.IO;
-    using System.Text.RegularExpressions;
 
     using Xunit;
 
     /// <summary>
-    /// The uninstall remedy has to reach users who do not have the repo (#45).
+    /// The cleanup script has to reach users who do not have the repo (#45).
     ///
-    /// Uninstalling through Options+ deletes the package but leaves the application registration
-    /// behind, still claiming Terminal. When the uninstalled product was the LAST of ours there is
-    /// no plugin left to sweep it — and the only script that could was in a developer doc. The fix
-    /// installs the recovery scripts to the runtime home, which outlives the package, by the same
-    /// embed-and-extract route as the bridge scripts.
+    /// Uninstalling through Options+ deletes the package and nothing else — the voice runtime, the
+    /// speech model, the hooks in settings.json all stay — and the only cleanup was a script in the
+    /// repo. The fix installs it to the runtime home, which outlives the package, by the same
+    /// embed-and-extract route as the bridge scripts. (It once carried two registration scripts as
+    /// well; those left with the application registration itself when the plugin went universal, #23.)
     ///
     /// Nothing checks that route end to end: the csproj names a resource, the C# names the same
     /// resource as a string, and neither compiler sees the other. These tests read both, the way
@@ -23,7 +22,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class RecoveryScriptsTests
     {
-        private static readonly String[] Scripts = { "uninstall-registration.sh", "repair-registration.sh", "uninstall.sh" };
+        // Once three; the registration repair and the orphan sweep left with the application
+        // registration itself (#23 — a universal plugin has no entry to orphan or repair).
+        private static readonly String[] Scripts = { "uninstall.sh" };
 
         private static String RepoRoot()
         {
@@ -91,22 +92,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void UninstallSweepsTheOrphanBeforeDeletingTheHomeItLivesIn()
-        {
-            // The installed copy of uninstall-registration.sh lives INSIDE ~/.claude/claude-console.
-            // uninstall.sh deletes that directory; if it did so first, the sweep it then calls would
-            // be gone and the orphan would survive the very script meant to clear it.
-            var script = Read(Path.Combine("scripts", "uninstall.sh"));
-
-            var sweep = script.IndexOf("bash \"$SWEEP\" --remove", StringComparison.Ordinal);
-            var delete = script.IndexOf("rm -rf \"$RUNTIME\"", StringComparison.Ordinal);
-
-            Assert.True(sweep > 0, "uninstall.sh no longer runs the orphan sweep");
-            Assert.True(delete > 0, "uninstall.sh no longer removes the runtime home");
-            Assert.True(sweep < delete, "uninstall.sh deletes the runtime home before sweeping — the sweep script is inside it");
-        }
-
-        [Fact]
         public void TheReadmePointsUsersAtTheInstalledCopiesNotTheRepo()
         {
             // A Marketplace user has no `scripts/` directory. Every recovery instruction has to
@@ -114,18 +99,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var readme = Read("README.md");
 
             Assert.Contains("~/.claude/claude-console/scripts/uninstall.sh", readme);
-            Assert.Contains("~/.claude/claude-console/scripts/repair-registration.sh", readme);
             Assert.DoesNotContain("bash scripts/uninstall.sh", readme);
-            Assert.DoesNotContain("bash scripts/repair-registration.sh", readme);
-        }
-
-        [Fact]
-        public void RepairTakesTheRegistrationNameSoTheOtherProductsCanUseIt()
-        {
-            var script = Read(Path.Combine("scripts", "repair-registration.sh"));
-
-            Assert.Matches(new Regex(@"NAME=""\$\{1:-claudeconsole\}"""), script);
-            Assert.DoesNotContain("@_claudeconsole\"", script);   // no hard-coded product left
         }
     }
 }

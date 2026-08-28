@@ -6,10 +6,8 @@
 # imported "Claude Console — Keypad" profile there too. That is the actual uninstall.
 #
 # This script only clears the app-level leftovers that Logi Options+ can't see and never
-# removes: the ORPHANED APPLICATION REGISTRATION an uninstall leaves behind (#45 — it keeps
-# claiming Terminal and shows a keypad of unresolvable keys until swept), the voice runtime +
-# ~142 MB speech model, the /tmp IPC files, the Microphone permission, any crash-disable marker,
-# and a dev plugin .link.
+# removes: the voice runtime + ~142 MB speech model, the /tmp IPC files, the Microphone
+# permission, any crash-disable marker, and a dev plugin .link.
 #
 # Installed to ~/.claude/claude-console/scripts/ by the plugin on every load, so a Marketplace
 # user can run it without the repo:
@@ -37,10 +35,6 @@ for a in "$@"; do
 done
 
 RUNTIME="$HOME/.claude/claude-console"
-# The orphan sweep lives beside this script — in the repo or in the installed copy — and must run
-# BEFORE the runtime home is deleted, because the installed copy lives inside it.
-SWEEP="$(cd "$(dirname "$0")" && pwd)/uninstall-registration.sh"
-[ -f "$SWEEP" ] || SWEEP="$RUNTIME/scripts/uninstall-registration.sh"
 LOGI="$HOME/Library/Application Support/Logi/LogiPluginService"
 LINK="$LOGI/Plugins/ClaudeConsolePlugin.link"
 MARKER="$LOGI/Logs/plugin_crashes/ClaudeConsolePlugin.dll"
@@ -52,10 +46,6 @@ echo "Claude Console — leftover-data cleanup."
 echo "This does NOT remove the plugin (uninstall that in Logi Options+). It clears the"
 echo "app-level leftovers Logi can't see. These will be removed:"
 echo
-if [ -f "$SWEEP" ]; then
-  echo "  • orphaned app registration  (only entries whose plugin is gone — see below)"
-  bash "$SWEEP" 2>/dev/null | sed 's/^/        /'
-fi
 if [ -d "$RUNTIME" ]; then
   echo "  • voice runtime + model   $RUNTIME  ($(sz "$RUNTIME"), incl. your prompts.json)"
 else
@@ -80,8 +70,6 @@ if [ "$YES" -ne 1 ]; then
   case "$ans" in y|Y|yes|YES) ;; *) echo "Aborted."; exit 1 ;; esac
 fi
 
-# Sweep first: it is inside $RUNTIME when this is the installed copy.
-[ -f "$SWEEP" ] && bash "$SWEEP" --remove
 [ -d "$RUNTIME" ] && rm -rf "$RUNTIME" && echo "removed $RUNTIME"
 rm -rf /tmp/claude-console /tmp/claude-console-* 2>/dev/null && echo "cleared /tmp/claude-console IPC files"
 tccutil reset Microphone "$HELPER_ID" >/dev/null 2>&1 && echo "reset Microphone permission for $HELPER_ID"

@@ -69,10 +69,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static readonly String ScriptsDir = Path.Combine(ClaudeConsoleHome, "scripts");
         private static readonly String StatuslineScript = Path.Combine(ScriptsDir, "statusline-handler.sh");
         private static readonly String ActivityScript = Path.Combine(ScriptsDir, "activity-hook.sh");
-        // Recovery scripts the user needs precisely when the package is gone (#45). Same directory,
+        // The cleanup script the user needs precisely when the package is gone (#45). Same directory,
         // same refresh-on-load, but NOT behind the bridge opt-out: declining settings.json wiring
-        // must not cost anyone the uninstall remedy.
-        private static readonly String[] RecoveryScripts = { "uninstall-registration.sh", "repair-registration.sh", "uninstall.sh" };
+        // must not cost anyone the uninstall remedy. (The registration repair and orphan sweep that
+        // used to ship beside it went with the application registration itself — #23.)
+        private static readonly String[] RecoveryScripts = { "uninstall.sh" };
         private static readonly String StatuslineChainFile = Path.Combine(ClaudeConsoleHome, "statusline-chain");
         private static readonly String BridgeOptOutFile = Path.Combine(ClaudeConsoleHome, "no-autowire");
 
@@ -1222,11 +1223,11 @@ namespace Loupedeck.ClaudeConsolePlugin
             ExtractEmbeddedScript("ClaudeConsole.activity-hook.sh", ActivityScript);
         }
 
-        // Write the recovery scripts to ~/.claude/claude-console/scripts/ (#45). Uninstalling through
-        // Options+ deletes the package but leaves the application registration behind; when the
-        // uninstalled product was the LAST of ours there is no plugin left to sweep it, and the only
-        // remedy was a script in the repo. The runtime home outlives the package, so the remedy lives
-        // there, refreshed every load like the bridge scripts.
+        // Write the cleanup script to ~/.claude/claude-console/scripts/ (#45). Uninstalling through
+        // Options+ deletes the package and nothing else — the voice runtime, the speech model, the
+        // hooks in settings.json all stay — and the only cleanup was a script in the repo. The runtime
+        // home outlives the package, so the script lives there, refreshed every load like the bridge
+        // scripts.
         private static void EnsureRecoveryScriptsInstalled()
         {
             if (OperatingSystem.IsWindows())

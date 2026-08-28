@@ -51,27 +51,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             // on a background thread, and takes effect on the user's next Claude Code session.
             BridgeManager.Instance.EnsureBridgeAutoWired();
 
-            // The application registration (icon in Options+, auto-imported layout) is ours to
-            // manage: a sideloaded install never CREATES it (clean machine: nothing appears), and
-            // a reinstall drops an existing one from the service's live list while disk stays
-            // correct. Create it from the packaged profile when it's missing entirely, otherwise
-            // heal the reinstall desync — either path schedules one service restart.
-            // Sweep orphans first: an entry whose plugin was uninstalled still holds the terminal
-            // and shows a keypad of unresolvable keys, which looks like THIS plugin being broken.
-            Platform.RegistrationCleanup.RemoveOrphans(
-                Platform.RegistrationHeal.ApplicationsRoot(),
-                Platform.PluginPaths.PluginsRoot,
-                "ClaudeConsole");
-
-            if (!Platform.SelfRegistration.RegisterIfMissing())
-            {
-                // Marketplace-distributed: never restart the service on a stale-timestamp guess.
-                // The installer writes the registration before it finishes copying the payload, so
-                // the timestamps ALWAYS look desynced on a healthy install (#20). A genuinely
-                // missing entry is still written by RegisterIfMissing above; a stale one is
-                // repaired by hand with scripts/repair-registration.sh.
-                Platform.RegistrationHeal.HealIfNeeded(automaticRestartAllowed: false);
-            }
+            // No application registration to write, heal, or sweep: this is a universal plugin
+            // (HasNoApplication in the package yaml), decided with Logitech on 2026-08-28 (#23).
+            // The keypad layout is a profile the user imports or builds, on Options+'s own entry
+            // for Terminal — not something the package carries. Everything that used to happen here
+            // (SelfRegistration, RegistrationHeal, RegistrationCleanup, and the service restarts they
+            // scheduled) existed only to manage an entry this plugin no longer has.
 
             PluginLog.Info("ClaudeConsolePlugin: Loaded — actions auto-discovered; bridge polling started");
         }

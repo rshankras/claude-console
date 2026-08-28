@@ -7,6 +7,10 @@ macOS user account** (or on another Mac) before each release.
 > Your everyday account is **not** a valid test bed: it already has the plugin loaded and
 > your own key assignments, and the shipped `.lp5` shares a profile GUID with your existing
 > Terminal profile, so importing it there would collide.
+>
+> Since 2.2.0 the plugin is **universal**: it registers no application and ships no layout. So the
+> correct result of step 2 is a keypad showing *nothing new* and an Options+ strip with *no* Claude
+> Console icon — the actions appear only in the action panel until step 3 gives them keys.
 
 ## What you need
 - `ClaudeConsole_<ver>.lplug4` — from [Releases](https://github.com/rshankras/claude-console/releases) (or a `dotnet build`).
@@ -40,7 +44,9 @@ macOS user account** (or on another Mac) before each release.
 ### 3. Import the layout
 - Logi Options+ → MX Creative Keypad → profile menu (the `⋯` / profile dropdown) →
   **Import Profile** → choose `ClaudeConsole-Keypad.lp5`.
-- It imports as **“Claude Console — Keypad,”** bound to Terminal, with the keys populated.
+- It imports as a **Terminal** profile with the keys populated. Terminal appears in the
+  application strip (it is Terminal's entry, not the plugin's) and the layout shows when
+  Terminal.app is frontmost.
 
 ### 4. Grant permissions (fresh per account)
 - **Accessibility** → Privacy & Security → Accessibility → enable **Logi Plugin Service**.
@@ -63,7 +69,7 @@ macOS user account** (or on another Mac) before each release.
   existing Terminal profile.
 
 ## Pass criteria
-- ✅ Package installs and **loads clean**
+- ✅ Package installs and **loads clean**, with **no** application entry and **nothing** on the keypad
 - ✅ **Import** produces the full layout on the keypad
 - ✅ prompt / voice / answer keys fire with Terminal focused
 - ✅ live keys auto-wire and show data on a second `claude` session

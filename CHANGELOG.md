@@ -3,6 +3,55 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.2.0] — Unreleased
+
+The Logitech QA retest release. Twenty-five findings were filed against 2.0.1; this release
+answers the ones that were ours to answer, and changes one thing about what the plugin *is*.
+
+### Changed
+- **The plugin is universal.** No application binding, no packaged profile (`HasNoApplication`),
+  at Logitech's request. The keypad layout is now a download — `ClaudeConsole-Keypad.lp5` (and
+  `-Windows.lp5`) from the release — imported once onto Terminal's own Options+ entry. This removes
+  the self-registration and repair machinery that produced the "icon vanished after reinstall" and
+  "nothing appeared after first install" failures outright, and lets Claude Console and Vizhi for
+  Codex be installed together.
+- **A Marketplace install no longer forces a service restart** (P0). The heal that did so fired on
+  every healthy install because the installer writes the registration before the payload.
+- **Text injection works on non-US keyboard layouts** (P0): typing goes by key code, not character.
+- **The No key rejects** (P0): both answer keys used to type text into the approval menu.
+- **The session pin releases**: display keys follow your eyes, answer keys follow the pin, and
+  pressing the pinned session again lets go.
+- **A busy turn that was interrupted no longer shows an hourglass forever**: the plugin watches
+  the transcript, not just the hooks — and a keypad Esc clears it in seconds.
+- **Subprocess timeouts say how often and how long**, and back off instead of retrying a stalled
+  machine every tick.
+
+### Fixed
+- **Voice works from a package install.** 2.0.1 shipped a whisper bundle with no compute backends;
+  it aborted on every machine without Homebrew while passing every check on the build machine. The
+  bundle now carries them, the release script refuses one that has not transcribed, and a broken
+  bundle already on disk is replaced on the next update.
+- **A failed dictation says so**: a denied microphone, a silent room, a missing model or helper each
+  put two words on the key — "Mic denied", "No speech", … — with a beep, instead of quietly typing
+  nothing. Whisper's noise labels ("(gunshot)") are no longer treated as speech and matched to a
+  project name.
+- **Go to Project finds projects anywhere**, not only under `~/Work`; the release binary no longer
+  embeds the build machine's paths.
+- Idle sessions no longer borrow another session's cost or wear the approval badge; an idle session
+  keeps its name and its state file.
+- The key-redraw storm (~11/s) is gone; redraws happen when something changed.
+- The icon converter wrote to a directory that no longer existed and reported success.
+- `uninstall.sh` ships with the plugin and lives outside the package, so it is there after an
+  uninstall; the README's recovery instructions name the installed paths.
+
+## [2.1.0] — 2026-08-21
+
+One repository, two products. The engine (`src/Core`), the agents (`src/Agents`) and the thin
+products (`src/Products`) were separated so that Claude Console and **Vizhi for Codex** build from
+the same core with one adapter each. Codex on Windows gained a hookless state transport (the
+rollout transcript), a working Screenshot key, per-session keys, and focus by tab identity.
+No user-facing change for Claude Console on macOS.
+
 ## [2.0.1] — 2026-08-13
 
 ### Changed
