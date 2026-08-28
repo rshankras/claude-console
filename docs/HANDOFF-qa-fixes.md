@@ -242,9 +242,16 @@ QA's three complaints and the comment's fourth, and what each got:
 - **Hidden opt-out** → it is now a two-way switch: with `no-autowire` present the plugin UNWIRES on
   load if it finds its entries. `uninstall.sh --unwire` = remove the wiring + set the opt-out, and
   the README's bridge section leads with "this edits your settings" and how to reverse it.
-- **"Prompt before modifying"** → NOT done, deliberately: a headless keypad plugin has no prompt. The
-  honest alternative is opt-IN via a key press, which ends the zero-setup install Logitech's own flow
-  assumes. Put to the PM as a product call; auto-wire stays on until they say otherwise.
+- **"Prompt before modifying"** → the platform's nearest thing, done: `Plugin.OnPluginStatusChanged`
+  (reflected from PluginApi.dll — Spotify and Zoom both use it) posts to Options+'s message centre with
+  a link. The engine composes it (`BridgeNotice`, pure, tested) and fires `BridgeManager.Notify` on the
+  load that WRITES the wiring (Warning → the "!" badge), on an opt-out unwire (Normal + message), and
+  clears to Normal on any load that changes nothing. A modal dialog is not available; true consent
+  would be opt-IN via a key, which ends zero-setup — still the PM's call, but "no prompt at all" is no
+  longer the honest description. **An earlier note here said the plugin could only show key faces and
+  a beep. That was wrong; the owner asked "are you sure?" and reflection said no.**
+  Unknown still: whether Options+ renders a plugin SETTINGS page (`PluginSettingRequest` exists in
+  the SDK; no shipped plugin uses it). If it does, the opt-out belongs there as a toggle.
 
 **Verified on this Mac 2026-08-28 17:40, on the owner's real settings.json** (5 KB, 12 unrelated
 top-level keys, backup dated 26 June — the exact stale-snapshot case QA described):

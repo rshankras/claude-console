@@ -132,6 +132,15 @@ namespace Loupedeck.ClaudeConsolePlugin
         public event Action<ActivityState> OnActivityChanged;
 
         /// <summary>
+        /// How the product tells the user something in Options+ (#31). The engine composes the
+        /// message; only the product's Plugin class can deliver it (Plugin.OnPluginStatusChanged is
+        /// an instance method there), so it installs this in its constructor. Null-safe: a product
+        /// that never installs it simply says nothing, as before.
+        /// (status, message, supportUrl, supportUrlTitle). A null message means "clear to Normal".
+        /// </summary>
+        internal Action<PluginStatus, String, String, String> Notify { get; set; }
+
+        /// <summary>
         /// A dictation failed: which key's capture it was, and the words that key should show (#18).
         /// Raised from whichever thread learns of the failure — the keys repaint from timer threads
         /// already, so that is safe — and always AFTER the beep, so sound and face agree.
@@ -1361,12 +1370,24 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (!changed)
             {
                 PluginLog.Info("Bridge auto-wire: settings.json already wired — no changes");
+                // A load that changed nothing clears the notice from the load that did: the "!" in
+                // Options+ means "since the last change", not "forever".
+                this.Notify?.Invoke(PluginStatus.Normal, null, null, null);
                 return;
             }
 
             WriteSettings(root);
             PluginLog.Info("Bridge auto-wire: wired live-status bridge into settings.json — start a NEW Claude Code session to activate Cost/Context/Activity");
+
+            // Say so where the user is looking (#31): the message centre in Options+, with the undo
+            // one click away. Warning is the level that earns the badge; it is cleared on the next
+            // load that changes nothing.
+            this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount, SettingsBackup), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
         }
+
+        // UserPromptSubmit, PostToolUse, Notification, Stop, PermissionRequest — the five EnsureHook
+        // calls above. Kept as a number the notice can print, and pinned by a test that counts them.
+        internal const Int32 WiredHookCount = 5;
 
         // The opt-out's other direction (#31): take our wiring back out if it is there. Reads the
         // chained status line we recorded so the user's own status bar comes back exactly as it was.
@@ -1391,6 +1412,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             WriteSettings(root);
             TryDelete(StatuslineChainFile);
             PluginLog.Info("Bridge auto-wire: opt-out file present — removed our statusLine + hooks from settings.json (your own entries were left alone)");
+            this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Unwired(SettingsBackup), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
         }
 
         // settings.json as a document we may rewrite, or null when we must not touch it: a symlink

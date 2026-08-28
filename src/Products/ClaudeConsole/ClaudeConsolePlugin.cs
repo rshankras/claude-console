@@ -35,6 +35,27 @@ namespace Loupedeck.ClaudeConsolePlugin
             var agent = new ClaudeCodeAdapter();
             IpcPaths.UseProduct(agent.ProductSlug);
             BridgeManager.Instance.Agent = agent;
+
+            // The engine composes what the user should be told about an edit to their settings; only
+            // this class can put it in front of them (Options+'s message centre, with a link) — #31.
+            BridgeManager.Instance.Notify = (status, message, url, title) =>
+            {
+                try
+                {
+                    if (message == null)
+                    {
+                        this.OnPluginStatusChanged(status, String.Empty);
+                    }
+                    else
+                    {
+                        this.OnPluginStatusChanged(status, message, url, title);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "ClaudeConsolePlugin: could not post the plugin status");
+                }
+            };
         }
 
         public override void Load()
