@@ -47,7 +47,7 @@ so renaming the folder to match would silently kill the running plugin. Leave it
 
 | | |
 |---|---|
-| Branch | `fix/qa-retest`, 22 commits, pushed, **no PR opened** |
+| Branch | `fix/qa-retest`, 21 commits, pushed, **no PR opened** |
 | Suite | 731 C# + 47 shell, green |
 | Issues | 25 filed (#20–#44) plus #45, #46, #47, #48, #49, #50, #51 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
