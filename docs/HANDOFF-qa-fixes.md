@@ -1,11 +1,11 @@
 # Handoff — the 2.0.1 QA retest fixes
 
-State as of **2026-08-28**, morning. Branch `fix/qa-p0`, branched from `main` (2.1.0), pushed.
+State as of **2026-08-28**, morning. Branch `fix/qa-retest`, branched from `main` (2.1.0), pushed.
 Read this before touching the QA work; the issue tracker carries the detail, this carries the shape.
 
 ## START HERE (fresh session)
 
-**Every fix below is on `fix/qa-p0` and pushed. Nothing is merged, so `Closes #NN` has not fired and
+**Every fix below is on `fix/qa-retest` and pushed. Nothing is merged, so `Closes #NN` has not fired and
 the issues still show OPEN on GitHub — the tracker understates what is done. This file is the
 authority on status, not the issue state.**
 
@@ -39,13 +39,15 @@ duplicate so the list stops overstating what is left.
 `claude-console-p0/bin/ClaudeConsole/Debug` (DLL of 2026-08-28 08:20, ~1.03 MB — a healthy one is
 ~1 MB; ~140 KB means resources were dropped). There is no installed ClaudeConsole package, so no
 dev-link collision. **LogiPluginService is NOT supervised on this Mac** — see the trap below before
-running `killall`.
+running `killall`. The worktree directory is still called `claude-console-p0` although the
+branch is now `fix/qa-retest` — that mismatch is deliberate: the `.link` names the DIRECTORY,
+so renaming the folder to match would silently kill the running plugin. Leave it.
 
 ## Where it stands
 
 | | |
 |---|---|
-| Branch | `fix/qa-p0`, 22 commits, pushed, **no PR opened** |
+| Branch | `fix/qa-retest`, 22 commits, pushed, **no PR opened** |
 | Suite | 731 C# + 47 shell, green |
 | Issues | 25 filed (#20–#44) plus #45, #46, #47, #48, #49, #50, #51 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
