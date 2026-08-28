@@ -51,11 +51,6 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         public const Int32 SlotCount = 6;
 
-        // A busy session that hasn't been heard from in this long is treated as finished: the Stop
-        // hook can be missed (crash, kill -9), and a key stuck on "Working" forever is worse than
-        // one that settles to Ready a little early.
-        private static readonly TimeSpan StalledBusyAfter = TimeSpan.FromSeconds(45);
-
         private readonly Object _lock = new Object();
         private RegistryRecord _registry = new RegistryRecord();
         private Dictionary<String, GridSession> _sessions = new Dictionary<String, GridSession>(StringComparer.Ordinal);
@@ -324,9 +319,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                     SessionId = state.SessionId,
                     SessionName = state.SessionName,
                     CtxPercent = state.CtxPercent,
+                    TranscriptPath = state.TranscriptPath,
                     // An agent that reports activity in the same document wins; one that keeps it
                     // in a separate activity file (Claude Code) leaves this null and we look there.
-                    State = state.Activity ?? ReadActivityState(tty),
+                    State = state.Activity ?? ReadActivityState(tty, state.TranscriptPath),
                     UpdatedAt = LastWrite(file),
                 };
 
@@ -347,9 +343,14 @@ namespace Loupedeck.ClaudeConsolePlugin
             return sessions;
         }
 
-        // "ready" unless the hooks say otherwise. A "busy" that has gone quiet for too long is
-        // reported as ready — see StalledBusyAfter.
-        private String ReadActivityState(String tty)
+        // "ready" unless the hooks say otherwise. A "busy" whose TRANSCRIPT has gone quiet is
+        // reported as ready — see ActivityStall, which also explains why age alone was not enough.
+        //
+        // The transcript path arrives from the caller because the session's state file has already
+        // been read and parsed in that loop: consulting it here would mean a second read and parse
+        // of the same file for every session on every poll, which is the cost #27 just finished
+        // removing.
+        private String ReadActivityState(String tty, String transcriptPath)
         {
             var file = this.ActivityFor(tty);
             var activity = ReadJson<ActivityState>(file);
@@ -358,13 +359,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return "ready";
             }
 
-            if (activity.State == "busy")
+            if (ActivityStall.IsStalledBusy(
+                    activity.State,
+                    activity.Ts,
+                    ActivityStall.TranscriptMtime(transcriptPath),
+                    DateTimeOffset.UtcNow.ToUnixTimeSeconds()))
             {
-                var age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - activity.Ts;
-                if (age > StalledBusyAfter.TotalSeconds)
-                {
-                    return "ready";
-                }
+                return "ready";
             }
 
             return activity.State == "done" ? "ready" : activity.State;

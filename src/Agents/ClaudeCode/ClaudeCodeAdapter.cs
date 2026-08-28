@@ -70,6 +70,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                     SessionId = state.SessionId,
                     SessionName = state.SessionName,
                     CtxPercent = ContextPercent(state),
+                    TranscriptPath = state.TranscriptPath,
                 };
             }
             catch (JsonException)

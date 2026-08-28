@@ -429,8 +429,18 @@ namespace Loupedeck.ClaudeConsolePlugin
             return quietPolls >= QuietPollsBeforeIdle ? QuietPollsBeforeIdle : quietPolls + 1;
         }
 
-        // Read the hook-written activity flag (busy/waiting/done). A "busy" with no Stop for a long
-        // while is treated as done, so a missed Stop hook can't leave the key stuck on "Working".
+        // Read the hook-written activity flag (busy/waiting/done). A "busy" whose transcript has
+        // gone quiet is treated as done, so an INTERRUPTED turn — which fires no hook at all — can't
+        // leave the key stuck on "Working" (#30).
+        //
+        // This used to expire on a bare 300s literal while SessionRegistry used 45s for the same
+        // question, so the Status key and the session-slot keys disagreed about the same session.
+        // QA's stuck session sat at 114s: past 45s, nowhere near 300s. Both now ask ActivityStall.
+        //
+        // The transcript path is taken from the ROUTING session, not from CurrentState: that is the
+        // session whose activity file was just read, and with a pin set DisplayTty() is a DIFFERENT
+        // session (#25). Pairing one session's activity with another's transcript would decide the
+        // hourglass from a tab nobody was asking about.
         private ActivityState ReadActivity()
         {
             var file = ActiveActivityFile();
@@ -440,11 +450,26 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             var a = ReadJsonWithRetry<ActivityState>(file);
-            if (a != null && a.State == "busy" &&
-                DateTimeOffset.UtcNow.ToUnixTimeSeconds() - a.Ts > 300)
+            if (a == null)
+            {
+                return null;
+            }
+
+            var routing = this.RoutingTty();
+            var transcript = !String.IsNullOrEmpty(routing)
+                && this.Grid.Sessions.TryGetValue(routing, out var routed)
+                    ? routed.TranscriptPath
+                    : null;
+
+            if (ActivityStall.IsStalledBusy(
+                    a.State,
+                    a.Ts,
+                    ActivityStall.TranscriptMtime(transcript),
+                    DateTimeOffset.UtcNow.ToUnixTimeSeconds()))
             {
                 a.State = "done";
             }
+
             return a;
         }
 

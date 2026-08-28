@@ -30,6 +30,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         [JsonPropertyName("session_id")]
         public String SessionId { get; set; }
 
+        // Written by the statusline handler verbatim, so this needs no script change (#30).
+        [JsonPropertyName("transcript_path")]
+        public String TranscriptPath { get; set; }
+
         [JsonPropertyName("workspace")]
         public WorkspaceInfo Workspace { get; set; }
 

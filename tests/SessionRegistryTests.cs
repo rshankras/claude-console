@@ -53,12 +53,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         // --- fixtures -------------------------------------------------------------------------
 
-        private void WriteSession(String tty, String projectDir, Int32 ctxPercent, DateTime? updatedAt = null)
+        private void WriteSession(String tty, String projectDir, Int32 ctxPercent, DateTime? updatedAt = null, String transcriptPath = null)
         {
             var state = new
             {
                 session_id = "sid-" + tty,
                 session_name = "name-" + tty,
+                transcript_path = transcriptPath,
                 workspace = new { project_dir = projectDir, current_dir = projectDir },
                 context_window = new { used_percentage = ctxPercent, context_window_size = 1000000, total_input_tokens = 0 },
             };
@@ -156,6 +157,41 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             WriteActivity("ttys001", "busy", DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 600);
 
             Assert.Equal("ready", RefreshedWith("ttys001").SlotSession(1).State);
+        }
+
+        [Fact]
+        public void An_interrupted_turn_clears_even_though_no_hook_fired()
+        {
+            // #30 end to end. Esc mid-turn fires NO hook, so "busy" is simply the last thing anyone
+            // wrote and its timestamp stops moving with it. The transcript stopped growing at the
+            // same moment, which is the evidence that the turn is over.
+            var transcript = this.TranscriptAged(seconds: 120);
+            WriteSession("ttys001", "/Users/x/proj", 10, transcriptPath: transcript);
+            WriteActivity("ttys001", "busy", DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 120);
+
+            Assert.Equal("ready", RefreshedWith("ttys001").SlotSession(1).State);
+        }
+
+        [Fact]
+        public void A_long_tool_call_keeps_working_even_when_the_hooks_have_gone_quiet()
+        {
+            // The other half, and the reason a plain timeout was rejected. The hooks last fired ten
+            // minutes ago, but the transcript moved a moment ago — the agent is still working, and
+            // the 45s age check this replaces would have cleared the key out from under it.
+            var transcript = this.TranscriptAged(seconds: 1);
+            WriteSession("ttys001", "/Users/x/proj", 10, transcriptPath: transcript);
+            WriteActivity("ttys001", "busy", DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 600);
+
+            Assert.Equal("busy", RefreshedWith("ttys001").SlotSession(1).State);
+        }
+
+        // A transcript file whose last write was `seconds` ago, in this test's own temp root.
+        private String TranscriptAged(Int32 seconds)
+        {
+            var path = Path.Combine(_root, "transcript-" + Guid.NewGuid().ToString("N") + ".jsonl");
+            File.WriteAllText(path, "{}");
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(-seconds));
+            return path;
         }
 
         [Fact]
