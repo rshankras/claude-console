@@ -111,6 +111,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // Test seam for the process scan: lets the tests feed captured `ps` output.
         internal Func<String> PsRunner { get; set; }
 
+        // Skip-window for the frontmost probe after it overruns (#46). Instance state, and the poll
+        // loop is non-overlapping, so it needs no locking.
+        private readonly ProbeBackoff _frontmostBackoff = new ProbeBackoff();
+
         // ------------------------------------------------------------------------------------------
         // Discovery
         // ------------------------------------------------------------------------------------------
@@ -151,7 +155,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 "  end tell\n" +
                 "end if\n" +
                 "return \"\"";
-            return NormalizeTty(this.RunOsascriptCapture(new List<String> { "-e", script }));
+            // #46: an overrun means the machine is not answering Apple Events, and the next probe
+            // would ask the same stalled machine the same question — blocking the non-overlapping
+            // poll loop for another full 2000ms to do it. Skip a few opportunities instead. An EMPTY
+            // answer is not a failure and must not back off: it just means Terminal isn't frontmost.
+            if (this._frontmostBackoff.ShouldSkip())
+            {
+                return null;
+            }
+
+            var raw = this.RunOsascriptCapture(new List<String> { "-e", script }, out var timedOut);
+            if (timedOut)
+            {
+                this._frontmostBackoff.RecordTimeout();
+                return null;
+            }
+
+            this._frontmostBackoff.RecordSuccess();
+            return NormalizeTty(raw);
         }
 
         /// <summary>"/dev/ttys003" (osascript) -> "ttys003"; "ttys003" (ps) stays "ttys003".</summary>
@@ -499,20 +520,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // Bounded subprocess plumbing
         // ------------------------------------------------------------------------------------------
 
-        private String RunOsascriptCore(List<String> args, Int32 timeoutMs, Boolean wantOutput)
+        private String RunOsascriptCore(List<String> args, Int32 timeoutMs, Boolean wantOutput) =>
+            this.RunOsascriptCore(args, timeoutMs, wantOutput, out _);
+
+        private String RunOsascriptCore(List<String> args, Int32 timeoutMs, Boolean wantOutput, out Boolean timedOut)
         {
             var runner = this.OsascriptRunner;
             if (runner != null)
             {
+                // A stubbed runner stands in for the OS and cannot overrun a budget it never waits on.
+                // The backoff POLICY is covered directly by ProbeBackoffTests; this line is the seam,
+                // not the behaviour.
+                timedOut = false;
                 return runner(args, timeoutMs, wantOutput);
             }
 
-            return BoundedProcess.Run("osascript", args, timeoutMs, wantOutput);
+            return BoundedProcess.Run("osascript", args, timeoutMs, wantOutput, out timedOut);
         }
 
         // Like a fire-and-forget osascript but returns stdout (trimmed) — for querying state (e.g.
         // the frontmost Terminal tab's TTY) on the poll timer, so it uses a short, snappy timeout.
-        private String RunOsascriptCapture(List<String> args) => this.RunOsascriptCore(args, 2000, wantOutput: true);
+        private String RunOsascriptCapture(List<String> args, out Boolean timedOut) =>
+            this.RunOsascriptCore(args, 2000, wantOutput: true, out timedOut);
 
         // Run a plain capture-only subprocess (the `ps` session scan) under the same hard-timeout
         // discipline as osascript.
