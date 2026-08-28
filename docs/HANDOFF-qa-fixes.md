@@ -13,7 +13,7 @@ authority on status, not the issue state.**
 leaked build path · #27 redraw storm · #28 voice lock · #48 noise annotations · #49 idle-session
 state + project-name memory · #51 badge inflation · #46 subprocess timeouts · #39 icon converter ·
 #30 interrupted-turn hourglass · #45 recovery scripts reach users · #18 silent voice failure ·
-**#23 universal plugin (verified on device)** · #31 settings.json rewrite · #29 undrivable sessions.
+**#23 universal plugin (verified on device)** · #31 settings.json rewrite · #29 undrivable sessions · #32 null-key traces.
 #50 closed wontfix.
 
 **Owed before release, and only these:**
@@ -225,6 +225,19 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   `LoupedeckService.dll`), which this Mac no longer captures — the Logi launch agents were removed
   during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
   comparable metric.
+
+## #32: the null-parameter trace, fixed without a reproduction
+
+`PromptCommand` looked its parameter up in a Dictionary three times; `TryGetValue(null)` throws, and
+the SDK does call a parameterised command's display-name/image hooks with a NULL parameter in some
+Options+ context. QA saw "dozens of ArgumentNullException traces per load" on 2.0.0 and again on
+2.0.1. **Not reproduced here**: twelve reloads today with Options+ open on the plugin's action panel,
+plus the owner dragging a key, produced zero traces — the trigger is some other Options+ interaction
+(the "PluginConfiguration.xml not found" half of QA's line is a service-side note about an OPTIONAL
+file no plugin on this Mac ships; it is noise, not the cause). The fix is unambiguous regardless: a
+null-safe static `Find` + `NameFor` ("Prompt" when there is nothing to go on), tested directly since
+a PluginDynamicCommand cannot be constructed outside the host. `PromptCommand` was the only
+dictionary-indexed action; the rest `switch`, which tolerates null.
 
 ## #29: a session the keys cannot reach no longer takes a key
 
