@@ -230,13 +230,25 @@ there is no sandbox equivalent for a Windows bundle on this machine.
 Logitech's PM decided it by email on 2026-08-28: no app binding, no packaged profile, users drag
 actions onto their own Terminal profile; the redesigned layout is delivered separately as a download.
 
-**Removed** (13 files): `ClaudeConsoleApplication.cs`, `VizhiCodexApplication.cs`,
-`SelfRegistration.cs`, `RegistrationHeal.cs`, `RegistrationCleanup.cs`, both
+**Removed** (11 files): `SelfRegistration.cs`, `RegistrationHeal.cs`, `RegistrationCleanup.cs`, both
 `package/profiles/DefaultProfile70.lp5`, `uninstall-registration.sh`, `repair-registration.sh`, and
 four test files (44 tests, all pinning behaviour that no longer exists). Both yamls:
 `HasApplication` → `HasNoApplication`. Both `Load()`s lose their registration block. The plugin class
 had declared `HasNoApplication => true` since the first commit — the yaml capability is what the
 service acts on.
+
+**THE TRAP, and it cost the afternoon: the `ClientApplication` subclasses must EXIST.** The first
+cut deleted `ClaudeConsoleApplication.cs`/`VizhiCodexApplication.cs` with the binding they carried,
+and the service refused the assembly: `Cannot load plugin from …ClaudeConsolePlugin.dll` then
+`added to disabled plugins list` — no crash marker, no reason in any log (the service's stdout goes
+nowhere on this Mac and the literal is in no readable binary), while the same DLL loaded in a plain
+.NET host with all 108 types. What found it: E1 (empty capability list) still failed; E3 (the
+previous commit rebuilt into the same link) LOADED; probing `SpotifyPlugin.dll` — QA's own universal
+example — showed a `SpotifyApplication : ClientApplication` that overrides nothing. Both classes are
+back as empty subclasses; `UniversalPluginTests` pins that they exist and override none of
+`GetProcessName`/`GetBundleName`/`GetApplicationStatus` (overriding with "" under HasApplication was
+the 1.5-era crash; under HasNoApplication the base's "" is correct). Side effect of E3 to know about:
+the old code re-wrote `@_claudeconsole` on load; it was removed again with the service stopped.
 
 **The downloads are the product now.** `profiles/ClaudeConsole-Keypad.lp5` was ALREADY the universal
 shape (bound to `com.apple.terminal`, `hasNativePlugin: false`, `ClaudeConsole` in
@@ -249,8 +261,13 @@ binding, rewriting only the plugin prefix, the plugin list, the GUID and the dro
 the "install one console per machine" warning (they can coexist now), `dev-reload.sh`'s service
 restart (a reload loses nothing), and the whole `@_` clause of CLAUDE.md's namespace rule.
 
+**Verified on this Mac 2026-08-28 17:05:** package uninstalled, `@_claudeconsole` removed with the
+service stopped, universal build loaded from the dev link, and 20 s later still no registration on
+disk — the build writes nothing. Keypad on `@_defaultmac`, as it should be before an import.
+
 **Unverified, in order of risk:**
-1. **On this Mac** — see START HERE item 4. Not done yet because the app-bound package is installed.
+1. **The import on this Mac** — `profiles/ClaudeConsole-Keypad.lp5` into Options+, then the full
+   layout with Terminal frontmost. Owed to the owner's click at time of writing.
 2. **`ClaudeConsole-Windows.lp5`** — the entry name `windowsterminal` and the default plugin
    `DefaultWin` follow the mac pattern by analogy; one import on the laptop confirms or corrects.
 3. **Two products together** — claimed possible, never tried since the change.

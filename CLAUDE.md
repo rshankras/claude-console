@@ -64,7 +64,10 @@ whose process it cannot see.
 **The plugins are universal (`HasNoApplication`) and ship no profile.** Decided with Logitech on
 2026-08-28 (#23). There is no application registration to write, heal, or sweep — the whole
 `SelfRegistration`/`RegistrationHeal`/`RegistrationCleanup` family was deleted, and with it a class
-of reinstall and uninstall defects (#20 #34 #45). The layouts are DOWNLOADS in `profiles/`, each a
+of reinstall and uninstall defects (#20 #34 #45). **Each product still has an EMPTY
+`ClientApplication` subclass, and must keep it**: the service refuses to load an assembly without
+one ("Cannot load plugin", then disabled, no reason logged) — Spotify's universal plugin carries
+one that overrides nothing. `UniversalPluginTests` pins the shape. The layouts are DOWNLOADS in `profiles/`, each a
 profile for Terminal's own Options+ entry that lists our plugin in `additionalNativePluginNames`;
 `tools/make-codex-profile.py` and `tools/windows/make-windows-profile.sh` derive the other two from
 `ClaudeConsole-Keypad.lp5`. Key bindings inside a profile are `<PluginShortName>___<Type>___<param>`,
