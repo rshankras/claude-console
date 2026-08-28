@@ -15,7 +15,7 @@ state + project-name memory · #51 badge inflation. #50 closed wontfix.
 
 **Owed before release, and only these:**
 1. **One voice hardware pass covering #24 AND #28 together** — `sign-and-notarize.sh` →
-   `tccutil reset Microphone com.rshankras.claudeconsole.voicehelper` (re-signing the helper kills
+   `tccutil reset Microphone com.rshankar.claudeconsole.voicehelper` (re-signing the helper kills
    its mic grant; the symptom looks exactly like the bug you fixed) → `pack-release.sh` (it now
    refuses a bundle that has not transcribed) → install → press Voice, then press a DIFFERENT voice
    key mid-recording and confirm it stops rather than starting a second capture. Also: restore the
