@@ -16,12 +16,14 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
 #50 closed wontfix.
 
 **Owed before release, and only these:**
-1. **One voice hardware pass covering #24, #28 AND #18 together** — `sign-and-notarize.sh` →
-   `tccutil reset Microphone com.rshankar.claudeconsole.voicehelper` (re-signing the helper kills
-   its mic grant; the symptom looks exactly like the bug you fixed) → `pack-release.sh` (it now
-   refuses a bundle that has not transcribed) → install → press Voice, then press a DIFFERENT voice
-   key mid-recording and confirm it stops rather than starting a second capture. Also: restore the
-   backend-less bundle first to prove the repair path replaces it.
+1. **Voice release round: DONE 2026-08-28 16:20, on a real package install** (`ClaudeConsole_2.2.0.lplug4`,
+   18 MB, gitignored, in the worktree root). `sign-and-notarize.sh` → both notarizations Accepted,
+   helper stapled → `pack-release.sh 2.2.0` → installed via Options+ → Voice → Allow → "Hey, this is
+   really cool." typed in 4s. **#24's repair path proven**: the Metal backend was deleted from the
+   runtime bundle beforehand; the log shows `installing whisper bundle from package` and all 5 backends
+   came back. First time `pkgVoice … exists=True` has ever appeared on this Mac. **#28 on the package
+   still owed** (Voice, then Voice Draft mid-recording → stops, no second helper). The Windows half is
+   #47 and needs the laptop.
 2. **#25 on hardware** — two sessions BOTH writing state files, pin one, look at the other, confirm
    Cost follows your eyes while the highlighted key and Yes stay with the pin; press the pinned key
    again to release.
@@ -215,6 +217,24 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   `LoupedeckService.dll`), which this Mac no longer captures — the Logi launch agents were removed
   during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
   comparable metric.
+
+## The 2.2.0 voice release round, and what it confirmed on the way
+
+- **The signing script's last check false-failed** on `libggml-blas.so` after every artifact was
+  correct (both notarizations Accepted, helper stapled, every file Developer-ID and valid by hand).
+  Cause unconfirmed — a pipefail + `grep -q` race fits but did not reproduce in 30 tries. The check now
+  captures before grepping and says WHICH half failed (`4fb3554`). Do not re-run the whole round on
+  that error: verify by hand, as done here.
+- **Package install over the dev registration reproduced the reinstall symptom exactly**: 2.2.0 loaded
+  from the package, `@_claudeconsole` on disk, live list without it, no profile in Options+. The
+  shipped `~/.claude/claude-console/scripts/repair-registration.sh` fixed it end to end, including
+  starting the service itself — the #45 deliverable, exercised as a user would. This is what QA will see
+  installing 2.2.0 over 2.0.1; the universal change (next) removes the failure entirely.
+- `logiplugintool` still needs `DOTNET_ROLL_FORWARD=LatestMajor`. `pack-release.sh` removes the dev
+  `.link`; restart the service BEFORE the Options+ install click or the package double-loads.
+- **Machine state after this round: the PACKAGE is installed and the dev `.link` is gone.** A bare
+  `dotnet build` (or `dev-reload.sh`) would write the link back and double-load. To return to the dev
+  loop, uninstall Claude Console in Options+ first.
 
 ## #18: a failed dictation now says so — reproduced on the device first
 
