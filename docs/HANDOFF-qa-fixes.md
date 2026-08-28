@@ -1,13 +1,51 @@
 # Handoff — the 2.0.1 QA retest fixes
 
-State as of **2026-08-27**, end of day. Branch `fix/qa-p0`, branched from `main` (2.1.0), pushed.
+State as of **2026-08-28**, morning. Branch `fix/qa-p0`, branched from `main` (2.1.0), pushed.
 Read this before touching the QA work; the issue tracker carries the detail, this carries the shape.
+
+## START HERE (fresh session)
+
+**Every fix below is on `fix/qa-p0` and pushed. Nothing is merged, so `Closes #NN` has not fired and
+the issues still show OPEN on GitHub — the tracker understates what is done. This file is the
+authority on status, not the issue state.**
+
+**Done and pushed:** #20 #21 #22 (P0s) · #24 whisper backends · #25 pin split · #26 project roots +
+leaked build path · #27 redraw storm · #28 voice lock · #48 noise annotations · #49 idle-session
+state + project-name memory · #51 badge inflation. #50 closed wontfix.
+
+**Owed before release, and only these:**
+1. **One voice hardware pass covering #24 AND #28 together** — `sign-and-notarize.sh` →
+   `tccutil reset Microphone com.rshankras.claudeconsole.voicehelper` (re-signing the helper kills
+   its mic grant; the symptom looks exactly like the bug you fixed) → `pack-release.sh` (it now
+   refuses a bundle that has not transcribed) → install → press Voice, then press a DIFFERENT voice
+   key mid-recording and confirm it stops rather than starting a second capture. Also: restore the
+   backend-less bundle first to prove the repair path replaces it.
+2. **#25 on hardware** — two sessions BOTH writing state files, pin one, look at the other, confirm
+   Cost follows your eyes while the highlighted key and Yes stay with the pin; press the pinned key
+   again to release.
+3. **#27's idle CPU number** — every Claude session closed (the measurer is otherwise a live busy
+   session), then `spikes/redraw-27/measure-27.sh 120` twice: Terminal frontmost, and not.
+4. **#47** needs the Windows laptop. **#34 and #23** need Logitech.
+
+**Suggested next issue: #46 (subprocess timeouts).** Six `osascript exceeded 2000ms` warnings
+appeared in the plugin log during two minutes of work on 2026-08-27, so it is live and observable —
+but #27's adaptive cadence cut how often the frontmost probe runs, so **measure before coding**; it
+may already be largely fixed, which is a cheap close with evidence. Then **#39** (already fixed on
+`feat/vizhi-desktop` as `6726b51` — cherry-pick it) and **#30** (hourglass stuck after an interrupted
+turn, small and adjacent to the state work). **#18 is superseded by #24** and should be closed as a
+duplicate so the list stops overstating what is left.
+
+**Machine state right now:** the keypad runs a DEV build via a `.link` pointing at
+`claude-console-p0/bin/ClaudeConsole/Debug` (DLL of 2026-08-28 08:20, ~1.03 MB — a healthy one is
+~1 MB; ~140 KB means resources were dropped). There is no installed ClaudeConsole package, so no
+dev-link collision. **LogiPluginService is NOT supervised on this Mac** — see the trap below before
+running `killall`.
 
 ## Where it stands
 
 | | |
 |---|---|
-| Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
+| Branch | `fix/qa-p0`, 22 commits, pushed, **no PR opened** |
 | Suite | 731 C# + 47 shell, green |
 | Issues | 25 filed (#20–#44) plus #45, #46, #47, #48, #49, #50, #51 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
@@ -229,6 +267,30 @@ an IDLE PROMPT as well as an approval, the activity hook maps it to `waiting`, a
   PermissionRequest hook"). Rewritten to the new intent, with the accepted cost in the test body:
   on a Claude Code too old for the hook, a real approval shows the waiting face without the badge.
   The plugin wires that hook itself, so this only affects hand-configured installs.
+
+## How this session worked, and what it cost
+
+Four of the nine fixes came from **using the plugin on real hardware**, not from QA's report: #48,
+#49, #51 and the (rejected) #50. None was visible to a green suite. Voice needed a real room and
+standing too far from the mic; the badge inflation needed three sessions left idle; the state loss
+needed ten minutes of not typing. Budget for driving the device, not just running tests.
+
+**Twice the existing tests out-argued a proposed fix, and both times the test was right:**
+
+- **#50 slot compaction** — implemented, then broke a test commented "THE important one". Stable
+  slots are a documented guarantee in `SessionRegistry`'s class comment. Reverted.
+- **#51 badge rule** — the old behaviour was pinned by a test whose comment justified it. Here the
+  reversal WAS correct (hardware evidence, owner's call, trade-off stated up front), so the test was
+  rewritten to the new intent rather than deleted, with the accepted cost recorded in its body.
+
+The lesson for both: **read the class comment and the existing test before changing a behaviour that
+looks wrong.** If a test asserts the opposite of your fix, find out why it was written before you
+decide which of you is mistaken.
+
+**Scripts left behind** (gitignored, recreate from the docs if lost):
+`spikes/whisper-24/repro-24.sh` (proves #24 both ways, sandboxing Homebrew away) and
+`spikes/redraw-27/measure-27.sh` + `results.tsv` (CPU baselines, with the state check that catches a
+run taken in the wrong display state).
 
 ## Traps and findings worth not rediscovering
 
