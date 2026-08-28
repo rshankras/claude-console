@@ -11,7 +11,8 @@ authority on status, not the issue state.**
 
 **Done and pushed:** #20 #21 #22 (P0s) · #24 whisper backends · #25 pin split · #26 project roots +
 leaked build path · #27 redraw storm · #28 voice lock · #48 noise annotations · #49 idle-session
-state + project-name memory · #51 badge inflation · #46 subprocess timeouts. #50 closed wontfix.
+state + project-name memory · #51 badge inflation · #46 subprocess timeouts · #39 icon converter.
+#50 closed wontfix.
 
 **Owed before release, and only these:**
 1. **One voice hardware pass covering #24 AND #28 together** — `sign-and-notarize.sh` →
@@ -27,10 +28,10 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts. #
    session), then `spikes/redraw-27/measure-27.sh 120` twice: Terminal frontmost, and not.
 4. **#47** needs the Windows laptop. **#34 and #23** need Logitech.
 
-**Suggested next issue: #39** (already fixed on `feat/vizhi-desktop` as `6726b51` — cherry-pick it),
-then **#30** (hourglass stuck after an interrupted turn, small and adjacent to the state work).
-**#18 is superseded by #24** and should be closed as a duplicate so the list stops overstating what
-is left. #46 was done on 2026-08-28 — see below; measuring first was right and it half-closed itself.
+**Suggested next issue: #30** (hourglass stuck after an interrupted turn, small and adjacent to the
+state work). **#18 is superseded by #24** and should be closed as a duplicate so the list stops
+overstating what is left. #46 and #39 were done on 2026-08-28 — see below; on #46, measuring first
+was right and it half-closed itself.
 
 **Machine state right now:** the keypad runs a DEV build via a `.link` pointing at
 `claude-console-p0/bin/ClaudeConsole/Debug` (DLL of 2026-08-28 08:20, ~1.03 MB — a healthy one is
@@ -194,6 +195,36 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   `LoupedeckService.dll`), which this Mac no longer captures — the Logi launch agents were removed
   during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
   comparable metric.
+
+## #39: cherry-picked from `feat/vizhi-desktop`, and reproduced afterwards
+
+`6726b51` picked clean as `e5e882e` — one file, `tools/convert-designer-icons.swift`, and the bug was
+present here too (`src/Core/Resources/icons` exists on this branch, `src/Resources/icons` does not).
+
+**Reproduced after the fact, which is the wrong order but worth having done.** The pre-fix script run
+against today's layout prints `OK(44)` / `FAIL(0)` / exit 0 and writes **zero files**. That single line
+of output is the whole defect: the wrong output path was invisible because `try? png.write(...)` was
+followed by an unconditional `return true`. Both runs used a throwaway root with `assets/` symlinked
+in — never regenerate into the working tree to test this, as the real folder holds 62 committed icons
+and the converter owns only 44 of them.
+
+| | pre-fix | post-fix |
+|---|---|---|
+| output dir missing | `OK(44)`, exit 0, 0 files | names the directory, exit 1 |
+| output dir present | writes to the old `src/Resources/icons` | 44 PNGs in `src/Core/Resources/icons`, exit 0 |
+
+**Nothing shipped was ever wrong** — the committed PNGs predate the refactor. What was broken is
+REGENERATING them, which is exactly what the new designer pack invites.
+
+**The new pack does not feed this pipeline, and that is the next surprise.** `~/Downloads/icons/Icons`
+(delivered 2026-08-27) is **38 PNGs at 192px, pure white** — but the converter consumes **SVG**, and not
+incidentally: `gauge_warn`/`gauge_crit` and `brain_haiku`/`sonnet`/`opus` are produced by swapping the
+fill hex IN THE SVG, so the glyph stays single-source. A flat PNG cannot do that. The names are also a
+different language — roughly four overlap; the pack adds `allow`, `alwaysallow`, `deny`, `needsinput`,
+`agent`, `skill`, `usage`, `fork` and drops `chevron-small-down/up`, `gitcommit`, `gitpush`,
+`nexttab(right)`, `voicedictation`, `smartactions`. 38 glyphs against 62 embedded icons. Ingesting it
+needs a name→key map and preferably the SVGs, which is **#41** (blocked on Logitech), and the four
+approval glyphs are aimed at **#40/#43**, also blocked.
 
 ## #46: measure-before-coding paid, and then disproved everything
 
