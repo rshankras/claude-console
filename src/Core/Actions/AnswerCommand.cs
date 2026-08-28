@@ -139,7 +139,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         private static void AnswerApproval(BridgeManager bridge, Boolean approve)
         {
-            var target = bridge.TargetTty();
+            var target = bridge.RoutingTty();
             String state = null;
             if (!String.IsNullOrEmpty(target) && bridge.Grid.Sessions.TryGetValue(target, out var session))
             {
@@ -182,7 +182,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private static ApprovalRisk TargetRisk()
         {
             var bridge = BridgeManager.Instance;
-            var target = bridge.TargetTty();
+            var target = bridge.RoutingTty();
             if (String.IsNullOrEmpty(target))
             {
                 return ApprovalRisk.None;

@@ -48,7 +48,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // "works without hooks" fallback. Claude Code's status line never sends a `status`
             // field, so that branch was dead — the key silently read Ready forever. The real signal
             // is the activity hooks, and now also the grid, which knows WHICH session is waiting.
-            var target = _bridge.TargetTty();
+            var target = _bridge.RoutingTty();
             var waitingApproval = !String.IsNullOrEmpty(target)
                 && _bridge.Grid.Sessions.TryGetValue(target, out var session)
                 && session.Risk != ApprovalRisk.None;

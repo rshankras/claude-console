@@ -96,7 +96,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         private ClaudeState _currentState;
         private ActivityState _activity;
         private String _activeTty;   // opaque id of the frontmost session (macOS: "ttys003"); null until known
-        private String _pinnedTty;   // session PINNED by a session-key press; outranks _activeTty (see TargetTty)
+        private String _pinnedTty;   // session PINNED by a session-key press; outranks _activeTty (see RoutingTty)
         private Int32 _pollTick;     // drives the ~1s cadence of the frontmost-tab check
 
         // The state file's last-seen raw text. Held so a poll can answer "did anything change?" by
@@ -221,7 +221,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // Test seam: the pinned session, so a test can assert the pin was set/released without
-        // reaching through TargetTty's fallbacks.
+        // reaching through RoutingTty's fallbacks.
         internal String PinnedTty => _pinnedTty;
 
         // ------------------------------------------------------------------------------------------
@@ -428,12 +428,15 @@ namespace Loupedeck.ClaudeConsolePlugin
         // whichever tab is frontmost. Falls back to the shared file (last writer) when the active
         // tab has no per-TTY file yet, or when Terminal isn't the frontmost app.
         // ------------------------------------------------------------------------------------------
-        private String ActiveStateFile() => PerTty(SessionsDir, StateFile);
-        private String ActiveActivityFile() => PerTty(ActivityDir, ActivityFile);
+        // Cost / Model / Context read this one: it follows the tab you are looking at (#25).
+        private String ActiveStateFile() => PerTty(SessionsDir, StateFile, this.DisplayTty());
 
-        private String PerTty(String dir, String shared)
+        // Activity follows the ROUTING target: "waiting" here is the approval the Yes key answers,
+        // so the Activity face and the key that acts on it must describe the same session.
+        private String ActiveActivityFile() => PerTty(ActivityDir, ActivityFile, this.RoutingTty());
+
+        private String PerTty(String dir, String shared, String tty)
         {
-            var tty = TargetTty();
             if (!String.IsNullOrEmpty(tty))
             {
                 var p = Path.Combine(dir, tty + ".json");
@@ -508,12 +511,23 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // ------------------------------------------------------------------------------------------
-        // Targeting — which session the typing keys act on.
+        // Targeting. TWO questions, and conflating them is #25.
         //
-        // Pressing a session key PINS that session (see SelectSlot); with nothing pinned the keys
-        // follow the frontmost Terminal tab, which is what single-session users already expect.
+        //   RoutingTty  — "where does this key ACT?"     Pin first. Injection, the answer keys, and
+        //                 every badge that describes an action (amber approval, slot highlight).
+        //   DisplayTty  — "what am I LOOKING at?"        The frontmost tab first. Cost, Model,
+        //                 Context — read-only keys that should follow your eyes.
+        //
+        // One resolver used to answer both, so pressing a session key froze the display on the
+        // pinned session: with one session frontmost, Cost showed the OTHER session's total and
+        // never moved again. The pin is right for routing — acting on session 2 while looking at
+        // session 1 is the entire point of the grid — and wrong for a cost readout.
+        //
+        // The badge rule matters and is not negotiable: a key's badge must describe the session
+        // that key will act on. An amber Yes that describes the session you are watching, while
+        // Yes answers a different one, is precisely the ambiguity Logitech asked about.
         // ------------------------------------------------------------------------------------------
-        internal String TargetTty()
+        internal String RoutingTty()
         {
             var live = Grid.LiveSessions();
 
@@ -559,16 +573,49 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
+        /// The session whose numbers should be on the display keys: the tab you are looking at.
+        ///
+        /// Falls back to <see cref="RoutingTty"/> when the frontmost tab is unknown, and that
+        /// fallback is what makes this correct on Windows without a platform branch — Windows
+        /// Terminal exposes no way to ask which tab is in front, so `_activeTty` is null there and
+        /// the display follows the pin, which is the only targeting Windows has.
+        /// </summary>
+        internal String DisplayTty()
+        {
+            var active = _activeTty;
+            if (!String.IsNullOrEmpty(active) && Grid.LiveSessions().Any(s => s.SessionKey == active))
+            {
+                return active;
+            }
+
+            return this.RoutingTty();
+        }
+
+        /// <summary>
         /// Press a session key: focus that tab and make it the target for every subsequent key,
-        /// until you pin a different session or this one exits. The pin is what makes "press slot
-        /// 2, then Clear" land in slot 2 even minutes later, and even if you have since switched
-        /// Terminal back to another tab.
+        /// until you pin a different session, press this one again, or it exits. The pin is what
+        /// makes "press slot 2, then Clear" land in slot 2 even minutes later, and even if you have
+        /// since switched Terminal back to another tab.
         /// </summary>
         public void SelectSlot(Int32 slot)
         {
             var session = Grid.SlotSession(slot);
             if (session == null)
             {
+                return;
+            }
+
+            // Pressing the slot that is ALREADY pinned releases it, and the keys go back to
+            // following the frontmost tab. Until now a pin could only be MOVED, never dropped —
+            // QA's actual complaint in #25 — and the only ways out were pinning a different session
+            // or closing the one you had pinned. A second press is what a user tries first, and the
+            // tab is focused either way, so the gesture still reads as "take me to this session".
+            if (_pinnedTty == session.SessionKey)
+            {
+                this.ClearPin();
+                _activeTty = session.SessionKey;
+                _platform.FocusSession(session.SessionKey);
+                PluginLog.Info($"BridgeManager: unpinned slot {slot} ({session.Project}) — keys follow the frontmost tab again");
                 return;
             }
 
@@ -660,24 +707,24 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Guarded keystroke injection. The guarantee — focus the tracked session and type in ONE
         // indivisible operation, or type nothing at all — is the backend's to keep; see
         // IPlatformBridge. What lives here is only the platform-neutral half: resolve WHICH session
-        // the keys act on (TargetTty), then hand the request across the seam.
+        // the keys act on (RoutingTty), then hand the request across the seam.
         // ------------------------------------------------------------------------------------------
 
         /// <summary>
         /// Type text into the tracked Claude session and optionally press Return.
         /// </summary>
         public void InjectText(String text, Boolean pressEnter) =>
-            _platform.InjectText(TargetTty(), text, pressEnter);
+            _platform.InjectText(RoutingTty(), text, pressEnter);
 
         /// <summary>
         /// Send a single key chord to the tracked Claude session, e.g. Shift+Tab to cycle modes.
         /// </summary>
-        public void InjectKey(KeyStroke key) => _platform.InjectKey(TargetTty(), key);
+        public void InjectKey(KeyStroke key) => _platform.InjectKey(RoutingTty(), key);
 
         /// <summary>
         /// Accept the highlighted autocomplete AND submit it in one press.
         /// </summary>
-        public void InjectTabThenEnter() => _platform.InjectTabThenEnter(TargetTty());
+        public void InjectTabThenEnter() => _platform.InjectTabThenEnter(RoutingTty());
 
         /// <summary>
         /// Optional per-poll pull of agent state, for a product whose agent cannot push it.

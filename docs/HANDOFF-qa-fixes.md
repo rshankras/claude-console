@@ -8,7 +8,7 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 | | |
 |---|---|
 | Branch | `fix/qa-p0`, 5 commits + the #24 work, pushed, **no PR opened** |
-| Suite | 706 C# + 47 shell, green |
+| Suite | 715 C# + 47 shell, green |
 | Issues | 25 filed (#20–#44) plus #45, #46, #47, #48 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
@@ -23,7 +23,18 @@ Read this before touching the QA work; the issue tracker carries the detail, thi
 
 ## What is NOT done
 
-- **#25 sticky pin** — P1, untouched, and it needs a design decision before code.
+- **#25 sticky pin: DONE (code), hardware pass outstanding.** One resolver answered two questions;
+  it is now `RoutingTty()` (pin first — injection, answer keys, approval badge, slot highlight) and
+  `DisplayTty()` (frontmost live session, falling back to routing — Cost/Model/Context).
+  **The rule that decided the split: a key's badge must describe the session that key acts on**, or
+  an amber Yes describes one session while answering another — exactly Logitech's question.
+  Option (b) from the issue was rejected on the evidence already in the code: a decaying pin was
+  tried before and "made a selection decay within ~2.5s" (comment at the top of the cascade).
+  Windows needs no branch: `_activeTty` is null there, so display falls through to the pin.
+  Plus the thing none of the three options offered and QA actually asked for: **pressing the pinned
+  slot again releases it.**
+  Hardware check owed: QA's reproduction — two sessions, pin one, look at the other, confirm Cost
+  follows your eyes while Yes still answers the pin.
 - **#28 concurrent voice capture: DONE (code), hardware pass rides with #24.** One `VoiceCaptureState`
   in the engine replaces three private per-key flags. The duplicate helper was the lesser half: because
   each key both started AND routed, the destination was decided by whichever key you pressed *second*

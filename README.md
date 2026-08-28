@@ -52,7 +52,7 @@ The Windows build reaches Claude a different way than macOS does, and two differ
 
 **Import the layout by hand.** A plugin package can carry exactly one auto-imported default profile per device type, and that file has to declare a single application binding — which on this cross-platform package is the macOS one. So on Windows: Options+ → your keypad → profile menu (`⋯`) → **Import** → pick [`profiles/ClaudeConsole-Windows.lp5`](profiles/ClaudeConsole-Windows.lp5), and choose **windowsterminal** as the application. (You can also just drag Claude Console's actions onto keys yourself; nothing depends on the profile.)
 
-**The keypad can't follow your eyes between tabs.** Windows Terminal exposes no supported way to ask which tab is in front, so with several idle sessions open the plugin can't tell which one you're looking at. One session needs no pin and just works; so does "exactly one session is waiting on you". Beyond that, **press a session key first** — pinning is exact, and every subsequent key goes to that session until you pin another. Pressing a session key also brings its tab to the front.
+**The keypad can't follow your eyes between tabs.** Windows Terminal exposes no supported way to ask which tab is in front, so with several idle sessions open the plugin can't tell which one you're looking at. One session needs no pin and just works; so does "exactly one session is waiting on you". Beyond that, **press a session key first** — pinning is exact, and every subsequent key goes to that session until you pin another or press the same key again to release it. Pressing a session key also brings its tab to the front.
 
 **Not available on Windows:** Next/Previous *Window* (an OS-level gesture `wt.exe` cannot express — those keys log and do nothing). Opening a project always uses a fresh tab rather than reusing an idle one, because Windows Terminal offers no way to tell a busy tab from an idle one and guessing wrong would type into a live session.
 
@@ -164,7 +164,8 @@ Pressing a session key also **pins every other key to it**, which is the point: 
 Notes:
 - **Slots are stable.** A session keeps its key for as long as it lives — close one and the others stay put, so you don't approve the wrong session out of muscle memory. The freed key is reused by the next session you start.
 - A session waiting for approval shows a badge on its key — see [The approval badge](#the-approval-badge) for what the colours mean.
-- The pin survives a plugin reload, and is released automatically if its session exits, so the keys are never stranded on a closed tab. **Go to Project** drops it too, since that starts a session somewhere new.
+- **Press the pinned session's key again to release it** — the keys go back to following whichever tab is in front. The pin also survives a plugin reload, is released automatically if its session exits so the keys are never stranded on a closed tab, and **Go to Project** drops it too, since that starts a session somewhere new.
+- **A pin aims the keys; it doesn't freeze the readouts.** Cost, Model and Context always show the session in the tab you're looking at, while Yes/No, Tab and the typing keys act on the pinned one — so you can watch one session while answering another. The highlighted session key tells you which is pinned, and the amber approval badge always describes the session the answer keys will actually answer. (On Windows there's no way to detect the frontmost tab, so both follow the pin.)
 - A new session takes a key **immediately** (labelled "Claude" until it first renders a status line), and a closed tab clears within about two seconds.
 - Six sessions fit; beyond that the extras run fine, just without a key.
 - Terminal.app only, like the rest of the plugin.

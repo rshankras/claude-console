@@ -435,7 +435,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         //
         // 1. QueryFrontmostSession returns null — "I don't know". Nothing supported maps a terminal
         //    TAB to the process running in it, so we cannot say which session the user is looking
-        //    at. This is NOT a silent failure: BridgeManager.TargetTty degrades through its other
+        //    at. This is NOT a silent failure: BridgeManager.RoutingTty degrades through its other
         //    rules, so one session still works, and "exactly one session waiting on you" still
         //    works. With several idle sessions the user presses a session key first — which is the
         //    explicit, already-supported way to aim the keypad. Pinning is exact on Windows even
