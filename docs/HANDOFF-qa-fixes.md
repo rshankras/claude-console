@@ -246,9 +246,17 @@ QA's three complaints and the comment's fourth, and what each got:
   honest alternative is opt-IN via a key press, which ends the zero-setup install Logitech's own flow
   assumes. Put to the PM as a product call; auto-wire stays on until they say otherwise.
 
-**Hardware pass owed**: `uninstall.sh --unwire` on this Mac with a real settings.json (the owner
-asked to test it) → live keys go dark on the next session → delete `no-autowire`, reload → wired
-again. Codex (Vizhi) is a separate issue: its hooks are trusted by hash, so the same edit has a
+**Verified on this Mac 2026-08-28 17:40, on the owner's real settings.json** (5 KB, 12 unrelated
+top-level keys, backup dated 26 June — the exact stale-snapshot case QA described):
+`uninstall.sh --unwire` removed the 5 hooks + statusLine and NOTHING else — the "before" snapshot with
+our entries stripped was byte-for-byte equal to the result — and the fresh backup held the
+pre-unwire state. Then the two-way switch via `open loupedeck:plugin/ClaudeConsole/reload`: opt-out
+removed → wired (6 refs); opt-out created → the plugin unwired ITSELF (0 refs, log "removed our
+statusLine + hooks"); removed again → wired. Final file semantically identical to the snapshot.
+Note: the script's backup is `copy2`, so its mtime is the source's last-write time, not "now" —
+correct for a backup, but do not read that date as when the backup was taken.
+Still owed: the "keys go dark in a new session" observation (left WIRED so the owner's keys keep
+working). Codex (Vizhi) is a separate issue: its hooks are trusted by hash, so the same edit has a
 user-visible cost there.
 
 ## #23: universal plugin — what changed, what it removed, what is unverified
