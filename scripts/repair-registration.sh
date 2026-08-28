@@ -21,10 +21,25 @@ fi
 echo ">>> registration is present on disk — restarting the Logi Plugin Service so it re-reads it"
 killall LogiPluginService 2>/dev/null || echo "    (service was not running)"
 sleep 8
+
+# The service is normally relaunched by Logi's own agents. Where those agents are absent it stays
+# down, and this script used to stop here and tell the user to open Options+ — which left the
+# keypad dark in the middle of the very repair meant to fix it. Start it ourselves and only give
+# up if that fails too.
 if ! pgrep -x LogiPluginService >/dev/null; then
-  echo "error: LogiPluginService did not come back on its own — open Logi Options+ to start it." >&2
+  echo "    service did not come back on its own — starting it"
+  open -a "/Applications/Utilities/LogiPluginService.app" 2>/dev/null || true
+  for _ in $(seq 1 15); do
+    pgrep -x LogiPluginService >/dev/null && break
+    sleep 1
+  done
+fi
+
+if ! pgrep -x LogiPluginService >/dev/null; then
+  echo "error: LogiPluginService could not be started — open Logi Options+ to start it." >&2
   exit 1
 fi
+echo "    service up as $(pgrep -x LogiPluginService)"
 
 echo ">>> restarting the Options+ UI so it reconnects to the healed service"
 killall logioptionsplus_agent 2>/dev/null || echo "    (Options+ UI was not running)"

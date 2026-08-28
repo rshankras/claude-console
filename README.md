@@ -306,7 +306,9 @@ File‑based IPC under a private `/tmp/claude-console/` root (0700 dirs / 0600 f
 killall LogiPluginService && sleep 5 && killall logioptionsplus_agent
 ```
 
-(A reboot does the same, and `bash scripts/repair-registration.sh` runs the whole recovery for you, with a sanity check first. **1.8.9 and later heal this automatically** — Options+ blinks once a few seconds after a reinstall as the plugin restarts the service; the manual recovery only matters for older versions.)
+(A reboot does the same, and `bash scripts/repair-registration.sh` runs the whole recovery for you, with a sanity check first.)
+
+> **On a package install this does not heal itself, and it used to.** 1.8.9–2.1.0 restarted the service automatically after a reinstall, so the icon came back on its own. That restart was removed for packaged installs in 2.2.0: the installer writes the registration *before* it finishes copying the payload, so the timestamps always look desynced on a perfectly healthy install and the heal fired on every launch, restarting the service each time. It now runs only for builds reached through a dev `.link`. The trade is deliberate — a spurious restart on every start is worse than a manual recovery after a reinstall — but it means **a reinstall needs the command above.** A first install on a clean machine is unaffected: the registration is genuinely absent there, so the plugin writes it and restarts once, as described below.
 
 **Nothing appears after a first install on a machine that never ran the plugin before.** A sideloaded `.lplug4` install doesn't create the application entry the icon and layout hang off — only Logitech Marketplace installs get that step. **2.0.0 and later handle it automatically**: the plugin writes its own registration and restarts the service — Options+ blinks once and comes back within about 40 seconds of the install (first-run initialization is the slow part), and the icon plus the 9-key layout appear. On older versions, import the layout manually (profile menu → Import → the `.lp5` from the release).
 
