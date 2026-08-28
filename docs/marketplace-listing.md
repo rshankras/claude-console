@@ -58,7 +58,7 @@ First Marketplace release. Claude Console turns the MX Creative Keypad's nine LC
 - **Git** — commit, diff, push, create PR
 - **Offline voice** — dictate a prompt or jump to a project by speaking its name; transcription runs locally, no cloud, no API keys
 
-Setup: install, then import the ready-made keypad layout from the GitHub release (one file, two clicks) — or drag the Claude Console actions onto your own Terminal profile. Works with Claude Code in Apple Terminal (macOS) or Windows Terminal.
+Setup: install, then import the ready-made keypad layout from the GitHub release (one file, two clicks) — or drag the Claude Console actions onto your own Terminal profile. Works with Claude Code in Apple Terminal (macOS) or Windows Terminal — sessions in other terminals are not shown.
 ```
 
 ## Lessons for next time

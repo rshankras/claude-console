@@ -79,7 +79,7 @@ Rather than mapping nine keys by hand, import the ready-made profile to get the 
 Notes:
 - Install the plugin first (step 1 above) so the imported keys resolve to real actions.
 - Import once. Reinstalling or updating the plugin never touches your profile — it belongs to Terminal's entry in Options+, not to the plugin — so the keys simply light up again after an update.
-- The profile is bound to Apple's **Terminal.app**, and so are the keys themselves: every typing key (prompts, answers, voice) focuses Claude's Terminal.app tab before it types — it will not type into iTerm2/Ghostty/Warp or any other app.
+- The profile is bound to Apple's **Terminal.app**, and so are the keys themselves: every typing key (prompts, answers, voice) focuses Claude's Terminal.app tab before it types — it will not type into iTerm2/Ghostty/Warp or any other app. Sessions running in another terminal are therefore **not shown on the Session keys** at all (since 2.2.0; before that they took a key that did nothing). The plugin log names each one it skipped. iTerm2 support is on the roadmap.
 - Already have a Terminal profile you like? Skip the import and drag the **Claude Console** actions onto it instead.
 
 ## Repository layout

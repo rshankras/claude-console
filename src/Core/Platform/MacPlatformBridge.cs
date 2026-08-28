@@ -131,8 +131,43 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
 
             var output = this.RunCapture("/bin/ps", new List<String> { "-axo", "pid=,ppid=,tty=,command=" }, 5000);
-            return output == null ? null : AgentProcessWatcher.TtysFrom(output, this._matcher);
+            if (output == null)
+            {
+                return null;
+            }
+
+            var found = AgentProcessWatcher.Discover(output, this._matcher, this.DrivableOwner);
+
+            // Say WHY a session is missing from the keys — once per session, not per poll (#27).
+            // Before #29 an iTerm2 or cmux session took a slot, the press pinned a TTY the keys could
+            // not reach, and the log said nothing at all.
+            foreach (var s in found.Skipped)
+            {
+                if (this._reportedUndrivable.Add(s.Tty + "|" + (s.Owner ?? "?")))
+                {
+                    PluginLog.Warning(s.Owner == null
+                        ? $"MacPlatformBridge: session on {s.Tty} is not shown — no terminal application in its ancestry (tmux, screen or ssh?), so the keys cannot reach it"
+                        : $"MacPlatformBridge: session on {s.Tty} is not shown — it runs in {s.Owner}, which the keys cannot drive (Terminal.app only; #29)");
+                }
+            }
+
+            return found.Ttys;
         }
+
+        /// <summary>
+        /// Which terminal application's sessions the keys can actually reach (#29). Every action key
+        /// finds the tab by TTY and types through Terminal.app's AppleScript, so today that is exactly
+        /// one application. iTerm2 exposes a `tty` on each session too and is the obvious second
+        /// driver; Ghostty, Warp and editor-integrated terminals expose nothing addressable by TTY,
+        /// so a session in them can only ever be a key that does nothing. Settable so tests can
+        /// switch the filter off (null) or supply their own.
+        /// </summary>
+        internal Func<String, Boolean> DrivableOwner { get; set; } = IsTerminalApp;
+
+        internal static Boolean IsTerminalApp(String ownerCommand) =>
+            ownerCommand != null && ownerCommand.Contains("/Terminal.app/Contents/MacOS/Terminal", StringComparison.Ordinal);
+
+        private readonly HashSet<String> _reportedUndrivable = new HashSet<String>(StringComparer.Ordinal);
 
         /// <summary>
         /// The TTY (e.g. "ttys003") of the frontmost Terminal tab, or null if Terminal isn't the

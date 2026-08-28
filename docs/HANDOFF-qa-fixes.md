@@ -13,7 +13,8 @@ authority on status, not the issue state.**
 leaked build path · #27 redraw storm · #28 voice lock · #48 noise annotations · #49 idle-session
 state + project-name memory · #51 badge inflation · #46 subprocess timeouts · #39 icon converter ·
 #30 interrupted-turn hourglass · #45 recovery scripts reach users · #18 silent voice failure ·
-**#23 universal plugin (verified on device)** · #31 settings.json rewrite. #50 closed wontfix.
+**#23 universal plugin (verified on device)** · #31 settings.json rewrite · #29 undrivable sessions.
+#50 closed wontfix.
 
 **Owed before release, and only these:**
 1. **Voice release round: DONE 2026-08-28 16:20, on a real package install** (`ClaudeConsole_2.2.0.lplug4`,
@@ -47,8 +48,9 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
    thing QA files as a regression against the #20 fix if you do not raise it first.
 6. **#47** needs the Windows laptop. **#34 and #23** need Logitech.
 
-**Suggested next: #29** (session keys silently no-op when another terminal owns the TTY), then the
-draft PR. #31 done 2026-08-28 — see below. The `IsApplicationActive` spike is DEAD — #23 went universal. #46, #39, #30, #45, #18
+**Suggested next: the draft PR.** Every P0–P2 that was ours to fix on the retest list is done; what
+remains is hardware-blocked (#47 laptop), Logitech-blocked (#23's design follow-ups, #34/#35/#40–43),
+or P3 (#32 #33 #36 #37 #38). #31 and #29 done 2026-08-28 — see below. The `IsApplicationActive` spike is DEAD — #23 went universal. #46, #39, #30, #45, #18
 and #23 were done on 2026-08-28 — see below.
 
 **An earlier version of this file said "#18 is superseded by #24 — close as duplicate". That was
@@ -223,6 +225,25 @@ there is no sandbox equivalent for a Windows bundle on this machine.
   `LoupedeckService.dll`), which this Mac no longer captures — the Logi launch agents were removed
   during 2.0.0 debugging and the service's stdout goes nowhere. Their headline CPU figure is the
   comparable metric.
+
+## #29: a session the keys cannot reach no longer takes a key
+
+`AgentProcessWatcher.Discover` walks each candidate's parent chain in the SAME `ps` listing (no
+extra process) to the first `.app` binary — `claude → zsh → login → Terminal.app` on this Mac — and
+`MacPlatformBridge.DrivableOwner` decides. Today that is Terminal.app only, because every action key
+finds a tab by TTY through Terminal's AppleScript. Skipped sessions are logged ONCE each with the
+owning app's name; a chain that reaches launchd without an app (tmux, screen, ssh) is skipped too, and
+said so — Terminal's `tty of tab` is the outer pty, not the one claude has, so the keys could not
+find it anyway. Windows is untouched (it never used this path). `TtysFrom` keeps its old meaning.
+
+**Design decision, made with the owner:** not "all terminals". iTerm2 is feasible (AppleScript
+exposes `tty` per session) and is the next-release driver — the predicate is the seam, and a second
+driver is a second predicate plus its own focus/type AppleScript. Ghostty, Warp, VS Code and cmux
+expose nothing addressable by TTY; a session in them can only ever be a key that does nothing, which
+is the bug. The README and listing now say "sessions in other terminals are not shown".
+
+**Not verified on hardware**: this Mac has only Terminal.app sessions. Repro per the issue needs
+an iTerm2 or cmux session running claude; expect no key for it and one WARN line naming the app.
 
 ## #31: the settings.json edit is now reversible, disclosed, and backed up honestly
 

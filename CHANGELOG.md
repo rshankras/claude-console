@@ -25,6 +25,10 @@ answers the ones that were ours to answer, and changes one thing about what the 
   the transcript, not just the hooks — and a keypad Esc clears it in seconds.
 - **Subprocess timeouts say how often and how long**, and back off instead of retrying a stalled
   machine every tick.
+- **Sessions in a terminal the keys cannot drive no longer take a Session key.** Only Terminal.app
+  sessions are shown; one in iTerm2, cmux or an editor's terminal used to occupy a slot whose press
+  did nothing, and six of them could crowd out every real session. Each skipped session is named
+  once in the plugin log.
 
 ### Fixed
 - **Voice works from a package install.** 2.0.1 shipped a whisper bundle with no compute backends;
