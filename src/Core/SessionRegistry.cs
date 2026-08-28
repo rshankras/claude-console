@@ -72,6 +72,18 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Last result of the `ps` scan, reused on the polls that don't run one.
         private IReadOnlyCollection<String> _lastLiveTtys;
 
+        // The last project each live session told us about. A session's state file is its own
+        // memory, and it is only rewritten when the session DOES something — so anything that loses
+        // that file mid-life (a prune, a cleared /tmp, a half-written read) used to erase the
+        // project name, and the key fell back to the agent's name. Showing "Claude Code" where a
+        // real folder name had been reads as a different session, which is worse than a stale label.
+        //
+        // Kept for as long as the TTY is alive and dropped the moment it is reaped, so a REUSED tab
+        // can never inherit the previous session's project — the case that makes a remembered name
+        // a lie rather than a convenience.
+        private readonly Dictionary<String, String> _lastKnownProject =
+            new Dictionary<String, String>(StringComparer.Ordinal);
+
         public SessionRegistry()
             : this(IpcPaths.SessionsDir, IpcPaths.ActivityDir, IpcPaths.RegistryFile)
         {
@@ -176,6 +188,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     foreach (var dead in next.Keys.Where(t => !liveTtys.Contains(t)).ToList())
                     {
                         next.Remove(dead);
+                        _lastKnownProject.Remove(dead);   // a reused tab must not inherit this name
                         ReapFiles(dead);
                     }
 
@@ -185,14 +198,24 @@ namespace Loupedeck.ClaudeConsolePlugin
                         next[tty] = new GridSession
                         {
                             SessionKey = tty,
-                            // No project yet, and no agent name either — the key falls back to
-                            // whichever agent is running (SessionSlotCommand). Naming one here is
-                            // how a Codex grid ended up labelled "Claude".
-                            Project = null,
+                            // If this session has told us its project before, keep showing it: the
+                            // file may be missing, but the fact is not. Only a session that has NEVER
+                            // reported gets a null here, and its key falls back to whichever agent is
+                            // running (SessionSlotCommand). Naming one here is how a Codex grid ended
+                            // up labelled "Claude".
+                            Project = _lastKnownProject.TryGetValue(tty, out var remembered) ? remembered : null,
                             State = "ready",
                             IsProvisional = true,
                             UpdatedAt = DateTime.UtcNow,
                         };
+                    }
+                }
+
+                foreach (var s in next.Values)
+                {
+                    if (!String.IsNullOrWhiteSpace(s.Project))
+                    {
+                        _lastKnownProject[s.SessionKey] = s.Project;
                     }
                 }
 
