@@ -250,7 +250,7 @@ The one program that knew why it failed said so to nobody.
 
 **Hardware-verified 2026-08-28 14:42, denied path:** Voice → Don't Allow → stop press at 14:42:32.531,
 `voice Mic denied — microphone permission denied…` logged at 14:42:32.691. **160 ms**, against 20 s of
-nothing the same morning. The beep and the red face come from the same call as that log line. Still
+nothing the same morning. Owner confirmed the red "Mic denied" face on the Voice key. Still
 owed on the device: "No speech" (record silence) and the post-Allow round-trip, and the RELEASE half —
 the shipped helper must be rebuilt by `sign-and-notarize.sh` (Developer-ID, stable hash) and packed;
 this verification was against an ad-hoc dev build of the helper, which is why `tccutil reset` was
