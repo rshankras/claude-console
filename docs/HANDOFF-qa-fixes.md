@@ -272,9 +272,12 @@ restart (a reload loses nothing), and the whole `@_` clause of CLAUDE.md's names
 service stopped, universal build loaded from the dev link, and 20 s later still no registration on
 disk — the build writes nothing. Keypad on `@_defaultmac`, as it should be before an import.
 
+**Import verified on this Mac 2026-08-28 ~17:15:** the owner deleted the stale old-layout import,
+imported the regenerated `profiles/ClaudeConsole-Keypad.lp5`, and page 1 showed the Session keys with
+Terminal frontmost. The import created Options+'s own `com.apple.terminal` entry (this Mac never had
+one) with "Claude Console — Keypad" as its profile — the exact shape a Marketplace user ends up with.
+
 **Unverified, in order of risk:**
-1. **The import on this Mac** — `profiles/ClaudeConsole-Keypad.lp5` into Options+, then the full
-   layout with Terminal frontmost. Owed to the owner's click at time of writing.
 2. **`ClaudeConsole-Windows.lp5`** — the entry name `windowsterminal` and the default plugin
    `DefaultWin` follow the mac pattern by analogy; one import on the laptop confirms or corrects.
 3. **Two products together** — claimed possible, never tried since the change.
