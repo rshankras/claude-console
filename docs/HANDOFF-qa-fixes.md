@@ -387,7 +387,18 @@ opens `display dialog` via System Events (comes to the front from the service; `
 `giving up after 15`), on its own thread, cancelled by a second key press. Both branches verified
 14:03 (declined → nothing; Turn on → wired). Seams: `BridgeManager.Prompt` (yes/no, cancellable) and
 `Toast`, product-installed like `Notify`; Windows has `Prompt = null` and keeps the two-step.
-**Still owed on the device:** the Disable / Enable KEY cards; `Restart Claude` on 60/90 px keys; a #27
+**14:22 — the keys are the switch, both ways (owner's call: no dragged keys at all).** A probe on
+Activity showed the SDK sends `Press → LongPress (~490 ms) → RepeatPress ×33 ms → Release`, that
+`PressDuration` is always 0, that the service runs `RunCommand` ~18 ms after `Press` unless
+`ProcessButtonEvent2` returns true, and that returning true suppresses it for the whole hold. So the
+three live keys own their button: short press = the key's job, on Release; long press = `LiveStatusGate
+.LongPress` → `TurnOffDialog` (*Keep* / *Turn off*, or a second long press within 15 s) →
+`DisableLiveStatus`. The Enable/Disable Live Status commands, the *Setup & Privacy* group, the two
+icons and the profile placements are GONE; `make-codex-profile.py` is back to its pre-#31 tables.
+`BridgeManager.Prompt` now carries the button labels. Caught on the way: on Vizhi for Codex the live
+keys would have read *Set up* forever (no settings file to consent to) — the gate is inert unless
+`Capabilities.SettingsFileWiring`.
+**Still owed on the device:** the long-press → *Turn off* path; `Restart Claude` on 60/90 px keys; a #27
 repaint check; the clean-room pass on a fresh account with a packed 2.2.0.
 
 ## #23: universal plugin — what changed, what it removed, what is unverified

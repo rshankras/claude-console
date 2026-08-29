@@ -49,9 +49,9 @@ place `ggml-base.en.bin` at `~/.claude/claude-console/whisper/` yourself before 
 To display live state, each plugin reads what its agent already writes on your machine:
 
 - **Claude Code** — the status line and lifecycle hooks it produces, which the plugin wires by
-  adding entries to `~/.claude/settings.json` — only when you press **Enable Live Status**; nothing
-  is written on install. Any status line you already had is chained, not replaced, and **Disable
-  Live Status** removes exactly the plugin's entries.
+  adding entries to `~/.claude/settings.json` — only when you turn the live keys on (a press, confirmed); nothing
+  is written on install. Any status line you already had is chained, not replaced, and turning
+  them off (a long press) removes exactly the plugin's entries.
 - **Codex CLI (macOS)** — lifecycle hooks, installed as the plugin's own `~/.codex/hooks.json`.
   Your `config.toml` is never edited. Codex asks you to trust these hooks before they run.
 - **Codex CLI (Windows)** — Codex's hook runner does not spawn processes on that platform, so the

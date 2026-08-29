@@ -58,9 +58,21 @@ namespace Loupedeck.ClaudeConsolePlugin
             "Cost, Context and Activity show live data. Your own entries are kept and the file is backed " +
             $"up first. (Pressing {keyName} again within {seconds} s also turns it on.)";
 
+        /// <summary>The dialog a long press opens once live status is on: the mirror question.</summary>
+        internal static String TurnOffDialog(String keyName, Int32 seconds) =>
+            "Turn off the live keys? This removes the plugin's 5 hooks and status line from ~/.claude/settings.json " +
+            "and puts back a status line it had chained. Your own entries are untouched; the file is backed up " +
+            $"first. (Holding {keyName} again within {seconds} s also turns it off.)";
+
+        /// <summary>The card posted by a long press before anything is removed.</summary>
+        internal static String LongPressAgain(String keyName, Int32 seconds) =>
+            $"Hold {keyName} again within {seconds} s to remove the plugin's 5 hooks and status line from " +
+            "~/.claude/settings.json. Your own entries are untouched and the file is backed up first. " +
+            "Nothing changes until then.";
+
         /// <summary>The message posted when Enable could not touch settings.json at all.</summary>
         internal static String EnableFailed() =>
             "Claude Console could not edit ~/.claude/settings.json (it is a symlink, not valid JSON, or " +
-            "kept changing). Nothing was written. Fix the file, then press Enable Live Status again.";
+            "kept changing). Nothing was written. Fix the file, then press the key again.";
     }
 }

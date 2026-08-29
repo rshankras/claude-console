@@ -28,7 +28,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 this.Bridge = new BridgeManager(new PlatformSeamTests.FakePlatformBridge());
                 this.Bridge.Notify = (status, message, url, title) => { };
-                this.Bridge.Prompt = (title, text, seconds, cancel) =>
+                this.Bridge.Prompt = (title, text, yes, no, seconds, cancel) =>
                 {
                     lock (this.Asked) { this.Asked.Add(text); }
                     if (hold != null)
@@ -45,7 +45,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 };
                 this.Home.WriteSettings("{\"model\":\"opus\"}");
                 this.Bridge.RunLoadWiringForTests();
-                this.Gate = new LiveStatusGate(this.Bridge, "Cost", () => { });
+                this.Gate = new LiveStatusGate(this.Bridge, "Cost", () => { }, applies: true);
             }
 
             public Boolean WaitUntil(Func<Boolean> condition, Int32 ms = 3000)

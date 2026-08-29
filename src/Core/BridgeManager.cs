@@ -162,12 +162,13 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         /// <summary>
         /// A yes/no question on screen (#31): the prompt QA asked for, before the file is modified,
-        /// with a way to say no. (title, text, timeout seconds, cancel) → true = yes, false = no,
+        /// with a way to say no. (title, text, yes label, no label, timeout seconds, cancel) →
+        /// true = yes, false = no,
         /// null = no answer. Blocks until answered, so callers run it off the SDK's key thread and
         /// cancel it when a key press settles the question first. Null where the product has no
         /// dialog to offer (Windows today) — the two-step press still works there.
         /// </summary>
-        internal Func<String, String, Int32, CancellationToken, Boolean?> Prompt { get; set; }
+        internal Func<String, String, String, String, Int32, CancellationToken, Boolean?> Prompt { get; set; }
 
         /// <summary>
         /// A dictation failed: which key's capture it was, and the words that key should show (#18).

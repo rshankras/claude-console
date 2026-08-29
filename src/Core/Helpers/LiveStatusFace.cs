@@ -6,7 +6,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
     /// <summary>
     /// The words a live key (Cost / Context / Activity) shows for each live-status state, and the
-    /// one flash a press gets while setup is still owed (#31). One owner, so the three keys can never
+    /// flashes a press gets while a question is open (#31). One owner, so the three keys can never
     /// drift apart on wording. Short on purpose: a key face holds about thirteen characters before
     /// the renderer shrinks it, and the voice keys' failure faces are held to the same budget.
     /// </summary>
@@ -15,8 +15,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// <summary>Shown while a first press has armed the key: a second press within the window enables.</summary>
         internal const String PressHint = "Press again";
 
-        /// <summary>The group in Options+ that holds Enable / Disable Live Status.</summary>
-        internal const String SetupGroup = "Setup & Privacy";
+        /// <summary>Shown while a long press has armed the key: a second long press within the window turns it off.</summary>
+        internal const String OffHint = "Turn off?";
 
         internal static Boolean NeedsSetup(LiveStatusState state) =>
             state is LiveStatusState.NotEnabled or LiveStatusState.Off or LiveStatusState.NeedsRepair;

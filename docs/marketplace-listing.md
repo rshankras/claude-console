@@ -46,7 +46,7 @@ Works with Claude Code in Apple Terminal or Windows Terminal.
 
 ## Release notes — limit 1000 characters
 
-First submission, so written as an introduction rather than a changelog (Marketplace users never saw 1.x). Future submissions should switch to a real what's-changed format. No version heading — the page already shows the version from the package. Used 973:
+First submission, so written as an introduction rather than a changelog (Marketplace users never saw 1.x). Future submissions should switch to a real what's-changed format. No version heading — the page already shows the version from the package. Used 967:
 
 ```markdown
 Claude Console turns the MX Creative Keypad's nine LCD keys into a control surface for Claude Code.
@@ -58,7 +58,7 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 - **Git** — commit, diff, push, create PR
 - **Offline voice** — dictate a prompt or jump to a project by name; transcription runs locally, no cloud, no API keys
 
-Setup: install, then import the ready-made keypad layout from the GitHub release — or drag the Claude Console actions onto your own Terminal profile. Live keys are opt-in: press Enable Live Status once. Works with Apple Terminal (macOS) or Windows Terminal; sessions in other terminals are not shown.
+Setup: install, then import the ready-made keypad layout from the GitHub release — or drag the Claude Console actions onto your own Terminal profile. Live keys are opt-in: one press turns them on. Works with Apple Terminal (macOS) or Windows Terminal; sessions in other terminals are not shown.
 ```
 
 ## Lessons for next time

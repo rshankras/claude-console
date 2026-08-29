@@ -14,10 +14,9 @@ answers the ones that were ours to answer, and changes one thing about what the 
   the first press flashes *Press again*, posts a card in Options+ and, on macOS, opens a dialog
   mid-screen stating the exact change (five hooks and a status line, your entries kept, the file
   backed up first) with *Not now* / *Turn on* — it edits nothing; *Turn on*, or a second press
-  within 15 s, does it. A labelled **Enable Live Status** key (new, under
-  *Setup & Privacy*; on the ready-made layout beside Cost) does the same in one press, with the
-  same disclosure in its description. **Disable Live Status** takes exactly those entries back out
-  and the keys read *Off*. Existing installs are already wired and simply load as
+  within 15 s, does it. To turn it off, hold a live key: the mirror
+  dialog (*Keep* / *Turn off*), or a second long press within 15 s, takes exactly those entries
+  back out and the keys read *Off*. Nothing to drag: the keys are the switch. Existing installs are already wired and simply load as
   enabled. Logitech QA asked for a prompt before user config is modified, and the SDK has neither
   a dialog nor a plugin settings page (#31), so the press is the prompt.
 - **The plugin is universal.** No application binding, no packaged profile (`HasNoApplication`),

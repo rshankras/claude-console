@@ -103,14 +103,15 @@ namespace Loupedeck.ClaudeConsolePlugin
             using var p = Process.Start(psi);   // not awaited on purpose
         }
 
-        // true = "Turn on", false = "Not now" (the cancel button: osascript exits non-zero),
+        // true = the yes button, false = the no button (the cancel button: osascript exits non-zero),
         // null = gave up after the timeout, or cancelled by a key press (the dialog is killed).
-        private static Boolean? AskMacDialog(String title, String text, Int32 timeoutSeconds, CancellationToken cancel)
+        private static Boolean? AskMacDialog(String title, String text, String yes, String no, Int32 timeoutSeconds, CancellationToken cancel)
         {
             var script =
                 "tell application \"System Events\" to display dialog " + AppleScriptString(text) +
                 " with title " + AppleScriptString(title) +
-                " buttons {\"Not now\", \"Turn on\"} default button \"Turn on\" cancel button \"Not now\"" +
+                " buttons {" + AppleScriptString(no) + ", " + AppleScriptString(yes) + "}" +
+                " default button " + AppleScriptString(yes) + " cancel button " + AppleScriptString(no) +
                 $" giving up after {timeoutSeconds}";
             var psi = new ProcessStartInfo("/usr/bin/osascript")
             {
@@ -133,13 +134,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             if (p.ExitCode != 0)
             {
-                return false;   // "Not now" — the cancel button makes osascript exit with -128
+                return false;   // the no button is the cancel button: osascript exits with -128
             }
             if (output.Contains("gave up:true", StringComparison.Ordinal))
             {
                 return null;
             }
-            return output.Contains("button returned:Turn on", StringComparison.Ordinal);
+            return output.Contains("button returned:" + yes, StringComparison.Ordinal);
         }
 
         public override void Load()

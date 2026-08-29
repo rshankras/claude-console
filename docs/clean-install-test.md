@@ -64,10 +64,9 @@ macOS user account** (or on another Mac) before each release.
   unchanged and the flash clears. Press Cost once more and click **Turn on** (or press Cost again
   within 15 s): a notification and a card confirm the edit, the keys read **Restart Claude**, and
   `~/.claude/settings.json` now holds five hooks + a `statusLine` (backup at
-  `~/.claude/settings.json.claude-console.bak`). (**Enable Live Status**,
-  page 2 key 9, does the same in one press.)
+  `~/.claude/settings.json.claude-console.bak`).
   Start a fresh `claude` and confirm the Model / Cost / Context / Activity keys show live data.
-  Press **Disable Live Status** (page 4, key 9): the keys read **Off** and the file carries none
+  Hold Cost (a long press) and click **Turn off**: the keys read **Off** and the file carries none
   of the plugin's entries.
 
 ### 6. Cleanup
@@ -80,4 +79,4 @@ macOS user account** (or on another Mac) before each release.
 - ✅ **Import** produces the full layout on the keypad
 - ✅ prompt / voice / answer keys fire with Terminal focused
 - ✅ install leaves `~/.claude/settings.json` untouched; one press on a live key, *Not now*, or a late second press changes nothing
-- ✅ *Turn on* in the dialog, two presses within 15 s, or Enable Live Status wire it and say so; live keys show data on the next `claude` session; Disable takes it out
+- ✅ *Turn on* in the dialog or two presses within 15 s wire it and say so; live keys show data on the next `claude` session; a long press (*Turn off*) takes it out

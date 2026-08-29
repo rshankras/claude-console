@@ -25,7 +25,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private Int32 _frame;
 
         public StatusCommand()
-            : base(displayName: "Activity", description: "Shows whether Claude is working, waiting, or ready (needs live status enabled — see Setup & Privacy)", groupName: "Core")
+            : base(displayName: "Activity", description: "Shows whether Claude is working, waiting, or ready (press to turn live status on, hold to turn it off)", groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
             // Without the hooks this key used to fall through to "Ready" forever — a value the agent
@@ -105,13 +105,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             }
         }
 
+        // The key owns its button events: the service would otherwise run the short action the
+        // instant the key goes down, before it can know a long press is coming. Short press = the
+        // key's own job (on release); long press = the way off. See LiveStatusGate.
+        protected override Boolean ProcessButtonEvent2(String actionParameter, DeviceButtonEvent2 buttonEvent) =>
+            _gate.HandleButton(buttonEvent.EventType, () => this.RunCommand(actionParameter));
+
         protected override void RunCommand(String actionParameter)
         {
-            if (_gate.Press())
-            {
-                return;
-            }
-
             // Display-only indicator. No terminal action on press.
             PluginLog.Info("StatusCommand: pressed (display-only)");
         }

@@ -19,7 +19,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private Boolean _hasData = true;
 
         public ContextCommand()
-            : base(displayName: "Context", description: "Live context-window usage, press for /context (needs live status enabled — see Setup & Privacy)", groupName: "Core")
+            : base(displayName: "Context", description: "Live context-window usage, press for /context (press to turn live status on, hold to turn it off)", groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
             // Until live status is set up the key says so instead of a value; the first press arms it and
@@ -60,13 +60,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             };
         }
 
+        // The key owns its button events: the service would otherwise run the short action the
+        // instant the key goes down, before it can know a long press is coming. Short press = the
+        // key's own job (on release); long press = the way off. See LiveStatusGate.
+        protected override Boolean ProcessButtonEvent2(String actionParameter, DeviceButtonEvent2 buttonEvent) =>
+            _gate.HandleButton(buttonEvent.EventType, () => this.RunCommand(actionParameter));
+
         protected override void RunCommand(String actionParameter)
         {
-            if (_gate.Press())
-            {
-                return;
-            }
-
             _bridge.SendPrompt("/context");
             PluginLog.Info("ContextCommand: /context");
         }

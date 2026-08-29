@@ -25,7 +25,7 @@
 #   bash scripts/uninstall.sh            # show targets, confirm, then remove everything
 #   bash scripts/uninstall.sh --dry-run  # preview only, change nothing
 #   bash scripts/uninstall.sh --yes      # skip the confirmation prompt
-#   bash scripts/uninstall.sh --unwire   # the same as pressing Disable Live Status: take the wiring
+#   bash scripts/uninstall.sh --unwire   # the same as a long press on a live key: take the wiring
 #                                        # out of settings.json and leave the Off marker, keeping the
 #                                        # plugin and voice — the live keys read Off; nothing else changes
 set -u
@@ -118,7 +118,7 @@ print(f"  settings.json: removed {what}  (backup: {backup})")
 PY
 }
 
-# --unwire: the wiring only — what the Disable Live Status key does. Leaves the Off marker, which
+# --unwire: the wiring only — what a long press on a live key does. Leaves the Off marker, which
 # is how the live keys know to read Off (and, for anyone still on a 2.2.0 pre-release that wired
 # on load, what stops the next load wiring it back).
 if [ "$UNWIRE_ONLY" -eq 1 ]; then
@@ -126,7 +126,7 @@ if [ "$UNWIRE_ONLY" -eq 1 ]; then
   unwire_settings apply
   rm -f "$CHAIN"
   mkdir -p "$RUNTIME" && : > "$OPT_OUT"
-  echo "  Off marker set: $OPT_OUT  (press Enable Live Status to turn it back on)"
+  echo "  Off marker set: $OPT_OUT  (press a live key to turn it back on)"
   echo "Takes effect on your next Claude Code session. The plugin and voice are untouched;"
   echo "the Cost / Context / Activity keys read Off."
   exit 0
