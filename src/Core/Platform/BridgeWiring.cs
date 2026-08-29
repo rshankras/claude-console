@@ -143,7 +143,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         }
 
         // A command node that is not a string (a user's malformed entry) reads as "not ours".
-        private static String Str(JsonNode node) =>
+        internal static String Str(JsonNode node) =>
             node is JsonValue v && v.TryGetValue<String>(out var s) ? s : null;
 
         // Windows paths routinely contain spaces (the plugin lives under %LOCALAPPDATA%), and

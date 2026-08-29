@@ -25,6 +25,14 @@ if [ -d "$LIVE_ROOT" ]; then
   if : > "$CANARY" 2>/dev/null; then CANARY_PLACED=1; fi
 fi
 
+# The same idea for the user's Claude Code settings. The engine can now be pointed at a temp home
+# (BridgeManager.HomeOverride / tests/TempHome.cs), so a settings test that touches the REAL
+# ~/.claude/settings.json is a test that forgot to. Record what is there before, compare after.
+SETTINGS="$HOME/.claude/settings.json"
+OPT_OUT="$HOME/.claude/claude-console/no-autowire"
+SETTINGS_BEFORE="$( [ -f "$SETTINGS" ] && cksum < "$SETTINGS" || echo absent )"
+OPT_OUT_BEFORE="$( [ -e "$OPT_OUT" ] && echo present || echo absent )"
+
 echo "▶ C# unit tests"
 if ! dotnet test "$REPO/tests/ClaudeConsolePlugin.Tests.csproj" --nologo "$@"; then
   STATUS=1
@@ -40,6 +48,23 @@ echo
 echo "▶ codex hook tests"
 if ! bash "$REPO/tests/scripts/test-codex-hook.sh"; then
   STATUS=1
+fi
+
+echo
+echo "▶ live settings.json not touched"
+SETTINGS_AFTER="$( [ -f "$SETTINGS" ] && cksum < "$SETTINGS" || echo absent )"
+OPT_OUT_AFTER="$( [ -e "$OPT_OUT" ] && echo present || echo absent )"
+if [ "$SETTINGS_BEFORE" != "$SETTINGS_AFTER" ]; then
+  echo "  FAIL a test rewrote the LIVE $SETTINGS — tests must use TempHome (BridgeManager.HomeOverride)."
+  STATUS=1
+elif [ "$OPT_OUT_BEFORE" != "$OPT_OUT_AFTER" ]; then
+  echo "  FAIL a test changed the LIVE opt-out marker ($OPT_OUT) — tests must use TempHome."
+  STATUS=1
+elif ls "$HOME/.claude"/settings.json.cc.*.tmp >/dev/null 2>&1; then
+  echo "  FAIL a settings.json temp file was left behind under ~/.claude"
+  STATUS=1
+else
+  echo "  ok   $SETTINGS and the opt-out marker are as they were"
 fi
 
 echo

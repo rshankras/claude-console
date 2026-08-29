@@ -96,15 +96,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var engine = File.ReadAllText(RepoFile("src", "Core", "BridgeManager.cs"));
             var wiring = engine.Substring(engine.IndexOf("private void EnsureBridgeWired()", StringComparison.Ordinal));
 
-            var write = wiring.IndexOf("WriteSettings(root);", StringComparison.Ordinal);
+            // The write goes through the one door (RewriteSettings), which also reports whether it
+            // wrote at all. Both notices must come after it, and each on its own branch.
+            var write = wiring.IndexOf("RewriteSettings(Merge", StringComparison.Ordinal);
+            var noChange = wiring.IndexOf("if (!wrote)", StringComparison.Ordinal);
             var warn = wiring.IndexOf("Notify?.Invoke(PluginStatus.Warning", StringComparison.Ordinal);
             var clear = wiring.IndexOf("Notify?.Invoke(PluginStatus.Normal, null", StringComparison.Ordinal);
 
-            Assert.True(write > 0 && warn > 0 && clear > 0, "the notice calls are missing from the wiring routine");
+            Assert.True(write > 0 && noChange > 0 && warn > 0 && clear > 0, "the notice calls are missing from the wiring routine");
             // Announce only what actually happened: the Warning comes AFTER the write succeeded...
             Assert.True(warn > write, "the wired notice is posted before the file is written");
-            // ...and the clear lives on the no-change path, which returns before the write.
-            Assert.True(clear < write, "the clear is not on the no-change path");
+            // ...and the clear lives on the no-change branch, between "nothing was written" and the Warning.
+            Assert.True(clear > noChange && clear < warn, "the clear is not on the no-change path");
         }
 
         [Fact]

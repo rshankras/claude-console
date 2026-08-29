@@ -53,32 +53,43 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         internal readonly VoiceCaptureState Voice = new VoiceCaptureState();
 
-        // Runtime home shared with the voice helper: ~/.claude/claude-console/
-        private static readonly String ClaudeConsoleHome = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "claude-console");
-        private static readonly String VoiceHelperApp = Path.Combine(ClaudeConsoleHome, "ClaudeVoiceHelper.app");
-        // Self-contained whisper-cli produced by tools/voice/bundle-whisper.sh (no Homebrew needed).
-        private static readonly String WhisperBinDir = Path.Combine(ClaudeConsoleHome, "whisper-bin");
-        private static readonly String BundledWhisperCli = Path.Combine(WhisperBinDir, "whisper-cli");
+        /// <summary>
+        /// Test seam: the home directory every runtime and settings path below hangs off. Null means
+        /// the real user profile. These used to be static readonly fields computed at type-init, which
+        /// is why no test could ever touch settings.json — every wiring test was a source-text scrape
+        /// or a pure JsonObject test. Set and restore it in a finally; the suite is serial on purpose
+        /// (tests/AssemblyInfo.cs), the same discipline as PluginPaths.PluginAssemblyFilePath.
+        /// </summary>
+        internal static String HomeOverride { get; set; }
 
-        // Live-status bridge — scripts + settings.json the plugin auto-wires (see EnsureBridgeAutoWired).
-        private static readonly String ClaudeDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
-        private static readonly String SettingsFile = Path.Combine(ClaudeDir, "settings.json");
-        private static readonly String SettingsBackup = Path.Combine(ClaudeDir, "settings.json.claude-console.bak");
-        private static readonly String ScriptsDir = Path.Combine(ClaudeConsoleHome, "scripts");
-        private static readonly String StatuslineScript = Path.Combine(ScriptsDir, "statusline-handler.sh");
-        private static readonly String ActivityScript = Path.Combine(ScriptsDir, "activity-hook.sh");
+        private static String UserHome =>
+            HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        // Runtime home shared with the voice helper: ~/.claude/claude-console/
+        private static String ClaudeDir => Path.Combine(UserHome, ".claude");
+        private static String ClaudeConsoleHome => Path.Combine(ClaudeDir, "claude-console");
+        private static String VoiceHelperApp => Path.Combine(ClaudeConsoleHome, "ClaudeVoiceHelper.app");
+        // Self-contained whisper-cli produced by tools/voice/bundle-whisper.sh (no Homebrew needed).
+        private static String WhisperBinDir => Path.Combine(ClaudeConsoleHome, "whisper-bin");
+        private static String BundledWhisperCli => Path.Combine(WhisperBinDir, "whisper-cli");
+
+        // Live-status bridge — the scripts the plugin installs and the settings.json it edits on the
+        // user's say-so (see the live-status section below).
+        private static String SettingsFile => Path.Combine(ClaudeDir, "settings.json");
+        private static String SettingsBackup => Path.Combine(ClaudeDir, "settings.json.claude-console.bak");
+        private static String ScriptsDir => Path.Combine(ClaudeConsoleHome, "scripts");
+        private static String StatuslineScript => Path.Combine(ScriptsDir, "statusline-handler.sh");
+        private static String ActivityScript => Path.Combine(ScriptsDir, "activity-hook.sh");
         // The cleanup script the user needs precisely when the package is gone (#45). Same directory,
         // same refresh-on-load, but NOT behind the bridge opt-out: declining settings.json wiring
         // must not cost anyone the uninstall remedy. (The registration repair and orphan sweep that
         // used to ship beside it went with the application registration itself — #23.)
         private static readonly String[] RecoveryScripts = { "uninstall.sh" };
-        private static readonly String StatuslineChainFile = Path.Combine(ClaudeConsoleHome, "statusline-chain");
-        private static readonly String BridgeOptOutFile = Path.Combine(ClaudeConsoleHome, "no-autowire");
+        private static String StatuslineChainFile => Path.Combine(ClaudeConsoleHome, "statusline-chain");
+        private static String BridgeOptOutFile => Path.Combine(ClaudeConsoleHome, "no-autowire");
 
         // Speech model — fetched on first use if absent (see EnsureVoiceModel). base.en ≈ 142 MB.
-        private static readonly String VoiceModelFile = Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
+        private static String VoiceModelFile => Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
         private const String VoiceModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
         private const String VoiceModelSha256 = "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
         private const Int64 VoiceModelSize = 147964211;
@@ -950,7 +961,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Windows whisper-cli lives in the same runtime-home dir as the macOS bundle, with the
         // platform's suffix. Installed by EnsureVoiceRuntimeInstalled from the package (or by
         // hand from a whisper.cpp release during development).
-        private static readonly String WindowsWhisperCli = Path.Combine(WhisperBinDir, "whisper-cli.exe");
+        private static String WindowsWhisperCli => Path.Combine(WhisperBinDir, "whisper-cli.exe");
 
         // The same flow as macOS with the platform differences flattened out: the helper is a
         // plain exe launched directly (no LaunchServices, no TCC — Windows mic permission is a
@@ -1197,19 +1208,22 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 try
                 {
-                    // Before the opt-out, on purpose — see RecoveryScripts.
-                    EnsureRecoveryScriptsInstalled();
-
-                    if (File.Exists(BridgeOptOutFile))
+                    lock (_wiringLock)
                     {
-                        // A switch, not a one-time skip (#31): a user who was wired on an earlier
-                        // load and opts out later gets settings.json put back — surgically, never
-                        // from a stale backup.
-                        this.UnwireIfWired();
-                        return;
+                        // Before the opt-out, on purpose — see RecoveryScripts.
+                        EnsureRecoveryScriptsInstalled();
+
+                        if (File.Exists(BridgeOptOutFile))
+                        {
+                            // A switch, not a one-time skip (#31): a user who was wired on an earlier
+                            // load and opts out later gets settings.json put back — surgically, never
+                            // from a stale backup.
+                            this.UnwireIfWired();
+                            return;
+                        }
+                        EnsureBridgeInstalled();
+                        EnsureBridgeWired();
                     }
-                    EnsureBridgeInstalled();
-                    EnsureBridgeWired();
                 }
                 catch (Exception ex)
                 {
@@ -1218,6 +1232,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             })
             { IsBackground = true, Name = "claude-bridge-autowire" }.Start();
         }
+
+        // Every path that reads settings.json to rewrite it, or touches the opt-out marker, holds
+        // this. The load thread and a key press must never interleave on the same file.
+        private readonly Object _wiringLock = new Object();
 
         // Write the embedded bridge scripts to ~/.claude/claude-console/scripts/ (refreshed every load
         // so a plugin upgrade updates them) and mark them executable.
@@ -1307,12 +1325,6 @@ namespace Loupedeck.ClaudeConsolePlugin
         // hook only if ours isn't already there, and chains (never clobbers) an existing statusLine.
         private void EnsureBridgeWired()
         {
-            var root = ReadSettingsForRewrite();
-            if (root == null)
-            {
-                return;
-            }
-
             var isWindows = OperatingSystem.IsWindows();
             var statusHandler = this.BridgeHandlerPath(null);
             var activityHandler = this.BridgeHandlerPath("busy");
@@ -1323,51 +1335,68 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            var changed = false;
+            // The chain file is written AFTER a successful write, never inside the mutate callback:
+            // the callback may run twice (RewriteSettings retries from fresh contents), and a chain
+            // file left behind by an attempt that never landed would be a lie about the file.
+            String chainedCommand = null;
+            var freshStatusLine = false;
 
-            // --- hooks (additive — append our entry only when it isn't already present) ---
-            if (root["hooks"] is not JsonObject hooks)
+            Boolean Merge(JsonObject root)
             {
-                hooks = new JsonObject();
-                root["hooks"] = hooks;
-            }
-            changed |= EnsureHook(hooks, "UserPromptSubmit", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
-            changed |= EnsureHook(hooks, "PostToolUse", "*", BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
-            changed |= EnsureHook(hooks, "Notification", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "waiting"));
-            changed |= EnsureHook(hooks, "Stop", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "done"));
-            // PermissionRequest fires the moment a tool needs approval and carries the tool name and
-            // its input, which is what tells a routine approval from `git push --force`. Notification
-            // can't: it has no tool name and is delayed ~6s for permission prompts. Unknown events are
-            // ignored by older Claude Code builds, so adding this is safe there — the badge simply
-            // stays amber instead of going red.
-            changed |= EnsureHook(hooks, "PermissionRequest", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "permission"));
+                var changed = false;
 
-            // --- statusLine (chain an existing one rather than clobbering it) ---
-            var ourStatusCmd = BridgeWiring.StatuslineCommand(isWindows, statusHandler);
-            var sl = root["statusLine"] as JsonObject;
-            var existingCmd = sl?["command"]?.GetValue<String>();
-            if (String.IsNullOrWhiteSpace(existingCmd))
-            {
-                root["statusLine"] = new JsonObject { ["type"] = "command", ["command"] = ourStatusCmd };
-                TryDelete(StatuslineChainFile);
-                changed = true;
-            }
-            else if (BridgeWiring.IsOurs(existingCmd))
-            {
-                // already ours — nothing to do
-            }
-            else
-            {
-                // Preserve the user's status bar: record their command so our handler runs it and
-                // passes its output through (see the chain block in statusline-handler.sh).
-                File.WriteAllText(StatuslineChainFile, existingCmd);
-                sl["command"] = ourStatusCmd;
-                sl["type"] = "command";
-                PluginLog.Info("Bridge auto-wire: chained existing statusLine so it still renders");
-                changed = true;
+                // --- hooks (additive — append our entry only when it isn't already present) ---
+                if (root["hooks"] is not JsonObject hooks)
+                {
+                    hooks = new JsonObject();
+                    root["hooks"] = hooks;
+                }
+                changed |= EnsureHook(hooks, "UserPromptSubmit", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
+                changed |= EnsureHook(hooks, "PostToolUse", "*", BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
+                changed |= EnsureHook(hooks, "Notification", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "waiting"));
+                changed |= EnsureHook(hooks, "Stop", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "done"));
+                // PermissionRequest fires the moment a tool needs approval and carries the tool name and
+                // its input, which is what tells a routine approval from `git push --force`. Notification
+                // can't: it has no tool name and is delayed ~6s for permission prompts. Unknown events are
+                // ignored by older Claude Code builds, so adding this is safe there — the badge simply
+                // stays amber instead of going red.
+                changed |= EnsureHook(hooks, "PermissionRequest", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "permission"));
+
+                // --- statusLine (chain an existing one rather than clobbering it) ---
+                var ourStatusCmd = BridgeWiring.StatuslineCommand(isWindows, statusHandler);
+                var sl = root["statusLine"] as JsonObject;
+                var existingCmd = BridgeWiring.Str(sl?["command"]);
+                chainedCommand = null;
+                freshStatusLine = false;
+                if (String.IsNullOrWhiteSpace(existingCmd))
+                {
+                    root["statusLine"] = new JsonObject { ["type"] = "command", ["command"] = ourStatusCmd };
+                    freshStatusLine = true;
+                    changed = true;
+                }
+                else if (BridgeWiring.IsOurs(existingCmd))
+                {
+                    // already ours — nothing to do
+                }
+                else
+                {
+                    // Preserve the user's status bar: record their command so our handler runs it and
+                    // passes its output through (see the chain block in statusline-handler.sh).
+                    chainedCommand = existingCmd;
+                    sl["command"] = ourStatusCmd;
+                    sl["type"] = "command";
+                    changed = true;
+                }
+
+                return changed;
             }
 
-            if (!changed)
+            if (!RewriteSettings(Merge, out var wrote))
+            {
+                return;
+            }
+
+            if (!wrote)
             {
                 PluginLog.Info("Bridge auto-wire: settings.json already wired — no changes");
                 // A load that changed nothing clears the notice from the load that did: the "!" in
@@ -1376,7 +1405,15 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            WriteSettings(root);
+            if (chainedCommand != null)
+            {
+                File.WriteAllText(StatuslineChainFile, chainedCommand);
+                PluginLog.Info("Bridge auto-wire: chained existing statusLine so it still renders");
+            }
+            else if (freshStatusLine)
+            {
+                TryDelete(StatuslineChainFile);
+            }
             PluginLog.Info("Bridge auto-wire: wired live-status bridge into settings.json — start a NEW Claude Code session to activate Cost/Context/Activity");
 
             // Say so where the user is looking (#31): the message centre in Options+, with the undo
@@ -1393,36 +1430,90 @@ namespace Loupedeck.ClaudeConsolePlugin
         // chained status line we recorded so the user's own status bar comes back exactly as it was.
         private void UnwireIfWired()
         {
-            var root = ReadSettingsForRewrite();
-            if (root == null)
-            {
-                return;
-            }
-
             String chained = null;
             try { if (File.Exists(StatuslineChainFile)) { chained = File.ReadAllText(StatuslineChainFile).Trim(); } }
             catch (Exception ex) { PluginLog.Warning(ex, "Bridge auto-wire: couldn't read the statusline chain file"); }
 
-            if (!BridgeWiring.Unwire(root, chained))
+            if (!RewriteSettings(root => BridgeWiring.Unwire(root, chained), out var wrote))
+            {
+                return;
+            }
+
+            if (!wrote)
             {
                 PluginLog.Info("Bridge auto-wire: opt-out file present — settings.json carries none of our wiring");
                 return;
             }
 
-            WriteSettings(root);
             TryDelete(StatuslineChainFile);
             PluginLog.Info("Bridge auto-wire: opt-out file present — removed our statusLine + hooks from settings.json (your own entries were left alone)");
             this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
         }
 
+        /// <summary>
+        /// The one way settings.json is rewritten. <paramref name="mutate"/> edits the parsed document
+        /// in place and returns whether it changed anything: read → mutate → write, where the write
+        /// refuses if the file's bytes moved since the read (Claude Code itself writes this file), and
+        /// one retry runs the whole thing again from the fresh contents. Returns false when the file
+        /// could not be touched at all (symlink, invalid JSON, kept changing); <paramref name="changed"/>
+        /// reports whether a write actually happened — a mutate that finds nothing to do costs no
+        /// write and no backup.
+        /// </summary>
+        internal static Boolean RewriteSettings(Func<JsonObject, Boolean> mutate, out Boolean changed)
+        {
+            changed = false;
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var root = ReadSettingsForRewrite(out var fingerprint);
+                if (root == null)
+                {
+                    return false;
+                }
+                if (!mutate(root))
+                {
+                    return true;
+                }
+                if (WriteSettings(root, fingerprint))
+                {
+                    changed = true;
+                    return true;
+                }
+                PluginLog.Warning("Live status: settings.json changed while it was being edited — retrying from the new contents");
+            }
+
+            PluginLog.Warning("Live status: settings.json kept changing — giving up; try again");
+            return false;
+        }
+
+        // SHA-256 of a file's bytes, or null when there is no file. The identity a write checks
+        // against: "the file I am about to replace is the file I read".
+        private static Byte[] Fingerprint(String path)
+        {
+            try
+            {
+                return File.Exists(path) ? SHA256.HashData(File.ReadAllBytes(path)) : null;
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "Live status: couldn't fingerprint settings.json");
+                return null;
+            }
+        }
+
+        private static Boolean SameBytes(Byte[] a, Byte[] b) =>
+            a == null ? b == null : b != null && a.AsSpan().SequenceEqual(b);
+
         // settings.json as a document we may rewrite, or null when we must not touch it: a symlink
         // (a planted link could redirect the rename-over-write), invalid JSON, or a non-object root.
         // A missing or empty file is an empty object — wiring a fresh install is the common case.
-        private static JsonObject ReadSettingsForRewrite()
+        // The fingerprint is of exactly the bytes that were parsed, so a write can prove nothing
+        // slipped in between.
+        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint)
         {
+            fingerprint = null;
             if (new FileInfo(SettingsFile).LinkTarget != null)
             {
-                PluginLog.Warning("Bridge auto-wire: settings.json is a symlink — leaving it untouched");
+                PluginLog.Warning("Live status: settings.json is a symlink — leaving it untouched");
                 return null;
             }
 
@@ -1431,7 +1522,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return new JsonObject();
             }
 
-            var text = File.ReadAllText(SettingsFile);
+            var bytes = File.ReadAllBytes(SettingsFile);
+            fingerprint = SHA256.HashData(bytes);
+            String text;
+            using (var reader = new StreamReader(new MemoryStream(bytes), Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                text = reader.ReadToEnd();
+            }
             if (String.IsNullOrWhiteSpace(text))
             {
                 return new JsonObject();
@@ -1448,44 +1545,62 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             catch (Exception ex)
             {
-                PluginLog.Warning(ex, "Bridge auto-wire: settings.json isn't valid JSON — leaving it untouched");
+                PluginLog.Warning(ex, "Live status: settings.json isn't valid JSON — leaving it untouched");
                 return null;
             }
 
             if (parsed is not JsonObject root)
             {
-                PluginLog.Warning("Bridge auto-wire: settings.json isn't a JSON object — leaving it untouched");
+                PluginLog.Warning("Live status: settings.json isn't a JSON object — leaving it untouched");
                 return null;
             }
 
             return root;
         }
 
-        // Back up, then write atomically. The backup is ROLLING — taken immediately before EVERY
-        // write, overwriting the last one (#31). It used to be taken once, on the first load, and
-        // never again: on QA's machine it was a month stale, so "restore the backup" would have
-        // rolled back every unrelated change the user had made since. A backup that is always the
-        // state one write ago is the only kind worth telling people about.
-        private static void WriteSettings(JsonObject root)
+        // Write atomically, but only over the file that was read. The temp name is unique per call
+        // so two writers can never truncate each other's temp; the file is re-fingerprinted at the
+        // last possible moment before the rename and the write is REFUSED on a mismatch — the caller
+        // (RewriteSettings) re-reads and tries once more. The backup is ROLLING — taken immediately
+        // before every write that goes ahead, overwriting the last one (#31). It used to be taken once,
+        // on the first load, and never again: on QA's machine it was a month stale, so "restore the
+        // backup" would have rolled back every unrelated change the user had made since. A backup
+        // that is always the state one write ago is the only kind worth telling people about.
+        private static Boolean WriteSettings(JsonObject root, Byte[] expected)
         {
-            try
-            {
-                if (File.Exists(SettingsFile))
-                {
-                    File.Copy(SettingsFile, SettingsBackup, overwrite: true);
-                }
-            }
-            catch (Exception ex)
-            {
-                PluginLog.Warning(ex, "Bridge auto-wire: couldn't back up settings.json (continuing)");
-            }
-
-            // Atomic write (temp + rename) so a concurrent reader never sees a half-written file.
             Directory.CreateDirectory(ClaudeDir);
             var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-            var tmp = SettingsFile + ".cc.tmp";
-            File.WriteAllText(tmp, json);
-            File.Move(tmp, SettingsFile, overwrite: true);
+            var tmp = SettingsFile + ".cc." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(tmp, json);
+
+                if (!SameBytes(Fingerprint(SettingsFile), expected))
+                {
+                    TryDelete(tmp);
+                    return false;
+                }
+
+                try
+                {
+                    if (File.Exists(SettingsFile))
+                    {
+                        File.Copy(SettingsFile, SettingsBackup, overwrite: true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "Live status: couldn't back up settings.json (continuing)");
+                }
+
+                File.Move(tmp, SettingsFile, overwrite: true);
+                return true;
+            }
+            catch
+            {
+                TryDelete(tmp);
+                throw;
+            }
         }
 
         // Ensure a hook event's array contains an entry pointing at our activity handler; append if
