@@ -59,10 +59,12 @@ macOS user account** (or on another Mac) before each release.
 - **Answer** keys (Up/Down/Return, Yes/No) drive a Claude prompt.
 - **Live status (opt-in, #31):** the Cost / Context / Activity keys read **Set up**, and that
   account's `~/.claude/settings.json` is **unchanged** by the install (check it, or note that it
-  does not exist). Press Cost: it flashes *Set up first* and a card appears in Options+ naming
-  Setup & Privacy; the file is still unchanged. Then press **Enable Live Status** (page 2, key 9):
-  a card confirms the edit, the keys read **Restart Claude**, and `~/.claude/settings.json` now
-  holds five hooks + a `statusLine` (backup at `~/.claude/settings.json.claude-console.bak`).
+  does not exist). Press Cost once: it flashes *Press again* and a card appears in Options+ naming the exact
+  change a second press makes; the file is still unchanged. Wait 15 s — the flash clears and the
+  file is still unchanged (a late press never writes). Press Cost twice within 10 s: a card confirms
+  the edit, the keys read **Restart Claude**, and `~/.claude/settings.json` now holds five hooks +
+  a `statusLine` (backup at `~/.claude/settings.json.claude-console.bak`). (**Enable Live Status**,
+  page 2 key 9, does the same in one press.)
   Start a fresh `claude` and confirm the Model / Cost / Context / Activity keys show live data.
   Press **Disable Live Status** (page 4, key 9): the keys read **Off** and the file carries none
   of the plugin's entries.
@@ -76,5 +78,5 @@ macOS user account** (or on another Mac) before each release.
 - ✅ Package installs and **loads clean**, with **no** application entry and **nothing** on the keypad
 - ✅ **Import** produces the full layout on the keypad
 - ✅ prompt / voice / answer keys fire with Terminal focused
-- ✅ install leaves `~/.claude/settings.json` untouched; a live key pressed before setup changes nothing
-- ✅ Enable Live Status wires it and says so; live keys show data on the next `claude` session; Disable takes it out
+- ✅ install leaves `~/.claude/settings.json` untouched; one press on a live key, or a late second press, changes nothing
+- ✅ two presses within 10 s (or Enable Live Status) wire it and say so; live keys show data on the next `claude` session; Disable takes it out

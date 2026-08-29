@@ -29,9 +29,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         {
             _bridge = BridgeManager.Instance;
             // Without the hooks this key used to fall through to "Ready" forever — a value the agent
-            // never reported. Until live status is set up it says so instead, and a press changes
-            // nothing (#31). One owner for the three live keys — see LiveStatusGate.
-            _gate = new LiveStatusGate(_bridge, () => this.ActionImageChanged());
+            // never reported. Until live status is set up it says so instead; the first press arms it and
+            // says what a second press will change, the second press enables (#31) — see LiveStatusGate.
+            _gate = new LiveStatusGate(_bridge, "Activity", () => this.ActionImageChanged());
             _bridge.OnActivityChanged += (_) => this.Refresh();
             _bridge.OnStateChanged += (_) => this.Refresh();
         }
@@ -107,7 +107,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         protected override void RunCommand(String actionParameter)
         {
-            if (_gate.Refuse())
+            if (_gate.Press())
             {
                 return;
             }

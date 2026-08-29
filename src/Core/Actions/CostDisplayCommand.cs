@@ -33,9 +33,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             : base(displayName: "Cost", description: "Shows live session cost and token count (needs live status enabled — see Setup & Privacy)", groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
-            // Until live status is set up the key says so instead of a value, and a press changes
-            // nothing (#31). One owner for the three live keys — see LiveStatusGate.
-            _gate = new LiveStatusGate(_bridge, () => this.ActionImageChanged());
+            // Until live status is set up the key says so instead of a value; the first press arms it and
+            // says what a second press will change, the second press enables (#31) — see LiveStatusGate.
+            _gate = new LiveStatusGate(_bridge, "Cost", () => this.ActionImageChanged());
 
             _bridge.OnStateChanged += (state) =>
             {
@@ -68,7 +68,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         protected override void RunCommand(String actionParameter)
         {
-            if (_gate.Refuse())
+            if (_gate.Press())
             {
                 return;
             }

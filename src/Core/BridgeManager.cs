@@ -1257,7 +1257,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     // never from a stale backup.
                     if (this.UnwireIfWired())
                     {
-                        this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                        this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
                     }
                 }
 
@@ -1265,6 +1265,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // Always say where we stand at load, even when nothing changed — the state that
                 // equals the starting value would otherwise leave no line at all.
                 PluginLog.Info($"Live status at load: {_liveStatus}");
+
+                // Cards are posted at Warning because that is the only level Options+ renders (a
+                // Normal + message post shows nothing — device, 2026-08-29 13:12). Warning also
+                // badges the All Actions tile, so a load clears it: the badge means "since the last
+                // change", not "forever".
+                this.Notify?.Invoke(PluginStatus.Normal, null, null, null);
             }
         }
 
@@ -1310,7 +1316,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var outcome = this.EnsureBridgeWired();
                 if (outcome == WiringOutcome.Failed)
                 {
-                    this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.EnableFailed(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.EnableFailed(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
                     return false;
                 }
 
@@ -1331,7 +1337,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     // Say so where the user is looking: the message centre in Options+, with the
                     // undo one click away. Normal, not Warning — this is something they just asked for.
-                    this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Wired(WiredHookCount), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
                 }
                 return true;
             }
@@ -1373,7 +1379,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 if (wrote)
                 {
-                    this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
                 }
                 return ok;
             }

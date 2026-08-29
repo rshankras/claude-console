@@ -40,7 +40,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // The first version was eight lines: the backup's absolute path (with the user's home
             // directory in it) and the undo command, under a button that already led to both. The
             // mechanics belong behind the button; the card says what happened.
-            foreach (var text in new[] { BridgeNotice.Wired(5), BridgeNotice.Unwired() })
+            foreach (var text in new[] { BridgeNotice.Wired(5), BridgeNotice.Unwired(), BridgeNotice.PressAgain("Activity", 10) })
             {
                 Assert.DoesNotContain("/Users/", text);
                 Assert.DoesNotContain("uninstall.sh", text);
@@ -62,13 +62,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void The_setup_notice_says_where_the_switch_is_and_that_nothing_changed()
+        public void The_press_again_notice_is_the_prompt_with_the_change_in_it()
         {
-            var text = BridgeNotice.SetupRequired();
+            var text = BridgeNotice.PressAgain("Cost", 10);
 
-            Assert.Contains("Enable Live Status", text);
-            Assert.Contains(LiveStatusFace.SetupGroup, text);
-            Assert.Contains("Nothing in ~/.claude/settings.json changes", text);
+            Assert.StartsWith("Press Cost again within 10 s", text);
+            Assert.Contains("5 hooks and a status line", text);
+            Assert.Contains("~/.claude/settings.json", text);
+            Assert.Contains("backed up first", text);
+            Assert.Contains("Nothing changes until then", text);
             Assert.True(text.Length <= 260, $"{text.Length} chars — that is a paragraph, not a notice");
         }
 
@@ -123,14 +125,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             enable = enable.Substring(0, enable.IndexOf("internal Boolean DisableLiveStatus()", StringComparison.Ordinal));
 
             var write = enable.IndexOf("this.EnsureBridgeWired()", StringComparison.Ordinal);
-            var card = enable.IndexOf("Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Wired(", StringComparison.Ordinal);
+            var card = enable.IndexOf("Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(", StringComparison.Ordinal);
             Assert.True(write > 0 && card > 0, "Enable no longer wires, or no longer says so");
             Assert.True(card > write, "the wired notice is posted before the file is written");
 
-            // A user's own action never earns a Warning badge, and there is no "clear on a no-change
-            // load" any more — there is no load-time write to clear after.
-            Assert.DoesNotContain("PluginStatus.Warning", engine);
-            Assert.DoesNotContain("Notify?.Invoke(PluginStatus.Normal, null", engine);
+            // Warning is the only level Options+ renders a card at (a Normal + message post shows
+            // nothing — device, 2026-08-29). It badges the All Actions tile, so every load clears it:
+            // the badge means "since the last change", not "forever".
+            var load = engine.Substring(engine.IndexOf("private void LoadWiring()", StringComparison.Ordinal));
+            load = load.Substring(0, load.IndexOf("internal void RunLoadWiringForTests()", StringComparison.Ordinal));
+            Assert.Contains("Notify?.Invoke(PluginStatus.Normal, null", load);
+            Assert.DoesNotContain("Notify?.Invoke(PluginStatus.Normal, BridgeNotice.", engine);
         }
 
         [Fact]

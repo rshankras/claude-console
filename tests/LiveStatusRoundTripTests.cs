@@ -30,7 +30,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             public Rig()
             {
                 this.Bridge = new BridgeManager(new PlatformSeamTests.FakePlatformBridge());
-                this.Bridge.Notify = (status, message, url, title) => this.Cards.Add((status, message));
+                this.Bridge.Notify = (status, message, url, title) => { if (message != null) { this.Cards.Add((status, message)); } };   // a null message is the load-time clear, not a card
                 this.Bridge.OnLiveStatusChanged += s => this.States.Add(s);
             }
 
@@ -92,7 +92,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("{\"model\":\"opus\",\"permissions\":{\"allow\":[\"Bash\"]}}", File.ReadAllText(rig.Home.Backup));
             Assert.Equal(LiveStatusState.JustEnabled, rig.Bridge.LiveStatus);
             var card = Assert.Single(rig.Cards);
-            Assert.Equal(PluginStatus.Normal, card.Status);
+            Assert.Equal(PluginStatus.Warning, card.Status);
             Assert.Equal(BridgeNotice.Wired(5), card.Message);
             Assert.Empty(rig.Home.LeftoverTemps());
         }
@@ -190,7 +190,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.False(File.Exists(rig.Home.ChainFile));
             Assert.Equal(LiveStatusState.Off, rig.Bridge.LiveStatus);
             var card = Assert.Single(rig.Cards);
-            Assert.Equal(PluginStatus.Normal, card.Status);
+            Assert.Equal(PluginStatus.Warning, card.Status);
             Assert.Equal(BridgeNotice.Unwired(), card.Message);
         }
 
@@ -317,7 +317,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 BridgeManager.HomeOverride = home.Dir;
                 this.Bridge = new BridgeManager(new PlatformSeamTests.FakePlatformBridge());
-                this.Bridge.Notify = (status, message, url, title) => this.Cards.Add((status, message));
+                this.Bridge.Notify = (status, message, url, title) => { if (message != null) { this.Cards.Add((status, message)); } };   // a null message is the load-time clear, not a card
             }
 
             public void Dispose() { }

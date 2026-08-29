@@ -12,8 +12,8 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// </summary>
     internal static class LiveStatusFace
     {
-        /// <summary>Flashed for ~2.5 s when a not-enabled live key is pressed. The press changes nothing.</summary>
-        internal const String PressHint = "Set up first";
+        /// <summary>Shown while a first press has armed the key: a second press within the window enables.</summary>
+        internal const String PressHint = "Press again";
 
         /// <summary>The group in Options+ that holds Enable / Disable Live Status.</summary>
         internal const String SetupGroup = "Setup & Privacy";

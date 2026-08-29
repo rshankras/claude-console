@@ -367,10 +367,20 @@ profiles (Enable at page 2 key 9, Disable at page 4 key 9; Codex drops both) · 
 `base()` + `AddParameter`, so the bindings are `…LiveStatusCommand___enable/___disable`; the
 Codex profile tool strips BEFORE it rearranges, so its `PLACE[(1,8)]` must keep expecting `None`;
 xUnit theories need public enum parameters, so `LiveStatusWiring`/`LiveStatusState` are public.
-**Owed on the device** (the plan's 12-step checklist is in `~/.claude/plans/enchanted-brewing-snail.md`):
-whether `PluginStatus.Normal` + message renders a visible card (fallback: Warning for Enable);
-the `Restart Claude` label on 60/90 px keys; the Set up → Enable → Restart → live → Disable → Off
-round trip; `uninstall.sh --unwire` reaching the keys within ~10 s; a #27 repaint check.
+**Device findings 2026-08-29 13:08–13:12:** `uninstall.sh --unwire` reached the keys in ~10 s (`Off`); a
+fresh-state load wrote nothing; a live key press before setup wrote nothing (cksum unchanged); Enable
+wrote exactly the five events + our statusLine with 12 unrelated keys intact, backup = the pre-Enable
+file, no temp; `JustEnabled` → `Enabled` in 1.2 s because this Mac's running session still reports.
+**`PluginStatus.Normal` + message renders NOTHING** — every card is now posted at Warning (the level
+that renders and badges the All Actions tile) and every load clears it.
+**Owner's call 2026-08-29 13:20 — the two-step press.** Dragging a key just to give permission was the
+friction the owner refused; the reviewer's objection (a face cannot carry the disclosure) is answered
+by the card, which does render at Warning. So a live key pressed once ARMS itself for 10 s, flashes
+`Press again`, and posts `BridgeNotice.PressAgain(key, 10)` — the prompt with the change in it; a
+second press on the SAME key inside the window runs `EnableLiveStatus`; a late press only arms again.
+The Enable/Disable keys stay for the layout and for anyone who prefers a labelled key.
+**Still owed on the device:** the Warning cards actually appearing (Disable, Enable, Press again);
+the `Restart Claude` label on 60/90 px keys; a #27 repaint check.
 
 ## #23: universal plugin — what changed, what it removed, what is unverified
 

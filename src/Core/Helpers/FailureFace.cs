@@ -54,7 +54,8 @@ namespace Loupedeck.ClaudeConsolePlugin
             _onChange();
         }
 
-        private void Clear()
+        /// <summary>Take the face down now (the hold timer would have; a caller that knows better may too).</summary>
+        public void Clear()
         {
             lock (_lock)
             {

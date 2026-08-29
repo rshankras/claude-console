@@ -40,13 +40,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             "you enable them again.";
 
         /// <summary>
-        /// The message posted when a live key is pressed before live status is enabled. The press
-        /// changed nothing; this says where the switch is. The key itself only has room to flash
-        /// "Set up first".
+        /// The message posted by the FIRST press on a live key before live status is enabled: the
+        /// prompt, with the change in it, before the change. The press itself changed nothing; the
+        /// key only has room to flash "Press again", so this is where the disclosure lives.
         /// </summary>
-        internal static String SetupRequired() =>
-            "The live keys are off until you turn them on: in Logi Options+, add Enable Live Status " +
-            "from Setup & Privacy to any key and press it. Nothing in ~/.claude/settings.json changes " +
+        internal static String PressAgain(String keyName, Int32 seconds) =>
+            $"Press {keyName} again within {seconds} s to add 5 hooks and a status line to ~/.claude/settings.json " +
+            "so the live keys work. Your own entries are kept and the file is backed up first. Nothing changes " +
             "until then.";
 
         /// <summary>The message posted when Enable could not touch settings.json at all.</summary>
