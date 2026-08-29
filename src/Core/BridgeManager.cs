@@ -1262,6 +1262,9 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
 
                 this.RefreshLiveStatusLocked();
+                // Always say where we stand at load, even when nothing changed — the state that
+                // equals the starting value would otherwise leave no line at all.
+                PluginLog.Info($"Live status at load: {_liveStatus}");
             }
         }
 
