@@ -13,8 +13,13 @@
 import AppKit
 
 let repo = FileManager.default.currentDirectoryPath
-let srcDir = repo + "/assets/designer-icons/Colours"
-let outDir = repo + "/src/Resources/icons"
+// Neutral action/nav glyphs render from the WHITE set — one monochrome colour, the designer's
+// 2026-08 direction (a dedicated White/ variant was delivered alongside Colours/). The colour
+// variants (gauge warn/crit, brain tiers, Yes/No) render from Colours/, whose hex fills `recolor`
+// can swap; a White SVG (fill="white") is deliberately left untouched by recolor.
+let whiteDir = repo + "/assets/designer-icons/White"
+let coloursDir = repo + "/assets/designer-icons/Colours"
+let outDir = repo + "/src/Core/Resources/icons"   // #39: the embedded-resource path (was src/Resources/icons)
 
 // Designer palette (sampled from the pack itself).
 let GREEN = "#7FC17A", RED = "#CE655C", AMBER = "#DFA658", BLUE = "#81A8ED", PURPLE = "#A194EB"
@@ -48,8 +53,6 @@ let mapping: [(String, String)] = [
     ("Optimize", "optimize"),
     ("PasteInsert", "write_tests"),
     ("PreviousTab(Left)", "prev_tab"),
-    ("Radiobutton-Check", "yes"),
-    ("Remove", "no"),
     ("ScrollDown", "scroll_down"),
     ("ScrollUp", "scroll_up"),
     ("Security", "security"),
@@ -68,6 +71,8 @@ let recolors: [(String, String, String)] = [
     ("Brain", "brain_haiku", GREEN),       // fast
     ("Brain", "brain_sonnet", BLUE),       // balanced
     ("Brain", "brain_opus", PURPLE),       // top tier
+    ("Radiobutton-Check", "yes", GREEN),   // approval: icon stays coloured until the tile carries it (#40/#42)
+    ("Remove", "no", RED),                 // approval: ditto
 ]
 
 let size: CGFloat = 96
@@ -106,10 +111,7 @@ func renderVoiceDraft(micSvg: String, to path: String) -> Bool {
     let target = NSImage(size: NSSize(width: size, height: size))
     target.lockFocus()
     mic.draw(in: NSRect(x: 34, y: 6, width: 66, height: 66))   // right-of-centre, slightly low
-    var v: UInt64 = 0
-    Scanner(string: String(PURPLE.dropFirst())).scanHexInt64(&v)
-    NSColor(srgbRed: CGFloat((v >> 16) & 0xff) / 255, green: CGFloat((v >> 8) & 0xff) / 255,
-            blue: CGFloat(v & 0xff) / 255, alpha: 1).set()
+    NSColor.white.set()   // white bars to match the white mic — the glyph shape distinguishes it from Voice
     let barW: CGFloat = 7
     for (x, h) in [(CGFloat(10), CGFloat(30)), (23, 52), (36, 38)] {
         NSBezierPath(roundedRect: NSRect(x: x, y: (size - h) / 2, width: barW, height: h),
@@ -124,7 +126,7 @@ func renderVoiceDraft(micSvg: String, to path: String) -> Bool {
 }
 
 var ok: [String] = [], fail: [String] = []
-if let micText = try? String(contentsOfFile: srcDir + "/VoiceDictation.svg", encoding: .utf8),
+if let micText = try? String(contentsOfFile: whiteDir + "/VoiceDictation.svg", encoding: .utf8),
    renderVoiceDraft(micSvg: micText, to: outDir + "/voice_draft.png")
 {
     ok.append("voice_draft")
@@ -134,12 +136,12 @@ else
     fail.append("voice_draft")
 }
 for (svg, name) in mapping {
-    let svgPath = srcDir + "/" + svg + ".svg"
+    let svgPath = whiteDir + "/" + svg + ".svg"
     guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
     if renderSvg(text, to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
 }
 for (svg, name, hex) in recolors {
-    let svgPath = srcDir + "/" + svg + ".svg"
+    let svgPath = coloursDir + "/" + svg + ".svg"
     guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
     if renderSvg(recolor(text, to: hex), to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
 }
