@@ -1,6 +1,6 @@
 # Handoff — the 2.0.1 QA retest fixes
 
-State as of **2026-08-28**, morning. Branch `fix/qa-retest`, branched from `main` (2.1.0), pushed.
+State as of **2026-08-28**, end of day. Branch `fix/qa-retest`, branched from `main` (2.1.0), pushed.
 Read this before touching the QA work; the issue tracker carries the detail, this carries the shape.
 
 ## START HERE (fresh session)
@@ -16,42 +16,37 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
 **#23 universal plugin (verified on device)** · #31 settings.json rewrite · #29 undrivable sessions · #32 null-key traces.
 #50 closed wontfix.
 
-**Owed before release, and only these:**
-1. **Voice release round: DONE 2026-08-28 16:20, on a real package install** (`ClaudeConsole_2.2.0.lplug4`,
-   18 MB, gitignored, in the worktree root). `sign-and-notarize.sh` → both notarizations Accepted,
-   helper stapled → `pack-release.sh 2.2.0` → installed via Options+ → Voice → Allow → "Hey, this is
-   really cool." typed in 4s. **#24's repair path proven**: the Metal backend was deleted from the
-   runtime bundle beforehand; the log shows `installing whisper bundle from package` and all 5 backends
-   came back. First time `pkgVoice … exists=True` has ever appeared on this Mac. **#28 on the package
-   still owed** (Voice, then Voice Draft mid-recording → stops, no second helper). The Windows half is
-   #47 and needs the laptop.
-2. **#25 on hardware** — two sessions BOTH writing state files, pin one, look at the other, confirm
-   Cost follows your eyes while the highlighted key and Yes stay with the pin; press the pinned key
-   again to release.
-3. **#27's idle CPU number** — every Claude session closed (the measurer is otherwise a live busy
-   session), then `spikes/redraw-27/measure-27.sh 120` twice: Terminal frontmost, and not.
-4. **#23 on the device — THE next thing.** The package on this Mac is still the app-bound 2.2.0 from
-   the voice round, and `@_claudeconsole` is still on disk, which would MASK the universal behaviour.
-   Sequence: uninstall Claude Console in Options+ (GUI; the CLI cannot) → `killall LogiPluginService`
-   (never delete registrations with it running) → `rm -rf …/Applications/Loupedeck70/@_claudeconsole`
-   → `bash tools/dev-reload.sh` → start the service → Options+ must show NO Claude Console tab, actions
-   under "Claude Console Actions" only, keypad on the universal layout → import
-   `profiles/ClaudeConsole-Keypad.lp5` → Terminal frontmost → the full layout, keys firing. Then the
-   clean-machine pass per docs/clean-install-test.md (updated for universal).
-5. **#30's keyboard half** — the KEYPAD Esc is verified on the device (hourglass clears in ~5s).
-   Esc typed on the KEYBOARD is unverified: the plugin never sees it, so it runs on the 90s
-   transcript-quiet rule alone. Start a turn, press Esc on the keyboard, and time the clear. Also
-   unverified: whether Ctrl+C behaves the same as Esc (the issue flags them as different paths).
-5. **Decide the reinstall story before submitting** — see "The #20 trade" below. Install 2.2.0 OVER
-   an existing 2.0.1, the way QA will, and watch the Options+ strip: the icon vanishes, and the
-   README used to promise it would heal itself. Nothing hard-blocks the submission; this is the
-   thing QA files as a regression against the #20 fix if you do not raise it first.
-6. **#47** needs the Windows laptop. **#34 and #23** need Logitech.
+**Every Mac-side bug on the retest list is DONE.** What is left, in the order it matters:
 
-**Suggested next: the draft PR.** Every P0–P2 that was ours to fix on the retest list is done; what
-remains is hardware-blocked (#47 laptop), Logitech-blocked (#23's design follow-ups, #34/#35/#40–43),
-or P3 (#32 #33 #36 #37 #38). #31 and #29 done 2026-08-28 — see below. The `IsApplicationActive` spike is DEAD — #23 went universal. #46, #39, #30, #45, #18
-and #23 were done on 2026-08-28 — see below.
+1. **REPACK before anyone sees a package.** `ClaudeConsole_2.2.0.lplug4` in the worktree root (28 Aug
+   15:29) predates the universal change, #31, #29 and #32 — it is the app-bound build from the voice
+   round. `DOTNET_ROLL_FORWARD=LatestMajor bash tools/voice/pack-release.sh 2.2.0` (the notarized voice
+   payload in the runtime home is still valid; it refuses without it). Then the clean-machine pass per
+   `docs/clean-install-test.md` (rewritten for universal: NOTHING on the keypad after install is correct;
+   import the `.lp5`).
+2. **The draft PR** `fix/qa-retest` → `main`, so the 25 `Closes #NN` lines finally reach the tracker.
+3. **The PM reply** — every answer is in this file: universal done and verified; Mac voice verified on a
+   packaged install; Windows voice = #47 (laptop); labels Yes/No; colour + placement agreed WITH THE
+   CONDITION that the approval row never lands on the Esc/Voice slots (#42 — "locked in" could quietly
+   ship the layout we objected to); icons: 9 missing, 7 of them exist only at 32px in `Icons_old`, ask
+   for SVG on one safe-area grid (glyph extents measured 28–84% of the frame); #37 deferred to Vizhi's
+   retest; the contract they asked for. Then close #34 (moot), #40 and #42 (decided) with a line each.
+4. **#40's palette swap is UNCOMMITTED in the OTHER worktree**: `src/Core/Helpers/KeyImage.cs` (and
+   `GitCommand.cs`) modified on `feat/vizhi-desktop` at `~/Work/MyApps/claude-console`. The decision it
+   was waiting for landed on 2026-08-28. Commit it there, or port it here.
+5. **Device checks still owed, none blocking:** #28 on the package (Voice, then Voice Draft
+   mid-recording → stops); #30's KEYBOARD Esc (90s rule; the keypad Esc is verified); Ctrl+C vs Esc;
+   #25 (pin one session, look at another: Cost follows your eyes, Yes stays with the pin); #27's
+   zero-session idle CPU (`spikes/redraw-27/measure-27.sh 120`, all sessions closed).
+6. **Windows, later by the owner's choice:** #47 (P1, packaged voice never shipped — cherry-pick the
+   `WINDOWS_WHISPER_DIR` section from `feat/vizhi-desktop`), #33, #36, and one import of
+   `profiles/ClaudeConsole-Windows.lp5` to confirm the `windowsterminal` / `DefaultWin` names chosen by
+   analogy.
+7. **Next release, with Logitech:** #41 icons (SVGs), #43 Codex answer row (two spikes first), #44 slot
+   order key (recency never default), iTerm2 as a second session driver (#29's seam), #37, #38.
+
+**Suggested next: item 1, then 2.** The per-issue sections below carry the reasoning; the class
+comments in the code carry the traps.
 
 **An earlier version of this file said "#18 is superseded by #24 — close as duplicate". That was
 wrong**, and it was checked before being acted on: #24 added the `.error` sidecar for WHISPER failures,
@@ -59,24 +54,25 @@ but the helper's denied-microphone path exited before the sidecar writer was eve
 report behind #18 was exactly that case, and it was still silent. Read the class comment before
 closing an issue on the strength of a note.
 
-**Machine state right now:** the keypad runs a DEV build via a `.link` pointing at
-`claude-console-p0/bin/ClaudeConsole/Debug` (DLL of 2026-08-28 10:46, ~1.04 MB — a healthy one is
-~1 MB; ~140 KB means resources were dropped). There is no installed ClaudeConsole package, so no
-dev-link collision. **LogiPluginService is NOT supervised on this Mac** — see the trap below before
-running `killall`. **Rebuild with `bash tools/dev-reload.sh`, not bare `dotnet build`**: a bare
-build sends a plugin RELOAD, the service's live application list loses `@_claudeconsole`, and the
-icon vanishes from the Options+ strip while the plugin loads fine — it happened twice on 2026-08-28
-before the cause was found. The script builds, restarts the service (and STARTS it, since nothing
-else here will), and restarts the Options+ agent. The worktree directory is still called `claude-console-p0` although the
-branch is now `fix/qa-retest` — that mismatch is deliberate: the `.link` names the DIRECTORY,
-so renaming the folder to match would silently kill the running plugin. Leave it.
+**Machine state right now (end of 2026-08-28):** the keypad runs the UNIVERSAL dev build via the
+`.link` → `claude-console-p0/bin/ClaudeConsole/Debug` (DLL 1.04 MB — ~140 KB means a `-t:Compile`
+poisoned `obj/`; `rm -rf src/Products/ClaudeConsole/obj bin/ClaudeConsole` and rebuild). **No package
+is installed** (the voice-round package was uninstalled for the universal test) and **no
+`@_claudeconsole` registration exists** — correct. Options+ has its own `com.apple.terminal` entry with
+the imported "Claude Console — Keypad" profile; a stale old-layout import may still be listed — delete
+it. `~/.claude/settings.json` is WIRED (the #31 round trip ended wired); the Options+ "!" notice from
+the last wiring clears on the next no-change load. Mic grant: allowed. `tools/dev-reload.sh` is now
+just build + size check — a reload loses nothing since universal. **LogiPluginService is NOT
+supervised on this Mac**: after `killall`, start it with `open -a /Applications/Utilities/LogiPluginService.app`.
+The worktree directory is still called `claude-console-p0` (branch `fix/qa-retest`) — deliberate; the
+`.link` names the directory.
 
 ## Where it stands
 
 | | |
 |---|---|
-| Branch | `fix/qa-retest`, 31 commits, pushed, **no PR opened** |
-| Suite | 768 C# + 47 shell, green |
+| Branch | `fix/qa-retest`, 51 commits, pushed, **no PR opened** |
+| Suite | 785 C# + 33 shell + 27 codex-hook, green |
 | Issues | 25 filed (#20–#44) plus #45, #46, #47, #48, #49, #50, #51 found while working. Milestone `QA fixes — CC 2.2.0 / Vizhi 1.5.4` |
 | Blocked on Logitech | #23, #35, #40–#43 (label `blocked:logitech`) |
 
