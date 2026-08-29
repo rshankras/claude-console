@@ -49,6 +49,15 @@ namespace Loupedeck.ClaudeConsolePlugin
             "so the live keys work. Your own entries are kept and the file is backed up first. Nothing changes " +
             "until then.";
 
+        /// <summary>
+        /// The dialog a first press opens where the product can show one: the same disclosure,
+        /// phrased for two buttons ("Not now" / "Turn on") rather than a second press.
+        /// </summary>
+        internal static String TurnOnDialog(String keyName, Int32 seconds) =>
+            "Turn on the live keys? This adds 5 hooks and a status line to ~/.claude/settings.json so " +
+            "Cost, Context and Activity show live data. Your own entries are kept and the file is backed " +
+            $"up first. (Pressing {keyName} again within {seconds} s also turns it on.)";
+
         /// <summary>The message posted when Enable could not touch settings.json at all.</summary>
         internal static String EnableFailed() =>
             "Claude Console could not edit ~/.claude/settings.json (it is a symlink, not valid JSON, or " +

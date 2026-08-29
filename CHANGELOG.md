@@ -13,7 +13,7 @@ answers the ones that were ours to answer, and changes one thing about what the 
   Cost / Context / Activity keys read *Set up* until you turn them on — by pressing one of them
   twice: the first press flashes *Press again* and posts a card in Options+ stating the exact
   change (five hooks and a status line, your entries kept, the file backed up first) and edits
-  nothing; a second press within 10 s does it. A labelled **Enable Live Status** key (new, under
+  nothing; a second press within 15 s does it. A labelled **Enable Live Status** key (new, under
   *Setup & Privacy*; on the ready-made layout beside Cost) does the same in one press, with the
   same disclosure in its description. **Disable Live Status** takes exactly those entries back out
   and the keys read *Off*. Existing installs are already wired and simply load as

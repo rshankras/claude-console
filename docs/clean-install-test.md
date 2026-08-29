@@ -60,8 +60,8 @@ macOS user account** (or on another Mac) before each release.
 - **Live status (opt-in, #31):** the Cost / Context / Activity keys read **Set up**, and that
   account's `~/.claude/settings.json` is **unchanged** by the install (check it, or note that it
   does not exist). Press Cost once: it flashes *Press again* and a card appears in Options+ naming the exact
-  change a second press makes; the file is still unchanged. Wait 15 s — the flash clears and the
-  file is still unchanged (a late press never writes). Press Cost twice within 10 s: a card confirms
+  change a second press makes; the file is still unchanged. Wait 20 s — the flash clears and the
+  file is still unchanged (a late press never writes). Press Cost twice within 15 s: a card confirms
   the edit, the keys read **Restart Claude**, and `~/.claude/settings.json` now holds five hooks +
   a `statusLine` (backup at `~/.claude/settings.json.claude-console.bak`). (**Enable Live Status**,
   page 2 key 9, does the same in one press.)
@@ -79,4 +79,4 @@ macOS user account** (or on another Mac) before each release.
 - ✅ **Import** produces the full layout on the keypad
 - ✅ prompt / voice / answer keys fire with Terminal focused
 - ✅ install leaves `~/.claude/settings.json` untouched; one press on a live key, or a late second press, changes nothing
-- ✅ two presses within 10 s (or Enable Live Status) wire it and say so; live keys show data on the next `claude` session; Disable takes it out
+- ✅ two presses within 15 s (or Enable Live Status) wire it and say so; live keys show data on the next `claude` session; Disable takes it out

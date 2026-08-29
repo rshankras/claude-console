@@ -1,6 +1,8 @@
 namespace Loupedeck.ClaudeConsolePlugin
 {
     using System;
+    using System.Diagnostics;
+    using System.Threading;
 
     using Loupedeck.ClaudeConsolePlugin.Agents;
 
@@ -56,6 +58,88 @@ namespace Loupedeck.ClaudeConsolePlugin
                     PluginLog.Warning(ex, "ClaudeConsolePlugin: could not post the plugin status");
                 }
             };
+
+            // The system-notification half of the same seam (#31): a press on the keypad deserves a
+            // reply where the user is looking, not only inside Options+. The SDK's ShowBalloonTip
+            // shows NOTHING on macOS (device, 2026-08-29 13:52), so there it goes through
+            // Notification Center via osascript; the SDK call is kept for Windows, where the name
+            // is native. Fire-and-forget: a notification must never hold up a key press.
+            BridgeManager.Instance.Toast = (title, text) =>
+            {
+                try
+                {
+                    if (OperatingSystem.IsMacOS())
+                    {
+                        ShowMacNotification(title, text);
+                    }
+                    else
+                    {
+                        this.NativeGui.ShowBalloonTip(text, title, BalloonTipIcon.Info);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "ClaudeConsolePlugin: could not show the notification");
+                }
+            };
+
+            // The yes/no half (#31): a dialog centred on screen with the change spelled out and a
+            // way to say no — the prompt QA asked for. macOS only; osascript through System Events
+            // brings it to the front from a background service (verified 2026-08-29). Windows has
+            // no dialog here yet, so it keeps the two-step press.
+            BridgeManager.Instance.Prompt = OperatingSystem.IsMacOS() ? AskMacDialog : null;
+        }
+
+        // AppleScript string literal: backslashes and double quotes escaped.
+        private static String AppleScriptString(String s) =>
+            "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+
+        private static void ShowMacNotification(String title, String text)
+        {
+            var script = $"display notification {AppleScriptString(text)} with title {AppleScriptString(title)}";
+            var psi = new ProcessStartInfo("/usr/bin/osascript") { UseShellExecute = false, CreateNoWindow = true };
+            psi.ArgumentList.Add("-e");
+            psi.ArgumentList.Add(script);
+            using var p = Process.Start(psi);   // not awaited on purpose
+        }
+
+        // true = "Turn on", false = "Not now" (the cancel button: osascript exits non-zero),
+        // null = gave up after the timeout, or cancelled by a key press (the dialog is killed).
+        private static Boolean? AskMacDialog(String title, String text, Int32 timeoutSeconds, CancellationToken cancel)
+        {
+            var script =
+                "tell application \"System Events\" to display dialog " + AppleScriptString(text) +
+                " with title " + AppleScriptString(title) +
+                " buttons {\"Not now\", \"Turn on\"} default button \"Turn on\" cancel button \"Not now\"" +
+                $" giving up after {timeoutSeconds}";
+            var psi = new ProcessStartInfo("/usr/bin/osascript")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add("-e");
+            psi.ArgumentList.Add(script);
+
+            using var p = Process.Start(psi);
+            using var closeOnCancel = cancel.Register(() => { try { p.Kill(); } catch { /* already gone */ } });
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit();
+
+            if (cancel.IsCancellationRequested)
+            {
+                return null;
+            }
+            if (p.ExitCode != 0)
+            {
+                return false;   // "Not now" — the cancel button makes osascript exit with -128
+            }
+            if (output.Contains("gave up:true", StringComparison.Ordinal))
+            {
+                return null;
+            }
+            return output.Contains("button returned:Turn on", StringComparison.Ordinal);
         }
 
         public override void Load()

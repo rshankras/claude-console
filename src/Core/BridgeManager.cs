@@ -152,6 +152,24 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal Action<PluginStatus, String, String, String> Notify { get; set; }
 
         /// <summary>
+        /// A system notification (#31): the Options+ card only helps someone who has Options+ open,
+        /// and a keypad press happens wherever the user is looking. INativeGui.ShowBalloonTip is a
+        /// protected member of the product's Plugin class, so the product installs this and the
+        /// engine composes the words. Null-safe. (title, text). SPIKE: whether macOS renders it is
+        /// being checked on the device.
+        /// </summary>
+        internal Action<String, String> Toast { get; set; }
+
+        /// <summary>
+        /// A yes/no question on screen (#31): the prompt QA asked for, before the file is modified,
+        /// with a way to say no. (title, text, timeout seconds, cancel) → true = yes, false = no,
+        /// null = no answer. Blocks until answered, so callers run it off the SDK's key thread and
+        /// cancel it when a key press settles the question first. Null where the product has no
+        /// dialog to offer (Windows today) — the two-step press still works there.
+        /// </summary>
+        internal Func<String, String, Int32, CancellationToken, Boolean?> Prompt { get; set; }
+
+        /// <summary>
         /// A dictation failed: which key's capture it was, and the words that key should show (#18).
         /// Raised from whichever thread learns of the failure — the keys repaint from timer threads
         /// already, so that is safe — and always AFTER the beep, so sound and face agree.
@@ -1335,9 +1353,10 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 if (outcome == WiringOutcome.Wrote)
                 {
-                    // Say so where the user is looking: the message centre in Options+, with the
-                    // undo one click away. Normal, not Warning — this is something they just asked for.
+                    // Say so where the user is looking: a system notification now, and the message
+                    // centre in Options+ as the record, with the undo one click away.
                     this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    this.Toast?.Invoke("Live status on", BridgeNotice.Wired(WiredHookCount));
                 }
                 return true;
             }
@@ -1380,6 +1399,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (wrote)
                 {
                     this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    this.Toast?.Invoke("Live status off", BridgeNotice.Unwired());
                 }
                 return ok;
             }

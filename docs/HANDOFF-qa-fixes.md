@@ -375,7 +375,7 @@ file, no temp; `JustEnabled` → `Enabled` in 1.2 s because this Mac's running s
 that renders and badges the All Actions tile) and every load clears it.
 **Owner's call 2026-08-29 13:20 — the two-step press.** Dragging a key just to give permission was the
 friction the owner refused; the reviewer's objection (a face cannot carry the disclosure) is answered
-by the card, which does render at Warning. So a live key pressed once ARMS itself for 10 s, flashes
+by the card, which does render at Warning. So a live key pressed once ARMS itself for 15 s, flashes
 `Press again`, and posts `BridgeNotice.PressAgain(key, 10)` — the prompt with the change in it; a
 second press on the SAME key inside the window runs `EnableLiveStatus`; a late press only arms again.
 The Enable/Disable keys stay for the layout and for anyone who prefers a labelled key.
