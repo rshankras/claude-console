@@ -98,9 +98,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             switch (session.State)
             {
-                case "busy": return ("Thinking", KeyImage.Slate, false);
-                case "waiting": return ("Waiting", KeyImage.Slate, false);
-                default: return ("Ready", KeyImage.Slate, false);
+                case "busy": return ("Thinking", KeyImage.Gray, false);
+                case "waiting": return ("Waiting", KeyImage.Gray, false);
+                default: return ("Ready", KeyImage.Gray, false);
             }
         }
 

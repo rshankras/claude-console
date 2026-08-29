@@ -26,6 +26,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         public static readonly BitmapColor Blue   = new BitmapColor(0x60, 0xA5, 0xFA);
         public static readonly BitmapColor Purple = new BitmapColor(0xA7, 0x8B, 0xFA);
         public static readonly BitmapColor Slate  = new BitmapColor(0x94, 0xA3, 0xB8);
+        // A muted neutral grey for the session state-word bar's quiet states (Ready/Thinking/
+        // Waiting) — Slate reads as bright BLUE on the OLED and clashed with the blue selection
+        // brackets; amber is reserved for "your approval is wanted".
+        public static readonly BitmapColor Gray   = new BitmapColor(0x5A, 0x5A, 0x60);
         public static readonly BitmapColor Dark   = new BitmapColor(0x0D, 0x11, 0x17);
 
         // Pure black: matches the profile's stored icon tiles, the Options+ editor background,
@@ -125,8 +129,16 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // to the very bottom, so the name has to live in the bitmap.
                 if (!String.IsNullOrWhiteSpace(name))
                 {
-                    var nameH = (Int32)(h * 0.58);
-                    bitmap.DrawText(name, pad, pad, w - (2 * pad), nameH, White, fontSize: (Int32)(15 * scale));
+                    // Wrap into up to two lines — DrawText centres a single line and CLIPS the
+                    // overflow (a long "claude-console" lost both ends on the device) instead of
+                    // wrapping, so the split is done here.
+                    var lines = WrapTwo(name, 11);
+                    var lineH = (Int32)(17 * scale);
+                    var top = pad + Math.Max(0, ((Int32)(h * 0.62) - (lines.Length * lineH)) / 2);
+                    for (var i = 0; i < lines.Length; i++)
+                    {
+                        bitmap.DrawText(lines[i], pad, top + (i * lineH), w - (2 * pad), lineH, White, fontSize: (Int32)(14 * scale));
+                    }
                 }
 
                 // STATE-WORD BAR — a filled band with the word centred. Hue = state (amber = your
@@ -211,6 +223,38 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Top corner brackets marking the pinned session. Everything scales off the key's short
         // side so the marker looks the same on every PluginImageSize the SDK asks for. 3px arms on
         // purpose: selection must read from an arm's length without focusing, and 2px didn't.
+        // Split a session name into at most two lines, breaking at a hyphen/space/underscore near
+        // the middle when there is one (so "claude-console" -> "claude-" / "console"), otherwise at
+        // the midpoint. The second line is ellipsised if it would still overflow.
+        private static String[] WrapTwo(String s, Int32 maxLen)
+        {
+            if (s.Length <= maxLen)
+            {
+                return new[] { s };
+            }
+
+            var mid = s.Length / 2;
+            var best = -1;
+            for (var i = 1; i < s.Length - 1; i++)
+            {
+                if ((s[i] == '-' || s[i] == ' ' || s[i] == '_') &&
+                    (best < 0 || Math.Abs(i - mid) < Math.Abs(best - mid)))
+                {
+                    best = i;
+                }
+            }
+
+            var cut = best > 0 ? best + 1 : mid;   // keep a hyphen on the first line
+            var a = s.Substring(0, cut);
+            var b = s.Substring(cut);
+            if (b.Length > maxLen)
+            {
+                b = b.Substring(0, maxLen - 1) + "…";
+            }
+
+            return new[] { a, b };
+        }
+
         private static void DrawSelectionCorners(BitmapBuilder bitmap, Boolean badgePresent)
         {
             var scale = Math.Min(bitmap.Width, bitmap.Height) / 96f;
