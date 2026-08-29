@@ -30,7 +30,7 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
    CONDITION that the approval row never lands on the Esc/Voice slots (#42 — "locked in" could quietly
    ship the layout we objected to); icons: 9 missing, 7 of them exist only at 32px in `Icons_old`, ask
    for SVG on one safe-area grid (glyph extents measured 28–84% of the frame); #37 deferred to Vizhi's
-   retest; the contract they asked for. Then close #34 (moot), #40 and #42 (decided) with a line each.
+   retest; retest item 15 (already-loaded) = #52, LPS-side — reproduces on Logitech's own Spotify/Zoom, evidence on the issue; the contract they asked for. Then close #34 (moot), #40 and #42 (decided) with a line each.
 4. **#40's palette swap is UNCOMMITTED in the OTHER worktree**: `src/Core/Helpers/KeyImage.cs` (and
    `GitCommand.cs`) modified on `feat/vizhi-desktop` at `~/Work/MyApps/claude-console`. The decision it
    was waiting for landed on 2026-08-28. Commit it there, or port it here.
@@ -234,6 +234,25 @@ file no plugin on this Mac ships; it is noise, not the cause). The fix is unambi
 null-safe static `Find` + `NameFor` ("Prompt" when there is nothing to go on), tested directly since
 a PluginDynamicCommand cannot be constructed outside the host. `PromptCommand` was the only
 dictionary-indexed action; the rest `switch`, which tolerates null.
+
+**Hardware-verified 2026-08-29, and the "not reproduced" above is explained.** A temporary log line
+inside `Find` (one INFO per null ask, hook named; reverted afterwards, not committed) showed the host
+calling `GetCommandDisplayName` with a NULL parameter **11 times on every load** — build reload and
+`loupedeck:plugin/ClaudeConsole/reload` alike — within ~1 ms of `PromptCommand` being registered, on
+several threads. `prompts.json` here has 10 entries: one ask per `AddParameter` plus one for the command
+itself fits. The pre-fix code did `_prompts.TryGetValue(null)` at exactly that site, which throws
+unconditionally — QA's "dozens of traces per load in `GetCommandDisplayName`". So the traces were
+happening on this Mac all along; they never reached the PLUGIN log — presumably the SDK catches a hook's exception and reports it in
+LoupedeckService's own log, which this Mac does not capture (see #27); where they went was NOT observed
+directly, only that the plugin log stayed clean before and after. The
+fixed build answers all 11 without throwing; zero exceptions in the plugin log across three reloads.
+Also confirmed while re-checking: `PluginConfiguration.xml` is a real SDK mechanism, not a phantom — an
+EMBEDDED resource `<Namespace>.PluginConfiguration.xml` (+ `…2.xml`: plugin_info and a default
+round-page layout) loaded by `TryLoadPluginConfiguration2`; Logitech's DefaultMac and Spotify embed
+both, Zoom embeds neither. v1 is a static declaration of actions with displayNames; a dynamic-actions
+plugin (us, Zoom) has no use for it, so the "file not found" line is benign for us — but the reply to
+Logitech should say that, not call the file fictional. And `GitCommand` returns null (not "Git") for
+a null parameter — no throw (`KeyImage.Render` does `label ?? ""`), just inconsistent with "Prompt".
 
 ## #29: a session the keys cannot reach no longer takes a key
 
