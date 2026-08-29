@@ -425,10 +425,14 @@ namespace Loupedeck.ClaudeConsolePlugin
                     PruneStaleIpcFiles();
                 }
 
-                // Every ~20 polls, one stat of settings.json so an edit made outside the plugin
+                // At most every 10 s, one stat of settings.json so an edit made outside the plugin
                 // (uninstall.sh --unwire, an editor) reaches the keys without a reload (#31).
-                if (_pollTick % 20 == 7)
+                // Time-based, not tick-based: at the idle cadence a tick is 5 s, and "every 20
+                // polls" would have been a minute and a half.
+                var now = DateTime.UtcNow;
+                if (now - _lastSettingsStat >= SettingsStatInterval)
                 {
+                    _lastSettingsStat = now;
                     this.CheckSettingsMoved();
                 }
             }
@@ -1278,6 +1282,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         private Boolean _justEnabled;             // Enable wrote, and no session has reported since
         private DateTime _settingsSeenWrite;      // settings.json as last inspected — see CheckSettingsMoved
         private Int64 _settingsSeenLength = -1;
+        private DateTime _lastSettingsStat;       // when the poll loop last stat'ed it
+        private static readonly TimeSpan SettingsStatInterval = TimeSpan.FromSeconds(10);
 
         internal LiveStatusState LiveStatus => _liveStatus;
 
