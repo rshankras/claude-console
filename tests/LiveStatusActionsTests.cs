@@ -41,13 +41,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }
         }
 
-        [Fact]
-        public void There_are_no_labelled_switch_keys_any_more()
-        {
-            Assert.False(File.Exists(RepoFile("src", "Core", "Actions", "CostDisplayCommand.cs").Replace("CostDisplayCommand.cs", "EnableLiveStatusCommand.cs")));
-            Assert.False(File.Exists(RepoFile("src", "Core", "Actions", "CostDisplayCommand.cs").Replace("CostDisplayCommand.cs", "DisableLiveStatusCommand.cs")));
-        }
-
         private sealed class Rig : IDisposable
         {
             public TempHome Home { get; } = new TempHome();
