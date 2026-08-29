@@ -38,6 +38,11 @@ PLUGIN = "VizhiCodex"
 DROP = {
     "ControlCommand___tab": "no completion to accept — the press would do nothing",
     "CostDisplayCommand": "Codex bills a subscription and reports no spend; the key would show a dash",
+    # Live status is opt-in for Claude Code because enabling it EDITS ~/.claude/settings.json (#31).
+    # Codex has no such file to consent to — the plugin installs its own ~/.codex/hooks.json and
+    # Codex gates it behind its trust prompt — so the product never registers these two actions.
+    "EnableLiveStatusCommand": "Claude Code's settings.json switch; Codex wires its own hooks.json",
+    "DisableLiveStatusCommand": "Claude Code's settings.json switch; Codex wires its own hooks.json",
 }
 
 # Voice is NOT dropped. It is agent-neutral — the helper records, whisper transcribes, and the text
@@ -62,6 +67,9 @@ PLACE = {
     (0, 5): ("ControlCommand___esc", "VoiceDraftCommand"),
     (0, 8): (None, "ControlCommand___esc"),
     (1, 0): (None, "ControlCommand___review"),
+    # Claude Console keeps Enable Live Status here; strip_unsupported runs FIRST and drops it for
+    # Codex, so by the time this table is consulted the slot is None again. Expect None, not the
+    # Enable binding — the guard below is about Claude's layout moving, and this slot has not.
     (1, 8): (None, "ControlCommand___clear"),
 }
 
