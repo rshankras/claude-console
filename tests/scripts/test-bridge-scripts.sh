@@ -121,13 +121,33 @@ if [ -n "$TTY_KEY" ]; then
   check_eq   "payload is stored verbatim" "$PERM_PAYLOAD" "$(cat "$PENDING" 2>/dev/null)"
   check_eq   "pending file is owner-only (600)" "600" "$(mode_of "$PENDING")"
 
-  # A stale pending file would leave a red badge lit after the command already ran, so any
-  # non-permission event must clear it.
+  # A bare "waiting" must NOT clear the payload: a permission menu fires PermissionRequest and then
+  # a plain Notification (arg "waiting", no payload) ~6s later while the SAME menu is up. Deleting
+  # it there darkened a live approval badge and blinded the Yes/No keys (#21/#51 retest regression).
+  printf '{}' | bash "$ACTIVITY_HOOK" waiting >/dev/null 2>&1
+  if [ -f "$PENDING" ]; then
+    ok "a bare waiting event leaves the pending payload intact"
+    check_eq "payload still verbatim after waiting" "$PERM_PAYLOAD" "$(cat "$PENDING" 2>/dev/null)"
+  else
+    bad "a bare waiting event leaves the pending payload intact" "the delayed Notification erased it"
+  fi
+
+  # ...but a genuine move-on (busy = a new turn / a tool completing, done = turn ended) clears it,
+  # or a stale red badge would linger after the command it described has already run.
   printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
   if [ -f "$PENDING" ]; then
-    bad "moving on clears the pending payload" "pending file survived a busy event"
+    bad "moving on (busy) clears the pending payload" "pending file survived a busy event"
   else
-    ok "moving on clears the pending payload"
+    ok "moving on (busy) clears the pending payload"
+  fi
+
+  # And done clears it too — re-arm, then Stop.
+  printf '%s' "$PERM_PAYLOAD" | bash "$ACTIVITY_HOOK" permission >/dev/null 2>&1
+  printf '{}' | bash "$ACTIVITY_HOOK" done >/dev/null 2>&1
+  if [ -f "$PENDING" ]; then
+    bad "moving on (done) clears the pending payload" "pending file survived a done event"
+  else
+    ok "moving on (done) clears the pending payload"
   fi
 fi
 

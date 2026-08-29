@@ -189,6 +189,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: OnVoiceFailed handler failed"); }
         }
 
+        /// <summary>
+        /// Audible feedback for a key press the plugin deliberately declined to act on — e.g. a
+        /// Yes/No press with no pending approval to answer (AnswerCommand). A thin passthrough so
+        /// actions never reach the platform bridge directly.
+        /// </summary>
+        internal void Alert() => _platform.Alert();
+
         /// <summary>The session grid — one row per live Claude Code session. See SessionRegistry.</summary>
         /// <remarks>Settable internally so tests can inject a registry rooted in a temp directory.</remarks>
         public SessionRegistry Grid { get; internal set; } = new SessionRegistry();
