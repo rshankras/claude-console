@@ -37,9 +37,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 this.ActionImageChanged(No);
             };
 
-            this.AddParameter(Yes, "Yes", "Answer")
+            this.AddParameter(Yes, "Allow", "Answer")
                 .SetDescription("Type \"yes\" and press Enter — for plain-text questions (use Up/Down/Return for numbered menus)");
-            this.AddParameter(No, "No", "Answer")
+            this.AddParameter(No, "Deny", "Answer")
                 .SetDescription("Type \"no\" and press Enter — for plain-text questions");
             this.AddParameter(Up, "Arrow Up", "Answer")
                 .SetDescription("Move the selection up in a Claude Code menu (Up arrow)");
@@ -78,8 +78,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         {
             switch (actionParameter)
             {
-                case Yes: return "Yes";
-                case No: return "No";
+                case Yes: return "Allow";
+                case No: return "Deny";
                 case Up: return "Up";
                 case Down: return "Down";
                 case Enter: return "Enter";

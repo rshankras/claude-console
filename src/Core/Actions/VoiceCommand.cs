@@ -20,7 +20,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private readonly ListeningFace _face;
 
         public VoiceCommand()
-            : base(displayName: "Voice", description: "Speak a prompt — press to start, press again to transcribe and send", groupName: "Universal")
+            : base(displayName: "Dictate", description: "Speak a prompt — press to start, press again to transcribe and send", groupName: "Universal")
         {
             _face = new ListeningFace(() => this.ActionImageChanged());
         }
@@ -44,11 +44,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            _face.IsActive ? "Listening" : "Voice";
+            _face.IsActive ? "Listening" : "Dictate";
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
             _face.IsActive
                 ? KeyImage.Render(imageSize, "Listening", KeyImage.Green, _face.Icon)
-                : KeyImage.Render(imageSize, "Voice", KeyImage.Purple, "voice");
+                : KeyImage.Render(imageSize, "Dictate", KeyImage.Purple, "voice");
     }
 }
