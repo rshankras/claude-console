@@ -24,6 +24,89 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Substring that identifies OUR activity hook command on macOS.</summary>
         internal const String MacActivityMarker = "activity-hook.sh";
 
+        /// <summary>One activity hook the plugin wires: the Claude Code event, its matcher, and the
+        /// state word the handler is called with.</summary>
+        internal readonly record struct HookSpec(String Event, String Matcher, String State);
+
+        /// <summary>
+        /// The five hooks, in wiring order — the ONE table both the wirer (BridgeManager) and the
+        /// detector (Inspect) read, so "wired" and "fully wired" can never disagree about what that
+        /// means. PermissionRequest fires the moment a tool needs approval and carries the tool name
+        /// and its input, which is what tells a routine approval from `git push --force`;
+        /// Notification can't (no tool name, ~6 s late for permission prompts). Older Claude Code
+        /// builds ignore events they don't know, so the badge there simply stays amber.
+        /// </summary>
+        internal static readonly HookSpec[] HookSpecs =
+        {
+            new HookSpec("UserPromptSubmit", null, "busy"),
+            new HookSpec("PostToolUse", "*", "busy"),
+            new HookSpec("Notification", null, "waiting"),
+            new HookSpec("Stop", null, "done"),
+            new HookSpec("PermissionRequest", null, "permission"),
+        };
+
+        /// <summary>
+        /// What settings.json says about our wiring. Pure: a parsed document in, a verdict out.
+        /// Enabled means every hook in <see cref="HookSpecs"/> is present AND the status line is ours;
+        /// Disabled means no trace of ours anywhere; NeedsRepair is everything in between — a hand
+        /// edit, an older layout, a partial write. (Precedent: CodexBridgeStatus.)
+        /// </summary>
+        internal static LiveStatusWiring Inspect(JsonObject root)
+        {
+            if (root == null)
+            {
+                return LiveStatusWiring.Disabled;   // unreadable: the caller cannot repair it either
+            }
+
+            var hooks = root["hooks"] as JsonObject;
+            var statusOurs = root["statusLine"] is JsonObject sl && IsOurs(Str(sl["command"]));
+
+            var specsPresent = HookSpecs.Count(spec => EventCarriesOurs(hooks, spec.Event));
+            if (specsPresent == HookSpecs.Length && statusOurs)
+            {
+                return LiveStatusWiring.Enabled;
+            }
+
+            var anyOurs = statusOurs || (hooks != null && hooks.Any(kv => EventCarriesOurs(hooks, kv.Key)));
+            return anyOurs ? LiveStatusWiring.NeedsRepair : LiveStatusWiring.Disabled;
+        }
+
+        private static Boolean EventCarriesOurs(JsonObject hooks, String eventName)
+        {
+            if (hooks?[eventName] is not JsonArray entries)
+            {
+                return false;
+            }
+            foreach (var entry in entries)
+            {
+                if (entry?["hooks"] is not JsonArray inner)
+                {
+                    continue;
+                }
+                foreach (var h in inner)
+                {
+                    if (IsOurHook(Str(h?["command"])))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// What the live keys show. The file's verdict plus two facts only the engine knows: whether
+        /// the user chose Off (the marker file), and whether Enable just wrote and no session has
+        /// reported since (so "Restart Claude" is the honest face, not a dash).
+        /// </summary>
+        internal static LiveStatusState DisplayState(LiveStatusWiring wiring, Boolean optOutMarker, Boolean justEnabled) =>
+            wiring switch
+            {
+                LiveStatusWiring.Enabled => justEnabled ? LiveStatusState.JustEnabled : LiveStatusState.Enabled,
+                LiveStatusWiring.NeedsRepair => LiveStatusState.NeedsRepair,
+                _ => optOutMarker ? LiveStatusState.Off : LiveStatusState.NotEnabled,
+            };
+
         /// <summary>
         /// The command Claude Code should run to render the status line.
         /// </summary>
@@ -153,5 +236,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             String.IsNullOrEmpty(path) || path.StartsWith("\"", StringComparison.Ordinal)
                 ? path
                 : "\"" + path + "\"";
+    }
+
+    /// <summary>The file's verdict on our wiring — see BridgeWiring.Inspect.</summary>
+    public enum LiveStatusWiring
+    {
+        Disabled = 0,
+        NeedsRepair = 1,
+        Enabled = 2,
+    }
+
+    /// <summary>What the live keys show — see BridgeWiring.DisplayState and LiveStatusFace.</summary>
+    public enum LiveStatusState
+    {
+        NotEnabled,     // never wired — "Set up"
+        Off,            // the user turned it off — "Off"
+        NeedsRepair,    // partly wired — "Set up" (Enable completes the set)
+        JustEnabled,    // wired this session, no data yet — "Restart Claude"
+        Enabled,        // the keys show their live values
     }
 }

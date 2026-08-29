@@ -2,7 +2,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
     using System.IO;
+    using System.Linq;
     using System.Text.RegularExpressions;
+
+    using Loupedeck.ClaudeConsolePlugin.Platform;
 
     using Xunit;
 
@@ -80,14 +83,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void The_hook_count_in_the_notice_matches_the_hooks_actually_wired()
         {
-            // The notice says "5 hooks". That number must be the number of EnsureHook calls in the
-            // wiring routine, or the notice lies the day someone adds a sixth.
+            // The notice says "5 hooks". That number is the length of the one table both the wirer
+            // and the detector read — and the wirer must ITERATE that table rather than list hooks
+            // inline, or the notice (and the detector) lie the day someone adds a sixth by hand.
+            Assert.Equal(BridgeManager.WiredHookCount, BridgeWiring.HookSpecs.Length);
+            Assert.Equal(
+                new[] { "UserPromptSubmit", "PostToolUse", "Notification", "Stop", "PermissionRequest" },
+                BridgeWiring.HookSpecs.Select(s => s.Event).ToArray());
+
             var engine = File.ReadAllText(RepoFile("src", "Core", "BridgeManager.cs"));
             var wiring = engine.Substring(engine.IndexOf("private void EnsureBridgeWired()", StringComparison.Ordinal));
-            wiring = wiring.Substring(0, wiring.IndexOf("internal const Int32 WiredHookCount", StringComparison.Ordinal));
+            wiring = wiring.Substring(0, wiring.IndexOf("private void UnwireIfWired()", StringComparison.Ordinal));
 
-            var calls = Regex.Matches(wiring, @"changed \|= EnsureHook\(").Count;
-            Assert.Equal(BridgeManager.WiredHookCount, calls);
+            Assert.Contains("foreach (var spec in BridgeWiring.HookSpecs)", wiring);
+            Assert.Single(Regex.Matches(wiring, @"changed \|= EnsureHook\("));
         }
 
         [Fact]

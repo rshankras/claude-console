@@ -1351,16 +1351,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                     hooks = new JsonObject();
                     root["hooks"] = hooks;
                 }
-                changed |= EnsureHook(hooks, "UserPromptSubmit", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
-                changed |= EnsureHook(hooks, "PostToolUse", "*", BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
-                changed |= EnsureHook(hooks, "Notification", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "waiting"));
-                changed |= EnsureHook(hooks, "Stop", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "done"));
-                // PermissionRequest fires the moment a tool needs approval and carries the tool name and
-                // its input, which is what tells a routine approval from `git push --force`. Notification
-                // can't: it has no tool name and is delayed ~6s for permission prompts. Unknown events are
-                // ignored by older Claude Code builds, so adding this is safe there — the badge simply
-                // stays amber instead of going red.
-                changed |= EnsureHook(hooks, "PermissionRequest", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "permission"));
+                // The five hooks come from the one table the detector also reads (BridgeWiring.HookSpecs),
+                // so "wired" here and "fully wired" there can never mean different things.
+                foreach (var spec in BridgeWiring.HookSpecs)
+                {
+                    changed |= EnsureHook(hooks, spec.Event, spec.Matcher, BridgeWiring.ActivityCommand(isWindows, activityHandler, spec.State));
+                }
 
                 // --- statusLine (chain an existing one rather than clobbering it) ---
                 var ourStatusCmd = BridgeWiring.StatuslineCommand(isWindows, statusHandler);
@@ -1422,9 +1418,8 @@ namespace Loupedeck.ClaudeConsolePlugin
             this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
         }
 
-        // UserPromptSubmit, PostToolUse, Notification, Stop, PermissionRequest — the five EnsureHook
-        // calls above. Kept as a number the notice can print, and pinned by a test that counts them.
-        internal const Int32 WiredHookCount = 5;
+        // The number of hooks the notice prints — the length of the one table the wirer iterates.
+        internal static Int32 WiredHookCount => BridgeWiring.HookSpecs.Length;
 
         // The opt-out's other direction (#31): take our wiring back out if it is there. Reads the
         // chained status line we recorded so the user's own status bar comes back exactly as it was.
