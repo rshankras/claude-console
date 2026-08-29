@@ -74,5 +74,23 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal static String EnableFailed() =>
             "Claude Console could not edit ~/.claude/settings.json (it is a symlink, not valid JSON, or " +
             "kept changing). Nothing was written. Fix the file, then press the key again.";
+
+        /// <summary>Where the Windows-Terminal notice points — the README's Windows section.</summary>
+        internal const String WindowsUrl = "https://github.com/rshankras/claude-console#windows-notes";
+
+        internal const String WindowsTitle = "How to set Windows Terminal";
+
+        /// <summary>
+        /// Posted the first time a navigation key is pressed with no Windows Terminal to drive
+        /// (#33 / retest item 16). The nav keys express every window/tab move as a `wt.exe` verb;
+        /// in a classic console window there is no Windows Terminal to receive it, so the press was
+        /// a silent no-op. The requirement is real (Claude Code itself renders poorly in conhost),
+        /// but it must be VISIBLE rather than silent. Typing keys are unaffected — say so, so the
+        /// user does not think the whole plugin is dead.
+        /// </summary>
+        internal static String WindowsTerminalRequired() =>
+            "The navigation keys need Windows Terminal, and it isn't the current terminal. Typing, Yes/No " +
+            "and voice still work here; only the tab and window keys need it. Set Settings › System › For " +
+            "developers › Terminal to Windows Terminal and start a new session.";
     }
 }

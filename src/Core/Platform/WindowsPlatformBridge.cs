@@ -586,6 +586,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
         }
 
+        /// <summary>
+        /// Raised the first time a navigation key finds no Windows Terminal to drive (#33 / retest
+        /// item 16). The engine wires this to an Options+ message-centre card so the requirement is
+        /// VISIBLE instead of a silent log line. Null in tests and until wired.
+        /// </summary>
+        internal Action OnTerminalUnavailable { get; set; }
+
+        // So the message-centre card is posted once, not on every nav press — but the beep is every
+        // press, because a press that did nothing deserves immediate feedback each time.
+        private Boolean _warnedNoTerminal;
+
         private void RunTerminal(List<String> args)
         {
             var runner = this.TerminalRunner;
@@ -595,11 +606,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return;
             }
 
-            // wt.exe is absent on stock Windows 10 (R9). A failure here is a logged no-op — the
-            // keypad's typing keys are unaffected, only navigation is.
+            // wt.exe is absent on stock Windows 10, or Claude Code is running in a classic console
+            // window rather than Windows Terminal (R9 / #33). The nav verb has nowhere to land, so
+            // the press was a SILENT no-op — the retest's complaint. Surface it: beep every time (a
+            // press that did nothing should say so), and post the explanation once. Typing keys are
+            // unaffected, which the card says so the user does not think the plugin is dead.
             if (BoundedProcess.RunForExitCode(WindowsTerminalCli.Exe, args, 10000) == null)
             {
                 PluginLog.Warning("WindowsPlatformBridge: wt.exe unavailable — Windows Terminal is required for the navigation keys");
+                this.Alert();
+                if (!this._warnedNoTerminal)
+                {
+                    this._warnedNoTerminal = true;
+                    try { this.OnTerminalUnavailable?.Invoke(); }
+                    catch (Exception ex) { PluginLog.Warning(ex, "WindowsPlatformBridge: OnTerminalUnavailable handler failed"); }
+                }
             }
         }
     }

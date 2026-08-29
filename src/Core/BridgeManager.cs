@@ -238,6 +238,19 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     this._platform = PlatformBridgeFactory.Create(
                         this._agent.ProcessMatcher, this._agent.CliCommand);
+
+                    // Surface the Windows-Terminal-missing case instead of only logging it (#33): a
+                    // nav press in a classic console window posts an Options+ card explaining that
+                    // the nav keys need Windows Terminal while typing keys still work. Fires once;
+                    // Notify may be null until the product installs it, and the ?. handles that.
+                    if (this._platform is WindowsPlatformBridge win)
+                    {
+                        win.OnTerminalUnavailable = () => this.Notify?.Invoke(
+                            PluginStatus.Warning,
+                            BridgeNotice.WindowsTerminalRequired(),
+                            BridgeNotice.WindowsUrl,
+                            BridgeNotice.WindowsTitle);
+                    }
                 }
 
                 // The grid reads state files through the agent too. Setting one without the other

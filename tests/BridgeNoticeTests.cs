@@ -151,6 +151,47 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("this.OnPluginStatusChanged(status, message, url, title)", product);
         }
 
+        [Fact]
+        public void The_windows_terminal_notice_names_the_fix_and_says_typing_still_works()
+        {
+            var text = BridgeNotice.WindowsTerminalRequired();
+
+            // What the user must DO, and the reassurance that the plugin is not dead — the retest's
+            // "documented but still silent at runtime" (#33) is answered by a card that says both.
+            Assert.Contains("navigation keys", text);
+            Assert.Contains("Windows Terminal", text);
+            Assert.Contains("Settings", text);
+            Assert.Contains("Typing", text);
+            Assert.True(text.Length <= 300, $"{text.Length} chars — that is a paragraph, not a notice");
+        }
+
+        [Fact]
+        public void The_windows_notice_link_points_at_a_readme_section_that_exists()
+        {
+            Assert.StartsWith("https://github.com/rshankras/claude-console#", BridgeNotice.WindowsUrl);
+            Assert.EndsWith("windows-notes", BridgeNotice.WindowsUrl);
+
+            var readme = File.ReadAllText(RepoFile("README.md"));
+            Assert.Contains("## Windows notes", readme);
+        }
+
+        [Fact]
+        public void The_windows_terminal_warning_is_surfaced_not_only_logged()
+        {
+            // The whole point of #33's fix: the engine wires the platform's "no Windows Terminal"
+            // signal to a message-centre card, and the platform raises it (once) with a beep rather
+            // than only writing a log line.
+            var engine = File.ReadAllText(RepoFile("src", "Core", "BridgeManager.cs"));
+            Assert.Contains("win.OnTerminalUnavailable = () => this.Notify?.Invoke(", engine);
+            Assert.Contains("BridgeNotice.WindowsTerminalRequired()", engine);
+
+            var win = File.ReadAllText(RepoFile("src", "Core", "Platform", "WindowsPlatformBridge.cs"));
+            Assert.Contains("this.OnTerminalUnavailable?.Invoke()", win);
+            Assert.Contains("this.Alert();", win);
+            // Posted once, not on every nav press.
+            Assert.Contains("_warnedNoTerminal", win);
+        }
+
         private static String RepoFile(params String[] relative)
         {
             var dir = AppContext.BaseDirectory;
