@@ -102,13 +102,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         ///
         /// The bar lives inside the BITMAP, not the service's own label strip below the key, because
         /// that strip is a fixed dark single-line label the plugin cannot colour — and the design's
-        /// point is a coloured state bar. So the whole face is custom; the service strip is left to
-        /// show the slot's registered name ("Session 1"). An empty slot is a plain dark face.
-        /// <paramref name="selected"/> adds corner brackets marking the routed session.
+        /// point is a coloured state bar. So the whole face is custom; the service strip is left
+        /// blank. An empty slot is a plain dark face. The bar's COLOUR is the selection cue: the
+        /// caller passes amber for the routed session, grey for the rest (no corner brackets).
         /// </summary>
         public static BitmapImage RenderSessionSlot(
             PluginImageSize imageSize, String name, String stateWord,
-            BitmapColor barColor, Boolean darkText, Boolean selected)
+            BitmapColor barColor, Boolean darkText)
         {
             using (var bitmap = new BitmapBuilder(imageSize))
             {
@@ -141,17 +141,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                     }
                 }
 
-                // STATE-WORD BAR — a filled band with the word centred. Hue = state (amber = your
-                // approval is wanted); dark text on amber, white on the muted slate.
+                // STATE-WORD BAR — a filled band with the word centred. Colour = selection (amber
+                // for the routed session, grey otherwise); dark text on amber, white on grey.
                 var barH = (Int32)(h * 0.30);
                 var barY = h - barH - pad;
                 bitmap.FillRectangle(pad, barY, w - (2 * pad), barH, barColor);
                 bitmap.DrawText(stateWord, pad, barY, w - (2 * pad), barH, darkText ? Dark : White, fontSize: (Int32)(14 * scale));
-
-                if (selected)
-                {
-                    DrawSelectionCorners(bitmap, badgePresent: false);
-                }
 
                 return bitmap.ToImage();
             }

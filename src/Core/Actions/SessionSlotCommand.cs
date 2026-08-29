@@ -78,29 +78,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             if (!TryGetSlot(actionParameter, out var slot) || _bridge.Grid.SlotSession(slot) is not { } session)
             {
                 // Empty slot: a plain dark face.
-                return KeyImage.RenderSessionSlot(imageSize, null, null, KeyImage.Slate, darkText: false, selected: false);
+                return KeyImage.RenderSessionSlot(imageSize, null, null, KeyImage.Gray, darkText: false);
             }
 
             var selected = session.SessionKey == _bridge.TargetTty();
             var name = String.IsNullOrWhiteSpace(session.Project) ? _bridge.Agent.DisplayName : session.Project;
-            var (word, color, dark) = StateFace(session);
-            return KeyImage.RenderSessionSlot(imageSize, name, word, color, dark, selected);
+            // The SELECTED (routed) session — the one every other key acts on — gets the AMBER bar;
+            // the rest are grey. The bar colour IS the selection cue (no more brackets). The word
+            // still says what each session is doing.
+            var barColor = selected ? KeyImage.Amber : KeyImage.Gray;
+            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session), barColor, darkText: selected);
         }
 
-        // Map a session's live state to the design's state word + bar colour. Amber (your approval
-        // is wanted) is the only loud one — the same reservation as #51: colour means "answer me".
-        private static (String Word, BitmapColor Color, Boolean DarkText) StateFace(GridSession session)
+        // The design's state word for a session's live state.
+        private static String StateWord(GridSession session)
         {
             if (session.Risk != ApprovalRisk.None)
             {
-                return ("Allow?", KeyImage.Amber, true);   // dark text reads best on amber
+                return "Allow?";
             }
 
             switch (session.State)
             {
-                case "busy": return ("Thinking", KeyImage.Gray, false);
-                case "waiting": return ("Waiting", KeyImage.Gray, false);
-                default: return ("Ready", KeyImage.Gray, false);
+                case "busy": return "Thinking";
+                case "waiting": return "Waiting";
+                default: return "Ready";
             }
         }
 
