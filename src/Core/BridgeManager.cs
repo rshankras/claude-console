@@ -1382,7 +1382,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             // Say so where the user is looking (#31): the message centre in Options+, with the undo
             // one click away. Warning is the level that earns the badge; it is cleared on the next
             // load that changes nothing.
-            this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount, SettingsBackup), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+            this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
         }
 
         // UserPromptSubmit, PostToolUse, Notification, Stop, PermissionRequest — the five EnsureHook
@@ -1412,7 +1412,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             WriteSettings(root);
             TryDelete(StatuslineChainFile);
             PluginLog.Info("Bridge auto-wire: opt-out file present — removed our statusLine + hooks from settings.json (your own entries were left alone)");
-            this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Unwired(SettingsBackup), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+            this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
         }
 
         // settings.json as a document we may rewrite, or null when we must not touch it: a symlink

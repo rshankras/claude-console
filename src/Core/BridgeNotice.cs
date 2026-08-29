@@ -21,17 +21,22 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         internal const String SupportTitle = "What was changed, and how to undo it";
 
-        /// <summary>The message posted on the load that WROTE the wiring.</summary>
-        internal static String Wired(Int32 hookCount, String backupPath) =>
+        /// <summary>
+        /// The message posted on the load that WROTE the wiring. Two sentences on purpose: a
+        /// message-centre card is a notice, not the manual. The first version carried the backup's
+        /// absolute path and the undo command as well — eight lines with the user's home directory
+        /// in it, duplicating the button underneath. Those live in the README section the button
+        /// opens (pinned by test), so the card says only what happened and that it is reversible.
+        /// </summary>
+        internal static String Wired(Int32 hookCount) =>
             $"Claude Console added its status line and {hookCount} hooks to ~/.claude/settings.json so the " +
-            "live keys (Cost / Context / Activity) work from your next Claude Code session. Your own entries " +
-            $"were kept, and the previous file is at {backupPath}. To take it back out: " +
-            "bash ~/.claude/claude-console/scripts/uninstall.sh --unwire";
+            "live keys work from your next Claude Code session. Your own entries were kept and the previous " +
+            "file was backed up.";
 
         /// <summary>The message posted when the opt-out made the plugin remove its wiring.</summary>
-        internal static String Unwired(String backupPath) =>
+        internal static String Unwired() =>
             "Claude Console removed its status line and hooks from ~/.claude/settings.json (opt-out file " +
-            $"present). Your own entries were left alone; the previous file is at {backupPath}. The live " +
-            "keys will show dashes from your next Claude Code session.";
+            "present). Your own entries were left alone and the previous file was backed up. The live keys " +
+            "will show dashes from your next Claude Code session.";
     }
 }

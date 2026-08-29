@@ -11,34 +11,49 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     ///
     /// The notice is the platform's answer to "prompt before modifying user config": a keypad plugin
     /// cannot show a dialog, but Plugin.OnPluginStatusChanged reaches the Options+ message centre with
-    /// a link. These pin that the words say what was done, where the backup is, and how to undo it —
+    /// a link. These pin that the words say what was done and that it is reversible, that the card
+    /// stays a card (the backup path and the undo command live behind its button, in the README),
     /// and that the engine fires the notice at the right moments and only through the delegate a
     /// product installs, so the engine never has to know which product it is.
     /// </summary>
     public class BridgeNoticeTests
     {
         [Fact]
-        public void The_wired_notice_says_what_was_added_where_the_backup_is_and_how_to_undo()
+        public void The_wired_notice_says_what_was_added_and_that_it_is_reversible()
         {
-            var text = BridgeNotice.Wired(5, "/Users/me/.claude/settings.json.claude-console.bak");
+            var text = BridgeNotice.Wired(5);
 
             Assert.Contains("5 hooks", text);
             Assert.Contains("status line", text);
             Assert.Contains("~/.claude/settings.json", text);
-            Assert.Contains("settings.json.claude-console.bak", text);
-            Assert.Contains("uninstall.sh --unwire", text);
+            Assert.Contains("backed up", text);
             // The reassurance that matters most to someone who did not ask for the edit.
             Assert.Contains("Your own entries were kept", text);
         }
 
         [Fact]
+        public void The_notice_is_a_card_not_the_manual()
+        {
+            // The first version was eight lines: the backup's absolute path (with the user's home
+            // directory in it) and the undo command, under a button that already led to both. The
+            // mechanics belong behind the button; the card says what happened.
+            foreach (var text in new[] { BridgeNotice.Wired(5), BridgeNotice.Unwired() })
+            {
+                Assert.DoesNotContain("/Users/", text);
+                Assert.DoesNotContain("uninstall.sh", text);
+                Assert.DoesNotContain(".bak", text);
+                Assert.True(text.Length <= 260, $"{text.Length} chars — that is a paragraph, not a notice");
+            }
+        }
+
+        [Fact]
         public void The_unwired_notice_says_the_keys_will_go_dark()
         {
-            var text = BridgeNotice.Unwired("/x/settings.json.claude-console.bak");
+            var text = BridgeNotice.Unwired();
 
             Assert.Contains("removed its status line and hooks", text);
             Assert.Contains("dashes", text);
-            Assert.Contains("/x/settings.json.claude-console.bak", text);
+            Assert.Contains("backed up", text);
         }
 
         [Fact]
@@ -49,7 +64,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             // ...and that anchor exists. A dead "how to undo" link is worse than none.
             var readme = File.ReadAllText(RepoFile("README.md"));
-            Assert.Contains("## The live status bridge", readme);
+            var at = readme.IndexOf("## The live status bridge", StringComparison.Ordinal);
+            Assert.True(at >= 0, "the README section the button opens is missing");
+
+            // The card no longer carries the backup's name or the undo command, so the section it
+            // opens must — or the button leads somewhere that does not answer its own title.
+            var section = readme.Substring(at);
+            var next = section.IndexOf("\n## ", 1, StringComparison.Ordinal);
+            section = next > 0 ? section.Substring(0, next) : section;
+            Assert.Contains("settings.json.claude-console.bak", section);
+            Assert.Contains("uninstall.sh --unwire", section);
+            Assert.Contains("no-autowire", section);
         }
 
         [Fact]

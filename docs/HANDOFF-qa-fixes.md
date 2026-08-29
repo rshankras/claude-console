@@ -25,6 +25,10 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
    `docs/clean-install-test.md` (rewritten for universal: NOTHING on the keypad after install is correct;
    import the `.lp5`).
 2. **The draft PR** `fix/qa-retest` → `main`, so the 25 `Closes #NN` lines finally reach the tracker.
+   **Merge BEFORE the package reaches QA.** The #31 notice's button opens the README on `main`; until the
+   merge it lands on the old section ("no action needed", no `--unwire`) and contradicts the card — the
+   owner tapped it on 2026-08-29 and got exactly that. A version-pinned link would fix it for good, but
+   tags are not reliable here (2.1.0 has none), so the order is the fix.
 3. **The PM reply** — every answer is in this file: universal done and verified; Mac voice verified on a
    packaged install; Windows voice = #47 (laptop); labels Yes/No; colour + placement agreed WITH THE
    CONDITION that the approval row never lands on the Esc/Voice slots (#42 — "locked in" could quietly
@@ -317,6 +321,38 @@ correct for a backup, but do not read that date as when the backup was taken.
 Still owed: the "keys go dark in a new session" observation (left WIRED so the owner's keys keep
 working). Codex (Vizhi) is a separate issue: its hooks are trusted by hash, so the same edit has a
 user-visible cost there.
+
+**2026-08-29 — the settings-UI spike ran, on the device, and the answer changes the plan.** QA's third
+ask ("opt-out as a normal plugin setting") was blocked on "does the SDK have a settings UI at all?".
+Reflection over `PluginApi.dll` + the docs' *Managing Plugin Settings* page: `Set/TryGet/Delete/List
+PluginSetting` is an ENCRYPTED KEY/VALUE STORE (optionally cloud-backed), no UI; `PluginSettingRequest`
+is the plugin→service storage channel (`Get/Set/Delete/List`), not a UI event; `PluginPreferenceType`
+is `{None, Account}` — the ONLY plugin-level control Options+ renders is a sign-in/sign-out button.
+Two probes were built into the dev plugin (stripped afterwards, never committed) and the owner
+clicked through them while the log was watched:
+
+- **`PluginPreferenceAccount` relabelled Enable/Disable: renders, both buttons fire
+  (`LoginRequested`/`LogoutRequested`), state persists in `PluginSettings/ClaudeConsole.dat` across
+  reloads — and it is UNUSABLE as a switch: while the preference is "signed out" (IsValid=false,
+  even with IsRequired=false) Options+ stamps an amber "!" on EVERY key of the plugin (owner's
+  11:45 screenshot); Enable cleared them (11:47). "Disabled" would look like an error forever.**
+- **Action Editor (`ActionEditorCommand`): the real answer, with limits.** The panel shows the
+  action's one-line Description, a Checkbox (label CLIPS — keep it short), and Buttons that fire
+  `ControlValueChanged` to the plugin WITHOUT a keypress; the checkbox value persists with the key
+  and arrives in `RunCommand` (`consent=True`). `Label` and `Hyperlink` render as hover-only ⓘ
+  icons — no readable explanation, no visible link. Appears only when an assigned action's editor
+  is open. `INativeGui.OpenConfigurationWindow()` opens Options+ itself (not a settings page).
+
+**Decision (owner + second reviewer, 2026-08-29): go OPT-IN.** No settings.json write on load.
+Two actions, "Enable Live Status" / "Disable Live Status" (group *Setup & Privacy*; separate so
+Disable can never enable), each editor = one sentence of Description + its one button; the key
+press does the same verb. No consent checkbox (the press/click IS the consent; the label clips).
+The message-centre card moves from "on load" to "on Enable" and carries the README link the editor
+cannot. Live keys show "Setup required" until enabled; a press on one flashes "Add the Enable Live
+Status key" (the #18 face pattern) and never enables. State = our hooks present in settings.json
+(existing installs land Enabled, no card, no re-consent); `no-autowire` stays one release as a
+never-auto-wire guard. The layout download places the two keys. Codex gains most: its hash-trusted
+hooks stop re-prompting on every update. NOT BUILT YET at time of writing.
 
 ## #23: universal plugin — what changed, what it removed, what is unverified
 
