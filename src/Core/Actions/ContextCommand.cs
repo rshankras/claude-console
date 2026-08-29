@@ -10,14 +10,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     public class ContextCommand : PluginDynamicCommand
     {
         private readonly BridgeManager _bridge;
+        private readonly LiveStatusGate _gate;
         private Int32 _percent;
         private Int32 _usedTokens;
         private Int32 _maxTokens;
 
+        // "33%" — plus "325k/1M" once the window size is known.
+        private Boolean _hasData = true;
+
         public ContextCommand()
-            : base(displayName: "Context", description: "Live context-window usage (press for /context)", groupName: "Core")
+            : base(displayName: "Context", description: "Live context-window usage, press for /context (needs live status enabled — see Setup & Privacy)", groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
+            // Until live status is set up the key says so instead of a value, and a press changes
+            // nothing (#31). One owner for the three live keys — see LiveStatusGate.
+            _gate = new LiveStatusGate(_bridge, () => this.ActionImageChanged());
 
             _bridge.OnStateChanged += (state) =>
             {
@@ -55,15 +62,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         protected override void RunCommand(String actionParameter)
         {
+            if (_gate.Refuse())
+            {
+                return;
+            }
+
             _bridge.SendPrompt("/context");
             PluginLog.Info("ContextCommand: /context");
         }
 
-        // "33%" — plus "325k/1M" once the window size is known.
-        private Boolean _hasData = true;
-
         private String Label()
         {
+            var setup = _gate.Label;
+            if (setup != null)
+            {
+                return setup;
+            }
+
             if (!_hasData)
             {
                 return "—";

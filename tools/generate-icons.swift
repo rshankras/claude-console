@@ -33,6 +33,10 @@ let icons: [(String, String, String)] = [
     ("busy0", "hourglass.tophalf.filled", B),     // animated "Working" — sand flips top↔bottom
     ("busy1", "hourglass.bottomhalf.filled", B),
     ("waiting", "bell.badge.fill", R),
+    // Setup & Privacy keys (#31): Enable = allow-green switch, Disable = neutral power glyph — not
+    // red, because turning the live keys off is a choice, not a risk.
+    ("setup", "switch.2", G),
+    ("off", "power", Y),
 ]
 
 // No coloured brains here any more — brain and brain_haiku/sonnet/opus are designer recolors

@@ -67,6 +67,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             // keys amber on evidence that does not exist.
             ApprovalSignal = !OperatingSystem.IsWindows(),  // PermissionRequest hook (macOS)
             HooksNeedTrust = !OperatingSystem.IsWindows(),  // no hooks installed on Windows at all
+            SettingsFileWiring = false,  // our own ~/.codex/hooks.json, gated by Codex's trust prompt — no Enable/Disable keys
 
             MultiConsumerHooks = true,   // matcher groups; concurrent handlers per event
             ImageInConversation = true,  // not via the composer — the MODEL reads the file with its

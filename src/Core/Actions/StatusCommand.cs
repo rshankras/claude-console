@@ -17,6 +17,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private static readonly String[] BusyFrames = { "busy0", "busy1" };
 
         private readonly BridgeManager _bridge;
+        private readonly LiveStatusGate _gate;
         private String _status = "Ready";
         private String _icon = "done";
         private Boolean _busy;
@@ -24,9 +25,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private Int32 _frame;
 
         public StatusCommand()
-            : base(displayName: "Activity", description: "Shows whether Claude is working, waiting, or ready", groupName: "Core")
+            : base(displayName: "Activity", description: "Shows whether Claude is working, waiting, or ready (needs live status enabled — see Setup & Privacy)", groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
+            // Without the hooks this key used to fall through to "Ready" forever — a value the agent
+            // never reported. Until live status is set up it says so instead, and a press changes
+            // nothing (#31). One owner for the three live keys — see LiveStatusGate.
+            _gate = new LiveStatusGate(_bridge, () => this.ActionImageChanged());
             _bridge.OnActivityChanged += (_) => this.Refresh();
             _bridge.OnStateChanged += (_) => this.Refresh();
         }
@@ -102,17 +107,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         protected override void RunCommand(String actionParameter)
         {
+            if (_gate.Refuse())
+            {
+                return;
+            }
+
             // Display-only indicator. No terminal action on press.
             PluginLog.Info("StatusCommand: pressed (display-only)");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
-            => _status;
+            => _gate.Label ?? _status;
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var icon = _busy ? BusyFrames[_frame % BusyFrames.Length] : _icon;
-            return KeyImage.Render(imageSize, _status, KeyImage.Dark, icon);
+            return KeyImage.Render(imageSize, _gate.Label ?? _status, KeyImage.Dark, icon);
         }
     }
 }

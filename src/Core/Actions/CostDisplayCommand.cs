@@ -18,6 +18,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     public class CostDisplayCommand : PluginDynamicCommand
     {
         private readonly BridgeManager _bridge;
+        private readonly LiveStatusGate _gate;
         private Decimal _cost;
         private Int32 _tokens;
         private String _model;
@@ -29,9 +30,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private Boolean HasValue => this.ReportsCost && _hasData;
 
         public CostDisplayCommand()
-            : base(displayName: "Cost", description: "Shows live session cost and token count", groupName: "Core")
+            : base(displayName: "Cost", description: "Shows live session cost and token count (needs live status enabled — see Setup & Privacy)", groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
+            // Until live status is set up the key says so instead of a value, and a press changes
+            // nothing (#31). One owner for the three live keys — see LiveStatusGate.
+            _gate = new LiveStatusGate(_bridge, () => this.ActionImageChanged());
 
             _bridge.OnStateChanged += (state) =>
             {
@@ -64,6 +68,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         protected override void RunCommand(String actionParameter)
         {
+            if (_gate.Refuse())
+            {
+                return;
+            }
+
             if (!this.ReportsCost)
             {
                 PluginLog.Info($"CostDisplayCommand: {_bridge.Agent.DisplayName} reports no cost — nothing to show");
@@ -74,18 +83,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             PluginLog.Info("CostDisplayCommand: Requested /cost details");
         }
 
+        // The live value, or the setup state's words while they apply ("Set up" / "Off" / "Restart Claude").
+        private String Label(String newline) =>
+            _gate.Label ?? (this.HasValue ? $"${_cost:F2}{newline}{TokenText(_tokens)}" : "—");
+
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            this.HasValue
-                ? $"${_cost:F2}{Environment.NewLine}{TokenText(_tokens)}"
-                : "—";
+            this.Label(Environment.NewLine);
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             // Face shows the $ icon; the live cost/tokens go in the LABEL (GetCommandDisplayName)
             // so the value isn't drawn twice. Falls back to the value text if the icon is missing.
-            var text = this.HasValue ? $"${_cost:F2}\n{TokenText(_tokens)}" : "—";
-
-            return KeyImage.Render(imageSize, text, KeyImage.Dark, this.ReportsCost ? "cost" : "brain");
+            return KeyImage.Render(imageSize, this.Label("\n"), KeyImage.Dark, this.ReportsCost ? "cost" : "brain");
         }
 
         private static String TokenText(Int32 tokens) =>
