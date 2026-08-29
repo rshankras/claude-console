@@ -91,9 +91,20 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// under it. An empty slot is a plain dark face. <paramref name="selected"/> adds corner
         /// brackets so you can see which session the typing keys are pointed at.
         /// </summary>
+        /// <summary>
+        /// A session-grid key face, redrawn to the 2026-08 design: the session NAME on top and a
+        /// colour-filled STATE-WORD bar below it (Thinking / Allow? / Waiting / Ready). Amber is
+        /// reserved for "your approval is wanted", the one state that needs the user.
+        ///
+        /// The bar lives inside the BITMAP, not the service's own label strip below the key, because
+        /// that strip is a fixed dark single-line label the plugin cannot colour — and the design's
+        /// point is a coloured state bar. So the whole face is custom; the service strip is left to
+        /// show the slot's registered name ("Session 1"). An empty slot is a plain dark face.
+        /// <paramref name="selected"/> adds corner brackets marking the routed session.
+        /// </summary>
         public static BitmapImage RenderSessionSlot(
-            PluginImageSize imageSize, String icon, Int32? ctxPercent,
-            Boolean selected, ApprovalRisk risk = ApprovalRisk.None)
+            PluginImageSize imageSize, String name, String stateWord,
+            BitmapColor barColor, Boolean darkText, Boolean selected)
         {
             using (var bitmap = new BitmapBuilder(imageSize))
             {
@@ -101,47 +112,35 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var w = bitmap.Width;
                 var h = bitmap.Height;
                 var scale = Math.Min(w, h) / 96f;
-                var pad = (Int32)(2 * scale);
+                var pad = (Int32)(4 * scale);
 
-                if (!String.IsNullOrEmpty(icon))
+                // Empty slot: a plain dark face (no live session in this slot).
+                if (String.IsNullOrEmpty(stateWord))
                 {
-                    try
-                    {
-                        var img = PluginResources.ReadImage("icons." + icon + ".png");
-                        var s = (Int32)(Math.Min(w, h) * 0.44);
-                        bitmap.DrawImage(img, (w - s) / 2, (Int32)(h * 0.06), s, s);
-                    }
-                    catch (Exception ex)
-                    {
-                        PluginLog.Verbose(ex, $"KeyImage: session icon '{icon}' failed to load");
-                    }
+                    return bitmap.ToImage();
                 }
 
-                if (ctxPercent.HasValue)
+                // NAME — the design's title, over the top ~60%. Smaller than the service's own label
+                // font, but the design puts the name ABOVE the state and the service strip is pinned
+                // to the very bottom, so the name has to live in the bitmap.
+                if (!String.IsNullOrWhiteSpace(name))
                 {
-                    // White and readable — slate at 13 was fine print on the real key. Colour
-                    // carries meaning, matching the Context gauge key's thresholds: amber when the
-                    // window is filling (75%+), red when it's nearly full (90%+) — so a session
-                    // that needs /compact flags itself from across the room.
-                    // Drawn TWICE, 1px apart: DrawText has no weight parameter, and the double
-                    // strike is a renderer-proof bold.
-                    var pct = ctxPercent.Value;
-                    var color = pct >= 90 ? Red : pct >= 75 ? Amber : White;
-                    var text = $"{pct}%";
-                    var y = (Int32)(h * 0.54);
-                    var th = (Int32)(h * 0.40);
-                    var size = (Int32)(17 * scale);
-                    var embolden = Math.Max(1, (Int32)(1 * scale));
-                    bitmap.DrawText(text, pad, y, w - (2 * pad), th, color, fontSize: size);
-                    bitmap.DrawText(text, pad + embolden, y, w - (2 * pad), th, color, fontSize: size);
+                    var nameH = (Int32)(h * 0.58);
+                    bitmap.DrawText(name, pad, pad, w - (2 * pad), nameH, White, fontSize: (Int32)(15 * scale));
                 }
+
+                // STATE-WORD BAR — a filled band with the word centred. Hue = state (amber = your
+                // approval is wanted); dark text on amber, white on the muted slate.
+                var barH = (Int32)(h * 0.30);
+                var barY = h - barH - pad;
+                bitmap.FillRectangle(pad, barY, w - (2 * pad), barH, barColor);
+                bitmap.DrawText(stateWord, pad, barY, w - (2 * pad), barH, darkText ? Dark : White, fontSize: (Int32)(14 * scale));
 
                 if (selected)
                 {
-                    DrawSelectionCorners(bitmap, badgePresent: risk != ApprovalRisk.None);
+                    DrawSelectionCorners(bitmap, badgePresent: false);
                 }
 
-                DrawApprovalBadge(bitmap, risk);
                 return bitmap.ToImage();
             }
         }
