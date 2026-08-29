@@ -379,8 +379,16 @@ by the card, which does render at Warning. So a live key pressed once ARMS itsel
 `Press again`, and posts `BridgeNotice.PressAgain(key, 10)` — the prompt with the change in it; a
 second press on the SAME key inside the window runs `EnableLiveStatus`; a late press only arms again.
 The Enable/Disable keys stay for the layout and for anyone who prefers a labelled key.
-**Still owed on the device:** the Warning cards actually appearing (Disable, Enable, Press again);
-the `Restart Claude` label on 60/90 px keys; a #27 repaint check.
+**Device, 13:31–14:04:** the two-step press worked (natural second presses landed at 11–12 s, so the
+window is 15 s now); the Warning card renders; `INativeGui.ShowBalloonTip` shows NOTHING on macOS, so
+notifications go through `osascript display notification` (they show, attributed to Script Editor);
+then the owner asked for a way to say no and for the prompt "in the middle" — so the first press now
+opens `display dialog` via System Events (comes to the front from the service; `Not now` / `Turn on`,
+`giving up after 15`), on its own thread, cancelled by a second key press. Both branches verified
+14:03 (declined → nothing; Turn on → wired). Seams: `BridgeManager.Prompt` (yes/no, cancellable) and
+`Toast`, product-installed like `Notify`; Windows has `Prompt = null` and keeps the two-step.
+**Still owed on the device:** the Disable / Enable KEY cards; `Restart Claude` on 60/90 px keys; a #27
+repaint check; the clean-room pass on a fresh account with a packed 2.2.0.
 
 ## #23: universal plugin — what changed, what it removed, what is unverified
 

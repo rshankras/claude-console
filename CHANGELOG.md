@@ -10,10 +10,11 @@ answers the ones that were ours to answer, and changes one thing about what the 
 
 ### Changed
 - **Live status is opt-in.** The plugin no longer edits `~/.claude/settings.json` on load. The
-  Cost / Context / Activity keys read *Set up* until you turn them on — by pressing one of them
-  twice: the first press flashes *Press again* and posts a card in Options+ stating the exact
-  change (five hooks and a status line, your entries kept, the file backed up first) and edits
-  nothing; a second press within 15 s does it. A labelled **Enable Live Status** key (new, under
+  Cost / Context / Activity keys read *Set up* until you turn them on — by pressing one of them:
+  the first press flashes *Press again*, posts a card in Options+ and, on macOS, opens a dialog
+  mid-screen stating the exact change (five hooks and a status line, your entries kept, the file
+  backed up first) with *Not now* / *Turn on* — it edits nothing; *Turn on*, or a second press
+  within 15 s, does it. A labelled **Enable Live Status** key (new, under
   *Setup & Privacy*; on the ready-made layout beside Cost) does the same in one press, with the
   same disclosure in its description. **Disable Live Status** takes exactly those entries back out
   and the keys read *Off*. Existing installs are already wired and simply load as
