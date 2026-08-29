@@ -9,6 +9,15 @@ The Logitech QA retest release. Twenty-five findings were filed against 2.0.1; t
 answers the ones that were ours to answer, and changes one thing about what the plugin *is*.
 
 ### Changed
+- **Live status is opt-in.** The plugin no longer edits `~/.claude/settings.json` on load. The
+  Cost / Context / Activity keys read *Set up* until you press **Enable Live Status** (new, under
+  *Setup & Privacy*; placed on the ready-made layout beside Cost), whose description states the
+  change before you press: five hooks and a status line, your entries kept, the file backed up
+  first. **Disable Live Status** takes exactly those entries back out and the keys read *Off*. A
+  live key pressed before setup flashes *Set up first* and posts a card in Options+ saying where
+  the switch is — it never edits anything. Existing installs are already wired and simply load as
+  enabled. Logitech QA asked for a prompt before user config is modified, and the SDK has neither
+  a dialog nor a plugin settings page (#31), so the press is the prompt.
 - **The plugin is universal.** No application binding, no packaged profile (`HasNoApplication`),
   at Logitech's request. The keypad layout is now a download — `ClaudeConsole-Keypad.lp5` (and
   `-Windows.lp5`) from the release — imported once onto Terminal's own Options+ entry. This removes

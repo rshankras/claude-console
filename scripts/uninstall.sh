@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Console — leftover-data cleanup, and the way to take the live-status wiring back out.
+# Claude Console — leftover-data cleanup, and the no-keypad way to turn live status off.
 # (This is NOT the plugin uninstaller.)
 #
 # To uninstall the PLUGIN, do it in Logi Options+: right-click the Claude Console
@@ -7,9 +7,10 @@
 # imported "Claude Console — Keypad" profile there too. That is the actual uninstall.
 #
 # This script clears the app-level leftovers that Logi Options+ can't see and never removes:
-#   • our statusLine + hooks in ~/.claude/settings.json — removed SURGICALLY (#31): only the
-#     entries that name claude-console go, your own hooks stay, and a status line we chained is
-#     put back to what it was. A rolling backup is written first (settings.json.claude-console.bak).
+#   • our statusLine + hooks in ~/.claude/settings.json (present only if you pressed Enable Live
+#     Status) — removed SURGICALLY (#31): only the entries that name claude-console go, your own
+#     hooks stay, and a status line we chained is put back to what it was. A rolling backup is
+#     written first (settings.json.claude-console.bak).
 #   • the voice runtime + ~142 MB speech model, the /tmp IPC files, the Microphone permission,
 #     any crash-disable marker, and a dev plugin .link.
 #
@@ -24,9 +25,9 @@
 #   bash scripts/uninstall.sh            # show targets, confirm, then remove everything
 #   bash scripts/uninstall.sh --dry-run  # preview only, change nothing
 #   bash scripts/uninstall.sh --yes      # skip the confirmation prompt
-#   bash scripts/uninstall.sh --unwire   # ONLY take the wiring out of settings.json and set the
-#                                        # opt-out, keeping the plugin and voice — the live keys
-#                                        # (Cost / Context / Activity) go dark; nothing else changes
+#   bash scripts/uninstall.sh --unwire   # the same as pressing Disable Live Status: take the wiring
+#                                        # out of settings.json and leave the Off marker, keeping the
+#                                        # plugin and voice — the live keys read Off; nothing else changes
 set -u
 
 DRY=0; YES=0; UNWIRE_ONLY=0
@@ -117,15 +118,17 @@ print(f"  settings.json: removed {what}  (backup: {backup})")
 PY
 }
 
-# --unwire: the wiring only. Sets the opt-out too, or the plugin's next load would wire it back.
+# --unwire: the wiring only — what the Disable Live Status key does. Leaves the Off marker, which
+# is how the live keys know to read Off (and, for anyone still on a 2.2.0 pre-release that wired
+# on load, what stops the next load wiring it back).
 if [ "$UNWIRE_ONLY" -eq 1 ]; then
   echo "Claude Console — removing the live-status wiring from $SETTINGS"
   unwire_settings apply
   rm -f "$CHAIN"
   mkdir -p "$RUNTIME" && : > "$OPT_OUT"
-  echo "  opt-out set: $OPT_OUT  (delete it and reload the plugin to wire again)"
+  echo "  Off marker set: $OPT_OUT  (press Enable Live Status to turn it back on)"
   echo "Takes effect on your next Claude Code session. The plugin and voice are untouched;"
-  echo "the Cost / Context / Activity keys will show dashes."
+  echo "the Cost / Context / Activity keys read Off."
   exit 0
 fi
 

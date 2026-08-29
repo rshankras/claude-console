@@ -66,7 +66,7 @@ Download the latest `ClaudeConsole_<ver>.lplug4` from [**Releases**](https://git
 2. **Put the keys on Terminal.** The plugin is *universal*: it binds to no application and ships no layout of its own, so nothing appears on the keypad until you give it keys. The quickest way is the ready-made layout — see [Import the ready-made layout](#import-the-ready-made-layout) just below (two clicks). Or build your own: in Options+ add **Terminal** as an application, then drag any **Claude Console** actions onto its profile.
 3. On first use, grant **Accessibility** to the Logi Plugin Service (so it can type into your terminal). For **voice**, press the Voice key and grant **Microphone** when prompted — the helper and speech model install themselves on first use.
 
-> Everything works straight from the download — including the live **Model / Cost / Context / Activity** keys. On first load the plugin installs its status-line + hook scripts and **edits `~/.claude/settings.json`** to wire them in, so the live keys light up on your **next Claude Code session** with no setup. It only adds its own entries and backs the file up first; `uninstall.sh --unwire` takes them out again. (Details, and how to opt out, in [The live status bridge](#the-live-status-bridge) below.)
+> The live **Cost / Context / Activity** keys (and the Model key's readout) are **opt-in**: the plugin never edits your Claude Code settings on its own. Until you turn them on they read **Set up**, and pressing one changes nothing. To turn them on, press **Enable Live Status** — the ready-made layout puts it beside the Cost key on page 2, and it is always in the Options+ action list under **Setup & Privacy**. Its description says exactly what will change (five hooks and a status line in `~/.claude/settings.json`, your own entries kept, the file backed up first); the keys go live on your **next Claude Code session**. **Disable Live Status** takes it all back out. (Details in [The live status bridge](#the-live-status-bridge) below.)
 
 ## Import the ready-made layout
 
@@ -119,20 +119,20 @@ A pre‑packaged install via the Logitech Marketplace is planned — see [SUBMIS
 
 ## The live status bridge
 
-The live keys read state files under a private `/tmp/claude-console/` directory that Claude Code writes via a status‑line handler (Cost / Model / Context ← `sessions/`) and four hooks (Activity ← `activity/`). Everything in it is owner‑only (0700 dirs / 0600 files), so your prompts and session state are never readable by other users on the Mac.
+The live keys read state files under a private `/tmp/claude-console/` directory that Claude Code writes via a status‑line handler (Cost / Model / Context ← `sessions/`) and five hooks (Activity ← `activity/`). Everything in it is owner‑only (0700 dirs / 0600 files), so your prompts and session state are never readable by other users on the Mac.
 
-**This is set up automatically — and it edits your Claude Code settings to do it, and tells you so.** On first load the plugin writes both scripts to `~/.claude/claude-console/scripts/` and merges a `statusLine` handler + five hooks into `~/.claude/settings.json`. The moment it does, it posts a notice in Logi Options+ (the **!** on the plugin) saying exactly what was added, where the backup is, and the one command that takes it back out; the notice clears on the next load. It's careful about it: only **appends** a hook when it isn't already present, **chains** an existing `statusLine` (records yours and runs it through, so your custom status bar still renders) rather than overwriting it, and takes a **rolling backup** — `settings.json.claude-console.bak` is rewritten immediately before *every* change the plugin makes, so it is always the state one change ago, never a stale snapshot. The live keys come alive on your **next Claude Code session** — Claude Code reads hooks/statusLine at session start, so a session already running won't pick them up.
+**Turning this on edits your Claude Code settings, so it happens only when you ask — nothing is written on install.** On every load the plugin writes its two scripts to `~/.claude/claude-console/scripts/` (its own folder) and leaves `~/.claude/settings.json` alone; the live keys read **Set up** and a press on one only points you at the switch. The switch is **Enable Live Status** — under **Setup & Privacy** in the Options+ action list, and already placed on the ready-made layout. Its description states the change before you press: it merges a `statusLine` handler + five hooks into `~/.claude/settings.json`. The moment it does, it posts a notice in Logi Options+ confirming what was added, with a button that opens this section. It's careful about it: only **appends** a hook when it isn't already present, **chains** an existing `statusLine` (records yours and runs it through, so your custom status bar still renders) rather than overwriting it, and takes a **rolling backup** — `settings.json.claude-console.bak` is rewritten immediately before *every* change the plugin makes, so it is always the state one change ago, never a stale snapshot. The live keys come alive on your **next Claude Code session** — Claude Code reads hooks/statusLine at session start, so a session already running won't pick them up.
 
-**To take it back out, or to keep it out:**
+**To take it back out:** press **Disable Live Status** (same group, and on page 4 of the ready-made layout), or without the keypad:
 
 ```bash
 bash ~/.claude/claude-console/scripts/uninstall.sh --unwire
 ```
 
-That removes *only* the plugin's entries (your own hooks and status bar are left exactly as they were, a chained status line is put back), and sets the opt-out so the plugin doesn't wire it again. The Cost / Context / Activity keys show dashes from then on; everything else keeps working. To wire it again, delete `~/.claude/claude-console/no-autowire` and reload the plugin. To opt out *before* first load, create that file first.
+Either removes *only* the plugin's entries (your own hooks and status bar are left exactly as they were, a chained status line is put back) and leaves a marker file, `~/.claude/claude-console/no-autowire`, which is how the live keys know to read **Off** rather than **Set up**. Everything else keeps working. **Enable Live Status** turns it back on and clears the marker. (Before 2.2.0 the plugin wired itself on first load and that file was the only opt-out; if you created it back then it is honoured — the plugin removes its entries on load and the keys read Off.)
 
 <details>
-<summary>Wire it by hand instead (e.g. if you opted out)</summary>
+<summary>Wire it by hand instead (instead of pressing Enable Live Status)</summary>
 
 Add this to `~/.claude/settings.json` — the scripts live at `~/.claude/claude-console/scripts/` (or use `scripts/` from a clone). Merge the `hooks` into any existing block:
 
@@ -339,7 +339,7 @@ Plugin Service.
 
 ## Uninstall / clean reinstall
 
-Claude Console's footprint spans Logi's store, `~/.claude/claude-console/` (incl. the ~142 MB speech model), `/tmp`, a Microphone permission, and — if you wired the live bridge — `~/.claude/settings.json`.
+Claude Console's footprint spans Logi's store, `~/.claude/claude-console/` (incl. the ~142 MB speech model), `/tmp`, a Microphone permission, and — if you enabled live status — `~/.claude/settings.json`.
 
 **1. Remove the plugin + profile — this is the actual uninstall (Logi Options+).** In Logi Options+, **right‑click the Claude Console plugin → Uninstall** (or `logiplugintool uninstall ClaudeConsole`), and delete the imported **Claude Console — Keypad** profile.
 
@@ -352,7 +352,7 @@ bash ~/.claude/claude-console/scripts/uninstall.sh --dry-run  # preview only
 
 It sweeps the orphaned registration (only entries whose plugin is gone, never another vendor's), then removes `~/.claude/claude-console/` (voice helper, whisper, the ~142 MB speech model, your `prompts.json`, and the auto-installed scripts — including itself), the `/tmp/claude-console` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present. It prints its targets and asks before deleting; **it never removes the plugin.** Then restart the service so Options+ forgets the entry: `killall LogiPluginService`.
 
-**3. Live‑status bridge — done by step 2.** The cleanup script removes the plugin's `statusLine` + hook entries from `~/.claude/settings.json` surgically (your own entries stay; a chained status line is put back) before it deletes the scripts they point at. If you only want the wiring gone and the plugin kept, run it with `--unwire` instead. Don't restore `settings.json.claude-console.bak` by hand to undo the plugin — it is a rolling backup of the state one change ago, useful if a write went wrong, not a pre-install snapshot.
+**3. Live‑status bridge — done by step 2.** The cleanup script removes the plugin's `statusLine` + hook entries from `~/.claude/settings.json` surgically (your own entries stay; a chained status line is put back) before it deletes the scripts they point at. If you only want the wiring gone and the plugin kept, press **Disable Live Status** or run it with `--unwire` instead. Don't restore `settings.json.claude-console.bak` by hand to undo the plugin — it is a rolling backup of the state one change ago, useful if a write went wrong, not a pre-install snapshot.
 
 For a **clean reinstall**, do 1–3, then reinstall from [Releases](https://github.com/rshankras/claude-console/releases) and re‑import the profile.
 

@@ -62,9 +62,10 @@
 
   <ItemGroup>
     <!-- Live-status bridge scripts embedded in the DLL so the plugin can self-install them to
-         ~/.claude/claude-console/scripts/ and auto-wire settings.json on first run
-         (BridgeManager.EnsureBridgeAutoWired). Embedding keeps ONE copy (the repo scripts/) as the
-         source of truth and works for both dev and release builds with no packaging step.
+         ~/.claude/claude-console/scripts/ on every load (BridgeManager.EnsureBridgeAutoWired);
+         settings.json is edited only when the user presses Enable Live Status (#31). Embedding
+         keeps ONE copy (the repo scripts/) as the source of truth and works for both dev and
+         release builds with no packaging step.
          LogicalName is what Assembly.GetManifestResourceStream() looks up. -->
     <EmbeddedResource Include="..\..\..\scripts\statusline-handler.sh">
       <LogicalName>ClaudeConsole.statusline-handler.sh</LogicalName>

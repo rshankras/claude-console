@@ -57,11 +57,15 @@ macOS user account** (or on another Mac) before each release.
 - Run `claude`, press a prompt key (e.g. *Fix Bug*) → it types the prompt and submits.
 - **Voice** key → *Tink* → speak → press again → transcribed into the terminal.
 - **Answer** keys (Up/Down/Return, Yes/No) drive a Claude prompt.
-- **Live status (auto-wired):** on first load the plugin wires the status-line + activity
-  [bridge](../README.md#the-live-status-bridge) into that account's `~/.claude/settings.json`
-  itself (backup at `~/.claude/settings.json.claude-console.bak`). It takes effect on the **next**
-  Claude Code session — start a fresh `claude` and confirm the Model / Cost / Context / Activity
-  keys show live data.
+- **Live status (opt-in, #31):** the Cost / Context / Activity keys read **Set up**, and that
+  account's `~/.claude/settings.json` is **unchanged** by the install (check it, or note that it
+  does not exist). Press Cost: it flashes *Set up first* and a card appears in Options+ naming
+  Setup & Privacy; the file is still unchanged. Then press **Enable Live Status** (page 2, key 9):
+  a card confirms the edit, the keys read **Restart Claude**, and `~/.claude/settings.json` now
+  holds five hooks + a `statusLine` (backup at `~/.claude/settings.json.claude-console.bak`).
+  Start a fresh `claude` and confirm the Model / Cost / Context / Activity keys show live data.
+  Press **Disable Live Status** (page 4, key 9): the keys read **Off** and the file carries none
+  of the plugin's entries.
 
 ### 6. Cleanup
 - Log back into your main account; optionally delete the test account.
@@ -72,4 +76,5 @@ macOS user account** (or on another Mac) before each release.
 - ✅ Package installs and **loads clean**, with **no** application entry and **nothing** on the keypad
 - ✅ **Import** produces the full layout on the keypad
 - ✅ prompt / voice / answer keys fire with Terminal focused
-- ✅ live keys auto-wire and show data on a second `claude` session
+- ✅ install leaves `~/.claude/settings.json` untouched; a live key pressed before setup changes nothing
+- ✅ Enable Live Status wires it and says so; live keys show data on the next `claude` session; Disable takes it out

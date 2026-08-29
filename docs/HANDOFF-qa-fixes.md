@@ -352,7 +352,25 @@ cannot. Live keys show "Setup required" until enabled; a press on one flashes "A
 Status key" (the #18 face pattern) and never enables. State = our hooks present in settings.json
 (existing installs land Enabled, no card, no re-consent); `no-autowire` stays one release as a
 never-auto-wire guard. The layout download places the two keys. Codex gains most: its hash-trusted
-hooks stop re-prompting on every update. NOT BUILT YET at time of writing.
+hooks stop re-prompting on every update.
+
+**BUILT 2026-08-29 (six commits after `79a1bf8`), suite 843 C# + 33 + 27 green, HARDWARE PASS PENDING.**
+What landed, in order: the settings.json seam + one write door (`BridgeManager.HomeOverride`,
+`RewriteSettings` — fingerprinted read, refused write on a moved file, unique temp, rolling backup;
+`tests/TempHome.cs`; a settings.json canary in `run-all.sh`) · the hook table + detector
+(`BridgeWiring.HookSpecs` / `Inspect` / `DisplayState`, `LiveStatusFace`) · the engine flip (load
+installs scripts and READS; `EnableLiveStatus` / `DisableLiveStatus` write; `OnLiveStatusChanged`;
+external edits picked up by a ~10 s stat) · the two actions + `LiveStatusGate` on Cost/Context/
+Activity + `SettingsFileWiring` capability (Claude true, Codex false) + `setup`/`off` icons · the
+profiles (Enable at page 2 key 9, Disable at page 4 key 9; Codex drops both) · the docs.
+**Traps met:** a parameterless `base(displayName…)` command registers unconditionally — gating needs
+`base()` + `AddParameter`, so the bindings are `…LiveStatusCommand___enable/___disable`; the
+Codex profile tool strips BEFORE it rearranges, so its `PLACE[(1,8)]` must keep expecting `None`;
+xUnit theories need public enum parameters, so `LiveStatusWiring`/`LiveStatusState` are public.
+**Owed on the device** (the plan's 12-step checklist is in `~/.claude/plans/enchanted-brewing-snail.md`):
+whether `PluginStatus.Normal` + message renders a visible card (fallback: Warning for Enable);
+the `Restart Claude` label on 60/90 px keys; the Set up → Enable → Restart → live → Disable → Off
+round trip; `uninstall.sh --unwire` reaching the keys within ~10 s; a #27 repaint check.
 
 ## #23: universal plugin — what changed, what it removed, what is unverified
 
