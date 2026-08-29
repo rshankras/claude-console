@@ -393,6 +393,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                         _currentState = newState;
                         _displayStateKnown = true;
                         OnStateChanged?.Invoke(_currentState);
+                        this.NoteStateArrived();   // "Restart Claude" becomes the live value (#31)
                     }
                 }
 
@@ -422,6 +423,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (_pollTick % 120 == 1)
                 {
                     PruneStaleIpcFiles();
+                }
+
+                // Every ~20 polls, one stat of settings.json so an edit made outside the plugin
+                // (uninstall.sh --unwire, an editor) reaches the keys without a reload (#31).
+                if (_pollTick % 20 == 7)
+                {
+                    this.CheckSettingsMoved();
                 }
             }
             catch (Exception ex)
@@ -1179,19 +1187,29 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // ==========================================================================================
-        // Live-status bridge — auto-install + auto-wire (zero user action)
+        // Live-status bridge — installed on load, wired on the user's say-so (#31)
         //
         // The live keys (Cost / Context / Model, Activity) read /tmp state files that only get
         // written when Claude Code is wired to push them: a `statusLine` handler feeds Cost/Context/
-        // Model and four `hooks` feed Activity, all via ~/.claude/settings.json. A package-only user
-        // never does this by hand, so those keys show defaults. To make them "just work", the plugin
-        // ships the two scripts embedded in the DLL, writes them to ~/.claude/claude-console/scripts/
-        // on first run, and merges the statusLine + hooks into settings.json itself.
+        // Model and five `hooks` feed Activity, all via ~/.claude/settings.json. The plugin ships the
+        // two scripts embedded in the DLL and writes them to ~/.claude/claude-console/scripts/ on
+        // every load — that touches nothing of the user's. The settings.json edit is a different
+        // matter: it is the user's file, so it happens only when they invoke Enable Live Status
+        // (a key, or its button in Options+), whose description says what will change. Until then
+        // the live keys read "Set up" and a press on one changes nothing.
         //
-        // Safe by design: backs settings.json up once, MERGES rather than clobbers (appends a hook
-        // only if absent; CHAINS an existing statusLine instead of replacing it — see the chain block
-        // in statusline-handler.sh), writes atomically, and is idempotent. Drop a file at
-        // ~/.claude/claude-console/no-autowire to opt out.
+        // It used to wire on first load, with a notice afterwards. Logitech QA's retest called that
+        // what it was — a modification of user config without a prompt — and the SDK offers no
+        // dialog and no settings page to ask through (the spike is in docs/HANDOFF-qa-fixes.md).
+        // So the press is the prompt.
+        //
+        // Safe by design either way: MERGES rather than clobbers (appends a hook only if absent;
+        // CHAINS an existing statusLine instead of replacing it — see the chain block in
+        // statusline-handler.sh), writes only over the bytes it read (RewriteSettings), takes a
+        // rolling backup before every write, and is idempotent. Disable takes exactly our entries
+        // back out and leaves the marker file ~/.claude/claude-console/no-autowire behind, which is
+        // how the keys know to say "Off" rather than "Set up". A marker created by hand while the
+        // wiring is present still unwires on the next load (the 2.2.0 two-way switch), for one release.
         //
         // Effect lands on the user's NEXT Claude Code session — Claude Code reads hooks/statusLine at
         // session start, so a session already running won't pick it up.
@@ -1208,34 +1226,256 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 try
                 {
-                    lock (_wiringLock)
-                    {
-                        // Before the opt-out, on purpose — see RecoveryScripts.
-                        EnsureRecoveryScriptsInstalled();
-
-                        if (File.Exists(BridgeOptOutFile))
-                        {
-                            // A switch, not a one-time skip (#31): a user who was wired on an earlier
-                            // load and opts out later gets settings.json put back — surgically, never
-                            // from a stale backup.
-                            this.UnwireIfWired();
-                            return;
-                        }
-                        EnsureBridgeInstalled();
-                        EnsureBridgeWired();
-                    }
+                    this.LoadWiring();
                 }
                 catch (Exception ex)
                 {
-                    PluginLog.Warning(ex, "Bridge auto-wire failed");
+                    PluginLog.Warning(ex, "Live status: load-time check failed");
                 }
             })
             { IsBackground = true, Name = "claude-bridge-autowire" }.Start();
         }
 
+        // The load-time body. Installs scripts, honours a marker, and reads the state — it never
+        // writes our wiring INTO settings.json; only EnableLiveStatus does that.
+        private void LoadWiring()
+        {
+            lock (_wiringLock)
+            {
+                // Before anything conditional, on purpose — see RecoveryScripts.
+                EnsureRecoveryScriptsInstalled();
+                EnsureBridgeInstalled();
+
+                if (File.Exists(BridgeOptOutFile))
+                {
+                    // The marker means "the user turned it off". A user who was wired on an earlier
+                    // version and created the file by hand gets settings.json put back — surgically,
+                    // never from a stale backup.
+                    if (this.UnwireIfWired())
+                    {
+                        this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    }
+                }
+
+                this.RefreshLiveStatusLocked();
+            }
+        }
+
+        /// <summary>Runs the load-time body synchronously, so a test can assert what a load does and does not write.</summary>
+        internal void RunLoadWiringForTests() => this.LoadWiring();
+
         // Every path that reads settings.json to rewrite it, or touches the opt-out marker, holds
         // this. The load thread and a key press must never interleave on the same file.
         private readonly Object _wiringLock = new Object();
+
+        /// <summary>
+        /// What the live keys should show (#31). Raised on change only, from whichever thread learned
+        /// of it — the keys repaint from timer threads already, so that is safe.
+        /// </summary>
+        public event Action<LiveStatusState> OnLiveStatusChanged;
+
+        private LiveStatusState _liveStatus = LiveStatusState.NotEnabled;
+        private Boolean _justEnabled;             // Enable wrote, and no session has reported since
+        private DateTime _settingsSeenWrite;      // settings.json as last inspected — see CheckSettingsMoved
+        private Int64 _settingsSeenLength = -1;
+
+        internal LiveStatusState LiveStatus => _liveStatus;
+
+        /// <summary>
+        /// The user asked for the live keys: merge our status line and hooks into settings.json,
+        /// clear the Off marker, and say so in Options+. Idempotent — an already-wired file costs no
+        /// write, no backup and no card. Returns false only when the file could not be touched.
+        /// </summary>
+        internal Boolean EnableLiveStatus()
+        {
+            if (!AutoWireSupported)
+            {
+                PluginLog.Warning("Live status: not supported on this platform");
+                return false;
+            }
+
+            lock (_wiringLock)
+            {
+                EnsureBridgeInstalled();   // the file is about to name these scripts; make sure they exist
+
+                var outcome = this.EnsureBridgeWired();
+                if (outcome == WiringOutcome.Failed)
+                {
+                    this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.EnableFailed(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    return false;
+                }
+
+                TryDelete(BridgeOptOutFile);
+                if (outcome == WiringOutcome.Wrote)
+                {
+                    _justEnabled = true;
+                    PluginLog.Info("Live status: enabled — wrote settings.json; start a NEW Claude Code session to activate the live keys");
+                }
+                else
+                {
+                    PluginLog.Info("Live status: already enabled — nothing written");
+                }
+
+                this.RefreshLiveStatusLocked();
+
+                if (outcome == WiringOutcome.Wrote)
+                {
+                    // Say so where the user is looking: the message centre in Options+, with the
+                    // undo one click away. Normal, not Warning — this is something they just asked for.
+                    this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Wired(WiredHookCount), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                }
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// The user turned the live keys off: take exactly our entries out of settings.json (a chained
+        /// status line goes back), and leave the marker so the keys read "Off" and no future load
+        /// wires anything. Returns false only when the file could not be touched.
+        /// </summary>
+        internal Boolean DisableLiveStatus()
+        {
+            lock (_wiringLock)
+            {
+                var wrote = false;
+                var ok = true;
+                try
+                {
+                    wrote = this.UnwireIfWired();
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "Live status: disable failed");
+                    ok = false;
+                }
+
+                try
+                {
+                    Directory.CreateDirectory(ClaudeConsoleHome);
+                    File.WriteAllText(BridgeOptOutFile, String.Empty);
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "Live status: couldn't write the Off marker");
+                }
+
+                _justEnabled = false;
+                this.RefreshLiveStatusLocked();
+
+                if (wrote)
+                {
+                    this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                }
+                return ok;
+            }
+        }
+
+        // Re-read settings.json and tell the keys what it says. Caller holds _wiringLock.
+        private void RefreshLiveStatusLocked()
+        {
+            var root = ReadSettingsForRewrite(out _);
+            var wiring = BridgeWiring.Inspect(root);
+            if (wiring != LiveStatusWiring.Enabled)
+            {
+                _justEnabled = false;
+            }
+            this.RememberSettingsStamp();
+            this.SetLiveStatus(BridgeWiring.DisplayState(wiring, File.Exists(BridgeOptOutFile), _justEnabled));
+        }
+
+        private void SetLiveStatus(LiveStatusState state)
+        {
+            if (state == _liveStatus)
+            {
+                return;
+            }
+            _liveStatus = state;
+            PluginLog.Info($"Live status: {state}");
+            OnLiveStatusChanged?.Invoke(state);
+        }
+
+        // The first state report after Enable is what turns "Restart Claude" into live values.
+        // Called from the poll loop; never waits on the lock.
+        private void NoteStateArrived()
+        {
+            if (!_justEnabled || !Monitor.TryEnter(_wiringLock, 0))
+            {
+                return;
+            }
+            try
+            {
+                _justEnabled = false;
+                if (_liveStatus == LiveStatusState.JustEnabled)
+                {
+                    this.SetLiveStatus(LiveStatusState.Enabled);
+                }
+            }
+            finally
+            {
+                Monitor.Exit(_wiringLock);
+            }
+        }
+
+        private void RememberSettingsStamp()
+        {
+            try
+            {
+                var fi = new FileInfo(SettingsFile);
+                _settingsSeenWrite = fi.Exists ? fi.LastWriteTimeUtc : default;
+                _settingsSeenLength = fi.Exists ? fi.Length : -1;
+            }
+            catch
+            {
+                _settingsSeenWrite = default;
+                _settingsSeenLength = -1;
+            }
+        }
+
+        // settings.json changed under us (uninstall.sh --unwire, an editor, Claude Code itself):
+        // re-inspect so the keys follow, without a reload. A stat every ~10 s of polls, and only a
+        // real read when the stamp moved — the #27 discipline. Never waits on the lock.
+        private void CheckSettingsMoved()
+        {
+            try
+            {
+                var fi = new FileInfo(SettingsFile);
+                var write = fi.Exists ? fi.LastWriteTimeUtc : default;
+                var length = fi.Exists ? fi.Length : -1;
+                if (write == _settingsSeenWrite && length == _settingsSeenLength)
+                {
+                    return;
+                }
+                if (!Monitor.TryEnter(_wiringLock, 0))
+                {
+                    return;
+                }
+                try
+                {
+                    this.RefreshLiveStatusLocked();
+                }
+                finally
+                {
+                    Monitor.Exit(_wiringLock);
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, "Live status: settings.json check failed");
+            }
+        }
+
+        /// <summary>Exposed for tests: the external-edit check the poll loop runs every ~10 s.</summary>
+        internal void CheckSettingsMovedForTests() => this.CheckSettingsMoved();
+
+        /// <summary>Exposed for tests: what the poll loop does when the first state arrives after Enable.</summary>
+        internal void NoteStateArrivedForTests() => this.NoteStateArrived();
+
+        private enum WiringOutcome
+        {
+            Failed,      // the file could not be touched (symlink, invalid JSON, kept changing)
+            Unchanged,   // already fully wired — nothing written
+            Wrote,       // merged and written
+        }
 
         // Write the embedded bridge scripts to ~/.claude/claude-console/scripts/ (refreshed every load
         // so a plugin upgrade updates them) and mark them executable.
@@ -1323,7 +1563,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         // Merge the statusLine + activity hooks into ~/.claude/settings.json. Idempotent: appends a
         // hook only if ours isn't already there, and chains (never clobbers) an existing statusLine.
-        private void EnsureBridgeWired()
+        private WiringOutcome EnsureBridgeWired()
         {
             var isWindows = OperatingSystem.IsWindows();
             var statusHandler = this.BridgeHandlerPath(null);
@@ -1331,8 +1571,8 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             if (isWindows && (statusHandler == null || activityHandler == null))
             {
-                PluginLog.Warning("Bridge auto-wire: claude-console-hook.exe is missing from the package — leaving settings.json untouched");
-                return;
+                PluginLog.Warning("Live status: claude-console-hook.exe is missing from the package — leaving settings.json untouched");
+                return WiringOutcome.Failed;
             }
 
             // The chain file is written AFTER a successful write, never inside the mutate callback:
@@ -1389,33 +1629,24 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             if (!RewriteSettings(Merge, out var wrote))
             {
-                return;
+                return WiringOutcome.Failed;
             }
 
             if (!wrote)
             {
-                PluginLog.Info("Bridge auto-wire: settings.json already wired — no changes");
-                // A load that changed nothing clears the notice from the load that did: the "!" in
-                // Options+ means "since the last change", not "forever".
-                this.Notify?.Invoke(PluginStatus.Normal, null, null, null);
-                return;
+                return WiringOutcome.Unchanged;
             }
 
             if (chainedCommand != null)
             {
                 File.WriteAllText(StatuslineChainFile, chainedCommand);
-                PluginLog.Info("Bridge auto-wire: chained existing statusLine so it still renders");
+                PluginLog.Info("Live status: chained the existing statusLine so it still renders");
             }
             else if (freshStatusLine)
             {
                 TryDelete(StatuslineChainFile);
             }
-            PluginLog.Info("Bridge auto-wire: wired live-status bridge into settings.json — start a NEW Claude Code session to activate Cost/Context/Activity");
-
-            // Say so where the user is looking (#31): the message centre in Options+, with the undo
-            // one click away. Warning is the level that earns the badge; it is cleared on the next
-            // load that changes nothing.
-            this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+            return WiringOutcome.Wrote;
         }
 
         // The number of hooks the notice prints — the length of the one table the wirer iterates.
@@ -1423,26 +1654,26 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         // The opt-out's other direction (#31): take our wiring back out if it is there. Reads the
         // chained status line we recorded so the user's own status bar comes back exactly as it was.
-        private void UnwireIfWired()
+        private Boolean UnwireIfWired()
         {
             String chained = null;
             try { if (File.Exists(StatuslineChainFile)) { chained = File.ReadAllText(StatuslineChainFile).Trim(); } }
-            catch (Exception ex) { PluginLog.Warning(ex, "Bridge auto-wire: couldn't read the statusline chain file"); }
+            catch (Exception ex) { PluginLog.Warning(ex, "Live status: couldn't read the statusline chain file"); }
 
             if (!RewriteSettings(root => BridgeWiring.Unwire(root, chained), out var wrote))
             {
-                return;
+                return false;
             }
 
             if (!wrote)
             {
-                PluginLog.Info("Bridge auto-wire: opt-out file present — settings.json carries none of our wiring");
-                return;
+                PluginLog.Info("Live status: settings.json carries none of our wiring — nothing to remove");
+                return false;
             }
 
             TryDelete(StatuslineChainFile);
-            PluginLog.Info("Bridge auto-wire: opt-out file present — removed our statusLine + hooks from settings.json (your own entries were left alone)");
-            this.Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+            PluginLog.Info("Live status: removed our statusLine + hooks from settings.json (your own entries were left alone)");
+            return true;
         }
 
         /// <summary>

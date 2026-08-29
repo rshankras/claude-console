@@ -55,8 +55,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var text = BridgeNotice.Unwired();
 
             Assert.Contains("removed its status line and hooks", text);
-            Assert.Contains("dashes", text);
+            Assert.Contains("read Off", text);
             Assert.Contains("backed up", text);
+            // A user pressed Disable, or created the marker by hand — either way it is not "an opt-out file".
+            Assert.DoesNotContain("opt-out file", text);
+        }
+
+        [Fact]
+        public void The_setup_notice_says_where_the_switch_is_and_that_nothing_changed()
+        {
+            var text = BridgeNotice.SetupRequired();
+
+            Assert.Contains("Enable Live Status", text);
+            Assert.Contains(LiveStatusFace.SetupGroup, text);
+            Assert.Contains("Nothing in ~/.claude/settings.json changes", text);
+            Assert.True(text.Length <= 260, $"{text.Length} chars — that is a paragraph, not a notice");
         }
 
         [Fact]
@@ -92,31 +105,32 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 BridgeWiring.HookSpecs.Select(s => s.Event).ToArray());
 
             var engine = File.ReadAllText(RepoFile("src", "Core", "BridgeManager.cs"));
-            var wiring = engine.Substring(engine.IndexOf("private void EnsureBridgeWired()", StringComparison.Ordinal));
-            wiring = wiring.Substring(0, wiring.IndexOf("private void UnwireIfWired()", StringComparison.Ordinal));
+            var wiring = engine.Substring(engine.IndexOf("private WiringOutcome EnsureBridgeWired()", StringComparison.Ordinal));
+            wiring = wiring.Substring(0, wiring.IndexOf("private Boolean UnwireIfWired()", StringComparison.Ordinal));
 
             Assert.Contains("foreach (var spec in BridgeWiring.HookSpecs)", wiring);
             Assert.Single(Regex.Matches(wiring, @"changed \|= EnsureHook\("));
         }
 
         [Fact]
-        public void The_notice_fires_after_the_write_and_clears_on_a_no_change_load()
+        public void The_wired_notice_is_posted_only_by_enable_and_only_after_the_write()
         {
             var engine = File.ReadAllText(RepoFile("src", "Core", "BridgeManager.cs"));
-            var wiring = engine.Substring(engine.IndexOf("private void EnsureBridgeWired()", StringComparison.Ordinal));
 
-            // The write goes through the one door (RewriteSettings), which also reports whether it
-            // wrote at all. Both notices must come after it, and each on its own branch.
-            var write = wiring.IndexOf("RewriteSettings(Merge", StringComparison.Ordinal);
-            var noChange = wiring.IndexOf("if (!wrote)", StringComparison.Ordinal);
-            var warn = wiring.IndexOf("Notify?.Invoke(PluginStatus.Warning", StringComparison.Ordinal);
-            var clear = wiring.IndexOf("Notify?.Invoke(PluginStatus.Normal, null", StringComparison.Ordinal);
+            // Since 2.2.0 nothing on the load path posts the "we changed your file" card, because the
+            // load path no longer changes the file. Enable does — and says so after, not before.
+            var enable = engine.Substring(engine.IndexOf("internal Boolean EnableLiveStatus()", StringComparison.Ordinal));
+            enable = enable.Substring(0, enable.IndexOf("internal Boolean DisableLiveStatus()", StringComparison.Ordinal));
 
-            Assert.True(write > 0 && noChange > 0 && warn > 0 && clear > 0, "the notice calls are missing from the wiring routine");
-            // Announce only what actually happened: the Warning comes AFTER the write succeeded...
-            Assert.True(warn > write, "the wired notice is posted before the file is written");
-            // ...and the clear lives on the no-change branch, between "nothing was written" and the Warning.
-            Assert.True(clear > noChange && clear < warn, "the clear is not on the no-change path");
+            var write = enable.IndexOf("this.EnsureBridgeWired()", StringComparison.Ordinal);
+            var card = enable.IndexOf("Notify?.Invoke(PluginStatus.Normal, BridgeNotice.Wired(", StringComparison.Ordinal);
+            Assert.True(write > 0 && card > 0, "Enable no longer wires, or no longer says so");
+            Assert.True(card > write, "the wired notice is posted before the file is written");
+
+            // A user's own action never earns a Warning badge, and there is no "clear on a no-change
+            // load" any more — there is no load-time write to clear after.
+            Assert.DoesNotContain("PluginStatus.Warning", engine);
+            Assert.DoesNotContain("Notify?.Invoke(PluginStatus.Normal, null", engine);
         }
 
         [Fact]

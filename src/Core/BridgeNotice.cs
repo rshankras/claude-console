@@ -33,10 +33,25 @@ namespace Loupedeck.ClaudeConsolePlugin
             "live keys work from your next Claude Code session. Your own entries were kept and the previous " +
             "file was backed up.";
 
-        /// <summary>The message posted when the opt-out made the plugin remove its wiring.</summary>
+        /// <summary>The message posted when Disable Live Status (or a marker found at load) removed the wiring.</summary>
         internal static String Unwired() =>
-            "Claude Console removed its status line and hooks from ~/.claude/settings.json (opt-out file " +
-            "present). Your own entries were left alone and the previous file was backed up. The live keys " +
-            "will show dashes from your next Claude Code session.";
+            "Claude Console removed its status line and hooks from ~/.claude/settings.json. Your own " +
+            "entries were left alone and the previous file was backed up. The live keys read Off until " +
+            "you enable them again.";
+
+        /// <summary>
+        /// The message posted when a live key is pressed before live status is enabled. The press
+        /// changed nothing; this says where the switch is. The key itself only has room to flash
+        /// "Set up first".
+        /// </summary>
+        internal static String SetupRequired() =>
+            "The live keys are off until you turn them on: in Logi Options+, add Enable Live Status " +
+            "from Setup & Privacy to any key and press it. Nothing in ~/.claude/settings.json changes " +
+            "until then.";
+
+        /// <summary>The message posted when Enable could not touch settings.json at all.</summary>
+        internal static String EnableFailed() =>
+            "Claude Console could not edit ~/.claude/settings.json (it is a symlink, not valid JSON, or " +
+            "kept changing). Nothing was written. Fix the file, then press Enable Live Status again.";
     }
 }

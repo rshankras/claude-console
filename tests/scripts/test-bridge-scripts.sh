@@ -180,7 +180,7 @@ check_eq "the user's own event survives" "echo mine" "$(j "d['hooks']['SessionSt
 check_eq "unrelated settings survive" "opus" "$(j "d['model']")"
 check_file "a rolling backup was written first" "$HOME/.claude/settings.json.claude-console.bak"
 check_eq "the backup is the pre-unwire state" "1" "$(grep -c 'statusline-handler' "$HOME/.claude/settings.json.claude-console.bak")"
-check_file "the opt-out is set so the plugin does not wire it back" "$HOME/.claude/claude-console/no-autowire"
+check_file "the Off marker is set, so no later load wires it back" "$HOME/.claude/claude-console/no-autowire"
 AFTER_SUM="$(cksum < "$HOME/.claude/settings.json")"
 bash "$UNINSTALL" --unwire >/dev/null 2>&1
 check_eq "a second --unwire is a no-op" "$AFTER_SUM" "$(cksum < "$HOME/.claude/settings.json")"
