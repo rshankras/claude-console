@@ -23,6 +23,9 @@ let outDir = repo + "/src/Core/Resources/icons"   // #39: the embedded-resource 
 
 // Designer palette (sampled from the pack itself).
 let GREEN = "#7FC17A", RED = "#CE655C", AMBER = "#DFA658", BLUE = "#81A8ED", PURPLE = "#A194EB"
+// Claude identity copper — the neutral action/nav glyphs render in this, matching the 2026-08
+// design frames (icons copper, colour reserved for state). The White SVGs are tinted to it below.
+let COPPER = "#CC7C5E"
 
 // SVG basename -> embedded icon basename (see preview sheet for the intended action).
 let mapping: [(String, String)] = [
@@ -102,6 +105,12 @@ func recolor(_ svgText: String, to hex: String) -> String {
     return out + rest
 }
 
+// Tint a WHITE glyph (fill="white") to `hex`. The White SVGs are single-fill masks, so this is
+// how the neutral set takes the copper identity colour. fill="none" backgrounds are left alone.
+func tintWhite(_ svgText: String, to hex: String) -> String {
+    return svgText.replacingOccurrences(of: "fill=\"white\"", with: "fill=\"" + hex + "\"")
+}
+
 // Compose voice_draft IN the designer's language: their VoiceDictation mic (scaled, right) plus
 // three rounded wave bars whose width matches the pack's stroke weight (~3.2 units on a 43 grid
 // ≈ 7px at 96). The pack predates the Voice Draft key, so this is the one icon built from
@@ -111,7 +120,7 @@ func renderVoiceDraft(micSvg: String, to path: String) -> Bool {
     let target = NSImage(size: NSSize(width: size, height: size))
     target.lockFocus()
     mic.draw(in: NSRect(x: 34, y: 6, width: 66, height: 66))   // right-of-centre, slightly low
-    NSColor.white.set()   // white bars to match the white mic — the glyph shape distinguishes it from Voice
+    NSColor(srgbRed: 0xCC / 255.0, green: 0x7C / 255.0, blue: 0x5E / 255.0, alpha: 1).set()  // copper bars, matching the copper mic
     let barW: CGFloat = 7
     for (x, h) in [(CGFloat(10), CGFloat(30)), (23, 52), (36, 38)] {
         NSBezierPath(roundedRect: NSRect(x: x, y: (size - h) / 2, width: barW, height: h),
@@ -127,7 +136,7 @@ func renderVoiceDraft(micSvg: String, to path: String) -> Bool {
 
 var ok: [String] = [], fail: [String] = []
 if let micText = try? String(contentsOfFile: whiteDir + "/VoiceDictation.svg", encoding: .utf8),
-   renderVoiceDraft(micSvg: micText, to: outDir + "/voice_draft.png")
+   renderVoiceDraft(micSvg: tintWhite(micText, to: COPPER), to: outDir + "/voice_draft.png")
 {
     ok.append("voice_draft")
 }
@@ -138,7 +147,8 @@ else
 for (svg, name) in mapping {
     let svgPath = whiteDir + "/" + svg + ".svg"
     guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
-    if renderSvg(text, to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
+    // Neutral glyphs take the copper identity colour (the White mask tinted to COPPER).
+    if renderSvg(tintWhite(text, to: COPPER), to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
 }
 for (svg, name, hex) in recolors {
     let svgPath = coloursDir + "/" + svg + ".svg"
