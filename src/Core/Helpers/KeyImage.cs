@@ -141,12 +141,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                     }
                 }
 
-                // STATE-WORD BAR — a filled band with the word centred. Colour = selection (amber
+                // STATE-WORD BAR — a filled band with the word centred, flush to the bottom and both
+                // side edges (zero padding) so it reads as a solid strip. Colour = selection (amber
                 // for the routed session, grey otherwise); dark text on amber, white on grey.
                 var barH = (Int32)(h * 0.30);
-                var barY = h - barH - pad;
-                bitmap.FillRectangle(pad, barY, w - (2 * pad), barH, barColor);
-                bitmap.DrawText(stateWord, pad, barY, w - (2 * pad), barH, darkText ? Dark : White, fontSize: (Int32)(14 * scale));
+                var barY = h - barH;
+                bitmap.FillRectangle(0, barY, w, barH, barColor);
+                bitmap.DrawText(stateWord, 0, barY, w, barH, darkText ? Dark : White, fontSize: (Int32)(14 * scale));
 
                 return bitmap.ToImage();
             }
