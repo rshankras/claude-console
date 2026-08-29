@@ -52,7 +52,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var entry = Commands.FirstOrDefault(c => c.Id == actionParameter);
-            return KeyImage.Render(imageSize, entry.Name ?? actionParameter, KeyImage.Orange, actionParameter);
+            return KeyImage.Render(imageSize, entry.Name ?? actionParameter, KeyImage.Coral, actionParameter);
         }
     }
 }

@@ -13,10 +13,16 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// </summary>
     internal static class KeyImage
     {
-        // Palette kept for callers / future use (e.g. restoring colored tiles).
-        public static readonly BitmapColor Green  = new BitmapColor(0x22, 0xC5, 0x5E);
-        public static readonly BitmapColor Red    = new BitmapColor(0xEF, 0x44, 0x44);
-        public static readonly BitmapColor Orange = new BitmapColor(0xF5, 0x9E, 0x0B);
+        // Palette. The state colours are the DESIGN's, sampled from the 2026-08-26 Logitech
+        // frames rather than picked here — their set is deliberately muted against the Tailwind-ish
+        // values this file used to carry, and mixing the two reads as two palettes on one pad.
+        // Coral is Claude's identity colour, Blue is Codex's; identity and state must stay on
+        // different cues, so a session's agent must never be signalled by Amber/Red/Green.
+        // ("Always allow", #275DA3 in the same frames, gets a constant when a key actually binds it.)
+        public static readonly BitmapColor Green  = new BitmapColor(0x4F, 0xA9, 0x75);   // Allow
+        public static readonly BitmapColor Red    = new BitmapColor(0xDA, 0x3D, 0x29);   // Deny / risk
+        public static readonly BitmapColor Amber  = new BitmapColor(0xE2, 0x9D, 0x37);   // waiting on approval
+        public static readonly BitmapColor Coral  = new BitmapColor(0xCC, 0x7C, 0x5E);   // Claude identity
         public static readonly BitmapColor Blue   = new BitmapColor(0x60, 0xA5, 0xFA);
         public static readonly BitmapColor Purple = new BitmapColor(0xA7, 0x8B, 0xFA);
         public static readonly BitmapColor Slate  = new BitmapColor(0x94, 0xA3, 0xB8);
@@ -32,8 +38,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static readonly BitmapColor Selection = new BitmapColor(0x60, 0xA5, 0xFA);
 
         // Approval badge: amber for a routine request, red when the command is destructive.
-        private static readonly BitmapColor BadgeWaiting = new BitmapColor(0xF5, 0xB9, 0x42);
-        private static readonly BitmapColor BadgeRisk = new BitmapColor(0xFB, 0x71, 0x85);
+        // These two are the only palette entries that paint pixels today — Render ignores its
+        // accent argument whenever an icon is present, because the colour lives in the PNG.
+        private static readonly BitmapColor BadgeWaiting = Amber;
+        private static readonly BitmapColor BadgeRisk = Red;
 
         /// <summary>
         /// Draw a key face. With an <paramref name="icon"/> (resource basename), the colored PNG is
@@ -118,7 +126,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     // Drawn TWICE, 1px apart: DrawText has no weight parameter, and the double
                     // strike is a renderer-proof bold.
                     var pct = ctxPercent.Value;
-                    var color = pct >= 90 ? Red : pct >= 75 ? Orange : White;
+                    var color = pct >= 90 ? Red : pct >= 75 ? Amber : White;
                     var text = $"{pct}%";
                     var y = (Int32)(h * 0.54);
                     var th = (Int32)(h * 0.40);
