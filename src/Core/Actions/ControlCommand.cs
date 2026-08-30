@@ -107,15 +107,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             PluginLog.Info($"ControlCommand: {actionParameter}");
         }
 
-        // Two Core keys carry icons that CANNOT be the parameter id: review.png is the Prompts
-        // family's blue (and still bound on the prompts page), and clear.png is Git-amber by
-        // designer-pack inheritance. Purple _core variants keep page 2 one family — and give the
-        // native review a different glyph from the review prompt, so the two stop wearing one face.
+        // Review keeps a separate resource basename so it can evolve independently without
+        // breaking existing bindings; both variants now use the approved copper eye glyph. Clear
+        // deliberately uses the designer's outlined Delete rather than the removed filled legacy.
         private static String IconFor(String actionParameter) =>
             actionParameter switch
             {
                 Review => "review_core",
-                Clear => "clear_core",
+                // Use the designer's lighter outlined Delete glyph.
+                Clear => "clear",
                 _ => actionParameter,
             };
 

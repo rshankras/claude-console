@@ -18,7 +18,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// do nothing on press.
     ///
     /// Face layout (2026-08-30 design): the project (directory) name is centred in the black title
-    /// region, with the live state in a bar along the bottom. Orange identifies the currently
+    /// region, with the live state in a bar along the bottom. Claude copper identifies the currently
     /// active/routed session; inactive sessions use grey. The word in the bar says what that session
     /// is doing (Thinking / Allow? / Waiting / Complete), independently of the bar colour.
     /// </summary>
@@ -30,6 +30,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             : base()
         {
             _bridge = BridgeManager.Instance;
+
+            // A normal command image is placed in Options+' inset, user-resizable icon layer; the
+            // remaining key area belongs to its static label compositor. Session faces are live,
+            // full-surface information rather than icons, so request widget rendering instead.
+            // This keeps the image dynamic while allowing its state bar to reach the button edge.
+            this.SetWidget(true);
 
             for (var slot = 1; slot <= SessionRegistry.SlotCount; slot++)
             {
@@ -83,7 +89,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             var active = session.SessionKey == _bridge.TargetTty();
             var name = String.IsNullOrWhiteSpace(session.Project) ? _bridge.Agent.DisplayName : session.Project;
-            var barColor = active ? KeyImage.Orange : KeyImage.Gray;
+            // Use Claude's copper identity colour for the routed session. The Logitech amber used
+            // previously looks correct in Options+ but shifts visibly yellow on the keypad OLED;
+            // this is the same colour already proven by the Claude action icons on that hardware.
+            var barColor = active ? KeyImage.Coral : KeyImage.Gray;
             return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session), barColor, darkText: active);
         }
 

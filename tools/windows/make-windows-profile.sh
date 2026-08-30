@@ -24,7 +24,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SRC="$ROOT/src/package/profiles/DefaultProfile70.lp5"
+SRC="$ROOT/src/Products/ClaudeConsole/package/profiles/DefaultProfile70.lp5"
 OUT="$ROOT/profiles/ClaudeConsole-Windows.lp5"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

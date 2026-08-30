@@ -21,8 +21,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // ("Always allow", #275DA3 in the same frames, gets a constant when a key actually binds it.)
         public static readonly BitmapColor Green  = new BitmapColor(0x4F, 0xA9, 0x75);   // Allow
         public static readonly BitmapColor Red    = new BitmapColor(0xDA, 0x3D, 0x29);   // Deny / risk
-        public static readonly BitmapColor Orange = new BitmapColor(0xE2, 0x9D, 0x37);   // active/routed session
-        public static readonly BitmapColor Amber  = Orange;                              // approval badge
+        public static readonly BitmapColor Amber  = new BitmapColor(0xE2, 0x9D, 0x37);   // approval badge
         public static readonly BitmapColor Coral  = new BitmapColor(0xCC, 0x7C, 0x5E);   // Claude identity
         public static readonly BitmapColor Blue   = new BitmapColor(0x60, 0xA5, 0xFA);
         public static readonly BitmapColor Purple = new BitmapColor(0xA7, 0x8B, 0xFA);
@@ -70,7 +69,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                         var img = PluginResources.ReadImage("icons." + icon + ".png");
                         var w = bitmap.Width;
                         var h = bitmap.Height;
-                        var s = (Int32)(Math.Min(w, h) * 0.82);
+                        // The three utility-row glyphs use denser/taller artwork than the mic and
+                        // other open line icons. Keep their render box smaller so Clear, Esc and Tab
+                        // read as one balanced group on the physical keypad.
+                        var compactUtilityIcon = icon == "clear" || icon == "esc" || icon == "tab";
+                        var iconShare = compactUtilityIcon ? 0.70 : 0.82;
+                        var s = (Int32)(Math.Min(w, h) * iconShare);
                         bitmap.DrawImage(img, (w - s) / 2, (h - s) / 2, s, s);
                         return bitmap.ToImage();
                     }
@@ -104,7 +108,15 @@ namespace Loupedeck.ClaudeConsolePlugin
             PluginImageSize imageSize, String name, String stateWord,
             BitmapColor barColor, Boolean darkText)
         {
-            using (var bitmap = new BitmapBuilder(imageSize))
+            // Width90 normally gives a plugin an inset 80x80 image inside the physical 90x90 key;
+            // Options+ reserves the remaining strip for its command label. Session keys draw their
+            // own title and state, and suppress that label, so render against the full button canvas
+            // instead. This is what lets the state bar reach all three physical edges with padding 0.
+            var canvasWidth = imageSize.GetButtonWidth();
+            var canvasHeight = imageSize.GetButtonHeight();
+            using (var bitmap = canvasWidth > 0 && canvasHeight > 0
+                ? new BitmapBuilder(canvasWidth, canvasHeight)
+                : new BitmapBuilder(imageSize))
             {
                 bitmap.Clear(Background);
 
@@ -143,43 +155,79 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
-        /// A normal key face plus an approval badge — used by Yes / No so you can see that an answer
-        /// is wanted, and whether it's routine, without looking at the screen.
+        /// A full-key Yes/No face matching the supplied Logitech design: solid state colour,
+        /// white circled decision glyph, and a white label. It remains a live widget, so approval
+        /// badges can still update without Options+ creating a static icon override.
         /// </summary>
-        public static BitmapImage RenderWithApprovalBadge(
-            PluginImageSize imageSize, String label, BitmapColor accent, String icon, ApprovalRisk risk)
+        public static BitmapImage RenderDecisionTile(
+            PluginImageSize imageSize, String label, BitmapColor color,
+            Boolean approve, ApprovalRisk risk)
         {
-            if (risk == ApprovalRisk.None)
+            using (var bitmap = ButtonCanvas(imageSize))
             {
-                return Render(imageSize, label, accent, icon);   // nothing pending: the usual face
-            }
+                bitmap.Clear(color);
 
-            using (var bitmap = new BitmapBuilder(imageSize))
-            {
-                bitmap.Clear(Background);
+                var w = bitmap.Width;
+                var h = bitmap.Height;
+                var scale = Math.Min(w, h) / 96f;
+                var cx = w / 2f;
+                var cy = h * 0.38f;
+                var radius = 17f * scale;
+                var stroke = Math.Max(3f, 4f * scale);
 
-                if (!String.IsNullOrEmpty(icon))
+                bitmap.DrawCircle(cx, cy, radius, White);
+                if (approve)
                 {
-                    try
-                    {
-                        var img = PluginResources.ReadImage("icons." + icon + ".png");
-                        var s = (Int32)(Math.Min(bitmap.Width, bitmap.Height) * 0.82);
-                        bitmap.DrawImage(img, (bitmap.Width - s) / 2, (bitmap.Height - s) / 2, s, s);
-                    }
-                    catch (Exception ex)
-                    {
-                        PluginLog.Verbose(ex, $"KeyImage: icon '{icon}' failed to load — falling back to text");
-                        bitmap.DrawText(label ?? "");
-                    }
+                    bitmap.DrawLine(cx - (8f * scale), cy, cx - (2f * scale), cy + (6f * scale), White, stroke);
+                    bitmap.DrawLine(cx - (2f * scale), cy + (6f * scale), cx + (10f * scale), cy - (7f * scale), White, stroke);
                 }
                 else
                 {
-                    bitmap.DrawText(label ?? "");
+                    bitmap.DrawLine(cx - (7f * scale), cy - (7f * scale), cx + (7f * scale), cy + (7f * scale), White, stroke);
+                    bitmap.DrawLine(cx + (7f * scale), cy - (7f * scale), cx - (7f * scale), cy + (7f * scale), White, stroke);
                 }
 
+                var labelY = (Int32)(h * 0.66f);
+                bitmap.DrawText(label, 0, labelY, w, h - labelY, White, fontSize: (Int32)(15 * scale));
                 DrawApprovalBadge(bitmap, risk);
                 return bitmap.ToImage();
             }
+        }
+
+        /// <summary>A full-canvas black action face used by the other Answer-command widgets.</summary>
+        public static BitmapImage RenderWidgetAction(PluginImageSize imageSize, String label, String icon)
+        {
+            using (var bitmap = ButtonCanvas(imageSize))
+            {
+                bitmap.Clear(Background);
+                var w = bitmap.Width;
+                var h = bitmap.Height;
+                var scale = Math.Min(w, h) / 96f;
+
+                try
+                {
+                    var img = PluginResources.ReadImage("icons." + icon + ".png");
+                    var size = (Int32)(Math.Min(w, h) * 0.58);
+                    bitmap.DrawImage(img, (w - size) / 2, (Int32)(h * 0.08), size, size);
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Verbose(ex, $"KeyImage: widget icon '{icon}' failed to load");
+                }
+
+                var labelY = (Int32)(h * 0.68f);
+                bitmap.DrawText(label, 0, labelY, w, h - labelY, White, fontSize: (Int32)(14 * scale));
+                return bitmap.ToImage();
+            }
+        }
+
+        private static BitmapBuilder ButtonCanvas(PluginImageSize imageSize)
+        {
+            var width = imageSize.GetButtonWidth();
+            var height = imageSize.GetButtonHeight();
+            return width > 0 && height > 0
+                ? new BitmapBuilder(width, height)
+                : new BitmapBuilder(imageSize);
         }
 
         // A filled dot in the top-right corner. Amber = something wants an answer; red = that

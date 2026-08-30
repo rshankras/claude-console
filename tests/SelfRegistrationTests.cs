@@ -268,6 +268,74 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         /// <summary>
+        /// The approved hardware design is also the clean-install default. Keeping this assertion
+        /// on the LP5 catches the easy-to-miss failure where a developer rearranges live Options+
+        /// keys but ships the old profile to every new macOS and Windows installation.
+        /// </summary>
+        [Fact]
+        public void Mac_and_windows_defaults_use_the_approved_five_page_layout()
+        {
+            var expectedFirstPage = new[]
+            {
+                "SessionSlotCommand___1", "SessionSlotCommand___2", "SessionSlotCommand___3",
+                "ControlCommand___clear", "AnswerCommand___no", "AnswerCommand___yes",
+                "ControlCommand___esc", "ControlCommand___tab", "VoiceCommand",
+            };
+
+            var packaged = PressPage(PackagedProfilePath(), 0);
+            var macFallback = PressPage(RepoFile("profiles", "ClaudeConsole-Keypad.lp5"), 0);
+            var windows = PressPage(RepoFile("profiles", "ClaudeConsole-Windows.lp5"), 0);
+
+            AssertPage(expectedFirstPage, packaged);
+            AssertPage(expectedFirstPage, macFallback);
+            AssertPage(expectedFirstPage, windows);
+
+            // The other approved pages must remain present on both platforms too.
+            Assert.Equal(5, PressPageCount(PackagedProfilePath()));
+            Assert.Equal(5, PressPageCount(RepoFile("profiles", "ClaudeConsole-Windows.lp5")));
+        }
+
+        [Fact]
+        public void Packaged_preview_matches_the_approved_first_page()
+        {
+            using var zip = ZipFile.OpenRead(PackagedProfilePath());
+            var preview = (JsonArray)ReadJsonEntry(zip, "metadata/ProfilePreview.json")["buttonPages"];
+            var profile = PressPage(PackagedProfilePath(), 0);
+
+            Assert.Equal(9, preview.Count);
+            for (var i = 0; i < 9; i++)
+            {
+                Assert.Equal((Int32)profile[i]!["controlId"], (Int32)preview[i]!["controlId"]);
+                Assert.Equal((String)profile[i]!["pressAction"], (String)preview[i]!["actionName"]);
+            }
+            Assert.Equal("Dictate", (String)preview[8]!["displayName"]);
+        }
+
+        private static void AssertPage(String[] expectedSuffixes, JsonArray page)
+        {
+            Assert.Equal(expectedSuffixes.Length, page.Count);
+            for (var i = 0; i < expectedSuffixes.Length; i++)
+            {
+                Assert.EndsWith(expectedSuffixes[i], (String)page[i]!["pressAction"]!);
+            }
+        }
+
+        private static Int32 PressPageCount(String path)
+        {
+            using var zip = ZipFile.OpenRead(path);
+            var profile = ReadJsonEntry(zip, "ProfileInfo.json");
+            return ((JsonArray)profile["layout"]!["layoutModes"]![0]!["workspaces"]![0]!["pressPages"]!).Count;
+        }
+
+        private static JsonArray PressPage(String path, Int32 index)
+        {
+            using var zip = ZipFile.OpenRead(path);
+            var profile = ReadJsonEntry(zip, "ProfileInfo.json");
+            return (JsonArray)profile["layout"]!["layoutModes"]![0]!["workspaces"]![0]!
+                ["pressPages"]![index]!["controls"]!;
+        }
+
+        /// <summary>
         /// A bound voice key with no payload in the package is exactly the failure this whole file
         /// guards against: the action registers, the key looks live, and the press finds no helper.
         /// The profile above is only honest because the packer embeds the payload for both products.

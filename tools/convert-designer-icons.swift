@@ -1,9 +1,9 @@
 // convert-designer-icons.swift — renders the designer SVG set (assets/designer-icons/Colours,
 // variant "B" of the July 2026 icon pack) into the 96px PNGs the plugin embeds.
 //
-// Owns the icons listed in `mapping` + `recolors` below; tools/generate-icons.swift owns the
-// REST (state faces, wave frames, and icons the pack doesn't cover). The two sets are disjoint
-// on purpose — run either script without stepping on the other's output.
+// Owns every static icon listed in `mapping` + `recolors` below. Where the delivered pack has no
+// glyph, a small SVG in the same 43-unit copper line language lives beside it in White/. The only
+// assets left to tools/generate-icons.swift are the animated listening bars.
 //
 // Recolors: the pack ships one colour per glyph. Threshold/model variants (gauge_warn/crit,
 // brain_haiku/sonnet/opus) are produced by swapping the SVG's fill hex before rendering, so the
@@ -15,7 +15,7 @@ import AppKit
 let repo = FileManager.default.currentDirectoryPath
 // Neutral action/nav glyphs render from the WHITE set — one monochrome colour, the designer's
 // 2026-08 direction (a dedicated White/ variant was delivered alongside Colours/). The colour
-// variants (gauge warn/crit, brain tiers, Yes/No) render from Colours/, whose hex fills `recolor`
+// variants (gauge warn/crit and brain tiers) render from Colours/, whose hex fills `recolor`
 // can swap; a White SVG (fill="white") is deliberately left untouched by recolor.
 let whiteDir = repo + "/assets/designer-icons/White"
 let coloursDir = repo + "/assets/designer-icons/Colours"
@@ -30,6 +30,8 @@ let COPPER = "#CC7C5E"
 // SVG basename -> embedded icon basename (see preview sheet for the intended action).
 let mapping: [(String, String)] = [
     ("Brain", "brain"),                    // Model key fallback (brain_* variants below)
+    ("BusyBottom", "busy1"),              // Activity animation, frame 2
+    ("BusyTop", "busy0"),                 // Activity animation, frame 1
     ("Branch", "create_pr"),
     ("Bug", "fix_bug"),
     ("Build project", "refactor"),
@@ -48,7 +50,8 @@ let mapping: [(String, String)] = [
     ("GoToFolder", "project"),
     ("Info", "status"),
     ("ListTool", "log"),
-    ("Money", "cost"),
+    ("Cost", "cost"),
+    ("Deploy", "deploy"),
     ("Multi-toggleOff", "plan"),           // the Mode key (action id is still "plan")
     ("NewBrowserTab", "new_tab"),
     ("NewPresentation", "new_claude"),
@@ -60,11 +63,18 @@ let mapping: [(String, String)] = [
     ("ScrollUp", "scroll_up"),
     ("Security", "security"),
     ("Show", "review"),
-    ("Shrink Selection", "compact"),
+    ("Show", "review_core"),              // native review uses the approved eye language too
+    ("Screenshot", "screenshot"),
+    ("Compact", "compact"),
     ("SmartActions", "done"),              // ready state (Activity key + session faces)
     ("Speed", "gauge"),                    // context gauge, normal fill
     ("Tab", "tab"),
+    ("Terminal", "terminal"),
     ("VoiceDictation", "voice"),
+    ("Waiting", "waiting"),
+    ("WindowAdd", "new_claude_window"),
+    ("WindowNext", "next_window"),
+    ("WindowPrevious", "prev_window"),
 ]
 
 // (source SVG, output name, fill hex) — colour variants of a designer glyph.
@@ -74,8 +84,6 @@ let recolors: [(String, String, String)] = [
     ("Brain", "brain_haiku", GREEN),       // fast
     ("Brain", "brain_sonnet", BLUE),       // balanced
     ("Brain", "brain_opus", PURPLE),       // top tier
-    ("Radiobutton-Check", "yes", GREEN),   // approval: icon stays coloured until the tile carries it (#40/#42)
-    ("Remove", "no", RED),                 // approval: ditto
 ]
 
 let size: CGFloat = 96
@@ -108,7 +116,9 @@ func recolor(_ svgText: String, to hex: String) -> String {
 // Tint a WHITE glyph (fill="white") to `hex`. The White SVGs are single-fill masks, so this is
 // how the neutral set takes the copper identity colour. fill="none" backgrounds are left alone.
 func tintWhite(_ svgText: String, to hex: String) -> String {
-    return svgText.replacingOccurrences(of: "fill=\"white\"", with: "fill=\"" + hex + "\"")
+    return svgText
+        .replacingOccurrences(of: "fill=\"white\"", with: "fill=\"" + hex + "\"")
+        .replacingOccurrences(of: "stroke=\"white\"", with: "stroke=\"" + hex + "\"")
 }
 
 // Compose voice_draft IN the designer's language: their VoiceDictation mic (scaled, right) plus

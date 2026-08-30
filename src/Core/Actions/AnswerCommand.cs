@@ -30,6 +30,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public AnswerCommand()
             : base()
         {
+            // Yes/No are full coloured live faces in the supplied design. Widget rendering
+            // bypasses Options+' inset icon layer without freezing the action into a static .ict.
+            // This flag applies to the whole dynamic command, so Up/Down/Enter also render their
+            // own complete faces below.
+            this.SetWidget(true);
+
             // Repaint Yes/No when the targeted session starts or stops waiting, so the badge is live.
             BridgeManager.Instance.Grid.OnGridChanged += () =>
             {
@@ -37,9 +43,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 this.ActionImageChanged(No);
             };
 
-            this.AddParameter(Yes, "Allow", "Answer")
+            this.AddParameter(Yes, "Yes", "Answer")
                 .SetDescription("Type \"yes\" and press Enter — for plain-text questions (use Up/Down/Return for numbered menus)");
-            this.AddParameter(No, "Deny", "Answer")
+            this.AddParameter(No, "No", "Answer")
                 .SetDescription("Type \"no\" and press Enter — for plain-text questions");
             this.AddParameter(Up, "Arrow Up", "Answer")
                 .SetDescription("Move the selection up in a Claude Code menu (Up arrow)");
@@ -74,18 +80,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             PluginLog.Info($"AnswerCommand: {actionParameter}");
         }
 
-        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
+        private static String LabelFor(String actionParameter)
         {
             switch (actionParameter)
             {
-                case Yes: return "Allow";
-                case No: return "Deny";
+                case Yes: return "Yes";
+                case No: return "No";
                 case Up: return "Up";
                 case Down: return "Down";
                 case Enter: return "Enter";
                 default: return actionParameter;
             }
         }
+
+        // Every widget face draws its own label. A zero-width display name prevents Options+ from
+        // adding a second, static label strip below the live bitmap.
+        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
+            "\u200B";
 
         // The risk of whatever the targeted session is waiting on — i.e. what pressing Yes right now
         // would approve. None when nothing is pending, which leaves the key looking normal.
@@ -115,17 +126,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 default: color = KeyImage.Slate; break; // Up, Down
             }
 
-            var label = this.GetCommandDisplayName(actionParameter, imageSize);
+            var label = LabelFor(actionParameter);
 
             // Yes/No carry an approval badge for the session they'd answer: amber when it's waiting,
             // red when what's waiting is destructive. That's the "glance from across the room" cue —
             // you can see an answer is wanted, and whether to look first, before pressing anything.
             if (actionParameter == Yes || actionParameter == No)
             {
-                return KeyImage.RenderWithApprovalBadge(imageSize, label, color, actionParameter, TargetRisk());
+                return KeyImage.RenderDecisionTile(
+                    imageSize, label, color,
+                    approve: actionParameter == Yes,
+                    // The badge belongs on the action that authorizes the request. Rejecting is
+                    // safe, and duplicating the same dot on No made both choices look cautionary.
+                    risk: actionParameter == Yes ? TargetRisk() : ApprovalRisk.None);
             }
 
-            return KeyImage.Render(imageSize, label, color, actionParameter);
+            return KeyImage.RenderWidgetAction(imageSize, label, actionParameter);
         }
     }
 }
