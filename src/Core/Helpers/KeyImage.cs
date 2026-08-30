@@ -21,7 +21,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         // ("Always allow", #275DA3 in the same frames, gets a constant when a key actually binds it.)
         public static readonly BitmapColor Green  = new BitmapColor(0x4F, 0xA9, 0x75);   // Allow
         public static readonly BitmapColor Red    = new BitmapColor(0xDA, 0x3D, 0x29);   // Deny / risk
-        public static readonly BitmapColor Amber  = new BitmapColor(0xE2, 0x9D, 0x37);   // waiting on approval
+        public static readonly BitmapColor Orange = new BitmapColor(0xE2, 0x9D, 0x37);   // active/routed session
+        public static readonly BitmapColor Amber  = Orange;                              // approval badge
         public static readonly BitmapColor Coral  = new BitmapColor(0xCC, 0x7C, 0x5E);   // Claude identity
         public static readonly BitmapColor Blue   = new BitmapColor(0x60, 0xA5, 0xFA);
         public static readonly BitmapColor Purple = new BitmapColor(0xA7, 0x8B, 0xFA);
@@ -86,25 +87,28 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         /// <summary>
         /// The session face is split in two: the TITLE region is the top 75% of the key, and the
-        /// bottom 25% is a reserved band (drawn black for now).
+        /// bottom 25% is the state bar.
         /// </summary>
         private const Single SessionTitleShare = 0.75f;
 
         /// <summary>
-        /// A session-grid key face: a plain BLACK key, divided 75/25. The session's project
-        /// (directory) name is centred within the top 75%; the bottom 25% is left empty.
+        /// A session-grid key face divided 75/25. The session's project (directory) name is centred
+        /// within the black title region; the bottom region contains its state. Orange marks the
+        /// active/routed session and grey marks inactive sessions — the state word is independent.
         ///
         /// The name lives in the bitmap rather than the service's own label strip because that
         /// strip is pinned to the bottom edge; centring needs the face. Long names wrap to two
         /// lines (DrawText clips overflow instead of wrapping). An empty slot is the bare black face.
         /// </summary>
-        public static BitmapImage RenderSessionSlot(PluginImageSize imageSize, String name)
+        public static BitmapImage RenderSessionSlot(
+            PluginImageSize imageSize, String name, String stateWord,
+            BitmapColor barColor, Boolean darkText)
         {
             using (var bitmap = new BitmapBuilder(imageSize))
             {
                 bitmap.Clear(Background);
 
-                if (String.IsNullOrWhiteSpace(name))
+                if (String.IsNullOrWhiteSpace(name) || String.IsNullOrWhiteSpace(stateWord))
                 {
                     return bitmap.ToImage();   // empty slot: bare black face
                 }
@@ -125,6 +129,14 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     bitmap.DrawText(lines[i], pad, top + (i * lineH), w - (2 * pad), lineH, White, fontSize: (Int32)(14 * scale));
                 }
+
+                var barY = titleH;
+                var barH = h - barY;
+                bitmap.FillRectangle(0, barY, w, barH, barColor);
+                bitmap.DrawText(
+                    stateWord, 0, barY, w, barH,
+                    darkText ? Dark : White,
+                    fontSize: (Int32)(14 * scale));
 
                 return bitmap.ToImage();
             }

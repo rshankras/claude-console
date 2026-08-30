@@ -17,10 +17,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// Six slots fill one 9-key page alongside Yes / No / Voice. Empty slots draw a blank face and
     /// do nothing on press.
     ///
-    /// Face layout (2026-08-30, owner's call): a plain BLACK key with the project (directory)
-    /// name centred in the middle — no state bar, no selection brackets, no context %. The name is
-    /// drawn in the bitmap (the service label strip is pinned to the bottom edge, so it cannot be
-    /// centred) and the strip itself is blanked.
+    /// Face layout (2026-08-30 design): the project (directory) name is centred in the black title
+    /// region, with the live state in a bar along the bottom. Orange identifies the currently
+    /// active/routed session; inactive sessions use grey. The word in the bar says what that session
+    /// is doing (Thinking / Allow? / Waiting / Complete), independently of the bar colour.
     /// </summary>
     public class SessionSlotCommand : PluginDynamicCommand
     {
@@ -73,16 +73,35 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
             "\u200B";
 
-        // A black key with the project (directory) name in the middle; an empty slot is bare black.
+        // A black title region with a state bar below it; an empty slot is bare black.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             if (!TryGetSlot(actionParameter, out var slot) || _bridge.Grid.SlotSession(slot) is not { } session)
             {
-                return KeyImage.RenderSessionSlot(imageSize, null);
+                return KeyImage.RenderSessionSlot(imageSize, null, null, KeyImage.Gray, darkText: false);
             }
 
+            var active = session.SessionKey == _bridge.TargetTty();
             var name = String.IsNullOrWhiteSpace(session.Project) ? _bridge.Agent.DisplayName : session.Project;
-            return KeyImage.RenderSessionSlot(imageSize, name);
+            var barColor = active ? KeyImage.Orange : KeyImage.Gray;
+            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session), barColor, darkText: active);
+        }
+
+        // Colour communicates routing; this word communicates session state. Keeping those two
+        // signals independent means an inactive session can still say "Allow?" without looking active.
+        private static String StateWord(GridSession session)
+        {
+            if (session.Risk != ApprovalRisk.None)
+            {
+                return "Allow?";
+            }
+
+            switch (session.State)
+            {
+                case "busy": return "Thinking";
+                case "waiting": return "Waiting";
+                default: return "Complete";
+            }
         }
 
         // The key is ~12 characters wide; the tooltip carries the full detail.
