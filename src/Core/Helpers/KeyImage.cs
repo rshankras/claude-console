@@ -175,7 +175,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var radius = 17f * scale;
                 var stroke = Math.Max(3f, 4f * scale);
 
+                // Draw a second concentric outline one rendered pixel inward. The SDK circle's
+                // single outline looked lighter than the check/X on the keypad OLED; this adds
+                // exactly 1 px of ring weight without changing its outside diameter or spacing.
                 bitmap.DrawCircle(cx, cy, radius, White);
+                bitmap.DrawCircle(cx, cy, radius - 1f, White);
                 if (approve)
                 {
                     bitmap.DrawLine(cx - (8f * scale), cy, cx - (2f * scale), cy + (6f * scale), White, stroke);
