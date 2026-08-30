@@ -11,7 +11,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// (working / waiting on you / ready). Pressing one focuses that Terminal tab AND pins every
     /// other key to it, so you can answer a prompt in session 2 while looking at session 1 — or at
     /// a browser. The pin holds until you press another session key or that session exits; it is
-    /// deliberately NOT undone by switching Terminal tabs (see BridgeManager.TargetTty). Slots are
+    /// deliberately NOT undone by switching Terminal tabs (see BridgeManager.RoutingTty); pressing the
+    /// pinned slot AGAIN releases it. Slots are
     /// stable: when a session exits, the others keep their keys.
     ///
     /// Six slots fill one 9-key page alongside Yes / No / Voice. Empty slots draw a blank face and
@@ -143,7 +144,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return KeyImage.RenderSessionSlot(imageSize, null, null, selected: false);
             }
 
-            var selected = session.SessionKey == _bridge.TargetTty();
+            var selected = session.SessionKey == _bridge.RoutingTty();
             // Null CtxPercent (no context used yet) draws nothing — a blank beats a misleading "0%".
             return KeyImage.RenderSessionSlot(
                 imageSize, IconFor(session.State), session.CtxPercent, selected, session.Risk);

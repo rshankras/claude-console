@@ -32,6 +32,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         // running agent's own name when a session has not reported a project yet.
         public String Project { get; set; }
 
+        /// <summary>
+        /// The file this session's agent appends to during a turn, when it reports one (#30). Held
+        /// here so a caller can reach it WITHOUT re-reading and re-parsing the session's state file:
+        /// the grid has already done both by the time anyone asks.
+        /// </summary>
+        public String TranscriptPath { get; set; }
+
         /// <summary>"busy" | "waiting" | "ready" — from the activity hooks.</summary>
         public String State { get; set; } = "ready";
 

@@ -129,8 +129,13 @@ does not survive switching to Terminal. The registration document has no priorit
 `defaultProfileName`, `isEnabled` — nothing else), so there is no hook for "Terminal, but running
 Codex".
 
-Registration itself is fine: `@_claudeconsole` and `@_codexconsole` coexist on disk, each with its
-own profile, and neither disturbs the other. It is *activation* that is exclusive.
+> **Superseded 2026-08-28 (#23).** Both plugins are universal now — `HasNoApplication`, no
+> registration, no packaged profile — so there is no activation to be exclusive about and the two
+> products can be installed together. The rest of this section and the next are kept as the
+> record of why the binding was a problem; nothing in them describes the shipping code.
+
+Registration itself was fine: `@_claudeconsole` and `@_codexconsole` coexisted on disk, each with
+its own profile, and neither disturbed the other. It was *activation* that was exclusive.
 
 **This does not overturn shipping two products.** The constraint only affects someone running both
 agents, which is a minority; for a single-agent user the other plugin isn't installed and nothing
@@ -151,7 +156,7 @@ and the hook already stamps `agent` into every file. What is missing is a per-se
 Everything else must still be namespaced per product: IPC root, `@_` registration, profile GUIDs,
 package name, crash-marker assembly version, `~/.<product>/` runtime home.
 
-## Uninstall leaves the registration behind
+## Uninstall leaves the registration behind (historical — no registration since 2.2.0)
 
 Uninstalling through Options+ removes the PLUGIN and nothing else. A sideloaded install never gets
 an application entry from the service, so the plugin writes one itself — and that entry survives.

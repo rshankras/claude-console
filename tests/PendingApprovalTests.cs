@@ -150,14 +150,41 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void Waiting_with_no_payload_still_asks_for_an_answer()
+        public void Waiting_with_no_payload_does_not_claim_an_approval_is_pending()
         {
-            // Older Claude Code has no PermissionRequest hook, and an idle prompt has no tool. The
-            // key should still show that something wants you — just without the risk detail.
+            // Reversed deliberately (#51). This used to badge, on the grounds that an older Claude
+            // Code has no PermissionRequest hook so SOMETHING wanting you was worth showing. On the
+            // device that made every idle session badge: Claude's Notification hook marks an idle
+            // prompt "waiting" too, and with three sessions open all three wore the amber dot, so
+            // it stopped distinguishing anything.
+            //
+            // The two cases were always separable — `permission` mode writes the payload AND the
+            // state, Notification writes only the state. No payload, no approval claim. The key
+            // still shows its waiting face; see the state assertion below.
+            //
+            // The cost, accepted: on a Claude Code too old to have the hook, a real approval shows
+            // the waiting face without the amber badge. The plugin wires that hook itself.
             WriteSession("ttys001");
             WriteActivity("ttys001", "waiting");
 
-            Assert.Equal(ApprovalRisk.Normal, Session().Risk);
+            var session = Session();
+
+            Assert.Equal(ApprovalRisk.None, session.Risk);
+            Assert.Equal("waiting", session.State);   // still visibly waiting, just not badged
+        }
+
+        [Fact]
+        public void Waiting_WITH_a_payload_still_badges()
+        {
+            // The case the badge exists for must be untouched by the above.
+            WriteSession("ttys001");
+            WriteActivity("ttys001", "waiting");
+            WritePending(@"{""tool_name"":""Bash"",""tool_input"":{""command"":""ls -la""}}");
+
+            var session = Session();
+
+            Assert.NotEqual(ApprovalRisk.None, session.Risk);
+            Assert.Equal("Bash", session.PendingTool);
         }
 
         [Fact]

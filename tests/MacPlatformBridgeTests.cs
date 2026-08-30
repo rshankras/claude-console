@@ -138,6 +138,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var mac = new MacPlatformBridge(AgentProcessMatcher.ClaudeCode)
             {
                 PsRunner = () =>
+                    "  500     1 ??       /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal\n" +   // the owning terminal — a session without one takes no key (#29)
                     "  501   500 ttys003  /opt/homebrew/bin/node /opt/homebrew/bin/claude\n" +
                     "  502   500 ttys004  /opt/homebrew/bin/node /opt/homebrew/bin/claude\n" +
                     "  600   500 ??       /Applications/Claude.app/Contents/MacOS/Claude\n",

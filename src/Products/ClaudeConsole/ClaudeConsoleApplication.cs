@@ -3,41 +3,27 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System;
 
     /// <summary>
-    /// Associates the plugin with Terminal.app, making this an APPLICATION plugin (yaml capability
-    /// HasApplication). That association is what lets the package ship an auto-imported default
-    /// profile (package/profiles/DefaultProfile70.lp5) — the mechanism Vizhi uses, so a fresh
-    /// install gets a working keypad layout with no manual .lp5 import.
+    /// The plugin's ClientApplication — deliberately EMPTY, because this is a universal plugin.
     ///
-    /// These names must be REAL: the 1.5-era crash that disabled the plugin happened when
-    /// HasApplication was enabled while this class still returned empty strings — an application
-    /// with no identity. Terminal.app is the right binding on macOS: every typing key targets
-    /// Claude's Terminal tab by TTY, and the hand-imported profile was always Terminal-bound.
+    /// It has to exist. On 2026-08-28 the universal change deleted it along with the Terminal
+    /// binding it carried, and the Logi Plugin Service then refused the assembly outright: "Cannot
+    /// load plugin from …ClaudeConsolePlugin.dll", then "added to disabled plugins list" — no crash
+    /// marker, no reason in any log, and the same DLL loaded fine in a plain .NET host. Rebuilding
+    /// the previous commit into the same dev link loaded; probing Spotify — the universal plugin
+    /// Logitech's QA cited as the model — showed a SpotifyApplication : ClientApplication that
+    /// overrides nothing. The service requires the class; the yaml capability (HasNoApplication)
+    /// decides whether it binds anything. Both products lost an afternoon to this once; do not
+    /// delete it again.
     ///
-    /// On Windows the equivalent host is Windows Terminal, and GetProcessName is what binds the
-    /// profile there — but this class runs on BOTH platforms, so the name must be chosen at
-    /// runtime. 1.8.0-1.8.4 hardcoded "WindowsTerminal", which named a process that does not
-    /// exist on macOS: the service then registered no application at all, so a fresh macOS
-    /// install created no "Claude Console" entry and never imported the layout. Nothing failed
-    /// loudly — the plugin loaded, its actions appeared, and only the application row was empty.
-    /// Existing installs were unaffected (their registration was already on disk), which is why
-    /// it took a clean install to surface.
+    /// Nothing is overridden on purpose. GetProcessName/GetBundleName return "" from the base and
+    /// that is correct under HasNoApplication. It was lethal only under HasApplication — the 1.5-era
+    /// crash was this same empty shape declared as an APPLICATION plugin, which asked the service
+    /// to associate a profile with an application that had no identity.
     /// </summary>
     public class ClaudeConsoleApplication : ClientApplication
     {
         public ClaudeConsoleApplication()
         {
         }
-
-        // The host terminal's process name ON THIS PLATFORM. Never a constant: a name belonging to
-        // the other OS reads as an application that isn't installed, and the registration is
-        // silently skipped. (No ".exe" — the SDK matches on the bare process name.)
-        protected override String GetProcessName() =>
-            OperatingSystem.IsWindows() ? "WindowsTerminal" : "Terminal";
-
-        // macOS bundle id of the associated application.
-        protected override String GetBundleName() => "com.apple.Terminal";
-
-        // Terminal ships with macOS, so "not installed" isn't a state worth probing for.
-        public override ClientApplicationStatus GetApplicationStatus() => ClientApplicationStatus.Unknown;
     }
 }
