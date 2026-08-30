@@ -22,6 +22,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         public static readonly BitmapColor Green  = new BitmapColor(0x4F, 0xA9, 0x75);   // Allow
         public static readonly BitmapColor Red    = new BitmapColor(0xDA, 0x3D, 0x29);   // Deny / risk
         public static readonly BitmapColor Amber  = new BitmapColor(0xE2, 0x9D, 0x37);   // approval badge
+        // Hardware-calibrated from the mockup's #E5A943: the keypad OLED pushes that source colour
+        // yellow, so reduce green/blue while preserving a brighter orange than Claude's coral.
+        public static readonly BitmapColor SelectionOrange = new BitmapColor(0xE2, 0x8A, 0x32); // active session bar
         public static readonly BitmapColor Coral  = new BitmapColor(0xCC, 0x7C, 0x5E);   // Claude identity
         public static readonly BitmapColor Blue   = new BitmapColor(0x60, 0xA5, 0xFA);
         public static readonly BitmapColor Purple = new BitmapColor(0xA7, 0x8B, 0xFA);
