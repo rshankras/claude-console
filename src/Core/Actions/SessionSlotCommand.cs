@@ -90,11 +90,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             var active = session.SessionKey == _bridge.RoutingTty();
             var name = String.IsNullOrWhiteSpace(session.Project) ? _bridge.Agent.DisplayName : session.Project;
-            // Use Claude's copper identity colour for the routed session. The Logitech amber used
-            // previously looks correct in Options+ but shifts visibly yellow on the keypad OLED;
-            // this is the same colour already proven by the Claude action icons on that hardware.
-            var barColor = active ? KeyImage.Coral : KeyImage.Gray;
-            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session), barColor, darkText: active);
+            // Routing is a distinct state cue, not Claude branding: use the golden orange sampled
+            // from the approved mockup rather than the coral used by the action icons. The mockup
+            // keeps the state word white on both active and inactive bars.
+            var barColor = active ? KeyImage.SelectionOrange : KeyImage.Gray;
+            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session), barColor, darkText: false);
         }
 
         // Colour communicates routing; this word communicates session state. Keeping those two
