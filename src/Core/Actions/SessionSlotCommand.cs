@@ -41,7 +41,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             for (var slot = 1; slot <= SessionRegistry.SlotCount; slot++)
             {
                 this.AddParameter(slot.ToString(), $"Session {slot}", "Sessions")
-                    .SetDescription($"Claude session {slot}: shows its project, state and context usage; press to focus that Terminal tab and keep every other key aimed at it until you pick another session");
+                    .SetDescription($"Claude session {slot}: shows its project and what it is doing; press to focus that Terminal tab and keep every other key aimed at it until you pick another session (press again to release)");
             }
 
             _bridge.Grid.OnGridChanged += this.OnGridChanged;

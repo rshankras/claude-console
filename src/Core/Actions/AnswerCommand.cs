@@ -7,17 +7,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// <summary>
     /// Answer keys (group "Answer") — for responding when Claude Code prompts a question.
     /// One auto-discovered command, one SDK action per response via AddParameter.
-    ///   Yes    → types "yes" + Enter   (plain-text questions like "Should I proceed?")
-    ///   No     → types "no"  + Enter
+    ///   Yes    → Return, ONLY on a captured permission prompt (confirms the highlighted option)
+    ///   No     → Escape, ONLY on a captured permission prompt (dismisses it; the tool never runs)
     ///   Up     → Up-arrow keystroke    (move the selection up in a menu)
     ///   Down   → Down-arrow keystroke  (move the selection down in a menu)
     ///   Enter  → Return keystroke      (confirm the highlighted menu option / submit)
     ///
     /// Up/Down/Enter drive Claude Code's numbered selection menus (permission prompts,
-    /// AskUserQuestion, plan-mode confirmation): arrow to an option, then Enter. Yes/No type a
-    /// literal reply for free-text questions — they do NOT pick a numbered menu option (use
-    /// Up/Down + Enter for those). All sent as raw System Events input to the focused terminal,
-    /// the same path the prompt keys use; needs Accessibility (already required by the plugin).
+    /// AskUserQuestion, plan-mode confirmation): arrow to an option, then Enter. Yes/No answer a
+    /// permission prompt the plugin can SEE, and beep instead of guessing when there is none (see
+    /// AnswerApproval / Decide below — #21). All sent as key codes to the focused terminal, the
+    /// same path the prompt keys use; needs Accessibility (already required by the plugin).
     /// </summary>
     public class AnswerCommand : PluginDynamicCommand
     {
@@ -44,9 +44,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             };
 
             this.AddParameter(Yes, "Yes", "Answer")
-                .SetDescription("Type \"yes\" and press Enter — for plain-text questions (use Up/Down/Return for numbered menus)");
+                .SetDescription("Approve the permission prompt Claude is waiting on (confirms the highlighted option); beeps if there is nothing to approve");
             this.AddParameter(No, "No", "Answer")
-                .SetDescription("Type \"no\" and press Enter — for plain-text questions");
+                .SetDescription("Reject the permission prompt Claude is waiting on (dismisses it, the tool does not run); beeps if there is nothing to reject");
             this.AddParameter(Up, "Arrow Up", "Answer")
                 .SetDescription("Move the selection up in a Claude Code menu (Up arrow)");
             this.AddParameter(Down, "Arrow Down", "Answer")

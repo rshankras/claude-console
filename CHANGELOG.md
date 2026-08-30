@@ -6,7 +6,21 @@ All notable changes to Claude Console are documented here. Format based on
 ## [2.2.0] — Unreleased
 
 The Logitech QA retest release. Twenty-five findings were filed against 2.0.1; this release
-answers the ones that were ours to answer, and changes one thing about what the plugin *is*.
+answers the ones that were ours to answer, changes one thing about what the plugin *is* — and
+carries the keypad design Logitech's designers drew for it.
+
+### Added
+- **The Logitech design.** Every action icon is now the designer's glyph in one copper monochrome
+  (Claude's identity colour); colour is reserved for state. **Session keys** are a full-surface
+  face: the project name on black with a state bar along the bottom — *Thinking* / *Waiting* /
+  *Allow?* / *Complete* — highlighted for the pinned session, grey for the rest. **Yes / No** are
+  full green / red tiles with a circled check / × and the label inside; the approval badge stays on
+  Yes only. The **Voice** key is now called **Dictate**. The importable layouts (`ClaudeConsole-
+  Keypad.lp5`, `-Windows.lp5`) carry the approved first page — Session 1·2·3 / Clear · No · Yes /
+  Esc · Tab · Dictate — with the approval keys deliberately off the Esc slot.
+- **Screenshot key** (Core) — capture a region with the system picker and hand the image to the
+  *current* conversation, unsent, so you add the question. It has been in the plugin since 2.1.0
+  and undocumented until now; first use asks for Screen Recording.
 
 ### Changed
 - **Live status is opt-in.** The plugin no longer edits `~/.claude/settings.json` on load. The
@@ -57,6 +71,20 @@ answers the ones that were ours to answer, and changes one thing about what the 
 - The icon converter wrote to a directory that no longer existed and reported success.
 - `uninstall.sh` ships with the plugin and lives outside the package, so it is there after an
   uninstall; the README's recovery instructions name the installed paths.
+
+### Fixed — Windows (verified on the MX keypad, 2026-08-30)
+- **Voice ships.** No package had ever carried the Windows whisper bundle, so packaged voice could
+  not work (#47). The release script now refuses to pack without a bundle that has transcribed on
+  Windows.
+- **No and Esc reach Claude Code.** The inject helper sent every named key without its character,
+  and Node's console reader identifies Escape by exactly that — so Yes answered approvals while No
+  and Esc did nothing, and the log claimed otherwise. Windows' own version of the No-key defect.
+- **A navigation press with no Windows Terminal window is refused, with the reason** (#33): it
+  beeps and posts a "Windows Terminal required" card once per load instead of issuing a `wt`
+  command that quietly acts on nothing — or on whatever window happens to exist.
+- Known, not yet fixed: an Options+ uninstall on Windows leaves the live-status hooks in
+  `settings.json` and there is no cleanup script there yet (#55) — turn live status off before
+  uninstalling.
 
 ## [2.1.0] — 2026-08-21
 
