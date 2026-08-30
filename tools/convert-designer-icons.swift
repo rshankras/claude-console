@@ -86,6 +86,15 @@ let recolors: [(String, String, String)] = [
     ("Brain", "brain_opus", PURPLE),       // top tier
 ]
 
+// (source SVG, output name) — glyphs rendered WHITE, untinted: they sit on a coloured tile
+// (KeyImage.RenderDecisionTile paints the Allow/Deny state colour underneath), so the glyph
+// itself stays the frame's white. Drawn in the pack's 43-unit line language, 2.7-unit stroke,
+// ring and mark sharing one weight — the shape the 2026-08 frames show.
+let whites: [(String, String)] = [
+    ("Allow", "allow"),                    // circled check, Yes key
+    ("Deny", "deny"),                      // circled x, No key
+]
+
 let size: CGFloat = 96
 
 func renderSvg(_ svgText: String, to path: String) -> Bool {
@@ -164,6 +173,11 @@ for (svg, name, hex) in recolors {
     let svgPath = coloursDir + "/" + svg + ".svg"
     guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
     if renderSvg(recolor(text, to: hex), to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
+}
+for (svg, name) in whites {
+    let svgPath = whiteDir + "/" + svg + ".svg"
+    guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
+    if renderSvg(text, to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
 }
 print("OK(\(ok.count)): \(ok.joined(separator: ", "))")
 print("FAIL(\(fail.count)): \(fail.joined(separator: ", "))")

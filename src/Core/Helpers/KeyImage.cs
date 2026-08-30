@@ -158,6 +158,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// A full-key Yes/No face matching the supplied Logitech design: solid state colour,
         /// white circled decision glyph, and a white label. It remains a live widget, so approval
         /// badges can still update without Options+ creating a static icon override.
+        ///
+        /// The glyph is the designer-pipeline PNG (icons/allow.png, icons/deny.png — a ring and a
+        /// mark sharing one 2.7-unit stroke, drawn in the pack's 43-unit language), not SDK
+        /// primitives: BitmapBuilder.DrawCircle has no stroke width, so a hand-drawn ring could
+        /// only ever be 1 px against a 4 px mark, and on the device the check broke out through
+        /// the ring. The PNG's circle spans ~74% of its box; drawn at half the tile's width it
+        /// lands at the frame's ~37%-of-tile circle, centred a little above the middle.
         /// </summary>
         public static BitmapImage RenderDecisionTile(
             PluginImageSize imageSize, String label, BitmapColor color,
@@ -170,25 +177,18 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var w = bitmap.Width;
                 var h = bitmap.Height;
                 var scale = Math.Min(w, h) / 96f;
-                var cx = w / 2f;
-                var cy = h * 0.38f;
-                var radius = 17f * scale;
-                var stroke = Math.Max(3f, 4f * scale);
 
-                // Draw a second concentric outline one rendered pixel inward. The SDK circle's
-                // single outline looked lighter than the check/X on the keypad OLED; this adds
-                // exactly 1 px of ring weight without changing its outside diameter or spacing.
-                bitmap.DrawCircle(cx, cy, radius, White);
-                bitmap.DrawCircle(cx, cy, radius - 1f, White);
-                if (approve)
+                var glyph = approve ? "allow" : "deny";
+                var size = (Int32)(Math.Min(w, h) * 0.50);
+                var cy = h * 0.42f;
+                try
                 {
-                    bitmap.DrawLine(cx - (8f * scale), cy, cx - (2f * scale), cy + (6f * scale), White, stroke);
-                    bitmap.DrawLine(cx - (2f * scale), cy + (6f * scale), cx + (10f * scale), cy - (7f * scale), White, stroke);
+                    var img = PluginResources.ReadImage("icons." + glyph + ".png");
+                    bitmap.DrawImage(img, (w - size) / 2, (Int32)(cy - (size / 2f)), size, size);
                 }
-                else
+                catch (Exception ex)
                 {
-                    bitmap.DrawLine(cx - (7f * scale), cy - (7f * scale), cx + (7f * scale), cy + (7f * scale), White, stroke);
-                    bitmap.DrawLine(cx + (7f * scale), cy - (7f * scale), cx - (7f * scale), cy + (7f * scale), White, stroke);
+                    PluginLog.Verbose(ex, $"KeyImage: decision glyph '{glyph}' failed to load — tile keeps colour + label");
                 }
 
                 var labelY = (Int32)(h * 0.66f);
