@@ -52,7 +52,7 @@ Runs the C# unit tests (xUnit — injection guard, IPC file permissions, stale-f
 ## Icons and profiles
 
 - Icons are the designer's SVG pack rendered to 96 px PNGs by `swift tools/convert-designer-icons.swift` (run from the repo root). Neutral glyphs are tinted to Claude's copper; state icons keep their colour; the Yes/No glyphs render white for their coloured tiles. The SDK cannot tint at draw time, so colour is fixed here.
-- The importable layouts in `profiles/` carry the approved first page; `python3 tools/sync-default-profiles.py` rewrites page one (and the preview) of both, and `tests/KeypadLayoutTests.cs` guards the result. The Windows profile derives from the Keypad one via `tools/windows/make-windows-profile.sh`.
+- The importable layouts in `profiles/` carry the approved first page; `python3 tools/sync-default-profiles.py` rewrites page one (and the preview) of both, and `tests/KeypadLayoutTests.cs` guards the result. The strip of thumbnails Options+ shows in its profile picker is static and is *not* re-rendered on import — `python3 tools/render-profile-preview.py` redraws the nine first-page thumbnails from the plugin's own icons and faces into both profiles; run it after the sync whenever the design or the first page changes. The Windows profile derives from the Keypad one via `tools/windows/make-windows-profile.sh`.
 
 ## Building & packaging
 
