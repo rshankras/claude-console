@@ -146,6 +146,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.False(new ClaudeCodeAdapter().Capabilities.HooksNeedTrust);
         }
 
+        [Fact]
+        public void OnlyClaudeCodeWiresThroughTheUsersSettingsFile()
+        {
+            // Claude Code reads hooks + statusline from ~/.claude/settings.json, so enabling live
+            // status means editing the user's file — which is why it is opt-in (#31). Codex gets
+            // its own ~/.codex/hooks.json behind its own trust prompt, so it has no such switch.
+            Assert.True(new ClaudeCodeAdapter().Capabilities.SettingsFileWiring);
+            Assert.False(new CodexCliAdapter().Capabilities.SettingsFileWiring);
+        }
+
         /// <summary>
         /// A capability describes what the agent can HONESTLY REPORT HERE, which for Codex means
         /// per-OS: its hook runner creates no process on Windows (hardware-proven, see

@@ -67,6 +67,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             // keys amber on evidence that does not exist.
             ApprovalSignal = !OperatingSystem.IsWindows(),  // PermissionRequest hook (macOS)
             HooksNeedTrust = !OperatingSystem.IsWindows(),  // no hooks installed on Windows at all
+            SettingsFileWiring = false,  // our own ~/.codex/hooks.json, gated by Codex's trust prompt — no Enable/Disable keys
 
             MultiConsumerHooks = true,   // matcher groups; concurrent handlers per event
             ImageInConversation = true,  // not via the composer — the MODEL reads the file with its
@@ -129,6 +130,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // Best-effort, and the only reader of an unstable format in the plugin — it
                 // returns null rather than a guess whenever the transcript surprises it.
                 CtxPercent = CodexContextReader.PercentFrom(snap.TranscriptPath),
+                // The rollout file. Codex reports its own activity, so the stall rule does not
+                // currently consult this — it is surfaced so the two agents describe themselves the
+                // same way, and NOT as a claim that Codex's stall behaviour has been verified (#30
+                // says a Codex equivalent needs its own check, and it has not had one).
+                TranscriptPath = snap.TranscriptPath,
             };
         }
 

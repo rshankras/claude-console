@@ -7,24 +7,22 @@
 #   ApplicationInfo.json   "processOrBundleName": "com.apple.Terminal"
 #   ProfileInfo.json       "applicationName":     "com.apple.terminal"
 #
-# On Windows the plugin registers its application by PROCESS name (WindowsTerminal — see
-# ClaudeConsoleApplication.GetProcessName), so a mac bundle id matches nothing and the service
-# silently skips the import. That is the "plugin installed but no profile" symptom.
+# On Windows the host is Windows Terminal, matched by PROCESS name, so a mac bundle id matches
+# nothing and the service silently skips the import. That is the "no profile" symptom.
 #
 # So: same layout, same keys, same GUID-stamped action ids — only the application binding and the
 # profile GUID change. A fresh profile GUID keeps the two from deduping against each other.
 #
-# THIS IS A MANUAL-IMPORT ARTIFACT, NOT AN AUTO-IMPORTED ONE. The service finds the packaged
-# profile by a FIXED filename — PluginApi.dll has FindDefaultProfileFilePath /
-# DefaultProfileFileName / ProfilesDirectoryName and no filename format literal, i.e. the name
-# "DefaultProfile<deviceType>.lp5" is built at runtime. So a package can carry exactly ONE
-# auto-imported profile per device type, and on a cross-platform package that one file can only
-# carry one platform's application binding. macOS keeps auto-import; Windows imports this by hand
-# (Options+ -> profile menu -> import), which is the same path the plugin used before 1.7.1.
+# Both files are DOWNLOADS the user imports (Options+ -> profile menu -> import). The plugin is
+# universal (#23) and carries no profile; each .lp5 is a profile for the TERMINAL's own Options+
+# entry that happens to use our actions, so the binding here is Windows Terminal's, not ours.
+# UNVERIFIED ON WINDOWS since the universal change: the entry name ("windowsterminal") and the
+# default-plugin name ("DefaultWin") follow the mac file's pattern (com.apple.terminal, DefaultMac)
+# and need one import on the laptop to confirm (#47's session is the natural place).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SRC="$ROOT/src/Products/ClaudeConsole/package/profiles/DefaultProfile70.lp5"
+SRC="$ROOT/profiles/ClaudeConsole-Keypad.lp5"
 OUT="$ROOT/profiles/ClaudeConsole-Windows.lp5"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -47,8 +45,9 @@ work, win_guid = sys.argv[1], sys.argv[2]
 app_path = os.path.join(work, "ApplicationInfo.json")
 app = json.load(open(app_path))
 # The Windows matcher is the bare process name — no .exe, matching GetProcessName().
+app["name"] = "windowsterminal"
+app["displayName"] = "Windows Terminal"
 app["processOrBundleName"] = "WindowsTerminal"
-app["description"] = "Claude Code controls for Windows Terminal."
 app["defaultProfileName"] = win_guid
 json.dump(app, open(app_path, "w"), indent=2)
 
@@ -56,6 +55,8 @@ prof_path = os.path.join(work, "ProfileInfo.json")
 prof = json.load(open(prof_path))
 prof["applicationName"] = "windowsterminal"   # the service lowercases the matcher on macOS too
 prof["name"] = win_guid
+prof["additionalNativePluginNames"] = [
+    "DefaultWin" if n == "DefaultMac" else n for n in prof.get("additionalNativePluginNames", [])]
 # Self-owning package stamp (Vizhi shape): a profile whose packageName names its own package
 # GUID is treated as package-owned, so installs refresh the registration instead of skipping
 # it. The mac source stamps its own GUID; restamp to the Windows GUID so ownership follows

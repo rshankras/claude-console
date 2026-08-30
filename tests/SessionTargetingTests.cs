@@ -72,7 +72,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.ActiveTty = "ttys002";
 
-            Assert.Equal("ttys002", bridge.TargetTty());
+            Assert.Equal("ttys002", bridge.RoutingTty());
         }
 
         [Fact]
@@ -85,7 +85,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.ActiveTty = null;
 
-            Assert.Equal("ttys004", bridge.TargetTty());
+            Assert.Equal("ttys004", bridge.RoutingTty());
         }
 
         [Fact]
@@ -100,7 +100,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.ActiveTty = "ttys009";   // some other, non-Claude tab
 
-            Assert.Equal("ttys002", bridge.TargetTty());
+            Assert.Equal("ttys002", bridge.RoutingTty());
         }
 
         [Fact]
@@ -116,7 +116,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.ActiveTty = "ttys009";
 
-            Assert.Equal("ttys009", bridge.TargetTty());
+            Assert.Equal("ttys009", bridge.RoutingTty());
         }
 
         [Fact]
@@ -132,7 +132,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.SelectSlot(2);
 
-            Assert.Equal("ttys002", bridge.TargetTty());
+            Assert.Equal("ttys002", bridge.RoutingTty());
         }
 
         [Fact]
@@ -150,7 +150,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.SelectSlot(2);
             bridge.ActiveTty = "ttys001";   // poll: you are now looking at session 1's tab
 
-            Assert.Equal("ttys002", bridge.TargetTty());
+            Assert.Equal("ttys002", bridge.RoutingTty());
         }
 
         [Fact]
@@ -168,7 +168,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.SelectSlot(2);
             bridge.ActiveTty = "ttys009";   // Terminal isn't frontmost at all
 
-            Assert.Equal("ttys002", bridge.TargetTty());
+            Assert.Equal("ttys002", bridge.RoutingTty());
         }
 
         [Fact]
@@ -201,7 +201,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.SelectSlot(2);
             bridge.SelectSlot(1);
 
-            Assert.Equal("ttys001", bridge.TargetTty());
+            Assert.Equal("ttys001", bridge.RoutingTty());
         }
 
         [Fact]
@@ -220,7 +220,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             File.Delete(Path.Combine(_sessionsDir, "ttys002.json"));
             grid.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));   // tab closed
 
-            Assert.Equal("ttys001", bridge.TargetTty());
+            Assert.Equal("ttys001", bridge.RoutingTty());
             Assert.Null(bridge.PinnedTty);
             Assert.Null(grid.FocusedSession);
         }
@@ -258,7 +258,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.SelectSlot(5);   // nothing in slot 5
 
             Assert.Equal(0, calls);
-            Assert.Equal("ttys001", bridge.TargetTty());
+            Assert.Equal("ttys001", bridge.RoutingTty());
         }
 
         [Fact]

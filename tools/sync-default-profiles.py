@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Keep the Claude Console default profiles aligned with the approved keypad design.
+"""Keep the downloadable keypad profiles aligned with the approved keypad design.
 
-The live command images come from the plugin, but an LP5 also stores its key bindings and a
-static first-page preview.  Moving keys only in Options+ therefore fixes one developer's keypad
-without fixing a clean install.  This script updates both the packaged default and the manual
-macOS fallback; the Windows fallback is then derived from the packaged default by
-tools/windows/make-windows-profile.sh.
+The plugin is universal (#23): it ships no packaged profile, and the layout reaches a keypad
+only through the two importable fallbacks in profiles/. An LP5 stores its key bindings and a
+static first-page preview, so moving keys in Options+ fixes one developer's keypad without
+fixing anyone else's import. This script rewrites the FIRST PAGE of both profiles to the
+approved layout and reorders each profile's preview thumbnails to match; every other page and
+every other zip member is preserved byte for byte.
 
 Run from the repository root: python3 tools/sync-default-profiles.py
 """
@@ -20,10 +21,10 @@ import zipfile
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PACKAGED = os.path.join(
-    ROOT, "src", "Products", "ClaudeConsole", "package", "profiles", "DefaultProfile70.lp5"
-)
-MAC_FALLBACK = os.path.join(ROOT, "profiles", "ClaudeConsole-Keypad.lp5")
+PROFILES = [
+    os.path.join(ROOT, "profiles", "ClaudeConsole-Keypad.lp5"),    # macOS, Terminal entry
+    os.path.join(ROOT, "profiles", "ClaudeConsole-Windows.lp5"),   # Windows Terminal entry
+]
 
 PREFIX = "$ClaudeConsole___Loupedeck.ClaudeConsolePlugin.Actions."
 FIRST_PAGE = [
@@ -87,7 +88,7 @@ def design_preview(source_preview: dict) -> dict:
     }
     missing = [action for action in FIRST_PAGE if action not in by_action]
     if missing:
-        raise RuntimeError(f"packaged preview is missing actions: {', '.join(missing)}")
+        raise RuntimeError(f"preview is missing actions: {', '.join(missing)}")
 
     result = copy.deepcopy(source_preview)
     result["buttonPages"] = []
@@ -101,16 +102,11 @@ def design_preview(source_preview: dict) -> dict:
 
 
 def main() -> None:
-    packaged_profile, packaged_preview = read_documents(PACKAGED)
-    apply_first_page(packaged_profile)
-    packaged_preview = design_preview(packaged_preview)
-    write_documents(PACKAGED, packaged_profile, packaged_preview)
-    print(f"updated {os.path.relpath(PACKAGED, ROOT)}")
-
-    fallback_profile, _ = read_documents(MAC_FALLBACK)
-    apply_first_page(fallback_profile)
-    write_documents(MAC_FALLBACK, fallback_profile, packaged_preview)
-    print(f"updated {os.path.relpath(MAC_FALLBACK, ROOT)}")
+    for path in PROFILES:
+        profile, preview = read_documents(path)
+        apply_first_page(profile)
+        write_documents(path, profile, design_preview(preview))
+        print(f"updated {os.path.relpath(path, ROOT)}")
 
 
 if __name__ == "__main__":

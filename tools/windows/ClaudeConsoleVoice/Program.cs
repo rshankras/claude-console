@@ -7,6 +7,11 @@
 // the TRANSCRIPT FILE IS THE CONTRACT, so it is written atomically, and written ALWAYS — an
 // empty file on failure or silence is what lets the plugin stop waiting instead of timing out.
 //
+// An empty transcript alone, though, cannot say WHY. When whisper could not transcribe at all —
+// bundle missing, crash, timeout — a "<transcript>.error" sidecar is written FIRST, carrying
+// whisper's own diagnosis; the plugin checks for it before the transcript and reports the reason
+// instead of "didn't catch that" (#24).
+//
 // Argument names mirror what BridgeManager.StartVoiceCapture passes on macOS, verb-for-verb:
 //   --maxsec 60 --out capture.wav --stopflag stop --transcript transcript.txt
 //   --model ggml-base.en.bin --whisper whisper-cli.exe
@@ -61,6 +66,7 @@ internal static class Program
 
                 Records until the stopflag file appears (or maxsec). The transcript file is
                 ALWAYS written — empty on silence or failure — because the plugin waits on it.
+                A failure ALSO writes <transcript>.error saying why.
                 """);
             return 1;
         }
@@ -76,15 +82,25 @@ internal static class Program
             var pcm = Record(stopFlag, maxSec);
             WriteWav(wavPath, pcm);
 
+            String? failure = null;
             var transcript = pcm.Length > 0
-                ? Transcribe(opts.GetValueOrDefault("--whisper"), opts.GetValueOrDefault("--model"), wavPath)
+                ? Transcribe(opts.GetValueOrDefault("--whisper"), opts.GetValueOrDefault("--model"), wavPath, out failure)
                 : "";
+
+            // Order matters. The plugin polls for the sidecar BEFORE the transcript, so writing an
+            // empty transcript first would let it conclude "silence" and stop looking.
+            if (failure != null)
+            {
+                WriteFailure(transcriptPath, failure);
+            }
+
             WriteAtomic(transcriptPath, transcript);
-            return 0;
+            return failure == null ? 0 : 7;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"claude-console-voice: {ex.Message}");
+            WriteFailure(transcriptPath, $"voice helper failed: {ex.Message}");
             // The contract: the plugin is waiting on this file. An empty transcript reads as
             // silence and ends the wait; no file would burn its whole 20 s timeout.
             try { WriteAtomic(transcriptPath, ""); } catch { /* nothing left to try */ }
@@ -246,12 +262,24 @@ internal static class Program
 
     // ---- transcription -----------------------------------------------------
 
+    /// <summary>
+    /// Runs whisper and returns the transcript. <paramref name="error"/> is non-null when whisper
+    /// could not transcribe AT ALL — a missing bundle, a crash, a timeout.
+    ///
+    /// The distinction is the whole point: every failure below used to return "" and exit 0, which
+    /// the plugin cannot tell apart from a quiet room, so a hard crash was reported to the user as
+    /// "didn't catch that" forever (#24, the Windows half — the macOS helper had the same defect).
+    /// </summary>
     [SupportedOSPlatform("windows")]
-    private static String Transcribe(String? whisperCli, String? model, String wavPath)
+    private static String Transcribe(String? whisperCli, String? model, String wavPath, out String? error)
     {
+        error = null;
         if (whisperCli == null || model == null || !File.Exists(whisperCli) || !File.Exists(model))
         {
-            Console.Error.WriteLine("whisper-cli or model missing — transcript will be empty");
+            error = whisperCli == null || !File.Exists(whisperCli)
+                ? "whisper-cli.exe not found — the voice bundle is missing or incomplete"
+                : $"speech model not found at {model}";
+            Console.Error.WriteLine(error);
             return "";
         }
 
@@ -273,6 +301,8 @@ internal static class Program
         using var p = Process.Start(psi);
         if (p == null)
         {
+            error = "whisper-cli.exe could not be launched";
+            Console.Error.WriteLine(error);
             return "";
         }
 
@@ -281,11 +311,22 @@ internal static class Program
         if (!p.WaitForExit(120_000))
         {
             try { p.Kill(entireProcessTree: true); } catch { /* already gone */ }
-            Console.Error.WriteLine("whisper-cli exceeded 120s — killed");
+            error = "whisper-cli exceeded 120s — killed";
+            Console.Error.WriteLine(error);
             return "";
         }
 
-        _ = errTask.ContinueWith(_ => { });   // drained; content irrelevant on success
+        var stderr = errTask.GetAwaiter().GetResult().Trim();
+        if (p.ExitCode != 0)
+        {
+            // whisper's own diagnosis is the useful part — a missing compute backend says so here.
+            error = stderr.Length == 0
+                ? $"whisper-cli exited with status {p.ExitCode}"
+                : $"whisper-cli exited with status {p.ExitCode}: {Tail(stderr, 1200)}";
+            Console.Error.WriteLine(error);
+            return "";
+        }
+
         var text = outTask.GetAwaiter().GetResult().Trim();
         return CleanTranscript(text);
     }
@@ -326,6 +367,20 @@ internal static class Program
         File.WriteAllText(tmp, content);
         File.Move(tmp, path, overwrite: true);
     }
+
+    /// <summary>
+    /// The failure sidecar: "&lt;transcript&gt;.error", read by BridgeManager's poll loop, which
+    /// checks for it BEFORE the transcript. Its existence is what turns a silent nothing into a
+    /// named failure in the plugin log. Best effort — a failure to report a failure must not throw.
+    /// </summary>
+    private static void WriteFailure(String transcriptPath, String message)
+    {
+        try { WriteAtomic(transcriptPath + ".error", message); }
+        catch { /* nothing left to try */ }
+    }
+
+    private static String Tail(String text, Int32 max) =>
+        text.Length <= max ? text : text[^max..];
 
     // ---- selftest ----------------------------------------------------------
 

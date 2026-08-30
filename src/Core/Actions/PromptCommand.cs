@@ -160,7 +160,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         protected override void RunCommand(String actionParameter)
         {
-            if (_prompts.TryGetValue(actionParameter, out var p) && !String.IsNullOrEmpty(p.Prompt))
+            var p = Find(_prompts, actionParameter);
+            if (p != null && !String.IsNullOrEmpty(p.Prompt))
             {
                 // "submit": false in prompts.json turns a key into a DRAFT: the prompt lands in the
                 // input box to be edited or extended, and the user sends it with Return.
@@ -170,14 +171,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
-            => _prompts.TryGetValue(actionParameter, out var p) ? (p.Label ?? actionParameter) : actionParameter;
+            => NameFor(Find(_prompts, actionParameter), actionParameter);
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
-            _prompts.TryGetValue(actionParameter, out var p);
+            var p = Find(_prompts, actionParameter);
             var icon = String.IsNullOrEmpty(p?.Icon) ? "explain" : p.Icon;
             // Accent is unused by KeyImage; the icon's baked colour is the key colour.
-            return KeyImage.Render(imageSize, p?.Label ?? actionParameter, KeyImage.Blue, icon);
+            return KeyImage.Render(imageSize, NameFor(p, actionParameter), KeyImage.Blue, icon);
         }
+
+        /// <summary>
+        /// The prompt for a key's parameter — or null, INCLUDING for a null parameter (#32).
+        ///
+        /// The SDK asks a parameterised command for its display name and image with a NULL
+        /// parameter in some Options+ contexts (the command itself, before a parameter is chosen).
+        /// Dictionary.TryGetValue(null) throws ArgumentNullException, and this command's three
+        /// lookups did exactly that — dozens of error traces per load on QA's machine, burying the
+        /// lines that mattered. Static so the null case can be tested without the SDK host, which
+        /// a PluginDynamicCommand cannot be constructed without.
+        /// </summary>
+        internal static PromptDef Find(IReadOnlyDictionary<String, PromptDef> prompts, String actionParameter) =>
+            actionParameter != null && prompts.TryGetValue(actionParameter, out var p) ? p : null;
+
+        /// <summary>The words on the key: the prompt's label, else the raw parameter, else — with nothing to go on — "Prompt".</summary>
+        internal static String NameFor(PromptDef p, String actionParameter) =>
+            p?.Label ?? actionParameter ?? "Prompt";
     }
 }

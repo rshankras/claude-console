@@ -65,12 +65,21 @@ done
 
 [ -n "$tty_key" ] && write "$ACTIVITY/$tty_key.json"
 
-# Record which tool is awaiting approval, or clear it the moment the session moves on — a stale
+# Record which tool is awaiting approval, or clear it the moment the session moves ON — a stale
 # pending file would leave a red badge lit after the command it described has already run.
+#
+# CLEAR ONLY ON busy/done, NEVER on a bare "waiting". A permission menu fires TWO events: the
+# immediate PermissionRequest (which lands here as "waiting" WITH a payload) and then a plain
+# Notification the CLI delays by ~6s (which lands as "waiting" with NO payload, while the same
+# menu is still on screen). Deleting the payload on that second event erased a live approval:
+# the amber badge went dark mid-prompt (#51's regression), and the Yes/No keys — which key off
+# the payload to tell a menu from a plain question (#21) — lost the one signal that a menu was
+# up. Only busy (a new turn / a tool completing) or done (turn ended) means the moment passed.
 if [ -n "$tty_key" ]; then
   if [ -n "$PENDING" ]; then
     write_pending "$ACTIVITY/pending-$tty_key.json"
-  else
+  elif [ "$STATE" = "busy" ] || [ "$STATE" = "done" ]; then
     rm -f "$ACTIVITY/pending-$tty_key.json"
   fi
+  # STATE=waiting with no payload: leave any existing pending file intact — the menu is still up.
 fi

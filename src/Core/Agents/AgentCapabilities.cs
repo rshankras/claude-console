@@ -62,6 +62,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         public Boolean HooksNeedTrust { get; init; }
 
         /// <summary>
+        /// The agent reads its hooks and status line from the user's own settings file
+        /// (Claude Code: ~/.claude/settings.json), so wiring the live keys means EDITING that file —
+        /// which is the user's to say yes to. Where false, the plugin installs its own hooks file
+        /// and the agent gates it itself (Codex: ~/.codex/hooks.json behind a trust prompt), so the
+        /// Enable / Disable Live Status keys have nothing to do and are not added.
+        /// </summary>
+        public Boolean SettingsFileWiring { get; init; }
+
+        /// <summary>
         /// An image FILE PATH typed into the composer reaches the CURRENT conversation — whether
         /// the composer attaches it (Claude Code) or the model opens it with its own image-viewing
         /// tool when told the path (Codex). The delivery differs; the honest question this flag

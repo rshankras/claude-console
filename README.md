@@ -50,9 +50,9 @@ The Windows build reaches Claude a different way than macOS does, and two differ
 
 **Typing is if anything safer than on macOS.** macOS focuses Claude's Terminal tab and types into it in one atomic AppleScript run. Windows writes key events straight to the target session's *console handle*, which has no relationship to the focused window at all — a keypress reaches the intended Claude session or nothing whatsoever, and it cannot leak into another application even in principle.
 
-**Import the layout by hand.** A plugin package can carry exactly one auto-imported default profile per device type, and that file has to declare a single application binding — which on this cross-platform package is the macOS one. So on Windows: Options+ → your keypad → profile menu (`⋯`) → **Import** → pick [`profiles/ClaudeConsole-Windows.lp5`](profiles/ClaudeConsole-Windows.lp5), and choose **windowsterminal** as the application. (You can also just drag Claude Console's actions onto keys yourself; nothing depends on the profile.)
+**Import the Windows layout.** Same as on macOS — the plugin is universal and carries no layout — but the file is Windows-specific, because a profile is bound to an application and the host here is Windows Terminal: Options+ → your keypad → profile menu (`⋯`) → **Import** → pick [`profiles/ClaudeConsole-Windows.lp5`](profiles/ClaudeConsole-Windows.lp5). (You can also just drag Claude Console's actions onto keys yourself; nothing depends on the profile.)
 
-**The keypad can't follow your eyes between tabs.** Windows Terminal exposes no supported way to ask which tab is in front, so with several idle sessions open the plugin can't tell which one you're looking at. One session needs no pin and just works; so does "exactly one session is waiting on you". Beyond that, **press a session key first** — pinning is exact, and every subsequent key goes to that session until you pin another. Pressing a session key also brings its tab to the front.
+**The keypad can't follow your eyes between tabs.** Windows Terminal exposes no supported way to ask which tab is in front, so with several idle sessions open the plugin can't tell which one you're looking at. One session needs no pin and just works; so does "exactly one session is waiting on you". Beyond that, **press a session key first** — pinning is exact, and every subsequent key goes to that session until you pin another or press the same key again to release it. Pressing a session key also brings its tab to the front.
 
 **Not available on Windows:** Next/Previous *Window* (an OS-level gesture `wt.exe` cannot express — those keys log and do nothing). Opening a project always uses a fresh tab rather than reusing an idle one, because Windows Terminal offers no way to tell a busy tab from an idle one and guessing wrong would type into a live session.
 
@@ -63,39 +63,33 @@ The Windows build reaches Claude a different way than macOS does, and two differ
 Download the latest `ClaudeConsole_<ver>.lplug4` from [**Releases**](https://github.com/rshankras/claude-console/releases), then:
 
 1. **Double-click it** — Logi Options+ registers the plugin. (Or, with the Logi Plugin Tool: `logiplugintool install ./ClaudeConsole_<ver>.lplug4`.) If macOS blocks it, right-click → **Open**, or run `xattr -dr com.apple.quarantine ClaudeConsole_<ver>.lplug4`.
-2. **Let one blink happen.** Within about a minute the plugin **registers a "Claude Console" application in Options+ and imports the 9-key layout by itself** (Sessions on top, Clear / Voice / Esc, Yes / No / Tab; more pages behind it), then restarts the Logi Plugin Service once so Options+ picks it up — the Options+ window closes and reopens on its own roughly 40 seconds after the install. **Don't quit or relaunch Options+ during that first minute**; when it settles, the Claude Console icon is in the application strip. Rearrange or rebind any key afterward. (Why a restart? The service only reads registrations at startup, and a sideloaded install skips the registration step entirely, so the plugin does it itself — an install from the Logitech Marketplace wouldn't need this, and on such installs the plugin skips the restart. On versions before 2.0.0, import the layout by hand — see [Import the ready-made layout](#import-the-ready-made-layout) below.)
+2. **Put the keys on Terminal.** The plugin is *universal*: it binds to no application and ships no layout of its own, so nothing appears on the keypad until you give it keys. The quickest way is the ready-made layout — see [Import the ready-made layout](#import-the-ready-made-layout) just below (two clicks). Or build your own: in Options+ add **Terminal** as an application, then drag any **Claude Console** actions onto its profile.
 3. On first use, grant **Accessibility** to the Logi Plugin Service (so it can type into your terminal). For **voice**, press the Voice key and grant **Microphone** when prompted — the helper and speech model install themselves on first use.
 
-> Everything works straight from the download — including the live **Model / Cost / Context / Activity** keys. On first load the plugin installs its status-line + hook scripts and wires them into `~/.claude/settings.json` for you, so the live keys light up on your **next Claude Code session** with no setup. (Details, and how to opt out, in [The live status bridge](#the-live-status-bridge) below.)
+> The live **Cost / Context / Activity** keys (and the Model key's readout) are **opt-in**: the plugin never edits your Claude Code settings on its own. Until you turn them on they read **Set up**. To turn them on, **press one of them**: the first press changes nothing — it flashes *Press again* and, on macOS, opens a dialog in the middle of the screen saying exactly what will change (five hooks and a status line in `~/.claude/settings.json`, your own entries kept, the file backed up first) with **Not now** / **Turn on**. *Turn on* — or a second press of the same key within 15 s — does it, and the keys go live on your **next Claude Code session**. On Windows there is no dialog yet: the second press is the switch. To turn them off, **hold one of them** (a long press): the same kind of dialog asks *Keep* / *Turn off* — or a second long press within 15 s. Nothing to drag, nothing to find in a menu: the keys are the switch. (Details in [The live status bridge](#the-live-status-bridge) below.)
 
 ## Import the ready-made layout
 
-> **Since 2.0.0 this happens automatically** — shortly after install the plugin registers its own
-> Options+ application and imports this layout itself (that's the Options+ blink described in the
-> install steps). The steps below are the manual fallback for older versions, or if you deleted
-> the auto-imported profile and want it back without reinstalling.
+Rather than mapping nine keys by hand, import the ready-made profile to get the full layout instantly. **This is the normal setup, not a fallback** — since 2.2.0 the plugin is universal (no application binding, no packaged profile), so the layout is something you import, exactly once.
 
-Rather than mapping nine keys by hand, import the bundled profile to get the full layout instantly:
-
-1. Download **`ClaudeConsole-Keypad.lp5`** from [**Releases**](https://github.com/rshankras/claude-console/releases) (alongside the `.lplug4`), or take it from [`profiles/`](profiles/) in this repo.
+1. Download **`ClaudeConsole-Keypad.lp5`** from [**Releases**](https://github.com/rshankras/claude-console/releases) (alongside the `.lplug4`), or take it from [`profiles/`](profiles/) in this repo. On Windows use **`ClaudeConsole-Windows.lp5`**.
 2. In **Logi Options+** → your **MX Creative Keypad**, open the profile menu (the `⋯` / profile dropdown) → **Import Profile** → pick the `.lp5`.
-3. It installs as **Claude Console — Keypad**, bound to **Terminal**, so it activates automatically whenever Terminal.app is frontmost. Prompts, git, answer, navigation, voice, and the live status keys are all pre‑mapped.
+3. It imports as a **Terminal** profile with the keys populated — Sessions on top, Clear / Voice / Esc, Yes / No / Tab, more pages behind — so it activates whenever Terminal.app is frontmost. Rearrange or rebind any key afterward.
 
 Notes:
 - Install the plugin first (step 1 above) so the imported keys resolve to real actions.
-- Import once. If you later reinstall or update the plugin, your profile stays put — just reinstall the plugin and the keys light up again; no need to re‑import.
-- The profile is bound to Apple's **Terminal.app**, and so are the keys themselves: since 1.4.0 every typing key (prompts, answers, voice) focuses Claude's Terminal.app tab before it types — it will not type into iTerm2/Ghostty/Warp or any other app.
-- It's only a starting point — rebind or rearrange any key afterward.
+- Import once. Reinstalling or updating the plugin never touches your profile — it belongs to Terminal's entry in Options+, not to the plugin — so the keys simply light up again after an update.
+- The profile is bound to Apple's **Terminal.app**, and so are the keys themselves: every typing key (prompts, answers, voice) focuses Claude's Terminal.app tab before it types — it will not type into iTerm2/Ghostty/Warp or any other app. Sessions running in another terminal are therefore **not shown on the Session keys** at all (since 2.2.0; before that they took a key that did nothing). The plugin log names each one it skipped. iTerm2 support is on the roadmap.
+- Already have a Terminal profile you like? Skip the import and drag the **Claude Console** actions onto it instead.
 
 ## Repository layout
 
 This repo builds **one package per agent** from a shared engine — Claude Console for Claude Code,
 and **[Vizhi for Codex](src/Products/VizhiCodex/README.md)** for OpenAI's Codex CLI on the same core.
 
-> **⚠️ Install one console per machine.** Both products bind to Terminal.app, and the Logi Plugin
-> Service activates only one plugin per application — installing both leaves one silently dead
-> (its keys stop responding with no error). If you run both agents, pick one console for now; a
-> unified dual-agent console is on the roadmap. `src/Core` is the engine (keypad, session grid, terminal
+> Both consoles can be installed side by side: since 2.2.0 neither binds an application, so the
+> Logi Plugin Service has nothing to arbitrate between them — put each product's keys on whatever
+> profile you like. (Before 2.2.0 both claimed Terminal.app and only one could win.) `src/Core` is the engine (keypad, session grid, terminal
 targeting, voice, install/repair), `src/Agents/<agent>` is a small adapter per agent, and
 `src/Products/<name>` is a thin product that pairs them with its own branding, profile and
 version. Products version and release independently.
@@ -125,12 +119,20 @@ A pre‑packaged install via the Logitech Marketplace is planned — see [SUBMIS
 
 ## The live status bridge
 
-The live keys read state files under a private `/tmp/claude-console/` directory that Claude Code writes via a status‑line handler (Cost / Model / Context ← `sessions/`) and four hooks (Activity ← `activity/`). Everything in it is owner‑only (0700 dirs / 0600 files), so your prompts and session state are never readable by other users on the Mac.
+The live keys read state files under a private `/tmp/claude-console/` directory that Claude Code writes via a status‑line handler (Cost / Model / Context ← `sessions/`) and five hooks (Activity ← `activity/`). Everything in it is owner‑only (0700 dirs / 0600 files), so your prompts and session state are never readable by other users on the Mac.
 
-**This is set up automatically — no action needed.** On first load the plugin writes both scripts to `~/.claude/claude-console/scripts/` and merges the `statusLine` + hooks into `~/.claude/settings.json` for you. It's careful about it: backs `settings.json` up first (`settings.json.claude-console.bak`), only **appends** a hook when it isn't already present, and **chains** an existing `statusLine` (records yours and runs it through, so your custom status bar still renders) rather than overwriting it. The live keys come alive on your **next Claude Code session** — Claude Code reads hooks/statusLine at session start, so a session already running won't pick them up. To opt out, create an empty file at `~/.claude/claude-console/no-autowire` before first load.
+**Turning this on edits your Claude Code settings, so it happens only when you ask — nothing is written on install.** On every load the plugin writes its two scripts to `~/.claude/claude-console/scripts/` (its own folder) and leaves `~/.claude/settings.json` alone; the live keys read **Set up**. The switch is the key itself: the first press flashes *Press again*, posts a card in Options+ stating the change and, on macOS, asks on screen — *Not now* / *Turn on*; *Turn on*, or a second press of the same key within 15 seconds, merges a `statusLine` handler + five hooks into `~/.claude/settings.json`. (*Not now*, silence, a single press, or a late one never writes — and each key arms only itself.) Windows has no dialog yet, so there the second press is the switch. The moment it does, it posts a notice in Logi Options+ confirming what was added, with a button that opens this section. It's careful about it: only **appends** a hook when it isn't already present, **chains** an existing `statusLine` (records yours and runs it through, so your custom status bar still renders) rather than overwriting it, and takes a **rolling backup** — `settings.json.claude-console.bak` is rewritten immediately before *every* change the plugin makes, so it is always the state one change ago, never a stale snapshot. The live keys come alive on your **next Claude Code session** — Claude Code reads hooks/statusLine at session start, so a session already running won't pick them up.
+
+**To take it back out:** hold a live key (a long press) and choose *Turn off* — or hold it again within 15 s — or, without the keypad:
+
+```bash
+bash ~/.claude/claude-console/scripts/uninstall.sh --unwire
+```
+
+Either removes *only* the plugin's entries (your own hooks and status bar are left exactly as they were, a chained status line is put back) and leaves a marker file, `~/.claude/claude-console/no-autowire`, which is how the live keys know to read **Off** rather than **Set up**. Everything else keeps working. Pressing a live key turns it back on and clears the marker. (Before 2.2.0 the plugin wired itself on first load and that file was the only opt-out; if you created it back then it is honoured — the plugin removes its entries on load and the keys read Off.)
 
 <details>
-<summary>Wire it by hand instead (e.g. if you opted out)</summary>
+<summary>Wire it by hand instead (instead of pressing a live key)</summary>
 
 Add this to `~/.claude/settings.json` — the scripts live at `~/.claude/claude-console/scripts/` (or use `scripts/` from a clone). Merge the `hooks` into any existing block:
 
@@ -164,7 +166,9 @@ Pressing a session key also **pins every other key to it**, which is the point: 
 Notes:
 - **Slots are stable.** A session keeps its key for as long as it lives — close one and the others stay put, so you don't approve the wrong session out of muscle memory. The freed key is reused by the next session you start.
 - A session waiting for approval shows a badge on its key — see [The approval badge](#the-approval-badge) for what the colours mean.
-- The pin survives a plugin reload, and is released automatically if its session exits, so the keys are never stranded on a closed tab. **Go to Project** drops it too, since that starts a session somewhere new.
+- **Press the pinned session's key again to release it** — the keys go back to following whichever tab is in front. The pin also survives a plugin reload, is released automatically if its session exits so the keys are never stranded on a closed tab, and **Go to Project** drops it too, since that starts a session somewhere new.
+- **Six sessions get keys; the shipped layout shows three.** Session 4, 5 and 6 exist as actions — drag them onto any page if you regularly run more than three at once. A session's key **never moves for as long as it lives**: when the middle of three exits, the other two stay exactly where your fingers expect them and the freed key waits for the next new session. That stability is deliberate, so a fourth session assigned to slot 4 stays there rather than sliding into the gap — if it isn't on your layout, add the key.
+- **A pin aims the keys; it doesn't freeze the readouts.** Cost, Model and Context always show the session in the tab you're looking at, while Yes/No, Tab and the typing keys act on the pinned one — so you can watch one session while answering another. The highlighted session key tells you which is pinned, and the amber approval badge always describes the session the answer keys will actually answer. (On Windows there's no way to detect the frontmost tab, so both follow the pin.)
 - A new session takes a key **immediately** (labelled "Claude" until it first renders a status line), and a closed tab clears within about two seconds.
 - Six sessions fit; beyond that the extras run fine, just without a key.
 - Terminal.app only, like the rest of the plugin.
@@ -175,11 +179,17 @@ Notes:
 - **Voice Draft key** — same flow, but the transcript is only **typed, not sent**: it sits in Claude's input box so you can fix anything whisper misheard, then submit with **Return** (keyboard or the keypad's Return key). Use Voice for quick prompts, Voice Draft for anything long enough to mis-transcribe.
 - **Go to Project** — press, say a project name (e.g. *"indie app autopilot"*), press again. Opens a new tab in that project running `claude`; reuses an idle shell tab, or opens a new one if `claude` is already running.
 
+  **Where it looks:** projects any session is already open in, plus every git repository within three levels of your home folder — and, once a folder is seen to hold several repositories, its other subfolders too (so a checkout-in-progress next to your repos still matches). Nothing needs configuring for a normal layout. If your projects live somewhere unusual, list the folders that contain them in `~/.claude/claude-console/project-roots`, one per line (`~` allowed, `#` for comments); every subfolder of those becomes matchable and the automatic search is skipped. When nothing matches, the plugin log names how many candidates it searched and where they came from.
+
 Start and stop a recording with the **same** key — each voice key is its own start/stop toggle.
+Pressing a *different* voice key while one is recording **stops** it rather than starting a second
+recording, and the transcript still goes where the key you started with intended: a dictation stopped
+with **Go to Project** is still sent to Claude, not treated as a project name. While a transcript is
+being produced, a further press is ignored with a beep rather than discarding the result.
 
 First use prompts once for **Microphone** permission (granted to the helper, not the daemon). The plugin also needs **Accessibility** permission for the Logi Plugin Service (to type into the terminal).
 
-**Voice records but types nothing (empty transcript):** macOS ties the Microphone grant to the helper's code signature, so **re-signing or rebuilding the helper resets it** — and it fails *silently* (no re-prompt). Reset the permission and re-grant on the next press:
+**The Voice key flashes red "Mic denied" (with a beep):** the helper was refused the microphone. Allow **ClaudeVoiceHelper** in System Settings → Privacy & Security → Microphone, or reset the permission and re-grant on the next press. This is also what you'll see after re-signing or rebuilding the helper: macOS ties the grant to the code signature, so a rebuild resets it — and until 2.2.0 that failed *silently* (nothing typed, no beep, no prompt), which is why the key now says so. "No speech" means it recorded but heard nothing usable; "Model loading" means the speech model is still downloading — try again shortly.
 
 ```bash
 tccutil reset Microphone com.rshankar.claudeconsole.voicehelper
@@ -292,17 +302,9 @@ File‑based IPC under a private `/tmp/claude-console/` root (0700 dirs / 0600 f
 
 **Keys show only an exclamation mark / plain text right after building from source.** If you've *both* installed the released `.lplug4` *and* run `dotnet build` (which writes a dev `.link`), the plugin is registered twice and the service refuses the duplicate — the plugin log shows `Cannot load plugin … because plugin 'ClaudeConsole' is already loaded` and the keys don't resolve. Keep **one** source: uninstall the packaged plugin in Logi Options+ to develop against the `.link`, or remove the dev `.link` (`scripts/uninstall.sh` does this) to run the installed package.
 
-**The Claude Console icon vanishes from Options+ after a reinstall — with or without an explicit uninstall first — and the keypad drops to the default layout, yet the plugin shows as installed and its log shows a clean load.** Any reinstall runs an uninstall step first (installing over an existing installation does it implicitly), which removes the application registration from the running service's *memory* but leaves it on *disk* (that's how your profiles survive reinstalls); the install step then sees the on-disk entry and silently skips re-registering it. Nothing is actually broken. Restart the service — it rebuilds the registration from disk at startup — then the Options+ UI:
+**Nothing appears on the keypad after installing.** That is expected: the plugin is universal (2.2.0+) — it binds to no application and ships no layout. Import [the ready-made layout](#import-the-ready-made-layout), or add Terminal as an application in Options+ and drag the Claude Console actions on. The actions are listed under **Claude Console Actions** in the Options+ action panel; if that list is missing, the plugin did not load — check the log.
 
-```bash
-killall LogiPluginService && sleep 5 && killall logioptionsplus_agent
-```
-
-(A reboot does the same, and `bash scripts/repair-registration.sh` runs the whole recovery for you, with a sanity check first. **1.8.9 and later heal this automatically** — Options+ blinks once a few seconds after a reinstall as the plugin restarts the service; the manual recovery only matters for older versions.)
-
-**Nothing appears after a first install on a machine that never ran the plugin before.** A sideloaded `.lplug4` install doesn't create the application entry the icon and layout hang off — only Logitech Marketplace installs get that step. **2.0.0 and later handle it automatically**: the plugin writes its own registration and restarts the service — Options+ blinks once and comes back within about 40 seconds of the install (first-run initialization is the slow part), and the icon plus the 9-key layout appear. On older versions, import the layout manually (profile menu → Import → the `.lp5` from the release).
-
-**On Windows, a reinstall loses the layout differently — and a restart won't bring it back.** Windows' uninstall deletes the plugin's application data outright (the Claude Console entry *and* the imported keypad layout). **2.0.0 and later rebuild the default layout automatically** on the next load, via the same self-registration; custom key changes made on top of it don't survive the uninstall, so re-import your own exported `.lp5` if you have one. On older versions, re-import `ClaudeConsole-Windows.lp5` (profile menu → Import).
+**Before 2.2.0: the Claude Console icon vanished from Options+ after a reinstall, or never appeared after a first sideloaded install.** Those versions registered their own application entry in Options+, and the service could lose it (a reinstall dropped it from memory, a sideloaded install never created it). 2.2.0 removed the entry altogether, so there is nothing to lose; the layout lives on Terminal's own entry, which is yours. If you are on an older version, update — or restart the Logi Plugin Service (`killall LogiPluginService`) and then Options+ so it re-reads the registration from disk.
 
 **The log says `Cannot load plugin … because plugin 'ClaudeConsole' is already loaded` at service start.** On its own this is benign boot noise, not a failure: the service loads every sideloaded plugin twice at startup (once from its internal plugin record, once from the folder scan) and the second attempt logs this while refusing the duplicate — every sideloaded plugin on the machine shows the same pair. It only signals a real problem when paired with a dev `.link` (see above).
 
@@ -337,20 +339,20 @@ Plugin Service.
 
 ## Uninstall / clean reinstall
 
-Claude Console's footprint spans Logi's store, `~/.claude/claude-console/` (incl. the ~142 MB speech model), `/tmp`, a Microphone permission, and — if you wired the live bridge — `~/.claude/settings.json`.
+Claude Console's footprint spans Logi's store, `~/.claude/claude-console/` (incl. the ~142 MB speech model), `/tmp`, a Microphone permission, and — if you enabled live status — `~/.claude/settings.json`.
 
-**1. Remove the plugin + profile — this is the actual uninstall (Logi Options+).** In Logi Options+, **right‑click the Claude Console plugin → Uninstall** (or `logiplugintool uninstall ClaudeConsole`), and delete the imported **Claude Console — Keypad** profile. For most people — anyone who never used Voice — this is all you need.
+**1. Remove the plugin + profile — this is the actual uninstall (Logi Options+).** In Logi Options+, **right‑click the Claude Console plugin → Uninstall** (or `logiplugintool uninstall ClaudeConsole`), and delete the imported **Claude Console — Keypad** profile.
 
-**2. Clear the leftover app data — optional cleanup (scripted).** Step 1 does **not** remove the voice runtime, the ~142 MB speech model, or the Microphone permission — Logi Options+ can't see them, so they're left behind. This script clears exactly those leftovers; **it never removes the plugin.** It prints its targets and asks before deleting:
+**2. Run the cleanup script — not optional if this was the last Logitech plugin of ours.** Options+ removes the plugin but **leaves its application registration behind**, still claiming Terminal.app: Claude Console stays listed in Options+ as if the uninstall had failed, and opening Terminal switches the keypad to a layout whose keys point at actions that no longer exist (a keypad of exclamation marks). Another of our plugins sweeps that on its next load; if none is left, nothing does. The plugin installs this script *outside* the package precisely so it survives the uninstall — you don't need the repo:
 
 ```bash
-bash scripts/uninstall.sh            # confirm, then remove
-bash scripts/uninstall.sh --dry-run  # preview only
+bash ~/.claude/claude-console/scripts/uninstall.sh            # confirm, then remove
+bash ~/.claude/claude-console/scripts/uninstall.sh --dry-run  # preview only
 ```
 
-It removes `~/.claude/claude-console/` (voice helper, whisper, the speech model, your `prompts.json`, and the auto-installed bridge scripts), the `/tmp/claude-console` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present.
+It sweeps the orphaned registration (only entries whose plugin is gone, never another vendor's), then removes `~/.claude/claude-console/` (voice helper, whisper, the ~142 MB speech model, your `prompts.json`, and the auto-installed scripts — including itself), the `/tmp/claude-console` IPC files, the Microphone grant (`tccutil reset`), any crash‑disable marker, and a dev `.link` if present. It prints its targets and asks before deleting; **it never removes the plugin.** Then restart the service so Options+ forgets the entry: `killall LogiPluginService`.
 
-**3. Live‑status bridge (manual).** The plugin auto-wired a `statusLine` + four `claude-console` hooks into `~/.claude/settings.json` on first run. Restore your pre-install config from the backup it made — `~/.claude/settings.json.claude-console.bak` — or just delete the `statusLine` block and the four `claude-console` hook entries by hand. (Do this after step 2, since removing the scripts leaves those entries pointing at nothing.)
+**3. Live‑status bridge — done by step 2.** The cleanup script removes the plugin's `statusLine` + hook entries from `~/.claude/settings.json` surgically (your own entries stay; a chained status line is put back) before it deletes the scripts they point at. If you only want the wiring gone and the plugin kept, long-press a live key and choose *Turn off*, or run it with `--unwire` instead. Don't restore `settings.json.claude-console.bak` by hand to undo the plugin — it is a rolling backup of the state one change ago, useful if a write went wrong, not a pre-install snapshot.
 
 For a **clean reinstall**, do 1–3, then reinstall from [Releases](https://github.com/rshankras/claude-console/releases) and re‑import the profile.
 
