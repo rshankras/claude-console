@@ -24,6 +24,13 @@ BUILD_DIR="$ROOT/bin/$PRODUCT/Release"
 HOME_DIR="$HOME/.claude/claude-console"
 APP="$HOME_DIR/ClaudeVoiceHelper.app"
 WBIN="$HOME_DIR/whisper-bin"
+# A Windows whisper.cpp bundle prepared and smoke-tested ON WINDOWS (#47). Kept separate from the
+# macOS bundle: both contain a whisper-cli with platform-specific dependencies and cannot share one
+# directory in the package. The plugin copies it from bin/voice/whisper-bin-win/ into the runtime
+# home on first use (BridgeManager.EnsureVoiceRuntimeInstalledWindows) — until 2.2.0 no package
+# carried it, so packaged Windows voice failed with "whisper-cli.exe missing" on every machine
+# where nobody had placed the bundle by hand.
+WIN_WBIN="${WINDOWS_WHISPER_DIR:-$HOME_DIR/whisper-bin-win}"
 
 # Which products ship offline voice. Both do: voice is agent-neutral — it records, transcribes and
 # injects into the focused session without asking which agent runs there. The payload installs to a
@@ -52,7 +59,21 @@ if [ "$SHIPS_VOICE" = "1" ]; then
     echo "error: $APP is not stapled/notarized — run tools/voice/sign-and-notarize.sh first." >&2
     exit 1
   fi
-  echo ">>> voice payload OK (helper notarized + stapled, bundle transcription-verified)"
+  # The Windows bundle needs the same proof, and it can only be produced on Windows: run
+  # whisper-cli.exe against a real recording there, then write the marker beside it.
+  [ -d "$WIN_WBIN" ] || {
+    echo "error: Windows whisper bundle missing ($WIN_WBIN) — set WINDOWS_WHISPER_DIR to a smoke-tested Windows bundle (#47)." >&2
+    exit 1
+  }
+  [ -f "$WIN_WBIN/whisper-cli.exe" ] || {
+    echo "error: Windows whisper bundle has no whisper-cli.exe ($WIN_WBIN)." >&2
+    exit 1
+  }
+  [ -f "$WIN_WBIN/TRANSCRIPTION_SMOKE_OK" ] || {
+    echo "error: $WIN_WBIN has not passed a real transcription smoke test on Windows." >&2
+    exit 1
+  }
+  echo ">>> voice payload OK (helper notarized + stapled, both bundles transcription-verified)"
 else
   echo ">>> $PRODUCT ships no voice payload — skipping the notarization preflight"
 fi
@@ -112,6 +133,10 @@ if [ "$SHIPS_VOICE" = "1" ]; then
   mkdir -p "$PKG_VOICE"
   ditto "$APP"  "$PKG_VOICE/ClaudeVoiceHelper.app"   # ditto preserves signature + exec bits
   ditto "$WBIN" "$PKG_VOICE/whisper-bin"
+  # The marker is proof for THIS script, not payload: RuntimeTreeMatchesPackage compares every
+  # packaged file, so anything copied here lands in every user's runtime home.
+  ditto "$WIN_WBIN" "$PKG_VOICE/whisper-bin-win"
+  rm -f "$PKG_VOICE/whisper-bin-win/TRANSCRIPTION_SMOKE_OK"
 else
   rm -rf "$PKG_VOICE"
 fi
@@ -127,6 +152,10 @@ echo "   size: $(du -h "$OUT" | cut -f1)"
 if [ "$SHIPS_VOICE" = "1" ]; then
   echo "   voice payload in package:"
   unzip -l "$OUT" | grep -iE "voice/.*(ClaudeVoiceHelper|whisper-cli)" | sed 's/^/     /'
+  unzip -l "$OUT" | grep -q "voice/whisper-bin-win/whisper-cli.exe" || {
+    echo "error: the package carries no Windows whisper bundle — packaged Windows voice would fail (#47)." >&2
+    exit 1
+  }
 fi
 echo
 if [ "$SHIPS_VOICE" = "1" ]; then
