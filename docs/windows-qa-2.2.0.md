@@ -45,8 +45,14 @@ after every press. Companion to `docs/HANDOFF-qa-fixes.md` (the Mac record) and
 | Screenshot key | Snip overlay → PNG in `screenshots/` → "inspect this image" prompt typed into the pinned session 7 s later | PASS |
 | Voice / Voice Draft / Model picker / Esc / Clear / Cost details / Enter | All fired and logged | PASS |
 
-Not run today: #22 (non-US keyboard layout), #49 (10-minute idle retention), #27 (zero-session idle
-CPU), #26 inferred project roots by voice.
+| #22 non-US layout | German QWERTZ added under en-US, Win+Space in the session's tab, Explain prompt sent: character-exact (y/z, apostrophe, em dash, hyphen). The helper resolves every character through `VkKeyScanW` against the live layout | PASS |
+| #26 project by voice | "claude console" → whisper caught only "console" (the ~1 s helper start-up clips the first word — known) → matched `ravi\claude-console` of 3 candidates → new session in slot 3 | PASS |
+| #27 idle CPU | `LogiPluginService` 5.1 cpu-s over 90 s ≈ 5.7 % of one core, 33 MB, two sessions idle (not zero-session: the measuring session was alive). QA's pre-fix figure was 8.1 % | PASS (upper bound) |
+| #49 idle retention | Session 2 idle 28 min: its state file (own cost $1.72, ctx 4 %) still present, still slot 2 — the old 10-minute prune would have deleted it | PASS |
+
+All 2.2.0 fixes that apply to Windows have now been exercised on the keypad. Not applicable here:
+#18's mic-denied path (macOS TCC), #29 (other terminals — Windows never used that path), #46
+(osascript), #20/#34/#45 (moot since universal).
 
 ## Findings
 
@@ -89,6 +95,13 @@ matters, with a one-line repaint log in a dev build.
 asserts Mac-shaped facts (`scripts/` exists after load) that the Windows gates deliberately skip.
 Make the assertions platform-aware or skip them on Windows the way the file-mode tests do; until then
 every Windows commit needs `--no-verify`, which is how W2 and W3 were committed.
+
+**W7 — an unpushed local branch overlaps today's #47 fix.** `.worktrees/qa-windows` holds
+`fix/qa-windows` (three commits of 2026-08-29, based on the pre-icons main): "package a smoke-tested
+whisper runtime" (a parallel #47 fix with `tools/windows/prepare-whisper-bundle.ps1`), "surface the
+Windows Terminal requirement", "recognize Store-installed Codex CLI". The #47 half is superseded by
+`4439a36` (on main, verified on the keypad); the other two and the prep script are worth rebasing onto
+main rather than losing.
 
 **W6 — the timestamp trap for anyone hand-writing state files on Windows.** PowerShell 5.1's
 `Get-Date -UFormat %s` returns LOCAL seconds (+19800 on this laptop). Use
