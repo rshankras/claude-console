@@ -17,10 +17,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// Six slots fill one 9-key page alongside Yes / No / Voice. Empty slots draw a blank face and
     /// do nothing on press.
     ///
-    /// Face layout (2026-08 design): the whole face is a custom bitmap — the session NAME wrapped
-    /// on top, and a colour-filled STATE-WORD bar below it (Thinking / Allow? / Waiting / Ready),
-    /// amber when your approval is wanted. The bar lives in the bitmap because the service label
-    /// strip cannot be coloured; that strip is left to show the registered slot name.
+    /// Face layout (2026-08-30, owner's call): a plain BLACK key with the project (directory)
+    /// name centred in the middle — no state bar, no selection brackets, no context %. The name is
+    /// drawn in the bitmap (the service label strip is pinned to the bottom edge, so it cannot be
+    /// centred) and the strip itself is blanked.
     /// </summary>
     public class SessionSlotCommand : PluginDynamicCommand
     {
@@ -66,44 +66,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             this.ActionImageChanged();
         }
 
-        // The whole face (name + state-word bar) is drawn in the bitmap, so the service's own label
+        // The name is drawn centred in the bitmap, so the service's own label
         // strip should be BLANK. Returning String.Empty makes the service fall back to the registered
         // slot name ("Session 1"); a zero-width space is non-empty, so it suppresses that fallback
         // and renders as nothing.
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
             "\u200B";
 
+        // A black key with the project (directory) name in the middle; an empty slot is bare black.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             if (!TryGetSlot(actionParameter, out var slot) || _bridge.Grid.SlotSession(slot) is not { } session)
             {
-                // Empty slot: a plain dark face.
-                return KeyImage.RenderSessionSlot(imageSize, null, null, KeyImage.Gray, darkText: false);
+                return KeyImage.RenderSessionSlot(imageSize, null);
             }
 
-            var selected = session.SessionKey == _bridge.TargetTty();
             var name = String.IsNullOrWhiteSpace(session.Project) ? _bridge.Agent.DisplayName : session.Project;
-            // The SELECTED (routed) session — the one every other key acts on — gets the AMBER bar;
-            // the rest are grey. The bar colour IS the selection cue (no more brackets). The word
-            // still says what each session is doing.
-            var barColor = selected ? KeyImage.Amber : KeyImage.Gray;
-            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session), barColor, darkText: selected);
-        }
-
-        // The design's state word for a session's live state.
-        private static String StateWord(GridSession session)
-        {
-            if (session.Risk != ApprovalRisk.None)
-            {
-                return "Allow?";
-            }
-
-            switch (session.State)
-            {
-                case "busy": return "Thinking";
-                case "waiting": return "Waiting";
-                default: return "Ready";
-            }
+            return KeyImage.RenderSessionSlot(imageSize, name);
         }
 
         // The key is ~12 characters wide; the tooltip carries the full detail.

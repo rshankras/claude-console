@@ -85,69 +85,46 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
-        /// A session-grid key face. Hardware taught the layout (photos, 3 iterations):
-        /// the bitmap covers only the UPPER SQUARE of the key — the service always reserves the
-        /// bottom strip for the label, and that strip's single-line font is the largest, crispest
-        /// text a key can carry (two-line labels get shrunk; in-bitmap text at comparable size
-        /// clips). So identity goes where the platform is strongest: the PROJECT NAME is the
-        /// service label (SessionSlotCommand.GetCommandDisplayName), matching every other key's
-        /// design language — and the bitmap carries the state icon with the small slate context %
-        /// under it. An empty slot is a plain dark face. <paramref name="selected"/> adds corner
-        /// brackets so you can see which session the typing keys are pointed at.
+        /// The session face is split in two: the TITLE region is the top 75% of the key, and the
+        /// bottom 25% is a reserved band (drawn black for now).
         /// </summary>
+        private const Single SessionTitleShare = 0.75f;
+
         /// <summary>
-        /// A session-grid key face, redrawn to the 2026-08 design: the session NAME on top and a
-        /// colour-filled STATE-WORD bar below it (Thinking / Allow? / Waiting / Ready). Amber is
-        /// reserved for "your approval is wanted", the one state that needs the user.
+        /// A session-grid key face: a plain BLACK key, divided 75/25. The session's project
+        /// (directory) name is centred within the top 75%; the bottom 25% is left empty.
         ///
-        /// The bar lives inside the BITMAP, not the service's own label strip below the key, because
-        /// that strip is a fixed dark single-line label the plugin cannot colour — and the design's
-        /// point is a coloured state bar. So the whole face is custom; the service strip is left
-        /// blank. An empty slot is a plain dark face. The bar's COLOUR is the selection cue: the
-        /// caller passes amber for the routed session, grey for the rest (no corner brackets).
+        /// The name lives in the bitmap rather than the service's own label strip because that
+        /// strip is pinned to the bottom edge; centring needs the face. Long names wrap to two
+        /// lines (DrawText clips overflow instead of wrapping). An empty slot is the bare black face.
         /// </summary>
-        public static BitmapImage RenderSessionSlot(
-            PluginImageSize imageSize, String name, String stateWord,
-            BitmapColor barColor, Boolean darkText)
+        public static BitmapImage RenderSessionSlot(PluginImageSize imageSize, String name)
         {
             using (var bitmap = new BitmapBuilder(imageSize))
             {
                 bitmap.Clear(Background);
+
+                if (String.IsNullOrWhiteSpace(name))
+                {
+                    return bitmap.ToImage();   // empty slot: bare black face
+                }
+
                 var w = bitmap.Width;
                 var h = bitmap.Height;
                 var scale = Math.Min(w, h) / 96f;
                 var pad = (Int32)(4 * scale);
+                var titleH = (Int32)(h * SessionTitleShare);
 
-                // Empty slot: a plain dark face (no live session in this slot).
-                if (String.IsNullOrEmpty(stateWord))
+                // Wrap into up to two lines — DrawText centres a single line and CLIPS the overflow
+                // (a long "claude-console" lost both ends on the device) — then stack the block
+                // vertically centred within the TITLE region (top 75%), not the whole face.
+                var lines = WrapTwo(name, 11);
+                var lineH = (Int32)(17 * scale);
+                var top = Math.Max(0, (titleH - (lines.Length * lineH)) / 2);
+                for (var i = 0; i < lines.Length; i++)
                 {
-                    return bitmap.ToImage();
+                    bitmap.DrawText(lines[i], pad, top + (i * lineH), w - (2 * pad), lineH, White, fontSize: (Int32)(14 * scale));
                 }
-
-                // NAME — the design's title, over the top ~60%. Smaller than the service's own label
-                // font, but the design puts the name ABOVE the state and the service strip is pinned
-                // to the very bottom, so the name has to live in the bitmap.
-                if (!String.IsNullOrWhiteSpace(name))
-                {
-                    // Wrap into up to two lines — DrawText centres a single line and CLIPS the
-                    // overflow (a long "claude-console" lost both ends on the device) instead of
-                    // wrapping, so the split is done here.
-                    var lines = WrapTwo(name, 11);
-                    var lineH = (Int32)(17 * scale);
-                    var top = pad + Math.Max(0, ((Int32)(h * 0.62) - (lines.Length * lineH)) / 2);
-                    for (var i = 0; i < lines.Length; i++)
-                    {
-                        bitmap.DrawText(lines[i], pad, top + (i * lineH), w - (2 * pad), lineH, White, fontSize: (Int32)(14 * scale));
-                    }
-                }
-
-                // STATE-WORD BAR — a filled band with the word centred, flush to the bottom and both
-                // side edges (zero padding) so it reads as a solid strip. Colour = selection (amber
-                // for the routed session, grey otherwise); dark text on amber, white on grey.
-                var barH = (Int32)(h * 0.30);
-                var barY = h - barH;
-                bitmap.FillRectangle(0, barY, w, barH, barColor);
-                bitmap.DrawText(stateWord, 0, barY, w, barH, darkText ? Dark : White, fontSize: (Int32)(14 * scale));
 
                 return bitmap.ToImage();
             }
