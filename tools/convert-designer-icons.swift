@@ -1,9 +1,9 @@
 // convert-designer-icons.swift — renders the designer SVG set (assets/designer-icons/Colours,
 // variant "B" of the July 2026 icon pack) into the 96px PNGs the plugin embeds.
 //
-// Owns the icons listed in `mapping` + `recolors` below; tools/generate-icons.swift owns the
-// REST (state faces, wave frames, and icons the pack doesn't cover). The two sets are disjoint
-// on purpose — run either script without stepping on the other's output.
+// Owns every static icon listed in `mapping` + `recolors` below. Where the delivered pack has no
+// glyph, a small SVG in the same 43-unit copper line language lives beside it in White/. The only
+// assets left to tools/generate-icons.swift are the animated listening bars.
 //
 // Recolors: the pack ships one colour per glyph. Threshold/model variants (gauge_warn/crit,
 // brain_haiku/sonnet/opus) are produced by swapping the SVG's fill hex before rendering, so the
@@ -13,20 +13,30 @@
 import AppKit
 
 let repo = FileManager.default.currentDirectoryPath
-let srcDir = repo + "/assets/designer-icons/Colours"
-let outDir = repo + "/src/Core/Resources/icons"   // moved here by the multi-agent refactor
+// Neutral action/nav glyphs render from the WHITE set — one monochrome colour, the designer's
+// 2026-08 direction (a dedicated White/ variant was delivered alongside Colours/). The colour
+// variants (gauge warn/crit and brain tiers) render from Colours/, whose hex fills `recolor`
+// can swap; a White SVG (fill="white") is deliberately left untouched by recolor.
+let whiteDir = repo + "/assets/designer-icons/White"
+let coloursDir = repo + "/assets/designer-icons/Colours"
+let outDir = repo + "/src/Core/Resources/icons"   // #39: the embedded-resource path (was src/Resources/icons)
 guard FileManager.default.fileExists(atPath: outDir) else {
     print("error: output directory does not exist: \(outDir)")
-    print("       (run from the repo root; the embedded icons moved to src/Core/Resources in the multi-agent refactor)")
+    print("       (run from the repo root; the embedded icons live in src/Core/Resources)")
     exit(1)
 }
 
 // Designer palette (sampled from the pack itself).
 let GREEN = "#7FC17A", RED = "#CE655C", AMBER = "#DFA658", BLUE = "#81A8ED", PURPLE = "#A194EB"
+// Claude identity copper — the neutral action/nav glyphs render in this, matching the 2026-08
+// design frames (icons copper, colour reserved for state). The White SVGs are tinted to it below.
+let COPPER = "#CC7C5E"
 
 // SVG basename -> embedded icon basename (see preview sheet for the intended action).
 let mapping: [(String, String)] = [
     ("Brain", "brain"),                    // Model key fallback (brain_* variants below)
+    ("BusyBottom", "busy1"),              // Activity animation, frame 2
+    ("BusyTop", "busy0"),                 // Activity animation, frame 1
     ("Branch", "create_pr"),
     ("Bug", "fix_bug"),
     ("Build project", "refactor"),
@@ -45,7 +55,8 @@ let mapping: [(String, String)] = [
     ("GoToFolder", "project"),
     ("Info", "status"),
     ("ListTool", "log"),
-    ("Money", "cost"),
+    ("Cost", "cost"),
+    ("Deploy", "deploy"),
     ("Multi-toggleOff", "plan"),           // the Mode key (action id is still "plan")
     ("NewBrowserTab", "new_tab"),
     ("NewPresentation", "new_claude"),
@@ -53,17 +64,22 @@ let mapping: [(String, String)] = [
     ("Optimize", "optimize"),
     ("PasteInsert", "write_tests"),
     ("PreviousTab(Left)", "prev_tab"),
-    ("Radiobutton-Check", "yes"),
-    ("Remove", "no"),
     ("ScrollDown", "scroll_down"),
     ("ScrollUp", "scroll_up"),
     ("Security", "security"),
     ("Show", "review"),
-    ("Shrink Selection", "compact"),
+    ("Show", "review_core"),              // native review uses the approved eye language too
+    ("Screenshot", "screenshot"),
+    ("Compact", "compact"),
     ("SmartActions", "done"),              // ready state (Activity key + session faces)
     ("Speed", "gauge"),                    // context gauge, normal fill
     ("Tab", "tab"),
+    ("Terminal", "terminal"),
     ("VoiceDictation", "voice"),
+    ("Waiting", "waiting"),
+    ("WindowAdd", "new_claude_window"),
+    ("WindowNext", "next_window"),
+    ("WindowPrevious", "prev_window"),
 ]
 
 // (source SVG, output name, fill hex) — colour variants of a designer glyph.
@@ -73,6 +89,15 @@ let recolors: [(String, String, String)] = [
     ("Brain", "brain_haiku", GREEN),       // fast
     ("Brain", "brain_sonnet", BLUE),       // balanced
     ("Brain", "brain_opus", PURPLE),       // top tier
+]
+
+// (source SVG, output name) — glyphs rendered WHITE, untinted: they sit on a coloured tile
+// (KeyImage.RenderDecisionTile paints the Allow/Deny state colour underneath), so the glyph
+// itself stays the frame's white. Drawn in the pack's 43-unit line language, 2.7-unit stroke,
+// ring and mark sharing one weight — the shape the 2026-08 frames show.
+let whites: [(String, String)] = [
+    ("Allow", "allow"),                    // circled check, Yes key
+    ("Deny", "deny"),                      // circled x, No key
 ]
 
 let size: CGFloat = 96
@@ -105,6 +130,14 @@ func recolor(_ svgText: String, to hex: String) -> String {
     return out + rest
 }
 
+// Tint a WHITE glyph (fill="white") to `hex`. The White SVGs are single-fill masks, so this is
+// how the neutral set takes the copper identity colour. fill="none" backgrounds are left alone.
+func tintWhite(_ svgText: String, to hex: String) -> String {
+    return svgText
+        .replacingOccurrences(of: "fill=\"white\"", with: "fill=\"" + hex + "\"")
+        .replacingOccurrences(of: "stroke=\"white\"", with: "stroke=\"" + hex + "\"")
+}
+
 // Compose voice_draft IN the designer's language: their VoiceDictation mic (scaled, right) plus
 // three rounded wave bars whose width matches the pack's stroke weight (~3.2 units on a 43 grid
 // ≈ 7px at 96). The pack predates the Voice Draft key, so this is the one icon built from
@@ -114,10 +147,7 @@ func renderVoiceDraft(micSvg: String, to path: String) -> Bool {
     let target = NSImage(size: NSSize(width: size, height: size))
     target.lockFocus()
     mic.draw(in: NSRect(x: 34, y: 6, width: 66, height: 66))   // right-of-centre, slightly low
-    var v: UInt64 = 0
-    Scanner(string: String(PURPLE.dropFirst())).scanHexInt64(&v)
-    NSColor(srgbRed: CGFloat((v >> 16) & 0xff) / 255, green: CGFloat((v >> 8) & 0xff) / 255,
-            blue: CGFloat(v & 0xff) / 255, alpha: 1).set()
+    NSColor(srgbRed: 0xCC / 255.0, green: 0x7C / 255.0, blue: 0x5E / 255.0, alpha: 1).set()  // copper bars, matching the copper mic
     let barW: CGFloat = 7
     for (x, h) in [(CGFloat(10), CGFloat(30)), (23, 52), (36, 38)] {
         NSBezierPath(roundedRect: NSRect(x: x, y: (size - h) / 2, width: barW, height: h),
@@ -135,8 +165,8 @@ func renderVoiceDraft(micSvg: String, to path: String) -> Bool {
 }
 
 var ok: [String] = [], fail: [String] = []
-if let micText = try? String(contentsOfFile: srcDir + "/VoiceDictation.svg", encoding: .utf8),
-   renderVoiceDraft(micSvg: micText, to: outDir + "/voice_draft.png")
+if let micText = try? String(contentsOfFile: whiteDir + "/VoiceDictation.svg", encoding: .utf8),
+   renderVoiceDraft(micSvg: tintWhite(micText, to: COPPER), to: outDir + "/voice_draft.png")
 {
     ok.append("voice_draft")
 }
@@ -145,14 +175,20 @@ else
     fail.append("voice_draft")
 }
 for (svg, name) in mapping {
-    let svgPath = srcDir + "/" + svg + ".svg"
+    let svgPath = whiteDir + "/" + svg + ".svg"
     guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
-    if renderSvg(text, to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
+    // Neutral glyphs take the copper identity colour (the White mask tinted to COPPER).
+    if renderSvg(tintWhite(text, to: COPPER), to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
 }
 for (svg, name, hex) in recolors {
-    let svgPath = srcDir + "/" + svg + ".svg"
+    let svgPath = coloursDir + "/" + svg + ".svg"
     guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
     if renderSvg(recolor(text, to: hex), to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
+}
+for (svg, name) in whites {
+    let svgPath = whiteDir + "/" + svg + ".svg"
+    guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
+    if renderSvg(text, to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
 }
 print("OK(\(ok.count)): \(ok.joined(separator: ", "))")
 print("FAIL(\(fail.count)): \(fail.joined(separator: ", "))")

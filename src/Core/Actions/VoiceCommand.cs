@@ -21,7 +21,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private readonly FailureFace _fail;
 
         public VoiceCommand()
-            : base(displayName: "Voice", description: "Speak a prompt — press to start, press again to transcribe and send", groupName: "Universal")
+            : base(displayName: "Dictate", description: "Speak a prompt — press to start, press again to transcribe and send", groupName: "Universal")
         {
             _face = new ListeningFace(() => this.ActionImageChanged());
             _fail = new FailureFace(() => this.ActionImageChanged());
@@ -59,7 +59,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            _face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Voice");
+            _face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Dictate");
 
         // Listening wins over a stale failure: a new press means a new attempt.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
@@ -67,6 +67,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 ? KeyImage.Render(imageSize, "Listening", KeyImage.Green, _face.Icon)
                 : _fail.IsActive
                     ? KeyImage.Render(imageSize, _fail.Text, KeyImage.Red, "voice")
-                    : KeyImage.Render(imageSize, "Voice", KeyImage.Purple, "voice");
+                    : KeyImage.Render(imageSize, "Dictate", KeyImage.Purple, "voice");
     }
 }
