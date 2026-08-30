@@ -38,11 +38,21 @@ esac
 if [ "$SHIPS_VOICE" = "1" ]; then
   [ -d "$APP" ]  || { echo "error: helper missing ($APP) — run sign-and-notarize.sh first." >&2; exit 1; }
   [ -d "$WBIN" ] || { echo "error: whisper bundle missing ($WBIN) — run sign-and-notarize.sh first." >&2; exit 1; }
+  # A whisper bundle that has never transcribed anything must not ship. 2.0.1 went out with a
+  # bundle carrying no compute backends: it aborted on every user machine and passed every check
+  # here, because this machine's Homebrew supplied the backends it was missing (#24). The marker
+  # is written by bundle-whisper.sh only after a real transcription with Homebrew unreachable.
+  if [ ! -f "$WBIN/TRANSCRIPTION_SMOKE_OK" ]; then
+    echo "error: $WBIN has not passed the transcription smoke test." >&2
+    echo "       Re-run tools/voice/bundle-whisper.sh (it needs a speech model; see" >&2
+    echo "       WHISPER_SMOKE_MODEL) — an unverified bundle is how the voice regression shipped." >&2
+    exit 1
+  fi
   if ! xcrun stapler validate "$APP" >/dev/null 2>&1; then
     echo "error: $APP is not stapled/notarized — run tools/voice/sign-and-notarize.sh first." >&2
     exit 1
   fi
-  echo ">>> voice payload OK (helper notarized + stapled)"
+  echo ">>> voice payload OK (helper notarized + stapled, bundle transcription-verified)"
 else
   echo ">>> $PRODUCT ships no voice payload — skipping the notarization preflight"
 fi
@@ -61,6 +71,26 @@ rm -rf "$BUILD_DIR"
 
 echo ">>> building plugin (Release)"
 ( cd "$ROOT/src/Products/$PRODUCT" && dotnet build -c Release -p:SkipPluginLink=true >/dev/null )
+
+# A shipped binary must not name the machine it was built on. Release builds set PathMap
+# (src/Directory.Build.props) so the recorded PDB path becomes /src/... instead of the author's
+# home directory, which 2.0.1 disclosed to anyone running `strings` on the plugin (#26). Verify it
+# here rather than trusting the property: this is the only place a Release DLL actually exists.
+echo ">>> checking the Release DLL for build-machine paths"
+LEAKED="$(python3 - "$BUILD_DIR" <<'PY'
+import pathlib, re, sys
+pat = re.compile(rb'(?:/Users/|[A-Za-z]:\\\\Users\\\\)[^\x00]{0,160}')
+for dll in pathlib.Path(sys.argv[1]).rglob('*.dll'):
+    for hit in pat.findall(dll.read_bytes()):
+        print(f"{dll.name}: {hit.decode(errors='replace')}")
+PY
+)"
+if [ -n "$LEAKED" ]; then
+  echo "error: the Release build embeds build-machine paths:" >&2
+  printf '%s\n' "$LEAKED" | head -10 >&2
+  echo "       PathMap in src/Directory.Build.props should prevent this — check it applied." >&2
+  exit 1
+fi
 
 # Belt and braces: if a .link is already lying around from an earlier dev build, it will collide
 # with the package we are about to install. Clear it now rather than debugging it later.

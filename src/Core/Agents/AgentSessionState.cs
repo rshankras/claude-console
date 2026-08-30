@@ -26,6 +26,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         public Int32? CtxPercent { get; init; }
 
         /// <summary>
+        /// The file this agent appends to as a turn progresses, when it exposes one — Claude Code's
+        /// `transcript_path`, Codex's rollout file. Null when the agent reports none.
+        ///
+        /// It exists here because a turn that is INTERRUPTED fires no lifecycle hook (#30): the only
+        /// exit from "busy" is the agent saying so, and on Esc it never does. A file that grows while
+        /// the agent works is the one signal that separates a stuck session from a slow one, which an
+        /// age threshold cannot do — a long tool call and a dead turn look identical by age alone.
+        /// </summary>
+        public String TranscriptPath { get; init; }
+
+        /// <summary>
         /// busy | waiting | done — or null when the agent reports activity somewhere else and the
         /// caller should keep looking (Claude Code writes it to a separate activity file).
         /// </summary>

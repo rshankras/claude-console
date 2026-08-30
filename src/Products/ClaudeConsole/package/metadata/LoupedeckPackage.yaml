@@ -18,7 +18,7 @@ description: Physical hardware controls for Claude Code on the MX Creative Keypa
 pluginFileName: ClaudeConsolePlugin.dll
 
 # Plugin version.
-version: 2.1.0
+version: 2.2.0
 
 # Author of the plugin. The author can be a company or an individual developer.
 author: S.Ravi Shankar
@@ -58,11 +58,14 @@ supportedDevices:
 
 # List of plugin capabilities.
 pluginCapabilities:
-    # Application plugin, associated with Terminal.app (ClaudeConsoleApplication). Required for the
-    # auto-imported default profile in profiles/DefaultProfile70.lp5. NOTE: enabling this with an
-    # EMPTY bundle name in the application class crashes the service's association machinery and
-    # trips the crash-disable marker — the class must name a real application.
-    - HasApplication
+    # Universal plugin (the same shape as Spotify): no application binding, no packaged profile.
+    # Users add Terminal as an application in Options+ and drag these actions onto its profile, or
+    # import the ready-made layout from profiles/ in the repo. Decided with Logitech on 2026-08-28
+    # (#23). With no application entry of our own there is nothing to register, orphan, or lose on
+    # a reinstall — the whole class of defects behind #20, #34 and #45 is gone rather than fixed —
+    # and two of our plugins can coexist, since neither claims the terminal. (The 1.5-era crash came
+    # from HasApplication with an EMPTY bundle name; the binding that needed is simply gone now.)
+    - HasNoApplication
 
     # Uncomment the following line if the plugin sends keyboard shortcuts to the target application.
     #- ActivatesApplication

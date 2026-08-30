@@ -10,14 +10,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     public class ContextCommand : PluginDynamicCommand
     {
         private readonly BridgeManager _bridge;
+        private readonly LiveStatusGate _gate;
         private Int32 _percent;
         private Int32 _usedTokens;
         private Int32 _maxTokens;
 
+        // "33%" — plus "325k/1M" once the window size is known.
+        private Boolean _hasData = true;
+
         public ContextCommand()
-            : base(displayName: "Context", description: "Live context-window usage (press for /context)", groupName: "Core")
+            : base(displayName: "Context", description: "Live context-window usage, press for /context (press to turn live status on, hold to turn it off)", groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
+            // Until live status is set up the key says so instead of a value; the first press arms it and
+            // says what a second press will change, the second press enables (#31) — see LiveStatusGate.
+            _gate = new LiveStatusGate(_bridge, "Context", () => this.ActionImageChanged());
 
             _bridge.OnStateChanged += (state) =>
             {
@@ -30,15 +37,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                         : max > 0 ? (Int32)Math.Round(100.0 * used / max)
                         : 0;
 
-                if (pct != _percent || used != _usedTokens || max != _maxTokens)
+                if (pct != _percent || used != _usedTokens || max != _maxTokens || !_hasData)
                 {
                     _percent = pct;
                     _usedTokens = used;
                     _maxTokens = max;
+                    _hasData = true;
+                    this.ActionImageChanged();
+                }
+            };
+
+            // The session on the display keys has reported nothing — a tab whose Claude has not run
+            // a turn yet, or one started before the status-line bridge was wired. Show a dash rather
+            // than the last writer's numbers, which would be a different session's (#49).
+            _bridge.OnStateUnavailable += () =>
+            {
+                if (_hasData)
+                {
+                    _hasData = false;
                     this.ActionImageChanged();
                 }
             };
         }
+
+        // The key owns its button events: the service would otherwise run the short action the
+        // instant the key goes down, before it can know a long press is coming. Short press = the
+        // key's own job (on release); long press = the way off. See LiveStatusGate.
+        protected override Boolean ProcessButtonEvent2(String actionParameter, DeviceButtonEvent2 buttonEvent) =>
+            _gate.HandleButton(buttonEvent.EventType, () => this.RunCommand(actionParameter));
 
         protected override void RunCommand(String actionParameter)
         {
@@ -46,9 +72,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             PluginLog.Info("ContextCommand: /context");
         }
 
-        // "33%" — plus "325k/1M" once the window size is known.
         private String Label()
         {
+            var setup = _gate.Label;
+            if (setup != null)
+            {
+                return setup;
+            }
+
+            if (!_hasData)
+            {
+                return "—";
+            }
+
             if (_maxTokens <= 0)
             {
                 return $"{_percent}%";

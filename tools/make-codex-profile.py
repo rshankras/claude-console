@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Build the Codex keypad profile from Claude Console's.
 
+Both are DOWNLOADS, not package contents: the plugins are universal (#23), so neither package
+carries a profile. Each .lp5 in profiles/ is a Terminal profile — bound to Options+'s own entry
+for Terminal (com.apple.terminal), NOT to the plugin — with the product's actions placed on it.
+The user imports it, or drags the actions on by hand; either way the binding stays Terminal's.
+
 The layout is deliberately the same — the two products do the same job — but a copied profile is
 not simply a rename. Three things have to change or the keypad lies to the user:
 
   1. Key bindings name the plugin that owns them ("<PluginShortName>___<Type>___<param>"). Left
-     alone, every key points at a plugin this package does not contain and does nothing.
+     alone, every key points at a plugin this package does not contain and does nothing. The
+     profile also LISTS the plugins it draws on (additionalNativePluginNames), and that list has
+     to name this product.
   2. Identity is the GUID, not the display string, and the service dedupes by it. Sharing Claude
      Console's would collapse the two profiles into one.
   3. Keys for things Codex does not have must be DROPPED, not merely disabled in code. Gating an
@@ -20,12 +27,11 @@ import json
 import os
 import zipfile
 
-SRC = "src/Products/ClaudeConsole/package/profiles/DefaultProfile70.lp5"
-DST = "src/Products/VizhiCodex/package/profiles/DefaultProfile70.lp5"
+SRC = "profiles/ClaudeConsole-Keypad.lp5"
+DST = "profiles/VizhiCodex-Keypad.lp5"
 
 GUID = "7B2C4E9A15D8436FA0C3E17D5B84962F"
-APP = "@_codexconsole"
-DISPLAY = "Vizhi for Codex"
+DISPLAY = "Vizhi for Codex — Keypad"
 PLUGIN = "VizhiCodex"
 
 # Bindings to drop, and why each one does not apply to Codex.
@@ -117,21 +123,22 @@ def main() -> None:
                 text = data.decode("utf-8").replace("ClaudeConsole___", PLUGIN + "___")
                 doc = json.loads(text)
                 doc["name"] = GUID
-                doc["packageName"] = GUID
+                if doc.get("packageName"):
+                    doc["packageName"] = GUID
                 doc["displayName"] = DISPLAY
-                doc["applicationName"] = APP
-                doc["nativePluginName"] = PLUGIN
+                # applicationName stays Terminal's own entry; nativePluginName stays null — this is
+                # a Terminal profile that USES the plugin, not a profile the plugin owns.
+                doc["additionalNativePluginNames"] = [
+                    PLUGIN if n == "ClaudeConsole" else n for n in doc.get("additionalNativePluginNames", [])]
                 freed = strip_unsupported(doc)
                 print(f"   {freed} keys freed")
                 rearrange(doc)
                 data = json.dumps(doc, indent=2).encode("utf-8")
 
             elif item.filename == "ApplicationInfo.json":
+                # Terminal's own entry, untouched except for which profile is its default: the
+                # name, bundle id and hasNativePlugin=false are what make this universal.
                 doc = json.loads(data)
-                doc["name"] = APP
-                doc["displayName"] = DISPLAY
-                doc["description"] = "Codex CLI controls for Terminal.app."
-                doc["nativePluginName"] = PLUGIN
                 doc["defaultProfileName"] = GUID
                 data = json.dumps(doc, indent=2).encode("utf-8")
 

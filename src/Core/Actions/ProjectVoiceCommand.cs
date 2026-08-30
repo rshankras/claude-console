@@ -18,37 +18,55 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     public class ProjectVoiceCommand : PluginDynamicCommand
     {
         private readonly ListeningFace _face;
+        private readonly FailureFace _fail;
 
         public ProjectVoiceCommand()
             : base(displayName: "Go to Project", description: "Speak a project name — opens a new tab, cd's there, and launches claude", groupName: "Terminal")
         {
             _face = new ListeningFace(() => this.ActionImageChanged());
+            _fail = new FailureFace(() => this.ActionImageChanged());
+
+            // A dictation that failed says so on the key that was pressed, for a moment (#18). Only
+            // this key's own captures: a failure routed to another key is that key's to show.
+            BridgeManager.Instance.OnVoiceFailed += (intent, text) =>
+            {
+                if (intent == VoiceIntent.Project) { _fail.Show(text); }
+            };
+
+            // The engine owns "is the mic running, and for whom" (#28). This key only reflects it,
+            // so a capture stopped from ANOTHER voice key clears this face too — three keys used to
+            // hold three private flags and could all claim to be recording at once.
+            BridgeManager.Instance.Voice.Changed += () =>
+            {
+                if (BridgeManager.Instance.Voice.IsRecording(VoiceIntent.Project))
+                {
+                    if (!_face.IsActive) { _face.Start(); }
+                }
+                else if (_face.IsActive)
+                {
+                    _face.Stop();
+                }
+                this.ActionImageChanged();
+            };
         }
 
         protected override void RunCommand(String actionParameter)
         {
-            var bridge = BridgeManager.Instance;
-            if (!_face.IsActive)
-            {
-                bridge.StartVoiceCapture();
-                _face.Start();
-            }
-            else
-            {
-                bridge.StopVoiceCaptureForProject();
-                _face.Stop();
-            }
-
-            this.ActionImageChanged();
+            // One door for every voice key. Whether this press starts, stops, or is refused — and
+            // where a stopped capture's transcript is routed — is the engine's call, not this key's.
+            BridgeManager.Instance.ToggleVoice(VoiceIntent.Project);
             PluginLog.Info($"ProjectVoiceCommand: listening={_face.IsActive}");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            _face.IsActive ? "Listening" : "Go to Project";
+            _face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Go to Project");
 
+        // Listening wins over a stale failure: a new press means a new attempt.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
             _face.IsActive
                 ? KeyImage.Render(imageSize, "Listening", KeyImage.Green, _face.Icon)
-                : KeyImage.Render(imageSize, "Project", KeyImage.Blue, "project");
+                : _fail.IsActive
+                    ? KeyImage.Render(imageSize, _fail.Text, KeyImage.Red, "project")
+                    : KeyImage.Render(imageSize, "Project", KeyImage.Blue, "project");
     }
 }

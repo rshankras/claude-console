@@ -45,7 +45,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             capture.Bridge().InjectText("Explain how this code works", pressEnter: false);
 
-            Assert.Contains("keystroke (item 2 of argv)", capture.Script);
+            Assert.Contains("set the clipboard to (item 2 of argv)", capture.Script);
             Assert.DoesNotContain("key code 36", capture.Script);
         }
 
@@ -58,7 +58,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             var script = capture.Script;
             Assert.InRange(
-                script.IndexOf("keystroke (item 2 of argv)", StringComparison.Ordinal),
+                script.IndexOf("set the clipboard to (item 2 of argv)", StringComparison.Ordinal),
                 0,
                 script.IndexOf("key code 36", StringComparison.Ordinal) - 1);
         }

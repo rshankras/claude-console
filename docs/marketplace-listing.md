@@ -46,19 +46,19 @@ Works with Claude Code in Apple Terminal or Windows Terminal.
 
 ## Release notes — limit 1000 characters
 
-First submission, so written as an introduction rather than a changelog (Marketplace users never saw 1.x). Future submissions should switch to a real what's-changed format. No version heading — the page already shows the version from the package. Used 936:
+First submission, so written as an introduction rather than a changelog (Marketplace users never saw 1.x). Future submissions should switch to a real what's-changed format. No version heading — the page already shows the version from the package. Used 967:
 
 ```markdown
-First Marketplace release. Claude Console turns the MX Creative Keypad's nine LCD keys into a control surface for Claude Code, on macOS and Windows.
+Claude Console turns the MX Creative Keypad's nine LCD keys into a control surface for Claude Code.
 
-- **A key per session** — run up to 3 Claude sessions, each key showing its project, state & context; press one to focus it
-- **Live status** — model, running cost & context usage, straight from Claude Code
-- **One-press prompts** — Fix Bug, Write Tests, Review & more, fully customizable
-- **Answer Claude** — Yes/No and menu navigation from the keypad; keys light amber when Claude asks for approval, red when the pending command is risky
+- **A key per session** — up to 3 Claude sessions, each key showing project, state & context; press one to focus it
+- **Live status** — model, running cost & context, straight from Claude Code
+- **One-press prompts** — Fix Bug, Write Tests, Review & more, customizable
+- **Answer Claude** — Yes/No and menu navigation from the keypad; keys go amber when Claude asks for approval, red when the command is risky
 - **Git** — commit, diff, push, create PR
-- **Offline voice** — dictate a prompt or jump to a project by speaking its name; transcription runs locally, no cloud, no API keys
+- **Offline voice** — dictate a prompt or jump to a project by name; transcription runs locally, no cloud, no API keys
 
-Setup is automatic: on install the plugin registers itself in Options+ and imports the 9-key layout. Works with Claude Code in Apple Terminal (macOS) or Windows Terminal.
+Setup: install, then import the ready-made keypad layout from the GitHub release — or drag the Claude Console actions onto your own Terminal profile. Live keys are opt-in: one press turns them on. Works with Apple Terminal (macOS) or Windows Terminal; sessions in other terminals are not shown.
 ```
 
 ## Lessons for next time

@@ -82,6 +82,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             switch (actionParameter)
             {
                 case Esc:
+                    // Tell the grid before injecting: this is the ONE Escape that means "stop the
+                    // turn", so the stall rule can trust it and clear the hourglass in seconds
+                    // instead of waiting out the full transcript-quiet window (#30). Deliberately
+                    // NOT inside InjectKey — AnswerCommand also sends Escape, to reject a tool,
+                    // and the turn carries on after that one.
+                    bridge.Grid.NoteInterrupt(bridge.RoutingTty());
                     bridge.InjectKey(KeyStroke.Escape);
                     break;
                 case Mode:

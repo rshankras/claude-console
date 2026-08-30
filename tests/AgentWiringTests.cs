@@ -87,7 +87,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }
         }
 
+        // Each session hangs off a Terminal.app process: since #29 a session whose owning terminal
+        // the keys cannot drive takes no key at all, so a fixture without the owner would be a test
+        // of the eligibility filter, not of the agent wiring it is here to prove.
         private const String TwoClaudeOneCodex =
+            "   99     1 ??       /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal\n" +
+            "  199     1 ??       /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal\n" +
+            "  299     1 ??       /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal\n" +
             "  100    99 s000     claude\n" +
             "  200   199 s001     claude\n" +
             "  300   299 s003     codex\n";

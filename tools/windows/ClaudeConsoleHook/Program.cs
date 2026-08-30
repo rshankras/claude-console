@@ -164,8 +164,13 @@ internal static class Program
         WriteAtomic(Path.Combine(ActivityDir, SharedName + ".json"), payload);
 
         // "permission" carries the tool name and its input — that payload is what lets the plugin
-        // tell a routine approval from `git push --force` (RiskClassifier). Any other state means
-        // the moment has passed, so the pending file is cleared.
+        // tell a routine approval from `git push --force` (RiskClassifier).
+        //
+        // Clear the pending file ONLY on busy/done, never on a bare "waiting". A permission menu
+        // fires PermissionRequest (arrives here as "permission" WITH a payload) and then a plain
+        // Notification the CLI delays ~6s ("waiting", no payload, same menu still up). Deleting the
+        // payload on that second event darkened a live approval badge and blinded the Yes/No keys
+        // to a menu they were about to answer (#21/#51). Mirror scripts/activity-hook.sh exactly.
         var pending = key != null ? Path.Combine(ActivityDir, "pending-" + key + ".json") : null;
         if (pending != null)
         {
@@ -177,10 +182,11 @@ internal static class Program
                     WriteAtomic(pending, stdin);
                 }
             }
-            else
+            else if (state == "busy" || state == "done")
             {
                 try { File.Delete(pending); } catch { /* best effort */ }
             }
+            // "waiting" with no payload: leave any existing pending file intact — the menu is up.
         }
 
         return 0;

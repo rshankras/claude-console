@@ -12,14 +12,9 @@ fully offline voice dictation. No cloud, no API keys — everything runs on your
 Built on the same engine as [Claude Console](../../../README.md): one core, one adapter per
 agent, one package per product. *(Not an OpenAI product; Codex is a trademark of OpenAI.)*
 
-> **⚠️ Install one console per machine.** Vizhi for Codex and Claude Console both bind to
-> Terminal.app, and the Logi Plugin Service activates only one plugin per application — the
-> other silently loses its keys. If you use both agents, pick one console for now; a unified
-> dual-agent console is on the roadmap.
->
-> **Trying this preview?** Use a machine that does **not** have Claude Console installed —
-> if it's already on your keypad, uninstall it first (Options+ → Plugins), or the keys you
-> see may belong to the wrong plugin and nothing will look live.
+> Vizhi for Codex and Claude Console can be installed side by side: since 1.5.4 / 2.2.0 neither
+> binds an application, so the Logi Plugin Service has nothing to arbitrate — put each product's
+> keys on whatever profile you like. (Earlier versions both claimed Terminal.app and only one won.)
 
 ## Status
 
@@ -76,10 +71,11 @@ The keypad never shows a value the agent did not report:
 
 1. **Logi Options+ 6.4+** with the MX Creative Keypad set up.
 2. Double-click `VizhiCodex_<version>.lplug4` → Options+ asks to install.
-3. **Let one blink happen.** Within a minute the plugin registers a "Vizhi for Codex"
-   application in Options+ and imports the keypad layout by itself, then restarts the plugin
-   service once — the Options+ window closes and reopens on its own. Don't quit Options+
-   during that first minute.
+3. **Import the layout.** The plugin is universal — no application binding, no layout of its
+   own — so nothing appears until you give it keys. Download `VizhiCodex-Keypad.lp5` from the
+   release (or [`profiles/`](../../../profiles/)) and import it: Options+ → keypad → profile
+   menu → **Import Profile**. It lands as a Terminal profile with the Codex keys populated. Or
+   add Terminal as an application and drag the **Vizhi for Codex** actions on by hand.
 4. **Trust the hooks.** Your next Codex session opens with **"Hooks need review — 7 hooks are
    new or changed"**. All seven are this plugin: one per lifecycle event, each running the same
    one-line launcher (`~/.codex/codex-console/scripts/codex-hook.sh`), which writes state files

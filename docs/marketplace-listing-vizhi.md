@@ -74,7 +74,7 @@ First Marketplace release. Vizhi for Codex turns the MX Creative Keypad's nine L
 
 **Install only one console plugin per machine** — this and Claude Console both bind the terminal, and only one can be active.
 
-Setup is automatic: the plugin registers itself and imports the layout.
+Setup: install, then import the ready-made keypad layout (`VizhiCodex-Keypad.lp5`) from the GitHub release — or drag the Vizhi for Codex actions onto your own Terminal profile.
 ```
 
 ## Notes for the reviewer / support answers

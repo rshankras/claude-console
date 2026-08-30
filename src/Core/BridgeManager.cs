@@ -43,28 +43,53 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static String VoiceStopFile => IpcPaths.VoiceStopFile;
         private static String VoiceTranscriptFile => IpcPaths.VoiceTranscriptFile;
         private static String VoiceWavFile => IpcPaths.VoiceWavFile;
+        // Written by the helper INSTEAD of a transcript when dictation failed outright. Its whole
+        // purpose is to make a failure distinguishable from silence — see the poll loop below.
+        private static String VoiceErrorFile => VoiceTranscriptFile + ".error";
+
+        /// <summary>
+        /// Is the microphone running, and where is the result going? Owned here rather than by the
+        /// keys, because three keys drive one microphone and one set of IPC files (#28).
+        /// </summary>
+        internal readonly VoiceCaptureState Voice = new VoiceCaptureState();
+
+        /// <summary>
+        /// Test seam: the home directory every runtime and settings path below hangs off. Null means
+        /// the real user profile. These used to be static readonly fields computed at type-init, which
+        /// is why no test could ever touch settings.json — every wiring test was a source-text scrape
+        /// or a pure JsonObject test. Set and restore it in a finally; the suite is serial on purpose
+        /// (tests/AssemblyInfo.cs), the same discipline as PluginPaths.PluginAssemblyFilePath.
+        /// </summary>
+        internal static String HomeOverride { get; set; }
+
+        private static String UserHome =>
+            HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
         // Runtime home shared with the voice helper: ~/.claude/claude-console/
-        private static readonly String ClaudeConsoleHome = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "claude-console");
-        private static readonly String VoiceHelperApp = Path.Combine(ClaudeConsoleHome, "ClaudeVoiceHelper.app");
+        private static String ClaudeDir => Path.Combine(UserHome, ".claude");
+        private static String ClaudeConsoleHome => Path.Combine(ClaudeDir, "claude-console");
+        private static String VoiceHelperApp => Path.Combine(ClaudeConsoleHome, "ClaudeVoiceHelper.app");
         // Self-contained whisper-cli produced by tools/voice/bundle-whisper.sh (no Homebrew needed).
-        private static readonly String WhisperBinDir = Path.Combine(ClaudeConsoleHome, "whisper-bin");
-        private static readonly String BundledWhisperCli = Path.Combine(WhisperBinDir, "whisper-cli");
+        private static String WhisperBinDir => Path.Combine(ClaudeConsoleHome, "whisper-bin");
+        private static String BundledWhisperCli => Path.Combine(WhisperBinDir, "whisper-cli");
 
-        // Live-status bridge — scripts + settings.json the plugin auto-wires (see EnsureBridgeAutoWired).
-        private static readonly String ClaudeDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude");
-        private static readonly String SettingsFile = Path.Combine(ClaudeDir, "settings.json");
-        private static readonly String SettingsBackup = Path.Combine(ClaudeDir, "settings.json.claude-console.bak");
-        private static readonly String ScriptsDir = Path.Combine(ClaudeConsoleHome, "scripts");
-        private static readonly String StatuslineScript = Path.Combine(ScriptsDir, "statusline-handler.sh");
-        private static readonly String ActivityScript = Path.Combine(ScriptsDir, "activity-hook.sh");
-        private static readonly String StatuslineChainFile = Path.Combine(ClaudeConsoleHome, "statusline-chain");
-        private static readonly String BridgeOptOutFile = Path.Combine(ClaudeConsoleHome, "no-autowire");
+        // Live-status bridge — the scripts the plugin installs and the settings.json it edits on the
+        // user's say-so (see the live-status section below).
+        private static String SettingsFile => Path.Combine(ClaudeDir, "settings.json");
+        private static String SettingsBackup => Path.Combine(ClaudeDir, "settings.json.claude-console.bak");
+        private static String ScriptsDir => Path.Combine(ClaudeConsoleHome, "scripts");
+        private static String StatuslineScript => Path.Combine(ScriptsDir, "statusline-handler.sh");
+        private static String ActivityScript => Path.Combine(ScriptsDir, "activity-hook.sh");
+        // The cleanup script the user needs precisely when the package is gone (#45). Same directory,
+        // same refresh-on-load, but NOT behind the bridge opt-out: declining settings.json wiring
+        // must not cost anyone the uninstall remedy. (The registration repair and orphan sweep that
+        // used to ship beside it went with the application registration itself — #23.)
+        private static readonly String[] RecoveryScripts = { "uninstall.sh" };
+        private static String StatuslineChainFile => Path.Combine(ClaudeConsoleHome, "statusline-chain");
+        private static String BridgeOptOutFile => Path.Combine(ClaudeConsoleHome, "no-autowire");
 
         // Speech model — fetched on first use if absent (see EnsureVoiceModel). base.en ≈ 142 MB.
-        private static readonly String VoiceModelFile = Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
+        private static String VoiceModelFile => Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
         private const String VoiceModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
         private const String VoiceModelSha256 = "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
         private const Int64 VoiceModelSize = 147964211;
@@ -87,8 +112,19 @@ namespace Loupedeck.ClaudeConsolePlugin
         private ClaudeState _currentState;
         private ActivityState _activity;
         private String _activeTty;   // opaque id of the frontmost session (macOS: "ttys003"); null until known
-        private String _pinnedTty;   // session PINNED by a session-key press; outranks _activeTty (see TargetTty)
+        private String _pinnedTty;   // session PINNED by a session-key press; outranks _activeTty (see RoutingTty)
         private Int32 _pollTick;     // drives the ~1s cadence of the frontmost-tab check
+
+        // The state file's last-seen raw text. Held so a poll can answer "did anything change?" by
+        // comparing bytes instead of raising an event and letting every key repaint to find out (#27).
+        private String _lastStateText;
+
+        // Consecutive polls in which nothing changed and no session was live. Drives the cadence.
+        private Int32 _quietPolls;
+
+        // False once we have told the keys that the display target reports nothing; set again by the
+        // next real state. Held so the announcement fires on the transition, not on every poll (#27).
+        private Boolean _displayStateKnown = true;
 
         // Everything OS-specific lives behind this seam: session discovery, injection, focus, nav.
         // See IPlatformBridge — above it, neither AppleScript nor TTYs nor consoles are visible.
@@ -97,7 +133,68 @@ namespace Loupedeck.ClaudeConsolePlugin
         private IPlatformBridge _platform;
 
         public event Action<ClaudeState> OnStateChanged;
+
+        /// <summary>
+        /// The session the display keys describe has reported nothing at all — a tab whose Claude
+        /// has not yet run a turn, or one started before the status-line bridge was wired. The keys
+        /// show a dash: a plausible number belonging to a DIFFERENT session is worse than no number.
+        /// </summary>
+        public event Action OnStateUnavailable;
         public event Action<ActivityState> OnActivityChanged;
+
+        /// <summary>
+        /// How the product tells the user something in Options+ (#31). The engine composes the
+        /// message; only the product's Plugin class can deliver it (Plugin.OnPluginStatusChanged is
+        /// an instance method there), so it installs this in its constructor. Null-safe: a product
+        /// that never installs it simply says nothing, as before.
+        /// (status, message, supportUrl, supportUrlTitle). A null message means "clear to Normal".
+        /// </summary>
+        internal Action<PluginStatus, String, String, String> Notify { get; set; }
+
+        /// <summary>
+        /// A system notification (#31): the Options+ card only helps someone who has Options+ open,
+        /// and a keypad press happens wherever the user is looking. INativeGui.ShowBalloonTip is a
+        /// protected member of the product's Plugin class, so the product installs this and the
+        /// engine composes the words. Null-safe. (title, text). SPIKE: whether macOS renders it is
+        /// being checked on the device.
+        /// </summary>
+        internal Action<String, String> Toast { get; set; }
+
+        /// <summary>
+        /// A yes/no question on screen (#31): the prompt QA asked for, before the file is modified,
+        /// with a way to say no. (title, text, yes label, no label, timeout seconds, cancel) →
+        /// true = yes, false = no,
+        /// null = no answer. Blocks until answered, so callers run it off the SDK's key thread and
+        /// cancel it when a key press settles the question first. Null where the product has no
+        /// dialog to offer (Windows today) — the two-step press still works there.
+        /// </summary>
+        internal Func<String, String, String, String, Int32, CancellationToken, Boolean?> Prompt { get; set; }
+
+        /// <summary>
+        /// A dictation failed: which key's capture it was, and the words that key should show (#18).
+        /// Raised from whichever thread learns of the failure — the keys repaint from timer threads
+        /// already, so that is safe — and always AFTER the beep, so sound and face agree.
+        /// </summary>
+        internal event Action<VoiceIntent, String> OnVoiceFailed;
+
+        // The single exit for a dictation that did not produce text: log the detail, beep, and put
+        // the user-facing words on the key that was pressed. Before this, three of the four ways a
+        // capture could end badly ended in a log line and nothing else — and the fourth (a denied
+        // microphone) did not even reach the log (#18).
+        private void ReportVoiceFailure(VoiceIntent intent, String keyText, String detail)
+        {
+            PluginLog.Warning($"BridgeManager: voice {keyText} — {detail}");
+            _platform.Alert();
+            try { OnVoiceFailed?.Invoke(intent, keyText); }
+            catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: OnVoiceFailed handler failed"); }
+        }
+
+        /// <summary>
+        /// Audible feedback for a key press the plugin deliberately declined to act on — e.g. a
+        /// Yes/No press with no pending approval to answer (AnswerCommand). A thin passthrough so
+        /// actions never reach the platform bridge directly.
+        /// </summary>
+        internal void Alert() => _platform.Alert();
 
         /// <summary>The session grid — one row per live Claude Code session. See SessionRegistry.</summary>
         /// <remarks>Settable internally so tests can inject a registry rooted in a temp directory.</remarks>
@@ -141,6 +238,19 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     this._platform = PlatformBridgeFactory.Create(
                         this._agent.ProcessMatcher, this._agent.CliCommand);
+
+                    // Surface the Windows-Terminal-missing case instead of only logging it (#33): a
+                    // nav press in a classic console window posts an Options+ card explaining that
+                    // the nav keys need Windows Terminal while typing keys still work. Fires once;
+                    // Notify may be null until the product installs it, and the ?. handles that.
+                    if (this._platform is WindowsPlatformBridge win)
+                    {
+                        win.OnTerminalUnavailable = () => this.Notify?.Invoke(
+                            PluginStatus.Warning,
+                            BridgeNotice.WindowsTerminalRequired(),
+                            BridgeNotice.WindowsUrl,
+                            BridgeNotice.WindowsTitle);
+                    }
                 }
 
                 // The grid reads state files through the agent too. Setting one without the other
@@ -205,7 +315,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // Test seam: the pinned session, so a test can assert the pin was set/released without
-        // reaching through TargetTty's fallbacks.
+        // reaching through RoutingTty's fallbacks.
         internal String PinnedTty => _pinnedTty;
 
         // ------------------------------------------------------------------------------------------
@@ -277,7 +387,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // Refresh the session grid. The `ps` scan runs on a DIFFERENT tick from the osascript
                 // frontmost probe above (2 vs 0) so the two subprocess calls never share a poll —
                 // stacking expensive calls on one tick is how the 1.3.1 thread leak began.
-                var liveTtys = _pollTick % 4 == 2 ? _platform.DiscoverSessions() : null;
+                // While backed off (below) the poll itself is rare, so scan every time instead: at a
+                // 5 s cadence, every 4th poll would mean 20 s before a new session appeared.
+                var liveTtys = _pollTick % 4 == 2 || _quietPolls >= QuietPollsBeforeSlow
+                    ? _platform.DiscoverSessions()
+                    : null;
                 Grid.Refresh(liveTtys);
 
                 // Where the agent cannot push state to us, pull it. Only Windows/Codex sets this
@@ -285,28 +399,80 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // files a hook would — so everything below this line is identical either way.
                 this.PullState?.Invoke();
 
-                var newState = ReadJsonWithRetry<ClaudeState>(ActiveStateFile());
-
-                if (newState != null)
+                // Compare the file's BYTES before doing anything with them. This event used to fire on
+                // every single poll for as long as the state file existed — twice a second, forever,
+                // whether or not one character had changed — and each subscriber then repainted its
+                // key. That is the redraw storm (#27): ~11 renders a second, each a full render plus
+                // an IPC push, continuing when no session was running and the keys were not even on
+                // screen. Byte equality is exact here because one writer rewrites the whole file.
+                var statePath = this.ActiveStateFile();
+                if (statePath == null)
                 {
-                    _currentState = newState;
-                    OnStateChanged?.Invoke(_currentState);
+                    // Nothing reported for the session on the display keys. Announce it ONCE, so the
+                    // keys can show a dash instead of another session's numbers, and forget the last
+                    // text so the next real state always re-fires even if it is byte-identical.
+                    if (_displayStateKnown)
+                    {
+                        _displayStateKnown = false;
+                        _lastStateText = null;
+                        OnStateUnavailable?.Invoke();
+                    }
+                }
+
+                var stateText = statePath == null ? null : ReadTextWithRetry(statePath);
+                var stateChanged = stateText != null
+                    && !String.Equals(stateText, _lastStateText, StringComparison.Ordinal);
+
+                if (stateChanged)
+                {
+                    var newState = Deserialize<ClaudeState>(stateText);
+                    if (newState != null)
+                    {
+                        _lastStateText = stateText;
+                        _currentState = newState;
+                        _displayStateKnown = true;
+                        OnStateChanged?.Invoke(_currentState);
+                        this.NoteStateArrived();   // "Restart Claude" becomes the live value (#31)
+                    }
                 }
 
                 // Activity is pushed by the Claude Code hooks into a separate file; surface changes
                 // so the Status key can flip between working / waiting / idle — for the active tab.
                 var act = ReadActivity();
-                if (act?.State != _activity?.State)
+                var activityChanged = act?.State != _activity?.State;
+                if (activityChanged)
                 {
                     _activity = act;
                     OnActivityChanged?.Invoke(_activity);
                 }
 
-                // ~Every 60s, prune per-tab files from dead sessions so closed tabs don't
-                // accumulate state on disk forever.
+                // Nothing to watch, and nothing moved: earn a slower cadence. With no live session
+                // the only event that can occur is one APPEARING, which the grid scan above still
+                // catches every poll. Any change at all, or any session existing, snaps straight back
+                // to the fast cadence — so this can never slow down a keypad you are actually using.
+                _quietPolls = NextQuietCount(
+                    _quietPolls,
+                    anythingChanged: stateChanged || activityChanged,
+                    anyLiveSession: Grid.LiveSessions().Any());
+
+                // Every 120 polls, prune per-tab files from dead sessions so closed tabs don't
+                // accumulate state on disk forever. That was a fixed ~60s when every poll was 500ms;
+                // now it stretches with the cadence, which is the right way round — an idle machine
+                // has nothing accumulating to prune.
                 if (_pollTick % 120 == 1)
                 {
                     PruneStaleIpcFiles();
+                }
+
+                // At most every 10 s, one stat of settings.json so an edit made outside the plugin
+                // (uninstall.sh --unwire, an editor) reaches the keys without a reload (#31).
+                // Time-based, not tick-based: at the idle cadence a tick is 5 s, and "every 20
+                // polls" would have been a minute and a half.
+                var now = DateTime.UtcNow;
+                if (now - _lastSettingsStat >= SettingsStatInterval)
+                {
+                    _lastSettingsStat = now;
+                    this.CheckSettingsMoved();
                 }
             }
             catch (Exception ex)
@@ -315,15 +481,61 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             finally
             {
-                // Re-arm the one-shot: the next poll fires 500ms AFTER this one returns, so polls
-                // never overlap. Swallow ObjectDisposedException from a concurrent StopPolling.
-                try { _pollTimer?.Change(500, Timeout.Infinite); }
+                // Re-arm the one-shot: the next poll fires AFTER this one returns, so polls never
+                // overlap. Swallow ObjectDisposedException from a concurrent StopPolling.
+                try { _pollTimer?.Change(this.NextPollDelayMs(), Timeout.Infinite); }
                 catch (ObjectDisposedException) { /* stopped */ }
             }
         }
 
-        // Read the hook-written activity flag (busy/waiting/done). A "busy" with no Stop for a long
-        // while is treated as done, so a missed Stop hook can't leave the key stuck on "Working".
+        // Cadence. Fast whenever anything is happening; an idle machine with no session running has
+        // nothing to render and should not cost a laptop 8% of a core indefinitely (#27).
+        private const Int32 PollFastMs = 500;
+        private const Int32 PollSlowMs = 2000;
+        private const Int32 PollIdleMs = 5000;
+        private const Int32 QuietPollsBeforeSlow = 20;    // ~10 s of nothing
+        private const Int32 QuietPollsBeforeIdle = 60;    // ~2 min of nothing
+
+        private Int32 NextPollDelayMs() => PollDelayForQuietCount(_quietPolls);
+
+        /// <summary>
+        /// How long to wait before the next poll, given how many consecutive polls found nothing.
+        /// </summary>
+        internal static Int32 PollDelayForQuietCount(Int32 quietPolls) =>
+            quietPolls >= QuietPollsBeforeIdle ? PollIdleMs
+            : quietPolls >= QuietPollsBeforeSlow ? PollSlowMs
+            : PollFastMs;
+
+        /// <summary>
+        /// The quiet-poll counter. A quiet poll is one where nothing changed AND no session was
+        /// live — the only condition under which slowing down is safe, because the sole event that
+        /// can still occur is a session appearing, which the grid scan catches on every poll.
+        /// Anything else resets to zero, so an active keypad always runs at the fast cadence.
+        /// </summary>
+        internal static Int32 NextQuietCount(Int32 quietPolls, Boolean anythingChanged, Boolean anyLiveSession)
+        {
+            if (anythingChanged || anyLiveSession)
+            {
+                return 0;
+            }
+
+            // Saturate rather than overflow: a machine left alone all weekend must not wrap round to
+            // a negative count and silently return to polling twice a second.
+            return quietPolls >= QuietPollsBeforeIdle ? QuietPollsBeforeIdle : quietPolls + 1;
+        }
+
+        // Read the hook-written activity flag (busy/waiting/done). A "busy" whose transcript has
+        // gone quiet is treated as done, so an INTERRUPTED turn — which fires no hook at all — can't
+        // leave the key stuck on "Working" (#30).
+        //
+        // This used to expire on a bare 300s literal while SessionRegistry used 45s for the same
+        // question, so the Status key and the session-slot keys disagreed about the same session.
+        // QA's stuck session sat at 114s: past 45s, nowhere near 300s. Both now ask ActivityStall.
+        //
+        // The transcript path is taken from the ROUTING session, not from CurrentState: that is the
+        // session whose activity file was just read, and with a pin set DisplayTty() is a DIFFERENT
+        // session (#25). Pairing one session's activity with another's transcript would decide the
+        // hourglass from a tab nobody was asking about.
         private ActivityState ReadActivity()
         {
             var file = ActiveActivityFile();
@@ -333,11 +545,27 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             var a = ReadJsonWithRetry<ActivityState>(file);
-            if (a != null && a.State == "busy" &&
-                DateTimeOffset.UtcNow.ToUnixTimeSeconds() - a.Ts > 300)
+            if (a == null)
+            {
+                return null;
+            }
+
+            var routing = this.RoutingTty();
+            var transcript = !String.IsNullOrEmpty(routing)
+                && this.Grid.Sessions.TryGetValue(routing, out var routed)
+                    ? routed.TranscriptPath
+                    : null;
+
+            if (ActivityStall.IsStalledBusy(
+                    a.State,
+                    a.Ts,
+                    ActivityStall.TranscriptMtime(transcript),
+                    DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    this.Grid.InterruptedAt(routing)))
             {
                 a.State = "done";
             }
+
             return a;
         }
 
@@ -347,20 +575,27 @@ namespace Loupedeck.ClaudeConsolePlugin
         // whichever tab is frontmost. Falls back to the shared file (last writer) when the active
         // tab has no per-TTY file yet, or when Terminal isn't the frontmost app.
         // ------------------------------------------------------------------------------------------
-        private String ActiveStateFile() => PerTty(SessionsDir, StateFile);
-        private String ActiveActivityFile() => PerTty(ActivityDir, ActivityFile);
+        // Cost / Model / Context read this one: it follows the tab you are looking at (#25).
+        private String ActiveStateFile() => PerTty(SessionsDir, StateFile, this.DisplayTty());
 
-        private String PerTty(String dir, String shared)
+        // Activity follows the ROUTING target: "waiting" here is the approval the Yes key answers,
+        // so the Activity face and the key that acts on it must describe the same session.
+        private String ActiveActivityFile() => PerTty(ActivityDir, ActivityFile, this.RoutingTty());
+
+        private String PerTty(String dir, String shared, String tty)
         {
-            var tty = TargetTty();
             if (!String.IsNullOrEmpty(tty))
             {
                 var p = Path.Combine(dir, tty + ".json");
-                if (File.Exists(p))
-                {
-                    return p;
-                }
+
+                // Known session, no file: it has reported NOTHING. Falling back to the shared file
+                // here would paint the last writer's cost onto a key describing this session —
+                // "a key must never show a value the agent did not report" (#49).
+                return File.Exists(p) ? p : null;
             }
+
+            // Target unknown (Terminal not frontmost, tty detection failed): the shared file, last
+            // writer, is the best guess available and is what single-session users have always seen.
             return shared;
         }
 
@@ -396,12 +631,25 @@ namespace Loupedeck.ClaudeConsolePlugin
         // refreshes on every assistant message, so anything this old belongs to a dead tab.
         private static readonly TimeSpan StaleIpcAge = TimeSpan.FromMinutes(10);
 
-        private static void PruneStaleIpcFiles() =>
-            PruneStaleFiles(new[] { SessionsDir, ActivityDir, VoiceDir }, DateTime.UtcNow - StaleIpcAge);
+        // The prune exists to clean up CLOSED tabs. It could not tell a closed tab from a quiet
+        // one, so a session you had not typed in for ten minutes had its state file deleted out
+        // from under it — and then the display fell back to shared.json (the last writer), putting
+        // ANOTHER session's cost on the key, while the grid recreated the session as provisional
+        // and its key lost the project name for the agent's name (#49). Live sessions are now
+        // exempt, however long they have been idle: the grid drops a session as soon as its process
+        // is gone, and only then does its file become prunable.
+        private void PruneStaleIpcFiles() =>
+            PruneStaleFiles(
+                new[] { SessionsDir, ActivityDir, VoiceDir },
+                DateTime.UtcNow - StaleIpcAge,
+                Grid.Sessions.Keys);
 
         // Split out so the tests can drive it against a temp root and a controlled cutoff.
-        internal static void PruneStaleFiles(IEnumerable<String> dirs, DateTime cutoff)
+        internal static void PruneStaleFiles(IEnumerable<String> dirs, DateTime cutoff, IEnumerable<String> keepKeys = null)
         {
+            // Names are "<tty>.json"; a live session's file is never stale, whatever its mtime says.
+            var keep = new HashSet<String>(keepKeys ?? Enumerable.Empty<String>(), StringComparer.Ordinal);
+
             foreach (var dir in dirs)
             {
                 try
@@ -414,6 +662,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         try
                         {
+                            if (keep.Contains(Path.GetFileNameWithoutExtension(f)))
+                            {
+                                continue;
+                            }
+
                             if (File.GetLastWriteTimeUtc(f) < cutoff)
                             {
                                 File.Delete(f);
@@ -427,12 +680,23 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // ------------------------------------------------------------------------------------------
-        // Targeting — which session the typing keys act on.
+        // Targeting. TWO questions, and conflating them is #25.
         //
-        // Pressing a session key PINS that session (see SelectSlot); with nothing pinned the keys
-        // follow the frontmost Terminal tab, which is what single-session users already expect.
+        //   RoutingTty  — "where does this key ACT?"     Pin first. Injection, the answer keys, and
+        //                 every badge that describes an action (amber approval, slot highlight).
+        //   DisplayTty  — "what am I LOOKING at?"        The frontmost tab first. Cost, Model,
+        //                 Context — read-only keys that should follow your eyes.
+        //
+        // One resolver used to answer both, so pressing a session key froze the display on the
+        // pinned session: with one session frontmost, Cost showed the OTHER session's total and
+        // never moved again. The pin is right for routing — acting on session 2 while looking at
+        // session 1 is the entire point of the grid — and wrong for a cost readout.
+        //
+        // The badge rule matters and is not negotiable: a key's badge must describe the session
+        // that key will act on. An amber Yes that describes the session you are watching, while
+        // Yes answers a different one, is precisely the ambiguity Logitech asked about.
         // ------------------------------------------------------------------------------------------
-        internal String TargetTty()
+        internal String RoutingTty()
         {
             var live = Grid.LiveSessions();
 
@@ -478,16 +742,49 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
+        /// The session whose numbers should be on the display keys: the tab you are looking at.
+        ///
+        /// Falls back to <see cref="RoutingTty"/> when the frontmost tab is unknown, and that
+        /// fallback is what makes this correct on Windows without a platform branch — Windows
+        /// Terminal exposes no way to ask which tab is in front, so `_activeTty` is null there and
+        /// the display follows the pin, which is the only targeting Windows has.
+        /// </summary>
+        internal String DisplayTty()
+        {
+            var active = _activeTty;
+            if (!String.IsNullOrEmpty(active) && Grid.LiveSessions().Any(s => s.SessionKey == active))
+            {
+                return active;
+            }
+
+            return this.RoutingTty();
+        }
+
+        /// <summary>
         /// Press a session key: focus that tab and make it the target for every subsequent key,
-        /// until you pin a different session or this one exits. The pin is what makes "press slot
-        /// 2, then Clear" land in slot 2 even minutes later, and even if you have since switched
-        /// Terminal back to another tab.
+        /// until you pin a different session, press this one again, or it exits. The pin is what
+        /// makes "press slot 2, then Clear" land in slot 2 even minutes later, and even if you have
+        /// since switched Terminal back to another tab.
         /// </summary>
         public void SelectSlot(Int32 slot)
         {
             var session = Grid.SlotSession(slot);
             if (session == null)
             {
+                return;
+            }
+
+            // Pressing the slot that is ALREADY pinned releases it, and the keys go back to
+            // following the frontmost tab. Until now a pin could only be MOVED, never dropped —
+            // QA's actual complaint in #25 — and the only ways out were pinning a different session
+            // or closing the one you had pinned. A second press is what a user tries first, and the
+            // tab is focused either way, so the gesture still reads as "take me to this session".
+            if (_pinnedTty == session.SessionKey)
+            {
+                this.ClearPin();
+                _activeTty = session.SessionKey;
+                _platform.FocusSession(session.SessionKey);
+                PluginLog.Info($"BridgeManager: unpinned slot {slot} ({session.Project}) — keys follow the frontmost tab again");
                 return;
             }
 
@@ -517,6 +814,17 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         private T ReadJsonWithRetry<T>(String filePath, Int32 maxAttempts = 3, Int32 backoffMs = 10) where T : class
         {
+            var json = ReadTextWithRetry(filePath, maxAttempts, backoffMs);
+            return json == null ? null : Deserialize<T>(json);
+        }
+
+        /// <summary>
+        /// The raw text of an IPC file, with the same size cap and retry-on-torn-write behaviour as
+        /// <see cref="ReadJsonWithRetry{T}"/>. Split out so a caller can ask "did this file change?"
+        /// by comparing bytes, which is both exact and cheaper than deserialising to find out (#27).
+        /// </summary>
+        private static String ReadTextWithRetry(String filePath, Int32 maxAttempts = 3, Int32 backoffMs = 10)
+        {
             for (var attempt = 0; attempt < maxAttempts; attempt++)
             {
                 try
@@ -533,13 +841,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                         return null;
                     }
 
-                    var json = File.ReadAllText(filePath);
-                    if (String.IsNullOrWhiteSpace(json))
+                    var text = File.ReadAllText(filePath);
+                    if (String.IsNullOrWhiteSpace(text))
                     {
                         continue;
                     }
 
-                    return JsonSerializer.Deserialize<T>(json);
+                    return text;
                 }
                 catch
                 {
@@ -553,6 +861,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             return null;
         }
 
+        private static T Deserialize<T>(String json) where T : class
+        {
+            try { return JsonSerializer.Deserialize<T>(json); }
+            catch { return null; }
+        }
+
         /// <summary>
         /// Type a prompt into the tracked Claude tab and press Return.
         /// </summary>
@@ -562,24 +876,24 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Guarded keystroke injection. The guarantee — focus the tracked session and type in ONE
         // indivisible operation, or type nothing at all — is the backend's to keep; see
         // IPlatformBridge. What lives here is only the platform-neutral half: resolve WHICH session
-        // the keys act on (TargetTty), then hand the request across the seam.
+        // the keys act on (RoutingTty), then hand the request across the seam.
         // ------------------------------------------------------------------------------------------
 
         /// <summary>
         /// Type text into the tracked Claude session and optionally press Return.
         /// </summary>
         public void InjectText(String text, Boolean pressEnter) =>
-            _platform.InjectText(TargetTty(), text, pressEnter);
+            _platform.InjectText(RoutingTty(), text, pressEnter);
 
         /// <summary>
         /// Send a single key chord to the tracked Claude session, e.g. Shift+Tab to cycle modes.
         /// </summary>
-        public void InjectKey(KeyStroke key) => _platform.InjectKey(TargetTty(), key);
+        public void InjectKey(KeyStroke key) => _platform.InjectKey(RoutingTty(), key);
 
         /// <summary>
         /// Accept the highlighted autocomplete AND submit it in one press.
         /// </summary>
-        public void InjectTabThenEnter() => _platform.InjectTabThenEnter(TargetTty());
+        public void InjectTabThenEnter() => _platform.InjectTabThenEnter(RoutingTty());
 
         /// <summary>
         /// Optional per-poll pull of agent state, for a product whose agent cannot push it.
@@ -629,18 +943,21 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal static Boolean VoiceSupported =>
             OperatingSystem.IsMacOS() || OperatingSystem.IsWindows();
 
-        public void StartVoiceCapture()
+        /// <summary>
+        /// Launch the recorder. Returns false when nothing was started, so the caller can clear the
+        /// in-flight state rather than leaving the voice keys believing a capture is running (#28).
+        /// </summary>
+        public Boolean StartVoiceCapture()
         {
             if (OperatingSystem.IsWindows())
             {
-                this.StartVoiceCaptureWindows();
-                return;
+                return this.StartVoiceCaptureWindows();
             }
 
             if (!OperatingSystem.IsMacOS())
             {
                 PluginLog.Info("BridgeManager.StartVoiceCapture: unsupported platform");
-                return;
+                return false;
             }
 
             // Install the helper + whisper from the plugin package if this is a package-only install
@@ -650,22 +967,25 @@ namespace Loupedeck.ClaudeConsolePlugin
             // Clear any stale transcript/flag so we never type a previous result.
             EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
+            TryDelete(VoiceErrorFile);
             TryDelete(VoiceStopFile);
 
+            // Voice.Press has already recorded the pressed key's intent by the time we are here, so
+            // a failure to START can be shown on the right key too.
             if (!Directory.Exists(VoiceHelperApp))
             {
-                PluginLog.Warning($"BridgeManager.StartVoiceCapture: helper missing at {VoiceHelperApp} (run tools/voice/build.sh, or reinstall the plugin)");
-                return;
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.NoHelper,
+                    $"helper missing at {VoiceHelperApp} (run tools/voice/build.sh, or reinstall the plugin)");
+                return false;
             }
 
             // Make sure the speech model is present. If it's still downloading, skip this capture
-            // (an audible beep tells the user to try again once it's ready) rather than record audio
-            // the helper can't transcribe yet.
+            // and say so, rather than record audio the helper can't transcribe yet.
             if (!EnsureVoiceModel())
             {
-                PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
-                _platform.Alert();
-                return;
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.ModelLoading,
+                    "speech model not ready (downloading) — try again shortly");
+                return false;
             }
 
             // Launch via LaunchServices (open) so the helper is its own TCC subject. Detached.
@@ -686,44 +1006,46 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             RunDetached("open", args);
             PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+            return true;
         }
 
         // Windows whisper-cli lives in the same runtime-home dir as the macOS bundle, with the
         // platform's suffix. Installed by EnsureVoiceRuntimeInstalled from the package (or by
         // hand from a whisper.cpp release during development).
-        private static readonly String WindowsWhisperCli = Path.Combine(WhisperBinDir, "whisper-cli.exe");
+        private static String WindowsWhisperCli => Path.Combine(WhisperBinDir, "whisper-cli.exe");
 
         // The same flow as macOS with the platform differences flattened out: the helper is a
         // plain exe launched directly (no LaunchServices, no TCC — Windows mic permission is a
         // Settings toggle the helper documents), and whisper is REQUIRED up front — the Windows
         // helper has no embedded fallback, so recording without it would always type nothing.
-        private void StartVoiceCaptureWindows()
+        private Boolean StartVoiceCaptureWindows()
         {
             EnsureVoiceRuntimeInstalled();
 
             EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
+            TryDelete(VoiceErrorFile);
             TryDelete(VoiceStopFile);
 
             var helper = PluginPaths.PackagedFile("claude-console-voice.exe");
             if (helper == null)
             {
                 PluginLog.Warning("BridgeManager.StartVoiceCapture: claude-console-voice.exe not found in the plugin package");
-                return;
+                return false;
             }
 
             if (!File.Exists(WindowsWhisperCli))
             {
                 PluginLog.Warning($"BridgeManager.StartVoiceCapture: whisper-cli.exe missing at {WhisperBinDir} — voice needs the whisper bundle installed");
                 _platform.Alert();
-                return;
+                return false;
             }
 
             if (!EnsureVoiceModel())
             {
                 PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
                 _platform.Alert();
-                return;
+                return false;
             }
 
             RunDetached(helper, new List<String>
@@ -736,6 +1058,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 "--whisper", WindowsWhisperCli,
             });
             PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
+            return true;
         }
 
         // ------------------------------------------------------------------------------------------
@@ -770,8 +1093,14 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var pkgVoice = Path.Combine(pkgDir, "voice");
                 PluginLog.Verbose($"BridgeManager.EnsureVoiceRuntimeInstalled: pkgVoice={pkgVoice} exists={Directory.Exists(pkgVoice)}");
 
+                // The guard compares the TREE, not the directory. `Directory.Exists` meant a runtime
+                // copy was accepted forever once created: the 2.0.1 whisper bundle shipped without
+                // its compute backends, and because ~/.claude/claude-console/ outlives an uninstall,
+                // shipping corrected files would have repaired nobody who had ever pressed Voice —
+                // their broken copy still "existed" (#24). Comparing every packaged file by size and
+                // hash also repairs an install interrupted halfway.
                 var pkgHelper = Path.Combine(pkgVoice, "ClaudeVoiceHelper.app");
-                if (Directory.Exists(pkgHelper) && !Directory.Exists(VoiceHelperApp))
+                if (Directory.Exists(pkgHelper) && !RuntimeTreeMatchesPackage(pkgHelper, VoiceHelperApp))
                 {
                     PluginLog.Info($"BridgeManager: installing voice helper from package -> {VoiceHelperApp}");
                     Directory.CreateDirectory(ClaudeConsoleHome);
@@ -780,11 +1109,15 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
 
                 var pkgWhisper = Path.Combine(pkgVoice, "whisper-bin");
-                if (Directory.Exists(pkgWhisper) && !Directory.Exists(WhisperBinDir))
+                if (Directory.Exists(pkgWhisper) && !RuntimeTreeMatchesPackage(pkgWhisper, WhisperBinDir))
                 {
                     PluginLog.Info($"BridgeManager: installing whisper bundle from package -> {WhisperBinDir}");
                     RunSync("/usr/bin/ditto", pkgWhisper, WhisperBinDir);
                     RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", WhisperBinDir);
+                    if (!RuntimeTreeMatchesPackage(pkgWhisper, WhisperBinDir))
+                    {
+                        PluginLog.Warning($"BridgeManager: whisper bundle at {WhisperBinDir} still differs from the package after install");
+                    }
                 }
             }
             catch (Exception ex)
@@ -802,11 +1135,6 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             try
             {
-                if (File.Exists(WindowsWhisperCli))
-                {
-                    return;   // already installed (by a previous run, or by hand)
-                }
-
                 var pkgDir = PluginPaths.PluginDirectory;
                 if (String.IsNullOrEmpty(pkgDir))
                 {
@@ -816,7 +1144,14 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var pkgWhisper = Path.Combine(pkgDir, "voice", "whisper-bin-win");
                 if (!Directory.Exists(pkgWhisper))
                 {
-                    return;   // dev build — nothing packaged
+                    return;   // dev build — nothing packaged; a hand-placed bundle is left alone
+                }
+
+                // Same rule as macOS: the presence of whisper-cli.exe says nothing about whether the
+                // rest of the bundle is the one we shipped (#24).
+                if (RuntimeTreeMatchesPackage(pkgWhisper, WhisperBinDir))
+                {
+                    return;
                 }
 
                 PluginLog.Info($"BridgeManager: installing whisper bundle from package -> {WhisperBinDir}");
@@ -841,6 +1176,47 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
         }
 
+        /// <summary>
+        /// A runtime directory is healthy only when every packaged file is present and identical.
+        /// Checking the tree rather than the directory itself is what repairs an existing broken
+        /// install: a whisper bundle whose CLI is present but whose compute backends are missing
+        /// looks installed to any existence test, and is exactly what shipped in 2.0.1 (#24).
+        /// </summary>
+        internal static Boolean RuntimeTreeMatchesPackage(String packageRoot, String runtimeRoot)
+        {
+            if (String.IsNullOrEmpty(packageRoot) || String.IsNullOrEmpty(runtimeRoot)
+                || !Directory.Exists(packageRoot) || !Directory.Exists(runtimeRoot))
+            {
+                return false;
+            }
+
+            var packagedFiles = Directory.GetFiles(packageRoot, "*", SearchOption.AllDirectories);
+            if (packagedFiles.Length == 0)
+            {
+                return false;
+            }
+
+            foreach (var source in packagedFiles)
+            {
+                var relative = Path.GetRelativePath(packageRoot, source);
+                var installed = Path.Combine(runtimeRoot, relative);
+                if (!File.Exists(installed)
+                    || new FileInfo(source).Length != new FileInfo(installed).Length)
+                {
+                    return false;
+                }
+
+                // Size alone would pass a same-size corruption, and these are signed Mach-O files
+                // where a re-sign changes content without changing length.
+                if (!String.Equals(HashFileSha256(source), HashFileSha256(installed), StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         // Run a process and wait for it (ditto/xattr install steps must finish before launching).
         private static void RunSync(String file, params String[] args)
         {
@@ -854,19 +1230,29 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // ==========================================================================================
-        // Live-status bridge — auto-install + auto-wire (zero user action)
+        // Live-status bridge — installed on load, wired on the user's say-so (#31)
         //
         // The live keys (Cost / Context / Model, Activity) read /tmp state files that only get
         // written when Claude Code is wired to push them: a `statusLine` handler feeds Cost/Context/
-        // Model and four `hooks` feed Activity, all via ~/.claude/settings.json. A package-only user
-        // never does this by hand, so those keys show defaults. To make them "just work", the plugin
-        // ships the two scripts embedded in the DLL, writes them to ~/.claude/claude-console/scripts/
-        // on first run, and merges the statusLine + hooks into settings.json itself.
+        // Model and five `hooks` feed Activity, all via ~/.claude/settings.json. The plugin ships the
+        // two scripts embedded in the DLL and writes them to ~/.claude/claude-console/scripts/ on
+        // every load — that touches nothing of the user's. The settings.json edit is a different
+        // matter: it is the user's file, so it happens only when they invoke Enable Live Status
+        // (a key, or its button in Options+), whose description says what will change. Until then
+        // the live keys read "Set up" and a press on one changes nothing.
         //
-        // Safe by design: backs settings.json up once, MERGES rather than clobbers (appends a hook
-        // only if absent; CHAINS an existing statusLine instead of replacing it — see the chain block
-        // in statusline-handler.sh), writes atomically, and is idempotent. Drop a file at
-        // ~/.claude/claude-console/no-autowire to opt out.
+        // It used to wire on first load, with a notice afterwards. Logitech QA's retest called that
+        // what it was — a modification of user config without a prompt — and the SDK offers no
+        // dialog and no settings page to ask through (the spike is in docs/HANDOFF-qa-fixes.md).
+        // So the press is the prompt.
+        //
+        // Safe by design either way: MERGES rather than clobbers (appends a hook only if absent;
+        // CHAINS an existing statusLine instead of replacing it — see the chain block in
+        // statusline-handler.sh), writes only over the bytes it read (RewriteSettings), takes a
+        // rolling backup before every write, and is idempotent. Disable takes exactly our entries
+        // back out and leaves the marker file ~/.claude/claude-console/no-autowire behind, which is
+        // how the keys know to say "Off" rather than "Set up". A marker created by hand while the
+        // wiring is present still unwires on the next load (the 2.2.0 two-way switch), for one release.
         //
         // Effect lands on the user's NEXT Claude Code session — Claude Code reads hooks/statusLine at
         // session start, so a session already running won't pick it up.
@@ -883,20 +1269,268 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 try
                 {
-                    if (File.Exists(BridgeOptOutFile))
-                    {
-                        PluginLog.Info("Bridge auto-wire: opt-out file present — skipping");
-                        return;
-                    }
-                    EnsureBridgeInstalled();
-                    EnsureBridgeWired();
+                    this.LoadWiring();
                 }
                 catch (Exception ex)
                 {
-                    PluginLog.Warning(ex, "Bridge auto-wire failed");
+                    PluginLog.Warning(ex, "Live status: load-time check failed");
                 }
             })
             { IsBackground = true, Name = "claude-bridge-autowire" }.Start();
+        }
+
+        // The load-time body. Installs scripts, honours a marker, and reads the state — it never
+        // writes our wiring INTO settings.json; only EnableLiveStatus does that.
+        private void LoadWiring()
+        {
+            lock (_wiringLock)
+            {
+                // Before anything conditional, on purpose — see RecoveryScripts.
+                EnsureRecoveryScriptsInstalled();
+                EnsureBridgeInstalled();
+
+                if (File.Exists(BridgeOptOutFile))
+                {
+                    // The marker means "the user turned it off". A user who was wired on an earlier
+                    // version and created the file by hand gets settings.json put back — surgically,
+                    // never from a stale backup.
+                    if (this.UnwireIfWired())
+                    {
+                        this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    }
+                }
+
+                this.RefreshLiveStatusLocked();
+                // Always say where we stand at load, even when nothing changed — the state that
+                // equals the starting value would otherwise leave no line at all.
+                PluginLog.Info($"Live status at load: {_liveStatus}");
+
+                // Cards are posted at Warning because that is the only level Options+ renders (a
+                // Normal + message post shows nothing — device, 2026-08-29 13:12). Warning also
+                // badges the All Actions tile, so a load clears it: the badge means "since the last
+                // change", not "forever".
+                this.Notify?.Invoke(PluginStatus.Normal, null, null, null);
+            }
+        }
+
+        /// <summary>Runs the load-time body synchronously, so a test can assert what a load does and does not write.</summary>
+        internal void RunLoadWiringForTests() => this.LoadWiring();
+
+        // Every path that reads settings.json to rewrite it, or touches the opt-out marker, holds
+        // this. The load thread and a key press must never interleave on the same file.
+        private readonly Object _wiringLock = new Object();
+
+        /// <summary>
+        /// What the live keys should show (#31). Raised on change only, from whichever thread learned
+        /// of it — the keys repaint from timer threads already, so that is safe.
+        /// </summary>
+        public event Action<LiveStatusState> OnLiveStatusChanged;
+
+        private LiveStatusState _liveStatus = LiveStatusState.NotEnabled;
+        private Boolean _justEnabled;             // Enable wrote, and no session has reported since
+        private DateTime _settingsSeenWrite;      // settings.json as last inspected — see CheckSettingsMoved
+        private Int64 _settingsSeenLength = -1;
+        private DateTime _lastSettingsStat;       // when the poll loop last stat'ed it
+        private static readonly TimeSpan SettingsStatInterval = TimeSpan.FromSeconds(10);
+
+        internal LiveStatusState LiveStatus => _liveStatus;
+
+        /// <summary>
+        /// The user asked for the live keys: merge our status line and hooks into settings.json,
+        /// clear the Off marker, and say so in Options+. Idempotent — an already-wired file costs no
+        /// write, no backup and no card. Returns false only when the file could not be touched.
+        /// </summary>
+        internal Boolean EnableLiveStatus()
+        {
+            if (!AutoWireSupported)
+            {
+                PluginLog.Warning("Live status: not supported on this platform");
+                return false;
+            }
+
+            lock (_wiringLock)
+            {
+                EnsureBridgeInstalled();   // the file is about to name these scripts; make sure they exist
+
+                var outcome = this.EnsureBridgeWired();
+                if (outcome == WiringOutcome.Failed)
+                {
+                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.EnableFailed(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    return false;
+                }
+
+                TryDelete(BridgeOptOutFile);
+                if (outcome == WiringOutcome.Wrote)
+                {
+                    _justEnabled = true;
+                    PluginLog.Info("Live status: enabled — wrote settings.json; start a NEW Claude Code session to activate the live keys");
+                }
+                else
+                {
+                    PluginLog.Info("Live status: already enabled — nothing written");
+                }
+
+                this.RefreshLiveStatusLocked();
+
+                if (outcome == WiringOutcome.Wrote)
+                {
+                    // Say so where the user is looking: a system notification now, and the message
+                    // centre in Options+ as the record, with the undo one click away.
+                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    this.Toast?.Invoke("Live status on", BridgeNotice.Wired(WiredHookCount));
+                }
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// The user turned the live keys off: take exactly our entries out of settings.json (a chained
+        /// status line goes back), and leave the marker so the keys read "Off" and no future load
+        /// wires anything. Returns false only when the file could not be touched.
+        /// </summary>
+        internal Boolean DisableLiveStatus()
+        {
+            lock (_wiringLock)
+            {
+                var wrote = false;
+                var ok = true;
+                try
+                {
+                    wrote = this.UnwireIfWired();
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "Live status: disable failed");
+                    ok = false;
+                }
+
+                try
+                {
+                    Directory.CreateDirectory(ClaudeConsoleHome);
+                    File.WriteAllText(BridgeOptOutFile, String.Empty);
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "Live status: couldn't write the Off marker");
+                }
+
+                _justEnabled = false;
+                this.RefreshLiveStatusLocked();
+
+                if (wrote)
+                {
+                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    this.Toast?.Invoke("Live status off", BridgeNotice.Unwired());
+                }
+                return ok;
+            }
+        }
+
+        // Re-read settings.json and tell the keys what it says. Caller holds _wiringLock.
+        private void RefreshLiveStatusLocked()
+        {
+            var root = ReadSettingsForRewrite(out _);
+            var wiring = BridgeWiring.Inspect(root);
+            if (wiring != LiveStatusWiring.Enabled)
+            {
+                _justEnabled = false;
+            }
+            this.RememberSettingsStamp();
+            this.SetLiveStatus(BridgeWiring.DisplayState(wiring, File.Exists(BridgeOptOutFile), _justEnabled));
+        }
+
+        private void SetLiveStatus(LiveStatusState state)
+        {
+            if (state == _liveStatus)
+            {
+                return;
+            }
+            _liveStatus = state;
+            PluginLog.Info($"Live status: {state}");
+            OnLiveStatusChanged?.Invoke(state);
+        }
+
+        // The first state report after Enable is what turns "Restart Claude" into live values.
+        // Called from the poll loop; never waits on the lock.
+        private void NoteStateArrived()
+        {
+            if (!_justEnabled || !Monitor.TryEnter(_wiringLock, 0))
+            {
+                return;
+            }
+            try
+            {
+                _justEnabled = false;
+                if (_liveStatus == LiveStatusState.JustEnabled)
+                {
+                    this.SetLiveStatus(LiveStatusState.Enabled);
+                }
+            }
+            finally
+            {
+                Monitor.Exit(_wiringLock);
+            }
+        }
+
+        private void RememberSettingsStamp()
+        {
+            try
+            {
+                var fi = new FileInfo(SettingsFile);
+                _settingsSeenWrite = fi.Exists ? fi.LastWriteTimeUtc : default;
+                _settingsSeenLength = fi.Exists ? fi.Length : -1;
+            }
+            catch
+            {
+                _settingsSeenWrite = default;
+                _settingsSeenLength = -1;
+            }
+        }
+
+        // settings.json changed under us (uninstall.sh --unwire, an editor, Claude Code itself):
+        // re-inspect so the keys follow, without a reload. A stat every ~10 s of polls, and only a
+        // real read when the stamp moved — the #27 discipline. Never waits on the lock.
+        private void CheckSettingsMoved()
+        {
+            try
+            {
+                var fi = new FileInfo(SettingsFile);
+                var write = fi.Exists ? fi.LastWriteTimeUtc : default;
+                var length = fi.Exists ? fi.Length : -1;
+                if (write == _settingsSeenWrite && length == _settingsSeenLength)
+                {
+                    return;
+                }
+                if (!Monitor.TryEnter(_wiringLock, 0))
+                {
+                    return;
+                }
+                try
+                {
+                    this.RefreshLiveStatusLocked();
+                }
+                finally
+                {
+                    Monitor.Exit(_wiringLock);
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, "Live status: settings.json check failed");
+            }
+        }
+
+        /// <summary>Exposed for tests: the external-edit check the poll loop runs every ~10 s.</summary>
+        internal void CheckSettingsMovedForTests() => this.CheckSettingsMoved();
+
+        /// <summary>Exposed for tests: what the poll loop does when the first state arrives after Enable.</summary>
+        internal void NoteStateArrivedForTests() => this.NoteStateArrived();
+
+        private enum WiringOutcome
+        {
+            Failed,      // the file could not be touched (symlink, invalid JSON, kept changing)
+            Unchanged,   // already fully wired — nothing written
+            Wrote,       // merged and written
         }
 
         // Write the embedded bridge scripts to ~/.claude/claude-console/scripts/ (refreshed every load
@@ -913,6 +1547,27 @@ namespace Loupedeck.ClaudeConsolePlugin
             Directory.CreateDirectory(ScriptsDir);
             ExtractEmbeddedScript("ClaudeConsole.statusline-handler.sh", StatuslineScript);
             ExtractEmbeddedScript("ClaudeConsole.activity-hook.sh", ActivityScript);
+        }
+
+        // Write the cleanup script to ~/.claude/claude-console/scripts/ (#45). Uninstalling through
+        // Options+ deletes the package and nothing else — the voice runtime, the speech model, the
+        // hooks in settings.json all stay — and the only cleanup was a script in the repo. The runtime
+        // home outlives the package, so the script lives there, refreshed every load like the bridge
+        // scripts.
+        private static void EnsureRecoveryScriptsInstalled()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                // bash + `open -a` + tccutil: macOS scripts. Windows uninstall deletes the
+                // application data outright (README), so there is no orphan to sweep there.
+                return;
+            }
+
+            Directory.CreateDirectory(ScriptsDir);
+            foreach (var name in RecoveryScripts)
+            {
+                ExtractEmbeddedScript("ClaudeConsole." + name, Path.Combine(ScriptsDir, name));
+            }
         }
 
         /// <summary>
@@ -964,133 +1619,270 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         // Merge the statusLine + activity hooks into ~/.claude/settings.json. Idempotent: appends a
         // hook only if ours isn't already there, and chains (never clobbers) an existing statusLine.
-        private void EnsureBridgeWired()
+        private WiringOutcome EnsureBridgeWired()
         {
-            // Refuse a symlinked settings.json — a planted link could redirect our atomic
-            // rename-over-write somewhere else entirely. (LinkTarget is null for a missing file.)
-            if (new FileInfo(SettingsFile).LinkTarget != null)
-            {
-                PluginLog.Warning("Bridge auto-wire: settings.json is a symlink — leaving it untouched");
-                return;
-            }
-
-            JsonObject root;
-            if (File.Exists(SettingsFile))
-            {
-                var text = File.ReadAllText(SettingsFile);
-                if (String.IsNullOrWhiteSpace(text))
-                {
-                    root = new JsonObject();
-                }
-                else
-                {
-                    JsonNode parsed;
-                    try
-                    {
-                        parsed = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions
-                        {
-                            CommentHandling = JsonCommentHandling.Skip,
-                            AllowTrailingCommas = true,
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        PluginLog.Warning(ex, "Bridge auto-wire: settings.json isn't valid JSON — leaving it untouched");
-                        return;
-                    }
-                    root = parsed as JsonObject;
-                    if (root == null)
-                    {
-                        PluginLog.Warning("Bridge auto-wire: settings.json isn't a JSON object — leaving it untouched");
-                        return;
-                    }
-                }
-            }
-            else
-            {
-                root = new JsonObject();
-            }
-
             var isWindows = OperatingSystem.IsWindows();
             var statusHandler = this.BridgeHandlerPath(null);
             var activityHandler = this.BridgeHandlerPath("busy");
 
             if (isWindows && (statusHandler == null || activityHandler == null))
             {
-                PluginLog.Warning("Bridge auto-wire: claude-console-hook.exe is missing from the package — leaving settings.json untouched");
-                return;
+                PluginLog.Warning("Live status: claude-console-hook.exe is missing from the package — leaving settings.json untouched");
+                return WiringOutcome.Failed;
             }
 
-            var changed = false;
+            // The chain file is written AFTER a successful write, never inside the mutate callback:
+            // the callback may run twice (RewriteSettings retries from fresh contents), and a chain
+            // file left behind by an attempt that never landed would be a lie about the file.
+            String chainedCommand = null;
+            var freshStatusLine = false;
 
-            // --- hooks (additive — append our entry only when it isn't already present) ---
-            if (root["hooks"] is not JsonObject hooks)
+            Boolean Merge(JsonObject root)
             {
-                hooks = new JsonObject();
-                root["hooks"] = hooks;
+                var changed = false;
+
+                // --- hooks (additive — append our entry only when it isn't already present) ---
+                if (root["hooks"] is not JsonObject hooks)
+                {
+                    hooks = new JsonObject();
+                    root["hooks"] = hooks;
+                }
+                // The five hooks come from the one table the detector also reads (BridgeWiring.HookSpecs),
+                // so "wired" here and "fully wired" there can never mean different things.
+                foreach (var spec in BridgeWiring.HookSpecs)
+                {
+                    changed |= EnsureHook(hooks, spec.Event, spec.Matcher, BridgeWiring.ActivityCommand(isWindows, activityHandler, spec.State));
+                }
+
+                // --- statusLine (chain an existing one rather than clobbering it) ---
+                var ourStatusCmd = BridgeWiring.StatuslineCommand(isWindows, statusHandler);
+                var sl = root["statusLine"] as JsonObject;
+                var existingCmd = BridgeWiring.Str(sl?["command"]);
+                chainedCommand = null;
+                freshStatusLine = false;
+                if (String.IsNullOrWhiteSpace(existingCmd))
+                {
+                    root["statusLine"] = new JsonObject { ["type"] = "command", ["command"] = ourStatusCmd };
+                    freshStatusLine = true;
+                    changed = true;
+                }
+                else if (BridgeWiring.IsOurs(existingCmd))
+                {
+                    // already ours — nothing to do
+                }
+                else
+                {
+                    // Preserve the user's status bar: record their command so our handler runs it and
+                    // passes its output through (see the chain block in statusline-handler.sh).
+                    chainedCommand = existingCmd;
+                    sl["command"] = ourStatusCmd;
+                    sl["type"] = "command";
+                    changed = true;
+                }
+
+                return changed;
             }
-            changed |= EnsureHook(hooks, "UserPromptSubmit", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
-            changed |= EnsureHook(hooks, "PostToolUse", "*", BridgeWiring.ActivityCommand(isWindows, activityHandler, "busy"));
-            changed |= EnsureHook(hooks, "Notification", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "waiting"));
-            changed |= EnsureHook(hooks, "Stop", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "done"));
-            // PermissionRequest fires the moment a tool needs approval and carries the tool name and
-            // its input, which is what tells a routine approval from `git push --force`. Notification
-            // can't: it has no tool name and is delayed ~6s for permission prompts. Unknown events are
-            // ignored by older Claude Code builds, so adding this is safe there — the badge simply
-            // stays amber instead of going red.
-            changed |= EnsureHook(hooks, "PermissionRequest", null, BridgeWiring.ActivityCommand(isWindows, activityHandler, "permission"));
 
-            // --- statusLine (chain an existing one rather than clobbering it) ---
-            var ourStatusCmd = BridgeWiring.StatuslineCommand(isWindows, statusHandler);
-            var sl = root["statusLine"] as JsonObject;
-            var existingCmd = sl?["command"]?.GetValue<String>();
-            if (String.IsNullOrWhiteSpace(existingCmd))
+            if (!RewriteSettings(Merge, out var wrote))
             {
-                root["statusLine"] = new JsonObject { ["type"] = "command", ["command"] = ourStatusCmd };
+                return WiringOutcome.Failed;
+            }
+
+            if (!wrote)
+            {
+                return WiringOutcome.Unchanged;
+            }
+
+            if (chainedCommand != null)
+            {
+                File.WriteAllText(StatuslineChainFile, chainedCommand);
+                PluginLog.Info("Live status: chained the existing statusLine so it still renders");
+            }
+            else if (freshStatusLine)
+            {
                 TryDelete(StatuslineChainFile);
-                changed = true;
             }
-            else if (BridgeWiring.IsOurs(existingCmd))
+            return WiringOutcome.Wrote;
+        }
+
+        // The number of hooks the notice prints — the length of the one table the wirer iterates.
+        internal static Int32 WiredHookCount => BridgeWiring.HookSpecs.Length;
+
+        // The opt-out's other direction (#31): take our wiring back out if it is there. Reads the
+        // chained status line we recorded so the user's own status bar comes back exactly as it was.
+        private Boolean UnwireIfWired()
+        {
+            String chained = null;
+            try { if (File.Exists(StatuslineChainFile)) { chained = File.ReadAllText(StatuslineChainFile).Trim(); } }
+            catch (Exception ex) { PluginLog.Warning(ex, "Live status: couldn't read the statusline chain file"); }
+
+            if (!RewriteSettings(root => BridgeWiring.Unwire(root, chained), out var wrote))
             {
-                // already ours — nothing to do
-            }
-            else
-            {
-                // Preserve the user's status bar: record their command so our handler runs it and
-                // passes its output through (see the chain block in statusline-handler.sh).
-                File.WriteAllText(StatuslineChainFile, existingCmd);
-                sl["command"] = ourStatusCmd;
-                sl["type"] = "command";
-                PluginLog.Info("Bridge auto-wire: chained existing statusLine so it still renders");
-                changed = true;
+                return false;
             }
 
-            if (!changed)
+            if (!wrote)
             {
-                PluginLog.Info("Bridge auto-wire: settings.json already wired — no changes");
-                return;
+                PluginLog.Info("Live status: settings.json carries none of our wiring — nothing to remove");
+                return false;
             }
 
-            // Back up once before the first write.
+            TryDelete(StatuslineChainFile);
+            PluginLog.Info("Live status: removed our statusLine + hooks from settings.json (your own entries were left alone)");
+            return true;
+        }
+
+        /// <summary>
+        /// The one way settings.json is rewritten. <paramref name="mutate"/> edits the parsed document
+        /// in place and returns whether it changed anything: read → mutate → write, where the write
+        /// refuses if the file's bytes moved since the read (Claude Code itself writes this file), and
+        /// one retry runs the whole thing again from the fresh contents. Returns false when the file
+        /// could not be touched at all (symlink, invalid JSON, kept changing); <paramref name="changed"/>
+        /// reports whether a write actually happened — a mutate that finds nothing to do costs no
+        /// write and no backup.
+        /// </summary>
+        internal static Boolean RewriteSettings(Func<JsonObject, Boolean> mutate, out Boolean changed)
+        {
+            changed = false;
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var root = ReadSettingsForRewrite(out var fingerprint);
+                if (root == null)
+                {
+                    return false;
+                }
+                if (!mutate(root))
+                {
+                    return true;
+                }
+                if (WriteSettings(root, fingerprint))
+                {
+                    changed = true;
+                    return true;
+                }
+                PluginLog.Warning("Live status: settings.json changed while it was being edited — retrying from the new contents");
+            }
+
+            PluginLog.Warning("Live status: settings.json kept changing — giving up; try again");
+            return false;
+        }
+
+        // SHA-256 of a file's bytes, or null when there is no file. The identity a write checks
+        // against: "the file I am about to replace is the file I read".
+        private static Byte[] Fingerprint(String path)
+        {
             try
             {
-                if (File.Exists(SettingsFile) && !File.Exists(SettingsBackup))
-                {
-                    File.Copy(SettingsFile, SettingsBackup);
-                }
+                return File.Exists(path) ? SHA256.HashData(File.ReadAllBytes(path)) : null;
             }
             catch (Exception ex)
             {
-                PluginLog.Warning(ex, "Bridge auto-wire: couldn't back up settings.json (continuing)");
+                PluginLog.Warning(ex, "Live status: couldn't fingerprint settings.json");
+                return null;
+            }
+        }
+
+        private static Boolean SameBytes(Byte[] a, Byte[] b) =>
+            a == null ? b == null : b != null && a.AsSpan().SequenceEqual(b);
+
+        // settings.json as a document we may rewrite, or null when we must not touch it: a symlink
+        // (a planted link could redirect the rename-over-write), invalid JSON, or a non-object root.
+        // A missing or empty file is an empty object — wiring a fresh install is the common case.
+        // The fingerprint is of exactly the bytes that were parsed, so a write can prove nothing
+        // slipped in between.
+        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint)
+        {
+            fingerprint = null;
+            if (new FileInfo(SettingsFile).LinkTarget != null)
+            {
+                PluginLog.Warning("Live status: settings.json is a symlink — leaving it untouched");
+                return null;
             }
 
-            // Atomic write (temp + rename) so a concurrent reader never sees a half-written file.
+            if (!File.Exists(SettingsFile))
+            {
+                return new JsonObject();
+            }
+
+            var bytes = File.ReadAllBytes(SettingsFile);
+            fingerprint = SHA256.HashData(bytes);
+            String text;
+            using (var reader = new StreamReader(new MemoryStream(bytes), Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
+            {
+                text = reader.ReadToEnd();
+            }
+            if (String.IsNullOrWhiteSpace(text))
+            {
+                return new JsonObject();
+            }
+
+            JsonNode parsed;
+            try
+            {
+                parsed = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions
+                {
+                    CommentHandling = JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true,
+                });
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "Live status: settings.json isn't valid JSON — leaving it untouched");
+                return null;
+            }
+
+            if (parsed is not JsonObject root)
+            {
+                PluginLog.Warning("Live status: settings.json isn't a JSON object — leaving it untouched");
+                return null;
+            }
+
+            return root;
+        }
+
+        // Write atomically, but only over the file that was read. The temp name is unique per call
+        // so two writers can never truncate each other's temp; the file is re-fingerprinted at the
+        // last possible moment before the rename and the write is REFUSED on a mismatch — the caller
+        // (RewriteSettings) re-reads and tries once more. The backup is ROLLING — taken immediately
+        // before every write that goes ahead, overwriting the last one (#31). It used to be taken once,
+        // on the first load, and never again: on QA's machine it was a month stale, so "restore the
+        // backup" would have rolled back every unrelated change the user had made since. A backup
+        // that is always the state one write ago is the only kind worth telling people about.
+        private static Boolean WriteSettings(JsonObject root, Byte[] expected)
+        {
             Directory.CreateDirectory(ClaudeDir);
             var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-            var tmp = SettingsFile + ".cc.tmp";
-            File.WriteAllText(tmp, json);
-            File.Move(tmp, SettingsFile, overwrite: true);
-            PluginLog.Info("Bridge auto-wire: wired live-status bridge into settings.json — start a NEW Claude Code session to activate Cost/Context/Activity");
+            var tmp = SettingsFile + ".cc." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(tmp, json);
+
+                if (!SameBytes(Fingerprint(SettingsFile), expected))
+                {
+                    TryDelete(tmp);
+                    return false;
+                }
+
+                try
+                {
+                    if (File.Exists(SettingsFile))
+                    {
+                        File.Copy(SettingsFile, SettingsBackup, overwrite: true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "Live status: couldn't back up settings.json (continuing)");
+                }
+
+                File.Move(tmp, SettingsFile, overwrite: true);
+                return true;
+            }
+            catch
+            {
+                TryDelete(tmp);
+                throw;
+            }
         }
 
         // Ensure a hook event's array contains an entry pointing at our activity handler; append if
@@ -1231,8 +2023,64 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Stop voice capture and use the transcript to OPEN a project (new tab + cd + claude).
         public void StopVoiceCaptureForProject() => StopVoiceCaptureThen(NavigateToProjectByVoice);
 
+        /// <summary>
+        /// The one door every voice key goes through (#28). The key says what it WANTS the transcript
+        /// used for; the state machine decides whether this press starts, stops, or is refused —
+        /// and, crucially, where a stopped capture's transcript is routed.
+        ///
+        /// Each key used to hold its own "am I recording?" flag and both start and route on its own,
+        /// so a second key pressed mid-recording spawned a second helper against the same files, and
+        /// the destination was decided by whichever key you pressed second. Dictating a prompt and
+        /// pressing Go to Project to stop it would fuzzy-match your prompt to a project and open it.
+        /// </summary>
+        internal void ToggleVoice(VoiceIntent intent)
+        {
+            if (!VoiceSupported)
+            {
+                PluginLog.Info("BridgeManager.ToggleVoice: voice is not supported on this platform");
+                return;
+            }
+
+            var (action, routed) = Voice.Press(intent, DateTime.UtcNow);
+            switch (action)
+            {
+                case VoiceAction.Start:
+                    PluginLog.Info($"BridgeManager.ToggleVoice: starting capture for {intent}");
+                    if (!this.StartVoiceCapture())
+                    {
+                        // Missing helper, model still downloading, unsupported platform: nothing is
+                        // recording, so the state must not say otherwise or the keys lock up.
+                        Voice.Finish();
+                    }
+                    break;
+
+                case VoiceAction.Stop:
+                    // The STARTING key's intent, not the one just pressed.
+                    if (routed != intent)
+                    {
+                        PluginLog.Info($"BridgeManager.ToggleVoice: {intent} key stopped a {routed} capture — routing to {routed}");
+                    }
+                    switch (routed)
+                    {
+                        case VoiceIntent.Project: this.StopVoiceCaptureForProject(); break;
+                        case VoiceIntent.Draft: this.StopVoiceCapture(submit: false); break;
+                        default: this.StopVoiceCapture(submit: true); break;
+                    }
+                    break;
+
+                default:
+                    // Transcribing: a result is already in flight and starting again would delete
+                    // the file the waiting thread is about to read.
+                    PluginLog.Info($"BridgeManager.ToggleVoice: ignoring {intent} press — a {routed} transcript is still in flight");
+                    _platform.Alert();
+                    break;
+            }
+        }
+
         // Shared: signal the helper to stop, then wait for the transcript off the UI thread and run
-        // <paramref name="handler"/> with it. An empty transcript (silence / mic denied) is ignored.
+        // <paramref name="handler"/> with it. Every way the wait can end WITHOUT text — a named
+        // failure, a blank transcript, a timeout — is reported to the key (#18); a denied
+        // microphone arrives as a named failure now, not as silence.
         private void StopVoiceCaptureThen(Action<String> handler)
         {
             if (!VoiceSupported)
@@ -1247,15 +2095,42 @@ namespace Loupedeck.ClaudeConsolePlugin
             catch (Exception ex)
             {
                 PluginLog.Warning(ex, "BridgeManager.StopVoiceCapture: failed to write stop flag");
+                Voice.Finish();
                 return;
             }
 
             new Thread(() =>
             {
+              // Whatever happens below — transcript, named failure, silence, timeout, an exception —
+              // the capture is over when this thread ends. A flag that could survive one crashed
+              // helper would leave every voice key dead until the plugin reloaded, which is a worse
+              // bug than the one being fixed (#28).
+              // Read before anything can Finish() it: the intent of the capture this thread is
+              // waiting on, so a failure lands on the key that was pressed.
+              var intent = Voice.Intent;
+              try
+              {
                 var deadline = DateTime.UtcNow.AddSeconds(20);
                 while (DateTime.UtcNow < deadline)
                 {
                     Thread.Sleep(150);
+
+                    // A named failure beats a blank transcript. The helper writes this sidecar when
+                    // whisper could not run at all — missing backend, missing model, a crash — which
+                    // otherwise arrives here as an empty string, indistinguishable from silence, and
+                    // is reported to the user as "didn't catch that" for months (#24).
+                    if (File.Exists(VoiceErrorFile))
+                    {
+                        String error;
+                        try { error = File.ReadAllText(VoiceErrorFile).Trim(); }
+                        catch { continue; }
+
+                        TryDelete(VoiceErrorFile);
+                        TryDelete(VoiceTranscriptFile);
+                        this.ReportVoiceFailure(intent, VoiceFailure.FromSidecar(error), error);
+                        return;
+                    }
+
                     if (!File.Exists(VoiceTranscriptFile))
                     {
                         continue;
@@ -1272,45 +2147,115 @@ namespace Loupedeck.ClaudeConsolePlugin
                     }
 
                     TryDelete(VoiceTranscriptFile);
-                    if (!String.IsNullOrWhiteSpace(text))
+
+                    // Whisper labels sounds it could not read as speech: "(gunshot)", "(static)",
+                    // "[BLANK_AUDIO]". They are descriptions of noise, not words anyone said, and
+                    // acting on one is acting on a failed dictation. Untreated, "(gunshot)" fuzzy-
+                    // matched a project called SafeShot and OPENED it, and "(static)" opened
+                    // StatementSense — a wrong project launched from across the room. The same text
+                    // would otherwise be typed into a session by the Voice keys.
+                    var spoken = CleanTranscript(text);
+                    if (!String.IsNullOrWhiteSpace(spoken))
                     {
-                        PluginLog.Info($"BridgeManager: transcript ({text.Length} chars): {text}");
-                        try { handler(text); }
+                        PluginLog.Info($"BridgeManager: transcript ({spoken.Length} chars): {spoken}");
+                        try { handler(spoken); }
                         catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: transcript handler failed"); }
+                    }
+                    else if (!String.IsNullOrWhiteSpace(text))
+                    {
+                        // Nothing survived the strip: whisper heard a noise and named it.
+                        this.ReportVoiceFailure(intent, VoiceFailure.NoSpeech, $"whisper reported \"{text}\", nothing to act on");
                     }
                     else
                     {
-                        PluginLog.Info("BridgeManager: empty transcript (silence or mic denied)");
+                        // Genuinely empty. This used to be "silence or mic denied" with no way to
+                        // tell which; a denial now arrives as a sidecar above, so this IS silence.
+                        this.ReportVoiceFailure(intent, VoiceFailure.NoSpeech, "empty transcript (silence)");
                     }
                     return;
                 }
-                PluginLog.Warning("BridgeManager: transcript not produced within 20s");
+                // The helper died without writing anything — the denied-microphone case before the
+                // sidecar covered it, or a helper killed mid-run. Nothing will arrive; say so.
+                this.ReportVoiceFailure(intent, VoiceFailure.NoResponse, "transcript not produced within 20s");
+              }
+              finally
+              {
+                Voice.Finish();
+              }
             })
             { IsBackground = true, Name = "claude-voice-transcript" }.Start();
         }
 
-        // Roots scanned (live) for voice project navigation — newly-added folders work with no code change.
-        private static readonly String[] ProjectRoots =
+        /// <summary>
+        /// Remove whisper's non-speech annotations — anything inside (…) or […] — and collapse the
+        /// whitespace left behind. What remains is what the user actually said, which may be nothing.
+        ///
+        /// This lives in the engine rather than in a helper because BOTH helpers feed it and they
+        /// disagreed: the Windows one stripped these, the macOS one matched three exact literals
+        /// ("[BLANK_AUDIO]", "(silence)", "[ Silence ]") and let every other annotation through.
+        /// One place, one rule, every key that consumes a transcript.
+        /// </summary>
+        internal static String CleanTranscript(String text)
         {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Work", "MyApps"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Work"),
-        };
+            if (String.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            var sb = new StringBuilder(text.Length);
+            var depth = 0;
+            foreach (var ch in text)
+            {
+                if (ch == '[' || ch == '(')
+                {
+                    depth++;
+                }
+                else if ((ch == ']' || ch == ')') && depth > 0)
+                {
+                    depth--;
+                }
+                else if (depth == 0)
+                {
+                    sb.Append(ch);
+                }
+            }
+
+            return String.Join(" ", sb.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries)).Trim();
+        }
+
+        // Projects the plugin already knows are real, because a session reported working in one.
+        // These count wherever they live, which is the point — they need no root to be under (#26).
+        private IReadOnlyList<String> KnownProjectDirs() =>
+            Grid.Sessions.Values
+                .Select(s => s.ProjectDir)
+                .Where(d => !String.IsNullOrEmpty(d))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
         // Match a spoken phrase to a project folder, then open it (new Terminal tab + cd + claude).
         private void NavigateToProjectByVoice(String transcript)
         {
-            var match = MatchProject(transcript);
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var candidates = ProjectDiscovery.Candidates(
+                home, ProjectDiscovery.DefaultRootsFile(home), this.KnownProjectDirs());
+
+            var match = MatchProject(transcript, candidates.Paths);
             if (match == null)
             {
-                PluginLog.Warning($"NavigateToProjectByVoice: no project matched \"{transcript}\"");
+                // Say what was searched. The whole of #26 reached us as "it does nothing" — a line
+                // naming the candidate count and where they came from would have diagnosed itself.
+                PluginLog.Warning(
+                    $"NavigateToProjectByVoice: no project matched \"{transcript}\" among "
+                    + $"{candidates.Paths.Count} candidate(s) — {candidates.Source}. If your projects "
+                    + $"live elsewhere, list their roots in {ProjectDiscovery.DefaultRootsFile(home)}");
                 _platform.Alert(); // audible "didn't catch a project" feedback
                 return;
             }
-            PluginLog.Info($"NavigateToProjectByVoice: \"{transcript}\" -> {match}");
+            PluginLog.Info($"NavigateToProjectByVoice: \"{transcript}\" -> {match} (of {candidates.Paths.Count} candidates)");
             LaunchClaudeInProject(match);
         }
 
-        private static String MatchProject(String transcript)
+        internal static String MatchProject(String transcript, IEnumerable<String> candidates)
         {
             var t = NormalizeForMatch(transcript);
             if (t.Length < 2)
@@ -1320,25 +2265,25 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             String best = null;
             var bestScore = 0;
-            foreach (var root in ProjectRoots)
+            foreach (var dir in candidates ?? Enumerable.Empty<String>())
             {
-                if (!Directory.Exists(root))
+                if (String.IsNullOrEmpty(dir))
                 {
                     continue;
                 }
-                foreach (var dir in Directory.GetDirectories(root))
+
+                // Match on the folder NAME, so a trailing separator can't reduce it to nothing.
+                var name = Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                var f = NormalizeForMatch(name);
+                if (f.Length == 0)
                 {
-                    var f = NormalizeForMatch(Path.GetFileName(dir));
-                    if (f.Length == 0)
-                    {
-                        continue;
-                    }
-                    var score = MatchScore(t, f);
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        best = dir;
-                    }
+                    continue;
+                }
+                var score = MatchScore(t, f);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = dir;
                 }
             }
 
@@ -1363,10 +2308,16 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (f.StartsWith(t) || t.StartsWith(f)) return 700 + Math.Min(t.Length, f.Length);
             if (f.Contains(t) || t.Contains(f)) return 500 + Math.Min(t.Length, f.Length);
 
-            // Fuzzy fallback: longest contiguous overlap, ≥4 chars and ≥50% of the shorter name.
+            // Fuzzy fallback: longest contiguous overlap, ≥5 chars and ≥50% of the shorter name.
+            //
+            // Four was too generous, and it launched the wrong projects: "gunshot" reached SafeShot
+            // on "shot", "static" reached StatementSense on "stat". Whisper's noise annotations are
+            // now stripped before matching, which is the real fix — this is the second line of
+            // defence, since a four-letter overlap is thin evidence that a mishearing meant THIS
+            // project. Genuine near-misses keep matching: "tailor"/"sailor" share five.
             var lcs = LongestCommonSubstringLength(t, f);
             var shorter = Math.Min(t.Length, f.Length);
-            if (lcs >= 4 && shorter > 0 && lcs * 2 >= shorter)
+            if (lcs >= 5 && shorter > 0 && lcs * 2 >= shorter)
             {
                 return 300 + lcs;
             }

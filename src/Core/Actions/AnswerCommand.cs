@@ -55,10 +55,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             switch (actionParameter)
             {
                 case Yes:
-                    bridge.InjectText("yes", pressEnter: true);
+                    AnswerApproval(bridge, approve: true);
                     break;
                 case No:
-                    bridge.InjectText("no", pressEnter: true);
+                    AnswerApproval(bridge, approve: false);
                     break;
                 case Up:
                     bridge.InjectKey(KeyStroke.ArrowUp);
@@ -72,6 +72,113 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             }
 
             PluginLog.Info($"AnswerCommand: {actionParameter}");
+        }
+
+        /// <summary>
+        /// Answer Yes/No, branching on whether the targeted session has a CAPTURED APPROVAL
+        /// pending (a permission menu we can see) or not.
+        ///
+        /// THE 2.0.1 DEFECT (#21). Both keys typed a literal word and pressed Return. A permission
+        /// prompt is a NUMBERED MENU, so the word did nothing and the Return confirmed whichever
+        /// option was highlighted — option 1, Yes. Pressing **No** therefore approved the action,
+        /// and the leftover word was then submitted as a stray chat message. Reproduced on hardware
+        /// 2026-08-27: a file the session had been asked to delete was deleted by a press of No,
+        /// after which "no" arrived as a user turn and the agent explained it was too late.
+        ///
+        /// WHY NOT "SEND THE OPTION NUMBER". That is the report's suggested fix and it cannot be
+        /// done from what the plugin knows: the captured PermissionRequest payload carries
+        /// tool_name and tool_input and nothing else (scripts/activity-hook.sh). The option list
+        /// and its length live in the TUI, which we cannot see, so any digit would be a guess —
+        /// and a guess that lands on the wrong row approves something.
+        ///
+        /// WHAT IS RELIABLE, without seeing the menu:
+        ///   • option 1 is Yes and starts highlighted, so RETURN approves. Count-independent.
+        ///   • ESCAPE dismisses the prompt without running the tool. Also count-independent, and
+        ///     it FAILS SAFE: if Escape ever did something broader than reject — interrupting the
+        ///     turn, say — the command still does not run, which is the direction a No key should
+        ///     err in. A wrong digit errs the other way.
+        /// Both are key codes, so neither inherits the keyboard-layout defect (#22).
+        ///
+        /// WHEN THERE IS NO CAPTURED APPROVAL, WE DO NOTHING. A session can be "waiting" without a
+        /// pending payload — Claude idling at a plain prompt (the Notification hook marks that
+        /// "waiting" too), or an agent too old for the PermissionRequest hook sitting on a real
+        /// menu. From here the two are indistinguishable, and BOTH bad guesses are unsafe: typing a
+        /// word at a hidden menu is the very P0 above, and a bare Return/Escape at an idle prompt
+        /// does the wrong thing quietly (the 2.0.1-retest regression — Yes sent Return, No sent
+        /// Escape, at a session with nothing to approve). So the key beeps and reports instead.
+        /// Refusing to answer is recoverable; approving what the user tried to refuse is not.
+        ///
+        /// This is why the decision keys on the captured PAYLOAD, not on State=="waiting": #51 made
+        /// the amber badge require that payload, and the keys must agree with the badge they draw —
+        /// an amber Yes must not describe a menu that Yes will not actually answer. (Cost, accepted
+        /// and shared with #51: to answer a plain free-text question you type into the session, not
+        /// with these keys.)
+        /// </summary>
+        /// <summary>How a Yes/No press should be delivered.</summary>
+        internal enum AnswerVia
+        {
+            /// <summary>An approval is captured: confirm the highlighted option (always Yes) with Return.</summary>
+            MenuConfirm,
+
+            /// <summary>An approval is captured: dismiss it with Escape, so the tool does not run.</summary>
+            MenuReject,
+
+            /// <summary>Nothing we can confirm is a menu: beep and do nothing, rather than guess.</summary>
+            NoOp,
+        }
+
+        /// <summary>
+        /// The decision, kept pure so tests exercise the real logic on values rather than on a
+        /// singleton bridge. <paramref name="hasPendingApproval"/> is whether the targeted session
+        /// carries a captured PermissionRequest payload — the SAME signal the amber badge is drawn
+        /// from (SessionRegistry.ApplyPendingApproval), so the key and its badge cannot disagree.
+        /// </summary>
+        internal static AnswerVia Decide(Boolean approve, Boolean hasPendingApproval)
+        {
+            // The captured payload is the only thing that tells a permission MENU from anything
+            // else. It is set only while a tool is genuinely blocked on approval, and — now the
+            // hook no longer deletes it on the delayed Notification — it stays set for the whole
+            // time the menu is up. No payload means we cannot confirm a menu, so we refuse to guess:
+            // typing a word is #21, and a bare Return/Escape at an idle prompt is the retest
+            // regression. Both are unsafe; doing nothing is not.
+            if (!hasPendingApproval)
+            {
+                return AnswerVia.NoOp;
+            }
+
+            return approve ? AnswerVia.MenuConfirm : AnswerVia.MenuReject;
+        }
+
+        private static void AnswerApproval(BridgeManager bridge, Boolean approve)
+        {
+            var target = bridge.RoutingTty();
+            var hasPending = false;
+            if (!String.IsNullOrEmpty(target) && bridge.Grid.Sessions.TryGetValue(target, out var session))
+            {
+                // PendingTool is filled only from a captured PermissionRequest payload, and only
+                // while the session is waiting on it — the same field that lights the risk badge.
+                hasPending = !String.IsNullOrEmpty(session.PendingTool);
+            }
+
+            switch (Decide(approve, hasPending))
+            {
+                case AnswerVia.MenuConfirm:
+                    bridge.InjectKey(KeyStroke.Return);
+                    PluginLog.Info($"AnswerCommand: approved the pending prompt on {target} by key");
+                    break;
+
+                case AnswerVia.MenuReject:
+                    bridge.InjectKey(KeyStroke.Escape);
+                    PluginLog.Info($"AnswerCommand: rejected the pending prompt on {target} by key");
+                    break;
+
+                default:
+                    // No approval we can see. Beep rather than type a word at a prompt we cannot
+                    // confirm is a menu (#21), or send a bare Return/Escape at an idle session.
+                    bridge.Alert();
+                    PluginLog.Info($"AnswerCommand: {(approve ? "Yes" : "No")} with no pending approval on {target ?? "(no target)"} — ignored");
+                    break;
+            }
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
@@ -92,7 +199,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private static ApprovalRisk TargetRisk()
         {
             var bridge = BridgeManager.Instance;
-            var target = bridge.TargetTty();
+            var target = bridge.RoutingTty();
             if (String.IsNullOrEmpty(target))
             {
                 return ApprovalRisk.None;
