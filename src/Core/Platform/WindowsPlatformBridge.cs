@@ -4,6 +4,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     using System.Collections.Generic;
     using System.Diagnostics;
     using System.Linq;
+    using System.Runtime.InteropServices;
+    using System.Text;
 
     /// <summary>
     /// The Windows backend: session discovery (Phase 1), console injection via a short-lived
@@ -452,6 +454,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Runs a terminal command. Injectable so navigation is testable without Windows.</summary>
         internal Func<String, List<String>, Boolean> TerminalRunner { get; set; }
 
+        /// <summary>
+        /// Does an existing Windows Terminal window exist? Commands addressed to `-w 0` require
+        /// one; without this guard wt may quietly do nothing or create an unrelated window (#33).
+        /// Injectable because the production probe is necessarily Windows-only.
+        /// </summary>
+        internal Func<Boolean> TerminalWindowProbe { get; set; }
+
+        /// <summary>
+        /// Raised when a terminal-dependent press cannot be delivered. BridgeManager owns how the
+        /// user is told; the platform owns detecting the failure.
+        /// </summary>
+        internal Action<String> TerminalUnavailable { get; set; }
+
         public String QueryFrontmostSession() => null;   // see gap 1 above
 
         public void Navigate(TerminalAction action)
@@ -465,7 +480,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return;
             }
 
-            this.RunTerminal(args);
+            this.RunTerminal(args, requiresExistingWindow: action != TerminalAction.NewClaudeWindow);
         }
 
         public Boolean CaptureScreenshotInteractive(String outputPath)
@@ -511,7 +526,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return;
             }
 
-            this.RunTerminal(args);
+            this.RunTerminal(args, requiresExistingWindow: true);
         }
 
         public void LaunchClaudeInProject(String projectDir)
@@ -522,7 +537,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return;
             }
 
-            this.RunTerminal(args);
+            this.RunTerminal(args, requiresExistingWindow: true);
         }
 
         /// <summary>Runs claude-console-focus.exe. Injectable for tests; returns its exit code.</summary>
@@ -574,7 +589,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
             // Degraded mode: bring the terminal window forward without selecting the tab — the
             // behavior all of Phase 3 had before the focus helper existed.
-            this.RunTerminal(WindowsTerminalCli.ArgsFor(TerminalAction.Activate));
+            this.RunTerminal(WindowsTerminalCli.ArgsFor(TerminalAction.Activate), requiresExistingWindow: true);
         }
 
         public void Alert()
@@ -586,42 +601,100 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
         }
 
-        /// <summary>
-        /// Raised the first time a navigation key finds no Windows Terminal to drive (#33 / retest
-        /// item 16). The engine wires this to an Options+ message-centre card so the requirement is
-        /// VISIBLE instead of a silent log line. Null in tests and until wired.
-        /// </summary>
-        internal Action OnTerminalUnavailable { get; set; }
-
-        // So the message-centre card is posted once, not on every nav press — but the beep is every
-        // press, because a press that did nothing deserves immediate feedback each time.
-        private Boolean _warnedNoTerminal;
-
-        private void RunTerminal(List<String> args)
+        // A terminal-dependent press that lands nowhere is the #33 bug (retest item 16): Claude Code
+        // in a classic console window, or wt.exe absent on stock Windows 10. `wt -w 0` with no
+        // Windows Terminal window open either fails or spawns a window the user is not looking at,
+        // so the probe comes FIRST — a zero exit from wt.exe is not proof the press did anything.
+        private Boolean RunTerminal(List<String> args, Boolean requiresExistingWindow)
         {
+            if (requiresExistingWindow && !this.HasTerminalWindow())
+            {
+                return this.ReportTerminalUnavailable("no Windows Terminal window is running");
+            }
+
             var runner = this.TerminalRunner;
             if (runner != null)
             {
-                runner(WindowsTerminalCli.Exe, args);
-                return;
+                return runner(WindowsTerminalCli.Exe, args)
+                    || this.ReportTerminalUnavailable("wt.exe could not deliver the action");
             }
 
-            // wt.exe is absent on stock Windows 10, or Claude Code is running in a classic console
-            // window rather than Windows Terminal (R9 / #33). The nav verb has nowhere to land, so
-            // the press was a SILENT no-op — the retest's complaint. Surface it: beep every time (a
-            // press that did nothing should say so), and post the explanation once. Typing keys are
-            // unaffected, which the card says so the user does not think the plugin is dead.
-            if (BoundedProcess.RunForExitCode(WindowsTerminalCli.Exe, args, 10000) == null)
+            // wt.exe is absent on stock Windows 10 (R9). Treat null AND nonzero as failure: both
+            // mean the requested action was not delivered, and a silent key is the #33 bug.
+            var exit = BoundedProcess.RunForExitCode(WindowsTerminalCli.Exe, args, 10000);
+            return exit == 0
+                || this.ReportTerminalUnavailable(
+                    exit.HasValue ? $"wt.exe exited with status {exit}" : "wt.exe is unavailable");
+        }
+
+        private Boolean HasTerminalWindow()
+        {
+            if (this.TerminalWindowProbe != null)
             {
-                PluginLog.Warning("WindowsPlatformBridge: wt.exe unavailable — Windows Terminal is required for the navigation keys");
-                this.Alert();
-                if (!this._warnedNoTerminal)
+                try { return this.TerminalWindowProbe(); }
+                catch (Exception ex)
                 {
-                    this._warnedNoTerminal = true;
-                    try { this.OnTerminalUnavailable?.Invoke(); }
-                    catch (Exception ex) { PluginLog.Warning(ex, "WindowsPlatformBridge: OnTerminalUnavailable handler failed"); }
+                    PluginLog.Verbose(ex, "WindowsPlatformBridge: Windows Terminal probe failed");
+                    return false;
                 }
             }
+
+            if (!OperatingSystem.IsWindows())
+            {
+                return false;
+            }
+
+            try { return HasWindowsTerminalWindow(); }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, "WindowsPlatformBridge: could not inspect Windows Terminal windows");
+                return false;
+            }
+        }
+
+        // Process.MainWindowHandle is not evidence here: WindowsTerminal.exe reports zero on
+        // current builds even while its HWND is visible. Enumerate real top-level windows and use
+        // the same stable class name the hardware-proven focus helper uses (#33).
+        private const String TerminalWindowClass = "CASCADIA_HOSTING_WINDOW_CLASS";
+
+        [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+        internal static Boolean HasWindowsTerminalWindow()
+        {
+            var found = false;
+            EnumWindows(
+                (hwnd, _) =>
+                {
+                    var className = new StringBuilder(128);
+                    if (IsWindowVisible(hwnd)
+                        && GetClassNameW(hwnd, className, className.Capacity) > 0
+                        && String.Equals(className.ToString(), TerminalWindowClass, StringComparison.Ordinal))
+                    {
+                        found = true;
+                        return false;
+                    }
+                    return true;
+                },
+                IntPtr.Zero);
+            return found;
+        }
+
+        private delegate Boolean EnumWindowsProc(IntPtr hwnd, IntPtr state);
+
+        [DllImport("user32.dll")]
+        private static extern Boolean EnumWindows(EnumWindowsProc callback, IntPtr state);
+
+        [DllImport("user32.dll")]
+        private static extern Boolean IsWindowVisible(IntPtr hwnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern Int32 GetClassNameW(IntPtr hwnd, StringBuilder className, Int32 maxCount);
+
+        private Boolean ReportTerminalUnavailable(String detail)
+        {
+            PluginLog.Warning($"WindowsPlatformBridge: {detail} — Windows Terminal is required for this action");
+            try { this.TerminalUnavailable?.Invoke(detail); }
+            catch (Exception ex) { PluginLog.Warning(ex, "WindowsPlatformBridge: terminal failure notice failed"); }
+            return false;
         }
     }
 }

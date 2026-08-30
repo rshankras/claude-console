@@ -56,6 +56,11 @@ The Windows build reaches Claude a different way than macOS does, and two differ
 
 **Not available on Windows:** Next/Previous *Window* (an OS-level gesture `wt.exe` cannot express — those keys log and do nothing). Opening a project always uses a fresh tab rather than reusing an idle one, because Windows Terminal offers no way to tell a busy tab from an idle one and guessing wrong would type into a live session.
 
+**When Windows Terminal is not open, terminal-dependent keys refuse safely.** They beep and post a
+“Windows Terminal required” warning in Options+ instead of issuing a `wt.exe` command that silently
+does nothing or opens an unrelated window. **New Claude (Window)** remains available because its job
+is to create that first Windows Terminal window. Direct typing keys do not depend on `wt.exe`.
+
 **Elevated sessions are unreachable.** Options+ runs unelevated, and Windows blocks the console attach across integrity levels. Run Claude unelevated.
 
 ## Install (released plugin)
@@ -303,6 +308,8 @@ File‑based IPC under a private `/tmp/claude-console/` root (0700 dirs / 0600 f
 **Keys show only an exclamation mark / plain text right after building from source.** If you've *both* installed the released `.lplug4` *and* run `dotnet build` (which writes a dev `.link`), the plugin is registered twice and the service refuses the duplicate — the plugin log shows `Cannot load plugin … because plugin 'ClaudeConsole' is already loaded` and the keys don't resolve. Keep **one** source: uninstall the packaged plugin in Logi Options+ to develop against the `.link`, or remove the dev `.link` (`scripts/uninstall.sh` does this) to run the installed package.
 
 **Nothing appears on the keypad after installing.** That is expected: the plugin is universal (2.2.0+) — it binds to no application and ships no layout. Import [the ready-made layout](#import-the-ready-made-layout), or add Terminal as an application in Options+ and drag the Claude Console actions on. The actions are listed under **Claude Console Actions** in the Options+ action panel; if that list is missing, the plugin did not load — check the log.
+
+**Windows: session/navigation keys beep or Options+ says “Windows Terminal required.”** Open Windows Terminal and start the agent there. For a classic Command Prompt or PowerShell console, set **Settings → System → For developers → Terminal** to **Windows Terminal**, then start a new session. Direct typing can still reach a supported unelevated console session, but tab navigation, session focus, Go to Project, and screenshot-to-agent launching require Windows Terminal. Elevated sessions cannot be controlled: Windows blocks an unelevated Options+ service from attaching across integrity levels.
 
 **Before 2.2.0: the Claude Console icon vanished from Options+ after a reinstall, or never appeared after a first sideloaded install.** Those versions registered their own application entry in Options+, and the service could lose it (a reinstall dropped it from memory, a sideloaded install never created it). 2.2.0 removed the entry altogether, so there is nothing to lose; the layout lives on Terminal's own entry, which is yours. If you are on an older version, update — or restart the Logi Plugin Service (`killall LogiPluginService`) and then Options+ so it re-reads the registration from disk.
 

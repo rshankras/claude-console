@@ -12,7 +12,7 @@ name: VizhiCodex
 displayName: Vizhi for Codex
 
 # Short description of the plugin.
-description: Physical hardware controls for OpenAI Codex CLI on the MX Creative Keypad. Press a button. Ship code.
+description: Control OpenAI Codex in Apple Terminal or Windows Terminal from the MX Creative Keypad.
 
 # Name of the plugin library file.
 pluginFileName: VizhiCodexPlugin.dll

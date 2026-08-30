@@ -12,7 +12,7 @@ name: ClaudeConsole
 displayName: Claude Console
 
 # Short description of the plugin.
-description: Physical hardware controls for Claude Code on the MX Creative Keypad. Press a button. Ship code.
+description: Control Claude Code in Apple Terminal or Windows Terminal from the MX Creative Keypad.
 
 # Name of the plugin library file.
 pluginFileName: ClaudeConsolePlugin.dll

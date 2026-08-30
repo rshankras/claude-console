@@ -238,19 +238,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     this._platform = PlatformBridgeFactory.Create(
                         this._agent.ProcessMatcher, this._agent.CliCommand);
-
-                    // Surface the Windows-Terminal-missing case instead of only logging it (#33): a
-                    // nav press in a classic console window posts an Options+ card explaining that
-                    // the nav keys need Windows Terminal while typing keys still work. Fires once;
-                    // Notify may be null until the product installs it, and the ?. handles that.
-                    if (this._platform is WindowsPlatformBridge win)
-                    {
-                        win.OnTerminalUnavailable = () => this.Notify?.Invoke(
-                            PluginStatus.Warning,
-                            BridgeNotice.WindowsTerminalRequired(),
-                            BridgeNotice.WindowsUrl,
-                            BridgeNotice.WindowsTitle);
-                    }
+                    this.WirePlatformNotices();
                 }
 
                 // The grid reads state files through the agent too. Setting one without the other
@@ -312,6 +300,35 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             this._platform = platform ?? new UnsupportedPlatformBridge();
             this._platformInjected = injected;
+            this.WirePlatformNotices();
+        }
+
+        // The message-centre card is posted once per load, not on every nav press — but the beep is
+        // every press, because a press that did nothing deserves immediate feedback each time.
+        private Boolean _warnedNoTerminal;
+
+        // Surface the Windows-Terminal-missing case instead of only logging it (#33 / retest item
+        // 16): the platform detects the failure and says why, the engine owns how the user is told.
+        // Notify may be null until the product installs it, and the ?. handles that.
+        private void WirePlatformNotices()
+        {
+            if (this._platform is WindowsPlatformBridge windows)
+            {
+                windows.TerminalUnavailable = detail =>
+                {
+                    this._platform.Alert();
+                    if (this._warnedNoTerminal)
+                    {
+                        return;
+                    }
+                    this._warnedNoTerminal = true;
+                    this.Notify?.Invoke(
+                        PluginStatus.Warning,
+                        BridgeNotice.WindowsTerminalRequired(detail),
+                        BridgeNotice.WindowsTerminalUrl,
+                        BridgeNotice.WindowsTerminalTitle);
+                };
+            }
         }
 
         // Test seam: the pinned session, so a test can assert the pin was set/released without

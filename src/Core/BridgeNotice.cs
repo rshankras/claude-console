@@ -76,21 +76,22 @@ namespace Loupedeck.ClaudeConsolePlugin
             "kept changing). Nothing was written. Fix the file, then press the key again.";
 
         /// <summary>Where the Windows-Terminal notice points — the README's Windows section.</summary>
-        internal const String WindowsUrl = "https://github.com/rshankras/claude-console#windows-notes";
+        internal const String WindowsTerminalUrl = "https://github.com/rshankras/claude-console#windows-notes";
 
-        internal const String WindowsTitle = "How to set Windows Terminal";
+        internal const String WindowsTerminalTitle = "How to set Windows Terminal";
 
         /// <summary>
-        /// Posted the first time a navigation key is pressed with no Windows Terminal to drive
-        /// (#33 / retest item 16). The nav keys express every window/tab move as a `wt.exe` verb;
-        /// in a classic console window there is no Windows Terminal to receive it, so the press was
-        /// a silent no-op. The requirement is real (Claude Code itself renders poorly in conhost),
-        /// but it must be VISIBLE rather than silent. Typing keys are unaffected — say so, so the
-        /// user does not think the whole plugin is dead.
+        /// Posted when a terminal-dependent key finds no Windows Terminal window to drive (#33 /
+        /// retest item 16). The nav keys express every window/tab move as a `wt.exe` verb; with
+        /// Claude Code in a classic console window and no Windows Terminal open, `wt.exe` either
+        /// fails or acts on a window the user is not looking at, so the press was a silent no-op.
+        /// The requirement is real (Claude Code itself renders poorly in conhost), but it must be
+        /// VISIBLE rather than silent. Typing keys are unaffected — say so, so the user does not
+        /// think the whole plugin is dead. <paramref name="detail"/> is the platform's reason.
         /// </summary>
-        internal static String WindowsTerminalRequired() =>
-            "The navigation keys need Windows Terminal, and it isn't the current terminal. Typing, Yes/No " +
-            "and voice still work here; only the tab and window keys need it. Set Settings › System › For " +
-            "developers › Terminal to Windows Terminal and start a new session.";
+        internal static String WindowsTerminalRequired(String detail) =>
+            "The navigation keys need an open Windows Terminal window, and it isn't the current terminal. " +
+            "Direct typing keys, Yes/No and voice still work here. Set Settings › System › For developers › " +
+            $"Terminal to Windows Terminal and start a new session. ({detail})";
     }
 }

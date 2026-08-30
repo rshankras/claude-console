@@ -96,6 +96,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void The_windows_terminal_notice_names_the_requirement_and_links_to_existing_guidance()
+        {
+            var text = BridgeNotice.WindowsTerminalRequired("no Windows Terminal window is running");
+
+            Assert.Contains("open Windows Terminal window", text);
+            Assert.Contains("Direct typing keys", text);
+            Assert.Contains("no Windows Terminal window is running", text);
+            Assert.EndsWith("#windows-notes", BridgeNotice.WindowsTerminalUrl);
+
+            var readme = File.ReadAllText(RepoFile("README.md"));
+            Assert.Contains("## Windows notes", readme);
+            Assert.Contains("Windows: session/navigation keys beep", readme);
+            Assert.Contains("Elevated sessions cannot be controlled", readme);
+        }
+
+        [Theory]
+        [InlineData("ClaudeConsole")]
+        [InlineData("VizhiCodex")]
+        public void Every_windows_product_description_names_windows_terminal(String product)
+        {
+            var metadata = File.ReadAllText(RepoFile(
+                "src", "Products", product, "package", "metadata", "LoupedeckPackage.yaml"));
+
+            Assert.Contains("description:", metadata);
+            Assert.Contains("Windows Terminal", metadata);
+        }
+
+        [Fact]
         public void The_hook_count_in_the_notice_matches_the_hooks_actually_wired()
         {
             // The notice says "5 hooks". That number is the length of the one table both the wirer
@@ -154,22 +182,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void The_windows_terminal_notice_names_the_fix_and_says_typing_still_works()
         {
-            var text = BridgeNotice.WindowsTerminalRequired();
+            var text = BridgeNotice.WindowsTerminalRequired("wt.exe is unavailable");
 
             // What the user must DO, and the reassurance that the plugin is not dead — the retest's
             // "documented but still silent at runtime" (#33) is answered by a card that says both.
             Assert.Contains("navigation keys", text);
             Assert.Contains("Windows Terminal", text);
             Assert.Contains("Settings", text);
-            Assert.Contains("Typing", text);
-            Assert.True(text.Length <= 300, $"{text.Length} chars — that is a paragraph, not a notice");
+            Assert.Contains("typing", text);
+            Assert.True(text.Length <= 360, $"{text.Length} chars — that is a paragraph, not a notice");
         }
 
         [Fact]
         public void The_windows_notice_link_points_at_a_readme_section_that_exists()
         {
-            Assert.StartsWith("https://github.com/rshankras/claude-console#", BridgeNotice.WindowsUrl);
-            Assert.EndsWith("windows-notes", BridgeNotice.WindowsUrl);
+            Assert.StartsWith("https://github.com/rshankras/claude-console#", BridgeNotice.WindowsTerminalUrl);
+            Assert.EndsWith("windows-notes", BridgeNotice.WindowsTerminalUrl);
 
             var readme = File.ReadAllText(RepoFile("README.md"));
             Assert.Contains("## Windows notes", readme);
@@ -178,18 +206,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void The_windows_terminal_warning_is_surfaced_not_only_logged()
         {
-            // The whole point of #33's fix: the engine wires the platform's "no Windows Terminal"
-            // signal to a message-centre card, and the platform raises it (once) with a beep rather
-            // than only writing a log line.
+            // The whole point of #33's fix: the platform detects a press that cannot land (no
+            // Windows Terminal window, or wt.exe failing) and says why; the engine beeps every time
+            // and posts the message-centre card once, rather than only writing a log line.
             var engine = File.ReadAllText(RepoFile("src", "Core", "BridgeManager.cs"));
-            Assert.Contains("win.OnTerminalUnavailable = () => this.Notify?.Invoke(", engine);
-            Assert.Contains("BridgeNotice.WindowsTerminalRequired()", engine);
+            Assert.Contains("windows.TerminalUnavailable = detail =>", engine);
+            Assert.Contains("BridgeNotice.WindowsTerminalRequired(detail)", engine);
+            Assert.Contains("this._platform.Alert();", engine);
+            // Posted once, not on every nav press.
+            Assert.Contains("_warnedNoTerminal", engine);
 
             var win = File.ReadAllText(RepoFile("src", "Core", "Platform", "WindowsPlatformBridge.cs"));
-            Assert.Contains("this.OnTerminalUnavailable?.Invoke()", win);
-            Assert.Contains("this.Alert();", win);
-            // Posted once, not on every nav press.
-            Assert.Contains("_warnedNoTerminal", win);
+            // The probe runs BEFORE wt.exe: a zero exit is not proof the press landed anywhere.
+            Assert.Contains("if (requiresExistingWindow && !this.HasTerminalWindow())", win);
+            Assert.Contains("this.TerminalUnavailable?.Invoke(detail)", win);
         }
 
         private static String RepoFile(params String[] relative)

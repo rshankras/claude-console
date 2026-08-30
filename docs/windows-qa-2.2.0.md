@@ -50,6 +50,8 @@ after every press. Companion to `docs/HANDOFF-qa-fixes.md` (the Mac record) and
 | #27 idle CPU | `LogiPluginService` 5.1 cpu-s over 90 s ≈ 5.7 % of one core, 33 MB, two sessions idle (not zero-session: the measuring session was alive). QA's pre-fix figure was 8.1 % | PASS (upper bound) |
 | #49 idle retention | Session 2 idle 28 min: its state file (own cost $1.72, ctx 4 %) still present, still slot 2 — the old 10-minute prune would have deleted it | PASS |
 
+| #33 / retest 16 Windows Terminal required | Main's `e66c1ee` fired only when `wt.exe` FAILED to run; with `wt.exe` present and Claude in a classic console, `wt -w 0` exits 0 and the nav press stayed a silent no-op. Ported the `fix/qa-windows` version (probe for a visible `CASCADIA_HOSTING_WINDOW_CLASS` window before running wt, nonzero exit = failure, reason in the notice) and kept main's beep-every-press / card-once. Verified: probe finds the one live WT window (no false refusals); with the WT window hidden for 40 s, 16 nav presses each logged `no Windows Terminal window is running — Windows Terminal is required for this action` and beeped. Residual: with a WT window open, a nav press from a classic console acts on that WT window — a documented limit, not a silent no-op | PASS (fixed today) |
+
 All 2.2.0 fixes that apply to Windows have now been exercised on the keypad. Not applicable here:
 #18's mic-denied path (macOS TCC), #29 (other terminals — Windows never used that path), #46
 (osascript), #20/#34/#45 (moot since universal).
@@ -102,6 +104,12 @@ whisper runtime" (a parallel #47 fix with `tools/windows/prepare-whisper-bundle.
 Windows Terminal requirement", "recognize Store-installed Codex CLI". The #47 half is superseded by
 `4439a36` (on main, verified on the keypad); the other two and the prep script are worth rebasing onto
 main rather than losing.
+
+**W8 — testing "no Windows Terminal" without closing Windows Terminal.** The driving Claude session
+lives in WT, so closing every WT window ends the session. `ShowWindow(hwnd, SW_HIDE)` on the
+`CASCADIA_HOSTING_WINDOW_CLASS` window for 40 s (then `SW_SHOW` from a background job) makes the
+probe's `IsWindowVisible` false while the session keeps running. Give the user a 10 s lead-in: the
+instruction to press is in the window being hidden.
 
 **W6 — the timestamp trap for anyone hand-writing state files on Windows.** PowerShell 5.1's
 `Get-Date -UFormat %s` returns LOCAL seconds (+19800 on this laptop). Use

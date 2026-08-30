@@ -21,6 +21,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var runs = new List<List<String>>();
             var bridge = new WindowsPlatformBridge
             {
+                TerminalWindowProbe = () => true,
                 TerminalRunner = (exe, args) =>
                 {
                     Assert.Equal("wt.exe", exe);
@@ -29,6 +30,119 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 },
             };
             return (bridge, runs);
+        }
+
+        [Fact]
+        public void No_running_terminal_blocks_existing_window_actions_and_reports_the_failure()
+        {
+            var runs = 0;
+            var notices = new List<String>();
+            var bridge = new WindowsPlatformBridge
+            {
+                TerminalWindowProbe = () => false,
+                TerminalRunner = (_, _) => { runs++; return true; },
+                TerminalUnavailable = notices.Add,
+            };
+
+            bridge.Navigate(TerminalAction.NewTab);
+
+            Assert.Equal(0, runs);
+            Assert.Single(notices);
+            Assert.Contains("no Windows Terminal window", notices[0]);
+        }
+
+        [Fact]
+        public void A_new_terminal_window_can_be_created_when_none_exists_yet()
+        {
+            var runs = new List<List<String>>();
+            var bridge = new WindowsPlatformBridge
+            {
+                TerminalWindowProbe = () => false,
+                TerminalRunner = (exe, args) => { runs.Add(args); return true; },
+                TerminalUnavailable = _ => throw new Xunit.Sdk.XunitException("must not report unavailable"),
+            };
+
+            bridge.Navigate(TerminalAction.NewClaudeWindow);
+
+            Assert.Single(runs);
+            Assert.Equal(new[] { "-w", "new" }, runs[0].Take(2));
+        }
+
+        [Fact]
+        public void A_failed_wt_command_is_reported_instead_of_becoming_a_silent_keypress()
+        {
+            var notices = new List<String>();
+            var bridge = new WindowsPlatformBridge
+            {
+                TerminalWindowProbe = () => true,
+                TerminalRunner = (_, _) => false,
+                TerminalUnavailable = notices.Add,
+            };
+
+            bridge.Navigate(TerminalAction.NextTab);
+
+            Assert.Single(notices);
+            Assert.Contains("could not deliver", notices[0]);
+        }
+
+        [Fact]
+        public void Bridge_manager_turns_a_terminal_failure_into_an_options_notice()
+        {
+            PluginStatus? status = null;
+            String message = null;
+            String url = null;
+            var platform = new WindowsPlatformBridge
+            {
+                TerminalWindowProbe = () => false,
+                TerminalRunner = (_, _) => throw new Xunit.Sdk.XunitException("must fail before launch"),
+                HelperPath = null,
+            };
+            var manager = new BridgeManager(platform)
+            {
+                Notify = (s, m, u, _) => { status = s; message = m; url = u; },
+            };
+
+            manager.Navigate(TerminalAction.NewTab);
+
+            Assert.Equal(PluginStatus.Warning, status);
+            Assert.Contains("open Windows Terminal window", message);
+            Assert.Equal(BridgeNotice.WindowsTerminalUrl, url);
+        }
+
+        [Fact]
+        public void Project_and_agent_launches_also_refuse_without_an_existing_terminal()
+        {
+            var runs = 0;
+            var notices = new List<String>();
+            var bridge = new WindowsPlatformBridge
+            {
+                TerminalWindowProbe = () => false,
+                TerminalRunner = (_, _) => { runs++; return true; },
+                TerminalUnavailable = notices.Add,
+            };
+
+            bridge.LaunchClaudeInProject(@"C:\dev\project");
+            bridge.LaunchAgentSession(new[] { "-i", @"C:\tmp\shot.png" });
+
+            Assert.Equal(0, runs);
+            Assert.Equal(2, notices.Count);
+        }
+
+        [Fact]
+        public void A_session_focus_fallback_reports_when_no_terminal_window_exists()
+        {
+            var notices = new List<String>();
+            var bridge = new WindowsPlatformBridge
+            {
+                FocusRunner = _ => 2,
+                TerminalWindowProbe = () => false,
+                TerminalRunner = (_, _) => throw new Xunit.Sdk.XunitException("must fail before wt"),
+                TerminalUnavailable = notices.Add,
+            };
+
+            bridge.FocusSession(FocusKey);
+
+            Assert.Single(notices);
         }
 
         // ---------------------------------------------------------------------------------------
