@@ -136,8 +136,20 @@ internal static class Program
             return ExitFailed;
         }
 
+        // A named key must carry the character a physical press puts in UnicodeChar. Node's
+        // console reader (libuv) recognises Escape, Return and Tab by that character and only
+        // falls back to the virtual-key code for keys that have none (arrows, paging). With '\0'
+        // here, Escape reached the console and was dropped unread: Return still worked, so the
+        // Yes key answered approvals while No — and the Esc key — did nothing (device, 2026-08-30).
+        var ch = vk switch
+        {
+            VkEscape => '\x1b',
+            VkReturn => '\r',
+            VkTab => '\t',
+            _ => '\0',
+        };
         var records = new List<INPUT_RECORD>();
-        AppendKey(records, vk, '\0', ModifiersFrom(opts.GetValueOrDefault("--mods")));
+        AppendKey(records, vk, ch, ModifiersFrom(opts.GetValueOrDefault("--mods")));
         return Deliver(opts, new List<(List<INPUT_RECORD>, Int32)> { (records, 0) });
     }
 

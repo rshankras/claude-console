@@ -42,10 +42,13 @@ state + project-name memory · #51 badge inflation · #46 subprocess timeouts ·
    mid-recording → stops); #30's KEYBOARD Esc (90s rule; the keypad Esc is verified); Ctrl+C vs Esc;
    #25 (pin one session, look at another: Cost follows your eyes, Yes stays with the pin); #27's
    zero-session idle CPU (`spikes/redraw-27/measure-27.sh 120`, all sessions closed).
-6. **Windows, later by the owner's choice:** #47 (P1, packaged voice never shipped — cherry-pick the
+6. ~~**Windows, later by the owner's choice:** #47 (P1, packaged voice never shipped — cherry-pick the
    `WINDOWS_WHISPER_DIR` section from `feat/vizhi-desktop`), #33, #36, and one import of
    `profiles/ClaudeConsole-Windows.lp5` to confirm the `windowsterminal` / `DefaultWin` names chosen by
-   analogy.
+   analogy.~~ **DONE 2026-08-30 on the laptop** — see `docs/windows-qa-2.2.0.md`: #47 closed (pack
+   flow + verified copy path), the `.lp5` names confirmed, and the full 2.2.0 fix list passed on the
+   MX keypad. Two new Windows findings there: the No/Esc keys were no-ops (fixed in the inject helper)
+   and an Options+ uninstall leaves hooks + registrations behind (open).
 7. **Next release, with Logitech:** #41 icons (SVGs), #43 Codex answer row (two spikes first), #44 slot
    order key (recency never default), iTerm2 as a second session driver (#29's seam), #37, #38.
 
