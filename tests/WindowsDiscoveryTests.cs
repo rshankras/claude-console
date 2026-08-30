@@ -465,6 +465,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var runs = new List<List<String>>();
             var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
             {
+                // Both gestures deliberately target the existing window. The production guard
+                // added for #33 must be satisfied here before the injected runner can be reached.
+                TerminalWindowProbe = () => true,
                 TerminalRunner = (exe, args) => { runs.Add(args); return true; },
             };
 
