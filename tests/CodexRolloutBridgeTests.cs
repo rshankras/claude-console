@@ -60,6 +60,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         private const String TaskComplete =
             "{\"timestamp\":\"2026-08-20T14:00:09.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\",\"last_agent_message\":\"done\"}}";
 
+        private const String TurnAborted =
+            "{\"timestamp\":\"2026-08-20T14:00:05.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"turn_aborted\"}}";
+
         // ------------------------------------------------------------------------------------
         // The translation: rollout events become the hook's envelope
         // ------------------------------------------------------------------------------------
@@ -76,6 +79,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             Assert.Equal(CodexStateBridge.IdleEvent, CodexRolloutBridge.ActivityFor(TaskComplete));
             Assert.Equal("done", CodexStateReader.ActivityFor(CodexRolloutBridge.ActivityFor(TaskComplete)));
+        }
+
+        [Fact]
+        public void An_interrupted_task_becomes_the_idle_envelope()
+        {
+            Assert.Equal(CodexStateBridge.IdleEvent, CodexRolloutBridge.ActivityFor(TurnAborted));
+            Assert.Equal("done", CodexStateReader.ActivityFor(CodexRolloutBridge.ActivityFor(TurnAborted)));
         }
 
         /// <summary>

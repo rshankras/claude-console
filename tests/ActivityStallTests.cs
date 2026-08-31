@@ -112,6 +112,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void An_agent_that_records_abort_in_its_transcript_still_clears_after_escape()
+        {
+            Assert.True(ActivityStall.IsStalledBusy(
+                "busy",
+                Now - 30,
+                Now - 1,       // Codex appended turn_aborted after the keypad sent Escape
+                Now,
+                Now - 10,
+                transcriptWritesOnInterrupt: true));
+        }
+
+        [Fact]
         public void AfterAnIgnoredEscapeTheNormalWindowStillApplies()
         {
             // The hint is discarded, not sticky: the ordinary transcript rule takes over, so a

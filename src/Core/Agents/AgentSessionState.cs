@@ -42,6 +42,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// </summary>
         public String Activity { get; init; }
 
+        /// <summary>
+        /// When <see cref="Activity"/> was reported, as Unix seconds. Agents that keep activity in
+        /// a separate document leave this null; the caller reads that document's timestamp instead.
+        /// </summary>
+        public Int64? ActivityTs { get; init; }
+
+        /// <summary>
+        /// True when interrupting a turn appends an abort record to the transcript. In that case a
+        /// post-Escape transcript write corroborates the interrupt instead of disproving it.
+        /// </summary>
+        public Boolean TranscriptWritesOnInterrupt { get; init; }
+
         /// <summary>Set only while an approval is pending; null means "not reported here".</summary>
         public String PendingTool { get; init; }
 

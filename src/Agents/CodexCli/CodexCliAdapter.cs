@@ -123,6 +123,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 ProjectDir = snap.ProjectDir,
                 SessionId = snap.SessionId,
                 Activity = snap.Activity,
+                ActivityTs = snap.Ts > 0 ? snap.Ts : null,
+                // Codex appends event_msg/turn_aborted after Escape. Claude Code writes nothing,
+                // so the shared interrupt policy needs this one semantic difference to interpret
+                // a newer transcript correctly.
+                TranscriptWritesOnInterrupt = true,
                 PendingTool = snap.PendingTool,
                 PendingCommand = snap.PendingCommand,
                 Risk = snap.Risk,
@@ -130,10 +135,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // Best-effort, and the only reader of an unstable format in the plugin — it
                 // returns null rather than a guess whenever the transcript surprises it.
                 CtxPercent = CodexContextReader.PercentFrom(snap.TranscriptPath),
-                // The rollout file. Codex reports its own activity, so the stall rule does not
-                // currently consult this — it is surfaced so the two agents describe themselves the
-                // same way, and NOT as a claim that Codex's stall behaviour has been verified (#30
-                // says a Codex equivalent needs its own check, and it has not had one).
+                // The rollout file grows while Codex works, so the shared stall rule can distinguish
+                // a long-running turn from one interrupted before Codex emitted a terminal event.
                 TranscriptPath = snap.TranscriptPath,
             };
         }

@@ -56,6 +56,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         // for the hourglass — and they must not disagree about the same session again.
         private readonly Dictionary<String, Int64> _interrupts = new Dictionary<String, Int64>(StringComparer.Ordinal);
 
+        // Test seam for the five-second post-Escape quiet window. Production always uses wall time.
+        internal Func<Int64> NowUnix { get; set; } = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
         private readonly Object _lock = new Object();
         private RegistryRecord _registry = new RegistryRecord();
         private Dictionary<String, GridSession> _sessions = new Dictionary<String, GridSession>(StringComparer.Ordinal);
@@ -109,7 +112,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             lock (_lock)
             {
-                _interrupts[tty] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                _interrupts[tty] = this.NowUnix();
             }
         }
 
@@ -347,6 +350,16 @@ namespace Loupedeck.ClaudeConsolePlugin
                     continue;
                 }
 
+                var updatedAt = LastWrite(file);
+                var activity = state.Activity == null
+                    ? ReadActivityState(tty, state.TranscriptPath)
+                    : NormalizeActivityState(
+                        tty,
+                        state.Activity,
+                        state.ActivityTs ?? new DateTimeOffset(updatedAt.ToUniversalTime()).ToUnixTimeSeconds(),
+                        state.TranscriptPath,
+                        state.TranscriptWritesOnInterrupt);
+
                 var session = new GridSession
                 {
                     SessionKey = tty,
@@ -356,10 +369,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     SessionName = state.SessionName,
                     CtxPercent = state.CtxPercent,
                     TranscriptPath = state.TranscriptPath,
-                    // An agent that reports activity in the same document wins; one that keeps it
-                    // in a separate activity file (Claude Code) leaves this null and we look there.
-                    State = state.Activity ?? ReadActivityState(tty, state.TranscriptPath),
-                    UpdatedAt = LastWrite(file),
+                    State = activity,
+                    UpdatedAt = updatedAt,
                 };
 
                 if (state.ReportsApproval)
@@ -395,17 +406,31 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return "ready";
             }
 
+            return this.NormalizeActivityState(tty, activity.State, activity.Ts, transcriptPath);
+        }
+
+        // Activity may live beside the session (Claude Code) or inside it (Codex). Both paths must
+        // apply the same interrupted-turn rule; otherwise Codex's non-null Activity bypasses the
+        // exact recovery that clears Claude's stale hourglass (#30).
+        private String NormalizeActivityState(
+            String tty,
+            String activity,
+            Int64 activityTs,
+            String transcriptPath,
+            Boolean transcriptWritesOnInterrupt = false)
+        {
             if (ActivityStall.IsStalledBusy(
-                    activity.State,
-                    activity.Ts,
+                    activity,
+                    activityTs,
                     ActivityStall.TranscriptMtime(transcriptPath),
-                    DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                    this.InterruptedAt(tty)))
+                    this.NowUnix(),
+                    this.InterruptedAt(tty),
+                    transcriptWritesOnInterrupt))
             {
                 return "ready";
             }
 
-            return activity.State == "done" ? "ready" : activity.State;
+            return activity == "done" ? "ready" : activity;
         }
 
         // Fill in what (if anything) this session is waiting to be approved. Only meaningful while

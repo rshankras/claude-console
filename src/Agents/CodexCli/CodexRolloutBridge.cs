@@ -231,7 +231,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// </summary>
         internal static String ActivityFor(String line)
         {
-            if (String.IsNullOrWhiteSpace(line) || !line.Contains("task_", StringComparison.Ordinal))
+            if (String.IsNullOrWhiteSpace(line)
+                || (!line.Contains("task_", StringComparison.Ordinal)
+                    && !line.Contains("turn_aborted", StringComparison.Ordinal)))
             {
                 return null;
             }
@@ -260,12 +262,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             }
         }
 
-        /// <summary>The only two event names this bridge knows. Everything else: no update.</summary>
+        /// <summary>The three records this bridge knows, mapped to two activity edges.</summary>
         private static String Map(String type) =>
             type switch
             {
                 "task_started" => CodexStateBridge.BusyEvent,
                 "task_complete" => CodexStateBridge.IdleEvent,
+                "turn_aborted" => CodexStateBridge.IdleEvent,
                 _ => null,
             };
 
