@@ -88,12 +88,10 @@ Things a QA reviewer is likely to hit, with the honest answer ready:
   keypad says so rather than inventing state.
 - **macOS asks for permissions**, once each: Accessibility (typing into Terminal), Microphone
   (voice), Screen Recording (screenshot).
-- **macOS also asks Codex to trust the plugin's hooks** — run `/hooks` inside Codex and approve.
+- **Codex asks you to trust the plugin's hooks on both platforms** — run `/hooks` and approve.
   That is Codex's own security model; the plugin can't and shouldn't bypass it.
-- **Windows has one deliberate gap**: approval lighting is unavailable, because Codex's hook
-  runner does not spawn processes on that platform (upstream; see
-  [the spike](spike-windows-codex-hooks.md)). State comes from Codex's own session transcript
-  instead. The capability is declared absent rather than faked.
+- **Windows uses official hooks plus rollout fallback.** `commandWindows` carries exact lifecycle
+  and approval state; Codex's session transcript keeps basic state alive if a hook is missed.
 - **Not affiliated with OpenAI.** "Codex" is OpenAI's product; the listing and README both say so.
 
 ## Before submitting — checklist

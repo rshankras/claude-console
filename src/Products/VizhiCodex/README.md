@@ -22,16 +22,12 @@ agent, one package per product. *(Not an OpenAI product; Codex is a trademark of
 state bridge, live busy/waiting/ready, focus tracking and tab switching, risk-graded approvals,
 model and context display, voice, screenshot, and every prompt/git/navigation key.
 
-**Windows (1.6.0): a different state transport, and one honest gap.** Codex's hook runner
-creates no process on Windows — proven on hardware, and an upstream issue, not something a
-plugin can fix ([the spike](../../../docs/spike-windows-codex-hooks.md)). So Windows reads
-codex's own rollout transcript instead: sessions, project, busy/done/ready and best-effort
-context all work, with **no hooks installed and no `/hooks` trust prompt**. Risk-graded
-approval lighting is unavailable there — codex publishes no approval event outside the hook
-runner, and this keypad never shows a state the agent did not report. Yes/No still answer a prompt
-you can see: Yes sends Return and No sends Escape, without typing a word or claiming the prompt was
-observed. Windows tab-switching selects the intended session by console identity, including when
-two tabs have the same title.
+**Windows (1.6.0): official hooks plus a recovery fallback.** Current Codex supports Windows
+command hooks through `commandWindows`, including the exact `PermissionRequest` event used for
+risk-graded approval lighting. Vizhi installs those hooks and keeps the rollout reader as a
+fallback while hooks await trust, for older clients, and for interrupted-turn recovery. Windows
+tab-switching selects the intended session by console identity, including when two tabs have the
+same title.
 
 ## The layout
 
@@ -83,14 +79,15 @@ The keypad never shows a value the agent did not report:
    `VizhiCodex-Keypad.lp5` on macOS or `VizhiCodex-Windows.lp5` on Windows: Options+ → keypad →
    profile menu → **Import Profile**. It lands on Terminal or Windows Terminal with the Codex keys
    populated. Or add the terminal yourself and drag the **Vizhi for Codex** actions on by hand.
-4. **Trust the hooks on macOS.** Your next Codex session opens with **"Hooks need review — 7 hooks are
+4. **Trust the hooks.** Your next Codex session opens with **"Hooks need review — 7 hooks are
    new or changed"**. All seven are this plugin: one per lifecycle event, each running the same
    one-line launcher (`~/.codex/codex-console/scripts/codex-hook.sh`), which writes state files
    for the keypad and nothing else. Review and trust; Codex trusts by hash, so it's one-time.
    Until trusted, keys show static labels and no live state — `/hooks` reopens the review if
    you skipped it. (Never use `--dangerously-bypass-hook-trust` — it disables the review for
    everything, not just this plugin.)
-   Windows installs no hooks and shows no trust prompt; it reads Codex's rollout transcript.
+   On Windows the reviewed command uses Codex's `commandWindows` override and the packaged
+   `claude-console-hook.exe`; rollout polling remains available as a fallback.
 5. **Grant permissions as the OS asks.** On macOS:
    - **Accessibility** (Logi Plugin Service) — how keys type into Terminal.
    - **Microphone** (first Voice press).

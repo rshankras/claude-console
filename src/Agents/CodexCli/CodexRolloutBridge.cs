@@ -2,6 +2,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 {
     using System;
     using System.Collections.Generic;
+    using System.Globalization;
     using System.IO;
     using System.Linq;
     using System.Text;
@@ -29,9 +30,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
     /// </summary>
     internal sealed class CodexRolloutBridge
     {
-        // A turn's events are small and frequent; we only ever want what arrived since the last
-        // poll. The cap bounds a first sighting (or a file that grew while we weren't looking).
+        // Normal polls stay cheap. A first sighting gets a wider bounded tail because a plugin
+        // reload can occur mid-turn after megabytes of tool output have followed task_started.
         private const Int32 MaxCatchUpBytes = 64 * 1024;
+        private const Int32 MaxInitialCatchUpBytes = 8 * 1024 * 1024;
+        private const Int32 MaxMetadataBytes = 1024 * 1024;
+        private const Double MaxStartSkewSeconds = 120.0;
 
         private readonly String _sessionsRoot;
         private readonly String _ipcSessionsDir;
@@ -44,6 +48,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         /// <summary>Rollout file → its last-reported cwd, so every envelope can carry the project.</summary>
         private readonly Dictionary<String, String> _cwds = new Dictionary<String, String>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Rollout file -> last lifecycle edge, so ordinary growth can refresh busy.</summary>
+        private readonly Dictionary<String, String> _activities = new Dictionary<String, String>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Rollout metadata is immutable; read its first record at most once per file.</summary>
+        private readonly Dictionary<String, (DateTime? StartedUtc, String Cwd)> _metadata =
+            new Dictionary<String, (DateTime?, String)>(StringComparer.OrdinalIgnoreCase);
 
         public CodexRolloutBridge(String sessionsRoot = null, String ipcSessionsDir = null)
         {
@@ -145,12 +156,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             }
 
             var known = this._offsets.TryGetValue(path, out var offset) ? offset : -1;
+            var firstSighting = known < 0;
 
-            // First sighting: start from the tail, not the beginning. Replaying a whole day of a
-            // long session would walk the keypad through hours of stale busy/idle transitions.
+            // session_meta is the first record and may be far outside the 64 KB catch-up tail in
+            // a long session. Read it once so every state envelope has the folder name from the
+            // first poll, rather than showing the generic agent fallback until another turn_context.
+            var metadata = this.MetadataFor(path);
+            if (metadata.Cwd != null)
+            {
+                this._cwds[path] = metadata.Cwd;
+            }
+
+            // First sighting: start from a bounded wide tail, not the beginning. The last edge wins,
+            // so this recovers the current turn without replaying a whole day of history.
             if (known < 0)
             {
-                known = Math.Max(0, info.Length - MaxCatchUpBytes);
+                known = Math.Max(0, info.Length - MaxInitialCatchUpBytes);
             }
 
             // Truncated or rotated underneath us — start over from where it now ends.
@@ -172,7 +193,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                     path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
                 stream.Seek(known, SeekOrigin.Begin);
-                var take = (Int32)Math.Min(MaxCatchUpBytes, stream.Length - known);
+                var catchUpLimit = firstSighting ? MaxInitialCatchUpBytes : MaxCatchUpBytes;
+                var take = (Int32)Math.Min(catchUpLimit, stream.Length - known);
                 var buffer = new Byte[take];
                 var read = stream.Read(buffer, 0, take);
                 text = Encoding.UTF8.GetString(buffer, 0, read);
@@ -218,9 +240,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
             if (activity == null)
             {
-                return 0;
+                // Windows can keep LastWriteTime frozen while Codex appends through an open file
+                // handle. Every complete batch is nevertheless direct evidence of transcript
+                // activity, so refresh a currently-busy envelope and its observation timestamp.
+                // Once growth stops, no heartbeat is written and the normal stall window applies.
+                if (this._activities.TryGetValue(path, out var current)
+                    && String.Equals(current, CodexStateBridge.BusyEvent, StringComparison.Ordinal))
+                {
+                    return this.WriteState(path, current, preserveWaiting: true) ? 1 : 0;
+                }
+
+                // A long active turn can push task_started outside the catch-up tail. Once the
+                // rollout has been safely correlated, publish its immutable metadata immediately
+                // so an old/missing state file cannot leave the key labelled only "Codex". Keep
+                // this per-session: metadata from one rollout must not replace shared activity.
+                return firstSighting && this.WriteState(path, "SessionStart", writeShared: false) ? 1 : 0;
             }
 
+            this._activities[path] = activity;
             return this.WriteState(path, activity) ? 1 : 0;
         }
 
@@ -320,7 +357,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// The shared file is always written (the grid's fallback when it has no key match yet);
         /// the per-session file only when this rollout could be attached to a live process.
         /// </summary>
-        private Boolean WriteState(String rolloutPath, String activityEvent)
+        private Boolean WriteState(
+            String rolloutPath,
+            String activityEvent,
+            Boolean writeShared = true,
+            Boolean preserveWaiting = false)
         {
             // Two payload fields this transport can honestly supply, and the reader wants both:
             // cwd names the key with the project folder instead of a generic label, and
@@ -331,6 +372,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             var fields = new List<String>
             {
                 "\"transcript_path\":\"" + JsonEscape(rolloutPath) + "\"",
+                "\"transcript_activity_ts\":" + DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             };
             if (this._cwds.TryGetValue(rolloutPath, out var cwd))
             {
@@ -339,21 +381,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             var payload = "{" + String.Join(",", fields) + "}";
 
             var envelope =
-                "{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"" + activityEvent + "\",\"ts\":" +
+                "{\"schema\":1,\"agent\":\"codex-cli\",\"transport\":\"rollout\",\"event\":\"" + activityEvent + "\",\"ts\":" +
                 DateTimeOffset.UtcNow.ToUnixTimeSeconds() + ",\"payload\":" + payload + "}\n";
 
             try
             {
                 Directory.CreateDirectory(this._ipcSessionsDir);
-                WriteAtomic(Path.Combine(this._ipcSessionsDir, "shared.json"), envelope);
-
                 var key = this.KeyFor(rolloutPath);
-                if (key != null)
+                if (!writeShared && key == null)
                 {
-                    WriteAtomic(Path.Combine(this._ipcSessionsDir, key + ".json"), envelope);
+                    return false;
                 }
 
-                return true;
+                var wrote = false;
+                var sharedPath = Path.Combine(this._ipcSessionsDir, "shared.json");
+                if (writeShared && (!preserveWaiting || !IsWaitingHookState(sharedPath)))
+                {
+                    WriteAtomic(sharedPath, envelope);
+                    wrote = true;
+                }
+
+                var keyedPath = key == null ? null : Path.Combine(this._ipcSessionsDir, key + ".json");
+                if (keyedPath != null && (!preserveWaiting || !IsWaitingHookState(keyedPath)))
+                {
+                    WriteAtomic(keyedPath, envelope);
+                    wrote = true;
+                }
+
+                return wrote;
             }
             catch (Exception ex)
             {
@@ -385,15 +440,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 return null;
             }
 
-            DateTime created;
-            try
+            var metadata = this.MetadataFor(rolloutPath);
+            DateTime started;
+            if (metadata.StartedUtc.HasValue)
             {
-                created = new FileInfo(rolloutPath).CreationTimeUtc;
+                started = metadata.StartedUtc.Value;
             }
-            catch (Exception ex)
+            else
             {
-                PluginLog.Verbose(ex, $"CodexRolloutBridge: cannot read creation time of {rolloutPath}");
-                return null;
+                try
+                {
+                    started = new FileInfo(rolloutPath).CreationTimeUtc;
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Verbose(ex, $"CodexRolloutBridge: cannot read creation time of {rolloutPath}");
+                    return null;
+                }
             }
 
             var unclaimed = live.Where(s => !this._claims.ContainsValue(s.Key)).ToList();
@@ -402,36 +465,132 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 return null;
             }
 
-            // One unclaimed session is the common case and needs no arithmetic at all.
-            if (unclaimed.Count == 1)
-            {
-                this._claims[rolloutPath] = unclaimed[0].Key;
-                return unclaimed[0].Key;
-            }
-
             var ordered = unclaimed
-                .OrderBy(s => Math.Abs((s.Start.ToUniversalTime() - created).TotalSeconds))
+                .OrderBy(s => Math.Abs((s.Start.ToUniversalTime() - started).TotalSeconds))
                 .ToList();
 
-            var best = Math.Abs((ordered[0].Start.ToUniversalTime() - created).TotalSeconds);
-            var runnerUp = Math.Abs((ordered[1].Start.ToUniversalTime() - created).TotalSeconds);
-
-            // Too close to call: two sessions started within a second of each other. The shared
-            // file still carries the state; a coin-flip claim would not.
-            if (Math.Abs(best - runnerUp) < 1.0)
+            var best = Math.Abs((ordered[0].Start.ToUniversalTime() - started).TotalSeconds);
+            if (best > MaxStartSkewSeconds)
             {
                 return null;
+            }
+
+            if (ordered.Count > 1)
+            {
+                var runnerUp = Math.Abs((ordered[1].Start.ToUniversalTime() - started).TotalSeconds);
+
+                // Too close to call: two sessions started within a second of each other. The shared
+                // file still carries the state; a coin-flip claim would not.
+                if (Math.Abs(best - runnerUp) < 1.0)
+                {
+                    return null;
+                }
             }
 
             this._claims[rolloutPath] = ordered[0].Key;
             return ordered[0].Key;
         }
 
+        /// <summary>
+        /// A rollout heartbeat says only that the turn is moving; it cannot disprove the exact
+        /// PermissionRequest hook that says the turn is paused for the user. Preserve that state
+        /// until a real lifecycle/terminal edge replaces it.
+        /// </summary>
+        private static Boolean IsWaitingHookState(String path)
+        {
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    return false;
+                }
+
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var root = doc.RootElement;
+                return root.ValueKind == JsonValueKind.Object
+                    && root.TryGetProperty("transport", out var transport)
+                    && transport.ValueKind == JsonValueKind.String
+                    && String.Equals(transport.GetString(), "hook", StringComparison.Ordinal)
+                    && root.TryGetProperty("event", out var evt)
+                    && evt.ValueKind == JsonValueKind.String
+                    && String.Equals(evt.GetString(), "PermissionRequest", StringComparison.Ordinal);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private (DateTime? StartedUtc, String Cwd) MetadataFor(String path)
+        {
+            if (this._metadata.TryGetValue(path, out var cached))
+            {
+                return cached;
+            }
+
+            var result = ((DateTime?)null, (String)null);
+            try
+            {
+                using var stream = new FileStream(
+                    path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                var take = (Int32)Math.Min(MaxMetadataBytes, stream.Length);
+                var buffer = new Byte[take];
+                var read = stream.Read(buffer, 0, take);
+                var text = Encoding.UTF8.GetString(buffer, 0, read);
+                var newline = text.IndexOf('\n');
+                if (newline >= 0)
+                {
+                    var firstLine = text.Substring(0, newline).TrimEnd('\r');
+                    using var doc = JsonDocument.Parse(firstLine);
+                    var root = doc.RootElement;
+                    if (root.ValueKind == JsonValueKind.Object
+                        && String.Equals(TypeOf(root), "session_meta", StringComparison.Ordinal)
+                        && root.TryGetProperty("payload", out var payload)
+                        && payload.ValueKind == JsonValueKind.Object)
+                    {
+                        var cwd = payload.TryGetProperty("cwd", out var cwdElement)
+                            && cwdElement.ValueKind == JsonValueKind.String
+                                ? cwdElement.GetString()
+                                : null;
+
+                        DateTime? startedUtc = null;
+                        if (payload.TryGetProperty("timestamp", out var timestamp)
+                            && timestamp.ValueKind == JsonValueKind.String
+                            && DateTimeOffset.TryParse(
+                                timestamp.GetString(), CultureInfo.InvariantCulture,
+                                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                                out var parsed))
+                        {
+                            startedUtc = parsed.UtcDateTime;
+                        }
+
+                        result = (startedUtc, String.IsNullOrWhiteSpace(cwd) ? null : cwd);
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is JsonException)
+            {
+                PluginLog.Verbose(ex, $"CodexRolloutBridge: cannot read session metadata from {path}");
+            }
+
+            this._metadata[path] = result;
+            return result;
+        }
+
         private static void WriteAtomic(String path, String content)
         {
-            var tmp = path + "." + Environment.ProcessId + ".tmp";
-            File.WriteAllText(tmp, content);
-            File.Move(tmp, path, overwrite: true);
+            // Reload briefly overlaps plugin instances inside one service process. A PID-only temp
+            // name lets their poll loops collide; a unique sibling preserves atomic replacement.
+            var tmp = path + "." + Environment.ProcessId + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(tmp, content);
+                File.Move(tmp, path, overwrite: true);
+            }
+            finally
+            {
+                try { if (File.Exists(tmp)) { File.Delete(tmp); } } catch { /* best effort */ }
+            }
         }
 
         // Minimal JSON string escaping for the one hand-built payload field — same discipline as

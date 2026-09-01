@@ -19,8 +19,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// too. So a session idling with nothing to approve got Return (Yes) / Escape (No) at it. The
     /// decision now keys on the captured PAYLOAD, exactly like the badge: an approval we can see →
     /// Return/Escape; anything else → do nothing when the transport is expected to report it.
-    /// Windows Codex is the explicit exception: its transport cannot report approvals, so a manual
-    /// Yes/No press sends Return/Escape without ever typing a word.
+    /// Agents without approval observation are the explicit exception: a manual Yes/No press sends
+    /// Return/Escape without ever typing a word. Current Codex hooks report approvals on Windows.
     ///
     /// These tests are about the DECISION, not the AppleScript: which delivery a press should use
     /// given whether the targeted session has a pending approval.

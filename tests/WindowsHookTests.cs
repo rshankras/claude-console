@@ -292,7 +292,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // Field-for-field the envelope scripts/codex-hook.sh writes and CodexStateReader parses.
             var src = ReadShimSource();
 
-            Assert.Contains("\\\"schema\\\":1,\\\"agent\\\":\\\"codex-cli\\\",\\\"event\\\":", src);
+            Assert.Contains("\\\"schema\\\":1,\\\"agent\\\":\\\"codex-cli\\\",\\\"transport\\\":\\\"hook\\\",\\\"event\\\":", src);
             Assert.Contains("\\\"ts\\\":{ts},\\\"payload\\\":{body}", src);
         }
 

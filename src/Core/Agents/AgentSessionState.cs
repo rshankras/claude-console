@@ -37,6 +37,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         public String TranscriptPath { get; init; }
 
         /// <summary>
+        /// Last time the transport actually observed the transcript grow, as Unix seconds. Some
+        /// Windows filesystems do not advance LastWriteTime for Codex's open rollout handle, so a
+        /// transport-provided observation is more authoritative than file metadata when present.
+        /// </summary>
+        public Int64? TranscriptActivityTs { get; init; }
+
+        /// <summary>
         /// busy | waiting | done — or null when the agent reports activity somewhere else and the
         /// caller should keep looking (Claude Code writes it to a separate activity file).
         /// </summary>

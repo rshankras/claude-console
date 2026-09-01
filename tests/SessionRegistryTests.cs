@@ -81,7 +81,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 JsonSerializer.Serialize(new { state, ts = ts ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
         }
 
-        private void WriteCodexSession(String tty, String activityEvent, Int64 ts, String transcriptPath)
+        private void WriteCodexSession(
+            String tty,
+            String activityEvent,
+            Int64 ts,
+            String transcriptPath,
+            Int64? transcriptActivityTs = null)
         {
             File.WriteAllText(
                 this.StateFor(tty),
@@ -96,6 +101,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                         session_id = "sid-" + tty,
                         cwd = "/Users/x/proj",
                         transcript_path = transcriptPath,
+                        transcript_activity_ts = transcriptActivityTs,
                     },
                 }));
         }
@@ -278,6 +284,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             registry.NowUnix = () => clock;
             registry.NoteInterrupt("ttys001");
             clock = now;
+            registry.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));
+
+            Assert.Equal("busy", registry.SlotSession(1).State);
+        }
+
+        [Fact]
+        public void Codex_rollout_observation_beats_a_frozen_windows_last_write_time()
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var transcript = this.TranscriptAged(seconds: 600);
+            WriteCodexSession(
+                "ttys001", "UserPromptSubmit", now - 600, transcript,
+                transcriptActivityTs: now - 1);
+
+            var registry = this.NewCodexRegistry();
+            registry.NowUnix = () => now;
             registry.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));
 
             Assert.Equal("busy", registry.SlotSession(1).State);

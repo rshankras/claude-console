@@ -175,8 +175,89 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(path, CodexStateReader.Parse(state).TranscriptPath);
         }
 
+        [Fact]
+        public void Rollout_growth_refreshes_a_busy_session_even_without_another_lifecycle_edge()
+        {
+            var path = this.Rollout("busy-growth", Today, TaskStarted);
+            var bridge = this.New();
+            Assert.Equal(1, bridge.Poll());
+
+            this.Append(path, "{\"timestamp\":\"2026-08-20T14:00:02.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\"}}");
+            Assert.Equal(1, bridge.Poll());
+
+            var snap = CodexStateReader.Parse(this.SharedState());
+            Assert.Equal("busy", snap.Activity);
+            Assert.NotNull(snap.TranscriptActivityTs);
+        }
+
+        [Fact]
+        public void Rollout_heartbeat_cannot_overwrite_a_permission_hook()
+        {
+            var path = this.Rollout("approval", Today, TaskStarted);
+            var bridge = this.New();
+            Assert.Equal(1, bridge.Poll());
+
+            Directory.CreateDirectory(this._ipc);
+            File.WriteAllText(
+                Path.Combine(this._ipc, "shared.json"),
+                "{\"schema\":1,\"agent\":\"codex-cli\",\"transport\":\"hook\",\"event\":\"PermissionRequest\",\"ts\":1,\"payload\":{\"tool_name\":\"Bash\"}}");
+
+            this.Append(path, "{\"timestamp\":\"2026-08-20T14:00:02.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\"}}");
+            Assert.Equal(0, bridge.Poll());
+            Assert.Equal("waiting", CodexStateReader.Parse(this.SharedState()).Activity);
+
+            // A real terminal edge is stronger than the old approval and must clear it even if a
+            // PostToolUse hook was missed.
+            this.Append(path, TaskComplete);
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal("done", CodexStateReader.Parse(this.SharedState()).Activity);
+        }
+
+        [Fact]
+        public void A_reload_mid_turn_recovers_task_started_beyond_the_normal_poll_tail()
+        {
+            var toolOutput = "{\"ignored\":\"" + new String('x', 2 * 1024 * 1024) + "\"}";
+            this.Rollout("reload-busy", Today, TaskStarted, toolOutput);
+
+            var bridge = this.New();
+            Assert.Equal(1, bridge.Poll());
+
+            Assert.Equal("busy", CodexStateReader.Parse(this.SharedState()).Activity);
+        }
+
         private const String TurnContext =
             "{\"timestamp\":\"2026-08-20T14:00:00.500Z\",\"type\":\"turn_context\",\"payload\":{\"turn_id\":\"t1\",\"cwd\":\"C:\\\\Users\\\\me\\\\proj\",\"workspace_roots\":[]}}";
+
+        private const String SessionMeta =
+            "{\"timestamp\":\"2026-08-20T14:00:05.000Z\",\"type\":\"session_meta\",\"payload\":{\"timestamp\":\"2026-08-20T14:00:00.000Z\",\"cwd\":\"C:\\\\Users\\\\me\\\\metadata-project\"}}";
+
+        [Fact]
+        public void Session_metadata_supplies_cwd_even_when_it_is_outside_the_catch_up_tail()
+        {
+            var filler = "{\"ignored\":\"" + new String('x', 70 * 1024) + "\"}";
+            this.Rollout("metadata", Today, SessionMeta, filler, TaskStarted);
+            var bridge = this.New();
+
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal(@"C:\Users\me\metadata-project", CodexStateReader.Parse(this.SharedState()).ProjectDir);
+        }
+
+        [Fact]
+        public void Session_metadata_alone_replaces_missing_or_stale_per_session_state()
+        {
+            var path = this.Rollout("metadata-only", Today, SessionMeta);
+            var bridge = this.New();
+            var started = new DateTime(2026, 8, 20, 14, 0, 0, DateTimeKind.Utc);
+            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-real", started) };
+
+            Assert.Equal(1, bridge.Poll());
+
+            var state = File.ReadAllText(Path.Combine(this._ipc, "pid-100-real.json"));
+            var snap = CodexStateReader.Parse(state);
+            Assert.Equal(@"C:\Users\me\metadata-project", snap.ProjectDir);
+            Assert.Equal("done", snap.Activity);
+            Assert.False(File.Exists(Path.Combine(this._ipc, "shared.json")));
+        }
 
         // ------------------------------------------------------------------------------------
         // Polling: only what is new, only what is complete
@@ -286,10 +367,35 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void One_live_session_claims_the_rollout()
         {
             var path = this.Rollout("a", Today, TaskStarted);
+            var created = new FileInfo(path).CreationTimeUtc;
             var bridge = this.New();
-            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", Today) };
+            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", created.AddSeconds(-1)) };
 
             Assert.Equal("pid-100-abc", bridge.KeyFor(path));
+        }
+
+        [Fact]
+        public void An_old_rollout_does_not_claim_a_new_live_session()
+        {
+            var path = this.Rollout("old", Today, TaskStarted);
+            var created = new FileInfo(path).CreationTimeUtc;
+            var bridge = this.New();
+            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-new", created.AddHours(3)) };
+
+            Assert.Null(bridge.KeyFor(path));
+        }
+
+        [Fact]
+        public void Session_metadata_timestamp_correlates_the_rollout_instead_of_ntfs_creation_time()
+        {
+            var path = this.Rollout("metadata", Today, SessionMeta, TaskStarted);
+            var bridge = this.New();
+            bridge.LiveSessions = new List<(String, DateTime)>
+            {
+                ("pid-100-real", new DateTime(2026, 8, 20, 13, 59, 57, DateTimeKind.Utc)),
+            };
+
+            Assert.Equal("pid-100-real", bridge.KeyFor(path));
         }
 
         [Fact]
@@ -345,8 +451,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void A_claim_is_kept_across_polls()
         {
             var first = this.Rollout("a", Today, TaskStarted);
+            var created = new FileInfo(first).CreationTimeUtc;
             var bridge = this.New();
-            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", Today) };
+            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", created) };
             Assert.Equal("pid-100-abc", bridge.KeyFor(first));
 
             // A second rollout appears; the first session is already spoken for.
@@ -359,8 +466,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void A_claim_lapses_when_its_session_dies()
         {
             var path = this.Rollout("a", Today, TaskStarted);
+            var created = new FileInfo(path).CreationTimeUtc;
             var bridge = this.New();
-            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", Today) };
+            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", created) };
             bridge.KeyFor(path);
 
             bridge.LiveSessions = Array.Empty<(String, DateTime)>();

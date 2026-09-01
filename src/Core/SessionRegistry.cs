@@ -402,7 +402,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                         state.Activity,
                         state.ActivityTs ?? new DateTimeOffset(updatedAt.ToUniversalTime()).ToUnixTimeSeconds(),
                         state.TranscriptPath,
-                        state.TranscriptWritesOnInterrupt);
+                        state.TranscriptWritesOnInterrupt,
+                        state.TranscriptActivityTs);
 
                 var session = new GridSession
                 {
@@ -463,12 +464,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             String activity,
             Int64 activityTs,
             String transcriptPath,
-            Boolean transcriptWritesOnInterrupt = false)
+            Boolean transcriptWritesOnInterrupt = false,
+            Int64? transcriptActivityTs = null)
         {
             if (ActivityStall.IsStalledBusy(
                     activity,
                     activityTs,
-                    ActivityStall.TranscriptMtime(transcriptPath),
+                    transcriptActivityTs ?? ActivityStall.TranscriptMtime(transcriptPath),
                     this.NowUnix(),
                     this.InterruptedAt(tty),
                     transcriptWritesOnInterrupt))

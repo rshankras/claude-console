@@ -55,8 +55,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
-        /// The Windows transport: pull state from codex's rollout transcript on every poll, since
-        /// its hook runner never spawns a process to push it (docs/spike-windows-codex-hooks.md).
+        /// The Windows fallback transport. Official hooks provide exact lifecycle and approval
+        /// events; rollout polling preserves discovery and activity when hooks are not yet trusted
+        /// or an older Codex build does not run them.
         ///
         /// The bridge needs to know which sessions are live and when each started, to attach a
         /// rollout file to a key. Both are already in the key itself — Windows keys are
@@ -65,8 +66,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         private void WireRolloutBridge()
         {
-            // Lay down the sandbox grants, so the day codex's hook runner is fixed the hooks can
-            // both LAUNCH and WRITE without a plugin update. Best effort: the sandbox group
+            // Lay down sandbox grants so hook helpers can launch and write. Best effort: the group
             // exists only after codex's own setup has run (Platform.CodexSandboxAccess). Off the
             // Load path: the service fails a Load that exceeds 10s, and ACL propagation across
             // the Logi tree ate that whole budget on hardware — the 1.5.0 install failure.
@@ -92,20 +92,14 @@ namespace Loupedeck.ClaudeConsolePlugin
                 bridge.Poll();
             };
 
-            PluginLog.Info(
-                "VizhiCodexPlugin: Windows — reading state from codex's rollout transcript (no hooks; " +
-                "codex's hook runner spawns nothing on this platform)");
+            PluginLog.Info("VizhiCodexPlugin: Windows — rollout recovery fallback enabled");
         }
 
         private void WireStateBridge()
         {
-            // Windows takes the hook-free path: codex's hook runner creates no process there, so
-            // there is nothing to install and no trust to ask for. State arrives from the rollout
-            // stream instead (docs/windows-codex-hookless-bridge.md).
             if (OperatingSystem.IsWindows())
             {
                 this.WireRolloutBridge();
-                return;
             }
 
             var script = CodexCliAdapter.HookScriptContents();

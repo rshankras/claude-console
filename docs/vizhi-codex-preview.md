@@ -60,27 +60,19 @@ tracking and tab switching · risk-graded approvals (amber/red) · model + conte
 voice (submit and draft) · screenshot → current conversation · native `/review` · all prompt,
 git, and navigation keys.
 
-**Windows works differently, on purpose (1.5.0).** Codex's hook runner creates no process on
-Windows — a probe binary that logs every launch and cannot exit nonzero was never invoked while
-codex reported "hook exited with code 1", in BOTH elevated and unelevated sandbox modes, with
-the sandbox itself provably working. That is upstream (openai/codex #17478, #26158, #24098;
-experiment table in `docs/spike-windows-codex-hooks.md`), so 1.5.0 stops waiting on it.
+**Windows uses official hooks plus a recovery fallback (1.6.0).** Current Codex supports the
+Windows-specific `commandWindows` hook command and publishes `PermissionRequest`, so session
+state and risk-graded approval lighting work on Windows too. The plugin also reads Codex's rollout
+transcript as a fallback for project name, busy/done/ready, and best-effort context. Exact hook
+approval state always wins over a rollout heartbeat.
 
-**Windows reads codex's own rollout transcript instead.** Sessions, project name, busy / done /
-ready and best-effort context all work — with **no hooks installed and no `/hooks` trust prompt
-on that platform**. The transport differs; the state files, the grid and every key do not.
-
-The honest gap: **risk-graded approval lighting is unavailable on Windows.** Codex publishes no
-approval event outside the hook runner, so the keypad declares the capability absent rather
-than lighting keys amber on evidence that does not exist — the same rule that gives Codex no
-Cost key. Yes/No still answer a prompt you can see: Yes sends Return and No sends Escape, without
-typing a word or claiming the prompt was observed. Tab-switching on Windows
+Tab-switching on Windows
 selects by identity, even for identically-titled tabs (verified on hardware): unique titles
 match directly, and on a duplicate the switcher briefly retitles the target session's own
 console to a nonce, selects the one tab that repaints to it, and restores the title — the tab
 is found by which console it is, not what it says. One caveat: avoid Windows Terminal's
 "Rename tab", which detaches the label from the console title the switcher works through.
-macOS keeps the full hook bridge and every feature, approvals included.
+Both platforms now use the full hook bridge, including approvals.
 
 Two Windows repairs worth knowing, both from the same hardware session: if codex ALSO fails its
 own shell commands with "the local command sandbox failed to start", copy
@@ -96,7 +88,7 @@ runner, hooks light up with no plugin update needed.
 2. Double-click `VizhiCodex_1.6.0.lplug4` → install via Options+.
 3. Import `VizhiCodex-Keypad.lp5` on macOS or `VizhiCodex-Windows.lp5` on Windows. The plugin is
    universal and intentionally installs no application or layout of its own.
-4. **macOS only — trust the hooks.** At your next Codex session start you'll see **"Hooks need
+4. **Trust the hooks on macOS and Windows.** At your next Codex session start you'll see **"Hooks need
    review — 7 hooks are new or changed"**. That's this plugin: one entry per lifecycle event
    (SessionStart, PreToolUse, PermissionRequest, …), all running the same one-line launcher,
    `~/.codex/codex-console/scripts/codex-hook.sh` — it writes state files for the keypad and
@@ -104,32 +96,26 @@ runner, hooks light up with no plugin update needed.
    Codex trusts by hash, so this is one-time. If you pick *Continue without trusting*, keys
    stay static — recover later with `/hooks`.
 
-   **On Windows there is no hook step and no trust prompt at all** — the plugin installs no
-   hooks there and reads Codex's session transcript instead. If Codex ever asks you to trust
-   hooks on Windows, they are not ours.
+   On Windows, the reviewed command uses Codex's `commandWindows` override and the packaged
+   `claude-console-hook.exe`. The rollout reader remains active as a recovery fallback.
 5. Grant permissions, once each. **macOS**: **Accessibility** (typing), **Microphone** (voice),
    **Screen Recording** (screenshot). **Windows**: microphone access for desktop apps, if you
    use voice — nothing else.
 
 ## The Yes / No keys, precisely
 
-They do two separate things, and only one of them is cross-platform:
+They do two separate things, and both are cross-platform:
 
-- **Answering** — on macOS, pressing Yes or No acts only on a captured approval. On Windows,
-  where Codex supplies no approval event, press them only while you can see the prompt: Yes sends
-  Return and No sends Escape. Neither key types the words `yes` or `no`, avoiding the failure where
-  a trailing Return approves the highlighted option.
+- **Answering** — pressing Yes or No acts only on a captured approval. Yes sends Return and No
+  sends Escape; neither key types the words `yes` or `no`.
 - **Lighting** — the same keys (and the session key) turn **amber** when Codex is waiting for
   an approval and **red** when the pending command is destructive. This needs Codex to announce
-  the approval, which it does through a lifecycle hook — so it works on **macOS only**. On
-  Windows the keys stay dark; answering is a deliberate manual action based on the visible prompt.
+  the approval, which Codex now supplies through lifecycle hooks on both platforms.
 
 ## Known limitations (preview)
 
-- **Windows: no approval lighting** (above). Codex's hook runner spawns no process on that
-  platform, and no other Codex channel announces an approval, so the capability is declared
-  absent rather than guessed. A working prototype exists behind Codex's app-server websocket;
-  it is documented, not shipped.
+- **Hooks require one-time trust.** Until the seven Vizhi hook definitions are trusted through
+  `/hooks`, fallback state can work but approval lighting cannot.
 - **Profiles are OS-specific downloads.** Import the macOS profile on Terminal.app and the Windows
   profile on Windows Terminal. The packages themselves can coexist with Claude Console.
 - Context % is read best-effort from a Codex transcript format documented as unstable — the

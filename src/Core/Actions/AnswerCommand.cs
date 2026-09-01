@@ -173,12 +173,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return approve ? AnswerVia.MenuConfirm : AnswerVia.MenuReject;
             }
 
-            // Codex on Windows has no PermissionRequest transport: lifecycle hooks never launch,
-            // and the rollout stream has no approval edge. Requiring a payload there made both
-            // keys permanent no-ops while the product documentation claimed they worked. A manual
-            // key press while the user can see the prompt is still meaningful. Return is Codex's
-            // highlighted Yes; Escape is a fail-safe No and cannot accidentally approve. Crucially,
-            // neither path types a word followed by Return — the original #21 failure mechanism.
+            // A transport that cannot observe PermissionRequest cannot distinguish an approval
+            // from an idle prompt. A manual key press while the user can see the prompt is still
+            // meaningful: Return confirms the highlighted option and Escape safely rejects it.
+            // Current Codex hooks report approvals on both platforms, so this remains only as the
+            // capability-driven fallback for agents or older transports without that signal.
             if (!canObserveApprovals)
             {
                 return approve ? AnswerVia.UnobservedConfirm : AnswerVia.UnobservedReject;

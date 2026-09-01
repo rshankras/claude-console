@@ -65,7 +65,7 @@ case "$PAYLOAD" in
 esac
 
 TMP="$SESSIONS/.$TTY.$$.tmp"
-printf '{"schema":1,"agent":"codex-cli","event":"%s","ts":%s,"payload":%s}\n' \
+printf '{"schema":1,"agent":"codex-cli","transport":"hook","event":"%s","ts":%s,"payload":%s}\n' \
     "$EVENT" "$TS" "$BODY" > "$TMP" 2>/dev/null || emit_and_exit
 chmod 600 "$TMP" 2>/dev/null
 

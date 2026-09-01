@@ -59,10 +59,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.False(File.Exists(b.HookScript));
         }
 
-        /// <summary>The platform default is the real decision: hooks everywhere except Windows.</summary>
+        /// <summary>Current Codex supports command hooks on Windows as well as Unix.</summary>
         [Fact]
         public void The_default_follows_the_platform() =>
-            Assert.Equal(!OperatingSystem.IsWindows(), new CodexStateBridge(this._home, this._sessions).InstallsHooks);
+            Assert.True(new CodexStateBridge(this._home, this._sessions).InstallsHooks);
 
         [Fact]
         public void Install_writes_the_hooks_file_and_the_launcher()
@@ -95,8 +95,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 Assert.True(hooks.ContainsKey(evt), $"missing subscription: {evt}");
                 var command = hooks[evt][0]["hooks"][0]["command"].GetValue<String>();
-                Assert.Equal(b.HookCommand(evt), command);
+                Assert.Equal(b.HookCommand(evt, windows: false), command);
                 Assert.EndsWith(" " + evt, command);
+            }
+        }
+
+        [Fact]
+        public void Windows_hooks_use_the_official_commandWindows_override()
+        {
+            var b = this.New();
+            var hooks = JsonNode.Parse(b.BuildHooksJson(windows: true))["hooks"].AsObject();
+
+            foreach (var evt in CodexStateBridge.Events)
+            {
+                var handler = hooks[evt][0]["hooks"][0];
+                Assert.Equal(b.HookCommand(evt, windows: false), handler["command"].GetValue<String>());
+                Assert.Equal(b.HookCommand(evt, windows: true), handler["commandWindows"].GetValue<String>());
             }
         }
 
@@ -117,7 +131,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var command = JsonNode.Parse(File.ReadAllText(b.HooksFile))
                 ["hooks"]["Stop"][0]["hooks"][0]["command"].GetValue<String>();
 
-            Assert.Equal(b.HookCommand("Stop"), command);
+            Assert.Equal(b.HookCommand("Stop", windows: false), command);
             Assert.Contains($"'{b.HookScript}'", b.HookCommand("Stop", windows: false));
         }
 
@@ -154,9 +168,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             b.EnsureInstalled(Script);
 
             Directory.CreateDirectory(this._sessions);
-            File.WriteAllText(Path.Combine(this._sessions, "ttys003.json"), "{}");
+            File.WriteAllText(
+                Path.Combine(this._sessions, "ttys003.json"),
+                "{\"schema\":1,\"transport\":\"hook\",\"event\":\"SessionStart\"}");
 
             Assert.Equal(CodexBridgeStatus.Active, b.Status);
+        }
+
+        [Fact]
+        public void Rollout_state_does_not_falsely_prove_hook_trust()
+        {
+            var b = this.New();
+            b.EnsureInstalled(Script);
+
+            Directory.CreateDirectory(this._sessions);
+            File.WriteAllText(
+                Path.Combine(this._sessions, "pid-1.json"),
+                "{\"schema\":1,\"transport\":\"rollout\",\"event\":\"UserPromptSubmit\"}");
+
+            Assert.Equal(CodexBridgeStatus.AwaitingTrust, b.Status);
         }
 
         [Fact]

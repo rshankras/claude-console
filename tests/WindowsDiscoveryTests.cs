@@ -61,6 +61,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Codex_apps_internal_node_runtime_is_not_a_cli_session()
+        {
+            // Captured from Codex App on Windows. The executable path contains "Codex", but the
+            // process is an MCP server, not an interpreter running the Codex CLI. Matching argv[0]
+            // gave this process a phantom session key alongside two real terminal sessions.
+            var appServer = Proc(22768, "node.exe",
+                @"""C:\Users\sahan\AppData\Local\OpenAI\Codex\runtimes\cua_node\415ffebf3d576e9b\bin\node.exe"" ./server.mjs");
+
+            Assert.False(WindowsProcessWatcher.IsAgentSession(appServer, AgentProcessMatcher.CodexCli));
+        }
+
+        [Fact]
         public void A_claude_session_is_invisible_to_the_codex_matcher()
         {
             Assert.False(WindowsProcessWatcher.IsAgentSession(NativeCli(1234), AgentProcessMatcher.CodexCli));

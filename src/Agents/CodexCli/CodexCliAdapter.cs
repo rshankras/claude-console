@@ -58,15 +58,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             TabCompletion = false,       // no completion to accept — verified on hardware
             InputModes = false,          // approval policy is a flag/picker, not a cycle chord
 
-            // The two below are TRANSPORT-dependent, so they differ by OS. Codex's hook runner
-            // creates no process on Windows — proven on hardware 2026-08-20 with a known-good
-            // probe exe that logs every invocation and cannot exit nonzero, never invoked while
-            // codex reported "hook exited with code 1" (docs/spike-windows-codex-hooks.md).
-            // Windows therefore drives state from the rollout stream instead, which carries the
-            // busy/idle edges but no approval event: claiming ApprovalSignal there would light
-            // keys amber on evidence that does not exist.
-            ApprovalSignal = !OperatingSystem.IsWindows(),  // PermissionRequest hook (macOS)
-            HooksNeedTrust = !OperatingSystem.IsWindows(),  // no hooks installed on Windows at all
+            // Codex now documents commandWindows for lifecycle hooks. PermissionRequest is the
+            // authoritative approval edge on both platforms; Windows keeps rollout polling only
+            // as a recovery fallback for old/untrusted hooks.
+            ApprovalSignal = true,
+            HooksNeedTrust = true,
             SettingsFileWiring = false,  // our own ~/.codex/hooks.json, gated by Codex's trust prompt — no Enable/Disable keys
 
             MultiConsumerHooks = true,   // matcher groups; concurrent handlers per event
@@ -138,6 +134,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // The rollout file grows while Codex works, so the shared stall rule can distinguish
                 // a long-running turn from one interrupted before Codex emitted a terminal event.
                 TranscriptPath = snap.TranscriptPath,
+                TranscriptActivityTs = snap.TranscriptActivityTs,
             };
         }
 
