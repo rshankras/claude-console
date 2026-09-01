@@ -243,13 +243,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 var handler = new JsonObject
                 {
                     ["type"] = "command",
-                    ["command"] = this.HookCommand(e, windows: false),
+                    // Some Windows Codex builds validate/launch the required command before
+                    // applying commandWindows. Make the required command native on Windows too,
+                    // so either path reaches the same helper instead of trying /bin/sh.
+                    ["command"] = this.HookCommand(e, windows),
                     ["timeout"] = 5,
                 };
                 if (windows)
                 {
-                    // Official Codex Windows override. Keep command as the portable fallback and
-                    // put Windows quoting/executable semantics in the dedicated field.
+                    // Official Codex Windows override. It intentionally matches command here:
+                    // command is the compatibility path; commandWindows is the documented path.
                     handler["commandWindows"] = this.HookCommand(e, windows: true);
                 }
 

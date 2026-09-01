@@ -95,7 +95,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 Assert.True(hooks.ContainsKey(evt), $"missing subscription: {evt}");
                 var command = hooks[evt][0]["hooks"][0]["command"].GetValue<String>();
-                Assert.Equal(b.HookCommand(evt, windows: false), command);
+                Assert.Equal(b.HookCommand(evt), command);
                 Assert.EndsWith(" " + evt, command);
             }
         }
@@ -109,7 +109,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             foreach (var evt in CodexStateBridge.Events)
             {
                 var handler = hooks[evt][0]["hooks"][0];
-                Assert.Equal(b.HookCommand(evt, windows: false), handler["command"].GetValue<String>());
+                Assert.Equal(b.HookCommand(evt, windows: true), handler["command"].GetValue<String>());
                 Assert.Equal(b.HookCommand(evt, windows: true), handler["commandWindows"].GetValue<String>());
             }
         }
@@ -126,9 +126,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var spaced = Path.Combine(this._home, "Application Support", ".codex");
             var b = new CodexStateBridge(spaced, this._sessions) { InstallsHooks = true };
-            b.EnsureInstalled(Script);
-
-            var command = JsonNode.Parse(File.ReadAllText(b.HooksFile))
+            var command = JsonNode.Parse(b.BuildHooksJson(windows: false))
                 ["hooks"]["Stop"][0]["hooks"][0]["command"].GetValue<String>();
 
             Assert.Equal(b.HookCommand("Stop", windows: false), command);

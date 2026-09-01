@@ -581,11 +581,36 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         {
             // Reload briefly overlaps plugin instances inside one service process. A PID-only temp
             // name lets their poll loops collide; a unique sibling preserves atomic replacement.
+            // A hook and the rollout fallback can also replace the same destination concurrently.
+            // Windows reports that short collision as either IOException or AccessDenied, so retry
+            // the move before using an in-place write as the last-resort recovery path. A partial
+            // JSON read is harmless (the reader skips one poll); losing cwd forever is not.
             var tmp = path + "." + Environment.ProcessId + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
                 File.WriteAllText(tmp, content);
-                File.Move(tmp, path, overwrite: true);
+                for (var attempt = 0; attempt < 5; attempt++)
+                {
+                    try
+                    {
+                        File.Move(tmp, path, overwrite: true);
+                        return;
+                    }
+                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                    {
+                        if (attempt == 4)
+                        {
+                            break;
+                        }
+                        System.Threading.Thread.Sleep(10 << attempt);
+                    }
+                }
+
+                // Reached only when the fifth atomic replacement failed. This commonly means the
+                // destination was created by Codex's sandbox identity with write but not delete
+                // rights for the service identity. Overwrite its contents without replacing the
+                // directory entry; the outer caller still reports if even this is denied.
+                File.WriteAllText(path, content);
             }
             finally
             {
