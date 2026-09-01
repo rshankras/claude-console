@@ -71,7 +71,7 @@ PAGE_ONE = [
     act("DesktopConversationCommand", "2"),       # 1  │ conversations, stable positions,
     act("DesktopConversationCommand", "3"),       # 2  ┘ state faces, press to jump
     folder("AllChatsDynamicFolder"),              # 3  ┐ overflow: every AX-visible conversation
-    act("DesktopStatusCommand"),                  # 4  │ the middle row: browse + glance + act
+    act("DesktopControlCommand", "new_chat"),    # 4  │ start work; status already lives in cards
     act("DesktopControlCommand", "show_diff"),    # 5  ┘
     act("DesktopApprovalCommand", "approve"),     # 6  ┐
     act("DesktopApprovalCommand", "deny"),        # 7  │ the bottom row answers
@@ -83,7 +83,7 @@ PAGE_TWO = [
     act("DesktopControlCommand", "mode"),         # 0
     act("DesktopControlCommand", "stop"),         # 1
     act("DesktopVoiceDraftCommand"),              # 2  transcribe, review, send yourself
-    act("DesktopControlCommand", "new_chat"),     # 3  moved here to make room for All Chats
+    None,                                         # 3  New Chat now lives on the home page
     None,                                         # 4
     None,                                         # 5
     None,                                         # 6

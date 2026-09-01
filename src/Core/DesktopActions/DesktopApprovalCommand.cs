@@ -123,12 +123,13 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
             if (pending)
             {
-                return KeyImage.RenderWithApprovalBadge(
+                return KeyImage.RenderDesktopWithApprovalBadge(
                     imageSize, this.FaceLabel(actionParameter),
                     actionParameter == Approve ? KeyImage.Green : KeyImage.Red, icon, state.Risk);
             }
 
-            return KeyImage.Render(imageSize, actionParameter == Approve ? "Approve" : "Deny", KeyImage.Slate, icon);
+            return KeyImage.RenderDesktop(
+                imageSize, actionParameter == Approve ? "Approve" : "Deny", icon);
         }
 
         // WHY THE CARD TEXT IS NOT ON THE KEY. It was, until hardware said otherwise: the card's

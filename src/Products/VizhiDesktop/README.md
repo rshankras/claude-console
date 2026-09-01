@@ -57,16 +57,17 @@ one placement, once.
 Bound to the app, so they appear while ChatGPT is frontmost.
 
 **Page 1 · Conversations — the home page.** Three large, readable keys are your three most recent
-conversations, each carrying its live state: **Awaiting approval** (amber badge), **Unread**
-(finished, result unseen), a blue spinner while running. Their positions stay stable while the
-sidebar reorders. The middle row is **All Chats · Activity · Show Diff**: All Chats opens a paged
-folder containing every conversation the app makes visible; press one to jump. The bottom row
-answers the one that's waiting: **Approve · Deny · Voice** — the same
+conversations. Each card keeps the title in its upper area and reports **Ready**, **Thinking**,
+**Allow?**, or **Complete** in a coloured bar below it. Complete means ChatGPT marked the finished
+result unread; a conversation already open when it finishes returns directly to Ready. Positions
+stay stable while the sidebar reorders. The middle row is **All Chats · New Chat · Show Diff**:
+All Chats opens a paged folder containing every conversation the app makes visible; press one to
+jump. The bottom row answers the one that's waiting: **Approve · Deny · Voice** — the same
 sessions-above/answers-below shape as the terminal consoles, so one muscle memory covers the
 whole family.
 
-**Page 2 · Actions.** **Mode** (ChatGPT ⇄ Codex — the key shows the mode you're in), **Stop**,
-**Voice Draft**, and **New Chat**.
+**Page 2 · Actions.** **Mode** (ChatGPT ⇄ Codex — the key shows the mode you're in), **Stop**, and
+**Voice Draft**.
 
 ## What it will not do
 

@@ -149,7 +149,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 Focus => "terminal",
                 _ => null,
             };
-            return KeyImage.Render(imageSize, label, KeyImage.Slate, icon);
+            return KeyImage.RenderDesktop(imageSize, label, icon);
         }
     }
 }

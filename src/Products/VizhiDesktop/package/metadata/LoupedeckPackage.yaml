@@ -18,7 +18,7 @@ description: Physical hardware controls for the ChatGPT / Codex desktop app on t
 pluginFileName: VizhiDesktopPlugin.dll
 
 # Plugin version.
-version: 0.9.0
+version: 0.9.4
 
 # Author of the plugin. The author can be a company or an individual developer.
 author: S.Ravi Shankar

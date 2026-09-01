@@ -152,9 +152,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Assert.EndsWith($"DesktopConversationCommand___{slot}", pageOne[slot - 1]);
             }
 
-            // Middle row: overflow + glance + act — All Chats, Activity, Show Diff.
+            // Middle row: browse + create + inspect. Session state already lives in each card,
+            // so a second global Activity key would duplicate the grid.
             Assert.Equal("$VizhiDesktop___#DynamicFolder___DynamicFolder#Loupedeck.ClaudeConsolePlugin.DesktopActions.AllChatsDynamicFolder", pageOne[3]);
-            Assert.EndsWith("DesktopStatusCommand", pageOne[4]);
+            Assert.EndsWith("DesktopControlCommand___new_chat", pageOne[4]);
             Assert.EndsWith("DesktopControlCommand___show_diff", pageOne[5]);
 
             // Bottom row: Approve / Deny / Voice.
@@ -162,10 +163,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.EndsWith("DesktopApprovalCommand___deny", pageOne[7]);
             Assert.EndsWith("DesktopVoiceCommand", pageOne[8]);
 
-            // New Chat remains available on Actions after All Chats takes its home-page slot.
+            // New Chat is no longer duplicated on Actions.
             var pageTwo = pages[1]["controls"].AsArray()
                 .Select(c => (String)c["pressAction"]).ToList();
-            Assert.EndsWith("DesktopControlCommand___new_chat", pageTwo[3]);
+            Assert.Null(pageTwo[3]);
         }
 
         private static String RepoFile(params String[] parts)

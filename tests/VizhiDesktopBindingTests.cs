@@ -3,6 +3,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System;
     using System.IO;
     using System.Reflection;
+    using System.Runtime.CompilerServices;
 
     using Xunit;
 
@@ -23,6 +24,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 .GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             Assert.NotNull(m);
             return (String)m.Invoke(app, null);
+        }
+
+        [Fact]
+        public void The_plugin_declares_its_foreground_application()
+        {
+            // The production constructor selects the desktop IPC namespace globally. Bypass it:
+            // these overrides are constants, and this test must not leak product state into the
+            // rest of the parallel suite.
+            var plugin = (VizhiDesktopPlugin)RuntimeHelpers.GetUninitializedObject(
+                typeof(VizhiDesktopPlugin));
+
+            Assert.True(plugin.UsesApplicationApiOnly);
+            Assert.False(plugin.HasNoApplication);
         }
 
         [Fact]

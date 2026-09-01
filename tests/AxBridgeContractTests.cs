@@ -91,6 +91,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("\"surface\": false", Source());
         }
 
+        [Fact]
+        public void Running_uses_the_current_one_icon_sidebar_baseline()
+        {
+            // Current ChatGPT rows expose one empty AXImage for Pin chat. A running row adds
+            // the spinner as a second image; the old >2 threshold left every card at Ready.
+            Assert.Contains("images > 1", Source());
+            Assert.DoesNotContain("images > 2", Source());
+        }
+
         /// <summary>Walks up from the test binary to a repo-relative file.</summary>
         private static String RepoFile(params String[] parts)
         {

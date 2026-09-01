@@ -95,7 +95,7 @@ func forceAccessibility(_ appEl: AXUIElement) {
 
 if verb == "help" || verb == "--help" {
     print("""
-    VizhiAxBridge <status|press|write|focus> --app <bundle-id> [verb args]  (see source header)
+    VizhiAxBridge <status|inspect|press|write|focus> --app <bundle-id> [verb args]  (see source header)
     """)
     exit(0)
 }
@@ -184,6 +184,19 @@ func cardText(before anchor: Node, in nodes: [Node]) -> String {
 // MARK: - verbs
 
 switch verb {
+case "inspect":
+    // Recon only: report controls and activity-shaped nodes, not message/static-text content.
+    // This keeps UI-label drift diagnosable without dumping the user's conversation into logs.
+    let (nodes, webArea) = scanWindows()
+    let interesting = nodes.filter {
+        $0.pressable || $0.role == "AXImage" || $0.role == "AXProgressIndicator" ||
+            $0.role == "AXBusyIndicator"
+    }.map {
+        ["role": $0.role, "text": $0.text, "pressable": $0.pressable ? "true" : "false",
+         "depth": String($0.depth)]
+    }
+    emit(["surface": webArea, "nodes": interesting], code: 0)
+
 case "status":
     let (nodes, webArea) = scanWindows()
     if !webArea {
@@ -215,7 +228,7 @@ case "status":
     // app-specific per-row control, e.g. a pin button, passed as --conv-marker so this stays
     // app-agnostic). DFS order is the sidebar's own order, i.e. recency. State, verified live
     // 2026-08-25: "awaiting"/"unread" are literal static texts on the row; "running" has NO text,
-    // only an extra activity image beyond the two the row controls always carry — a heuristic,
+    // only an extra activity image beyond the pin icon the row now always carries — a heuristic,
     // and the reason it ranks below the text states.
     var conversations: [[String: String]] = []
     if let convMarker = argValue("--conv-marker"), !convMarker.isEmpty {
@@ -242,7 +255,7 @@ case "status":
             }
 
             if hasMarker {
-                if state == "idle" && images > 2 { state = "running" }   // pin + archive own two
+                if state == "idle" && images > 1 { state = "running" }   // pin owns one; spinner adds one
                 // Which conversation is OPEN matters to approval identity: the card only ever
                 // belongs to the open one. AXSelected is the app's own answer — carried by the
                 // row's container, not the button (checked live), so climb a couple of parents.

@@ -25,7 +25,11 @@ namespace Loupedeck.ClaudeConsolePlugin
     public class VizhiDesktopPlugin : Plugin
     {
         public override Boolean UsesApplicationApiOnly => true;
-        public override Boolean HasNoApplication => true;
+        // Unlike the terminal products, this plugin owns a real foreground application
+        // (VizhiDesktopApplication). Reporting HasNoApplication here makes Options+ expose the
+        // imported profile in the editor but skip the ClientApplication when ChatGPT becomes
+        // frontmost, so the keypad remains on its previous/default profile.
+        public override Boolean HasNoApplication => false;
 
         private readonly DesktopMonitor _monitor;
         private readonly IDesktopAppAdapter _app;

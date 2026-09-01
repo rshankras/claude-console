@@ -68,7 +68,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         public override String GetButtonDisplayName(PluginImageSize imageSize) => "All Chats";
 
         public override BitmapImage GetButtonImage(PluginImageSize imageSize) =>
-            KeyImage.Render(imageSize, "All Chats", KeyImage.Blue, "all_chats");
+            KeyImage.RenderDesktop(imageSize, "All Chats", "all_chats");
 
         public override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
             TryDecodeTitle(actionParameter, out var title) ? Trim(title) : "Unavailable";

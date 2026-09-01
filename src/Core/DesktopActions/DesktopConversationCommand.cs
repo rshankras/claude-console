@@ -35,6 +35,10 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 return;   // an app with no readable sidebar never grows these keys
             }
 
+            // Conversation cards own the whole LCD surface: title above, live state bar below.
+            // A normal command would be inset as an icon and receive a second static label strip.
+            this.SetWidget(true);
+
             for (var i = 1; i <= Slots; i++)
             {
                 this.AddParameter(i.ToString(), $"Conversation {i}", "Conversations")
@@ -77,44 +81,33 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             PluginLog.Info($"DesktopConversationCommand: jumped to “{conv.Title}”");
         }
 
-        // THE LAYOUT LAW, learned by the terminal session grid over three hardware photo
-        // iterations (see KeyImage.RenderSessionSlot's history): the service reserves the
-        // key's bottom strip for the label, and that strip's single-line font is the largest,
-        // crispest text a key can carry — while in-bitmap text at comparable size clips. The
-        // first cut of these keys ignored that and drew the title INSIDE the bitmap too, so
-        // every key showed its title twice, small and mangled above, truncated below.
-        //
-        // So identity goes where the platform is strongest: the TITLE is the service label,
-        // once; the bitmap carries only STATE — amber-badged waiting glyph, green check for
-        // unread, hourglass while running, plain dark for idle. Same design language as the
-        // terminal grid, which is the family promise.
-        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
-        {
-            var conv = Slot(actionParameter);
-            return conv == null ? "—" : Trim(conv.Title);
-        }
+        // The full widget draws both title and state. A zero-width space suppresses the SDK's
+        // registered-name fallback ("Conversation 1") without adding a duplicate bottom label.
+        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
+            "\u200B";
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var conv = Slot(actionParameter);
             if (conv == null)
             {
-                return KeyImage.RenderSessionSlot(imageSize, null, null, selected: false);
+                return KeyImage.RenderConversationSlot(
+                    imageSize, null, null, KeyImage.Gray, darkText: false);
             }
 
-            var (icon, risk) = conv.State switch
-            {
-                ConversationState.Awaiting => ("waiting", ApprovalRisk.Normal),   // the amber badge
-                ConversationState.Unread => ("done", ApprovalRisk.None),          // green check: done, unseen
-                ConversationState.Running => ("busy0", ApprovalRisk.None),
-                _ => ((String)null, ApprovalRisk.None),
-            };
-
-            return KeyImage.RenderSessionSlot(imageSize, icon, null, selected: false, risk);
+            var (word, color, darkText) = FaceFor(conv.State);
+            return KeyImage.RenderConversationSlot(imageSize, conv.Title, word, color, darkText);
         }
 
-        // The label strip is single-line; past ~24 characters the service shrinks it to mush.
-        private static String Trim(String title) =>
-            title.Length <= 24 ? title : title.Substring(0, 23) + "…";
+        // Desktop states are the app's own observable truths. Colour reinforces the two states
+        // that matter across the room: amber wants the user; green means unseen completed work.
+        internal static (String Word, BitmapColor Color, Boolean DarkText) FaceFor(ConversationState state) =>
+            state switch
+            {
+                ConversationState.Awaiting => ("Allow?", KeyImage.Amber, true),
+                ConversationState.Running => ("Thinking", KeyImage.Gray, false),
+                ConversationState.Unread => ("Complete", KeyImage.Green, false),
+                _ => ("Ready", KeyImage.Gray, false),
+            };
     }
 }

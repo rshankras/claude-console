@@ -142,7 +142,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var icon = _workflows.TryGetValue(actionParameter, out var w) ? w.Icon : null;
-            return KeyImage.Render(imageSize, this.GetCommandDisplayName(actionParameter, imageSize), KeyImage.Slate, icon);
+            return KeyImage.RenderDesktop(
+                imageSize, this.GetCommandDisplayName(actionParameter, imageSize), icon);
         }
 
         /// <summary>One workflow template. JSON-compatible with the terminal PromptDef shape.</summary>
