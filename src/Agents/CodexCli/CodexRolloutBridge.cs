@@ -52,6 +52,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// <summary>Rollout file -> last lifecycle edge, so ordinary growth can refresh busy.</summary>
         private readonly Dictionary<String, String> _activities = new Dictionary<String, String>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Rollout file -> code-mode exec call currently waiting for CLI approval. Codex 0.152
+        /// writes the outer custom tool call before showing its menu and the matching output after
+        /// the user answers, but does not run PermissionRequest for that nested exec_command.
+        /// </summary>
+        private readonly Dictionary<String, String> _pendingApprovalCalls =
+            new Dictionary<String, String>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>Rollout metadata is immutable; read its first record at most once per file.</summary>
         private readonly Dictionary<String, (DateTime? StartedUtc, String Cwd)> _metadata =
             new Dictionary<String, (DateTime?, String)>(StringComparer.OrdinalIgnoreCase);
@@ -223,12 +231,42 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             // it the envelope's payload is empty and the key can only ever say "Codex" instead of
             // the project's folder name — seen on hardware 2026-08-21.
             String activity = null;
+            String pendingCommand = null;
+            String transport = null;
             foreach (var line in complete.Split('\n'))
             {
                 var mapped = ActivityFor(line);
                 if (mapped != null)
                 {
                     activity = mapped;
+                    pendingCommand = null;
+                    transport = null;
+
+                    if (String.Equals(mapped, CodexStateBridge.IdleEvent, StringComparison.Ordinal))
+                    {
+                        this._pendingApprovalCalls.Remove(path);
+                    }
+                }
+
+                // Code mode wraps exec_command in a custom `exec` tool. In Codex CLI 0.152 the
+                // nested command's approval menu is real, but PermissionRequest is not dispatched
+                // for it. The rollout still gives us exact, ordered edges: the call is written
+                // before the menu and its matching output only after Yes/No/Escape resolves it.
+                if (TryCodeModeApproval(line, out var approvalCallId, out var command))
+                {
+                    this._pendingApprovalCalls[path] = approvalCallId;
+                    activity = "PermissionRequest";
+                    pendingCommand = command;
+                    transport = "rollout-code-mode";
+                }
+                else if (TryCodeModeOutput(line, out var completedCallId)
+                    && this._pendingApprovalCalls.TryGetValue(path, out var pendingCallId)
+                    && String.Equals(completedCallId, pendingCallId, StringComparison.Ordinal))
+                {
+                    this._pendingApprovalCalls.Remove(path);
+                    activity = CodexStateBridge.BusyEvent;
+                    pendingCommand = null;
+                    transport = null;
                 }
 
                 var cwd = CwdFrom(line);
@@ -258,7 +296,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             }
 
             this._activities[path] = activity;
-            return this.WriteState(path, activity) ? 1 : 0;
+            return this.WriteState(path, activity, pendingCommand: pendingCommand, transport: transport) ? 1 : 0;
         }
 
         /// <summary>
@@ -353,6 +391,295 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 : null;
 
         /// <summary>
+        /// Recognise only the OUTER exec_command argument object's explicit escalation request.
+        /// A plain substring search is unsafe: the shell command itself may be source code or a
+        /// diagnostic search containing the words sandbox_permissions and require_escalated.
+        /// </summary>
+        internal static Boolean TryCodeModeApproval(String line, out String callId, out String command)
+        {
+            callId = null;
+            command = null;
+
+            if (String.IsNullOrWhiteSpace(line)
+                || !line.Contains("custom_tool_call", StringComparison.Ordinal)
+                || !line.Contains("exec_command", StringComparison.Ordinal)
+                || !line.Contains("require_escalated", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                if (!String.Equals(TypeOf(root), "response_item", StringComparison.Ordinal)
+                    || !root.TryGetProperty("payload", out var payload)
+                    || payload.ValueKind != JsonValueKind.Object
+                    || !String.Equals(TypeOf(payload), "custom_tool_call", StringComparison.Ordinal)
+                    || !payload.TryGetProperty("name", out var name)
+                    || name.ValueKind != JsonValueKind.String
+                    || !String.Equals(name.GetString(), "exec", StringComparison.Ordinal)
+                    || !payload.TryGetProperty("call_id", out var id)
+                    || id.ValueKind != JsonValueKind.String
+                    || String.IsNullOrWhiteSpace(id.GetString())
+                    || !payload.TryGetProperty("input", out var inputElement)
+                    || inputElement.ValueKind != JsonValueKind.String)
+                {
+                    return false;
+                }
+
+                var input = inputElement.GetString();
+                var marker = input.IndexOf("tools.exec_command", StringComparison.Ordinal);
+                if (marker < 0)
+                {
+                    return false;
+                }
+
+                var openParen = input.IndexOf('(', marker + "tools.exec_command".Length);
+                var objectStart = openParen < 0 ? -1 : NextNonWhitespace(input, openParen + 1);
+                if (objectStart < 0 || input[objectStart] != '{'
+                    || !TryTopLevelStringProperty(input, objectStart, "sandbox_permissions", out var permission)
+                    || !String.Equals(permission, "require_escalated", StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                // A command that changed to a non-string shape is still an exact approval edge;
+                // omit its detail rather than inventing one. The key can still safely say Allow?.
+                TryTopLevelStringProperty(input, objectStart, "cmd", out command);
+                callId = id.GetString();
+                return true;
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>The matching custom tool output is the exact end of the CLI approval menu.</summary>
+        internal static Boolean TryCodeModeOutput(String line, out String callId)
+        {
+            callId = null;
+            if (String.IsNullOrWhiteSpace(line)
+                || !line.Contains("custom_tool_call_output", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                var root = doc.RootElement;
+                if (!String.Equals(TypeOf(root), "response_item", StringComparison.Ordinal)
+                    || !root.TryGetProperty("payload", out var payload)
+                    || payload.ValueKind != JsonValueKind.Object
+                    || !String.Equals(TypeOf(payload), "custom_tool_call_output", StringComparison.Ordinal)
+                    || !payload.TryGetProperty("call_id", out var id)
+                    || id.ValueKind != JsonValueKind.String
+                    || String.IsNullOrWhiteSpace(id.GetString()))
+                {
+                    return false;
+                }
+
+                callId = id.GetString();
+                return true;
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Read one string property from the first level of a JavaScript object literal. This is a
+        /// deliberately small parser for Codex's generated call shape, not a general JS evaluator.
+        /// It respects strings and nested values so text inside cmd can never masquerade as an
+        /// approval property.
+        /// </summary>
+        private static Boolean TryTopLevelStringProperty(
+            String source,
+            Int32 objectStart,
+            String wanted,
+            out String value)
+        {
+            value = null;
+            var i = objectStart + 1;
+
+            while (i < source.Length)
+            {
+                i = NextNonWhitespace(source, i);
+                while (i >= 0 && i < source.Length && source[i] == ',')
+                {
+                    i = NextNonWhitespace(source, i + 1);
+                }
+
+                if (i < 0 || i >= source.Length || source[i] == '}')
+                {
+                    return false;
+                }
+
+                String property;
+                if (source[i] == '"')
+                {
+                    if (!TryReadJsonString(source, ref i, out property))
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    var start = i;
+                    while (i < source.Length
+                        && (Char.IsLetterOrDigit(source[i]) || source[i] == '_' || source[i] == '$'))
+                    {
+                        i++;
+                    }
+
+                    if (i == start)
+                    {
+                        return false;
+                    }
+                    property = source.Substring(start, i - start);
+                }
+
+                i = NextNonWhitespace(source, i);
+                if (i < 0 || i >= source.Length || source[i] != ':')
+                {
+                    return false;
+                }
+
+                i = NextNonWhitespace(source, i + 1);
+                if (i < 0 || i >= source.Length)
+                {
+                    return false;
+                }
+
+                if (String.Equals(property, wanted, StringComparison.Ordinal))
+                {
+                    return source[i] == '"' && TryReadJsonString(source, ref i, out value);
+                }
+
+                if (!SkipJavaScriptValue(source, ref i))
+                {
+                    return false;
+                }
+            }
+
+            return false;
+        }
+
+        private static Int32 NextNonWhitespace(String source, Int32 start)
+        {
+            var i = start;
+            while (i < source.Length && Char.IsWhiteSpace(source[i]))
+            {
+                i++;
+            }
+            return i < source.Length ? i : -1;
+        }
+
+        private static Boolean TryReadJsonString(String source, ref Int32 i, out String value)
+        {
+            value = null;
+            if (i < 0 || i >= source.Length || source[i] != '"')
+            {
+                return false;
+            }
+
+            var start = i++;
+            var escaped = false;
+            while (i < source.Length)
+            {
+                var ch = source[i++];
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+                if (ch == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+                if (ch == '"')
+                {
+                    try
+                    {
+                        value = JsonSerializer.Deserialize<String>(source.Substring(start, i - start));
+                        return true;
+                    }
+                    catch (JsonException)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static Boolean SkipJavaScriptValue(String source, ref Int32 i)
+        {
+            var depth = 0;
+            var quote = '\0';
+            var escaped = false;
+
+            while (i < source.Length)
+            {
+                var ch = source[i];
+                if (quote != '\0')
+                {
+                    i++;
+                    if (escaped)
+                    {
+                        escaped = false;
+                    }
+                    else if (ch == '\\')
+                    {
+                        escaped = true;
+                    }
+                    else if (ch == quote)
+                    {
+                        quote = '\0';
+                    }
+                    continue;
+                }
+
+                if (ch == '"' || ch == '\'' || ch == '`')
+                {
+                    quote = ch;
+                    i++;
+                    continue;
+                }
+                if (ch == '{' || ch == '[' || ch == '(')
+                {
+                    depth++;
+                    i++;
+                    continue;
+                }
+                if (ch == '}' || ch == ']' || ch == ')')
+                {
+                    if (depth == 0)
+                    {
+                        return ch == '}';
+                    }
+                    depth--;
+                    i++;
+                    continue;
+                }
+                if (ch == ',' && depth == 0)
+                {
+                    i++;
+                    return true;
+                }
+
+                i++;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Write the envelope the hook would have written, so every reader above stays unchanged.
         /// The shared file is always written (the grid's fallback when it has no key match yet);
         /// the per-session file only when this rollout could be attached to a live process.
@@ -361,7 +688,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             String rolloutPath,
             String activityEvent,
             Boolean writeShared = true,
-            Boolean preserveWaiting = false)
+            Boolean preserveWaiting = false,
+            String pendingCommand = null,
+            String transport = null)
         {
             // Two payload fields this transport can honestly supply, and the reader wants both:
             // cwd names the key with the project folder instead of a generic label, and
@@ -378,10 +707,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             {
                 fields.Add("\"cwd\":\"" + JsonEscape(cwd) + "\"");
             }
+            if (String.Equals(activityEvent, "PermissionRequest", StringComparison.Ordinal))
+            {
+                fields.Add("\"tool_name\":\"Bash\"");
+                if (pendingCommand != null)
+                {
+                    fields.Add("\"tool_input\":{\"command\":\"" + JsonEscape(pendingCommand) + "\"}");
+                }
+            }
             var payload = "{" + String.Join(",", fields) + "}";
 
             var envelope =
-                "{\"schema\":1,\"agent\":\"codex-cli\",\"transport\":\"rollout\",\"event\":\"" + activityEvent + "\",\"ts\":" +
+                "{\"schema\":1,\"agent\":\"codex-cli\",\"transport\":\"" +
+                JsonEscape(transport ?? "rollout") + "\",\"event\":\"" + activityEvent + "\",\"ts\":" +
                 DateTimeOffset.UtcNow.ToUnixTimeSeconds() + ",\"payload\":" + payload + "}\n";
 
             try
@@ -395,14 +733,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
                 var wrote = false;
                 var sharedPath = Path.Combine(this._ipcSessionsDir, "shared.json");
-                if (writeShared && (!preserveWaiting || !IsWaitingHookState(sharedPath)))
+                if (writeShared && (!preserveWaiting || !IsWaitingState(sharedPath)))
                 {
                     WriteAtomic(sharedPath, envelope);
                     wrote = true;
                 }
 
                 var keyedPath = key == null ? null : Path.Combine(this._ipcSessionsDir, key + ".json");
-                if (keyedPath != null && (!preserveWaiting || !IsWaitingHookState(keyedPath)))
+                if (keyedPath != null && (!preserveWaiting || !IsWaitingState(keyedPath)))
                 {
                     WriteAtomic(keyedPath, envelope);
                     wrote = true;
@@ -496,7 +834,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// PermissionRequest hook that says the turn is paused for the user. Preserve that state
         /// until a real lifecycle/terminal edge replaces it.
         /// </summary>
-        private static Boolean IsWaitingHookState(String path)
+        private static Boolean IsWaitingState(String path)
         {
             try
             {
@@ -508,9 +846,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 using var doc = JsonDocument.Parse(File.ReadAllText(path));
                 var root = doc.RootElement;
                 return root.ValueKind == JsonValueKind.Object
-                    && root.TryGetProperty("transport", out var transport)
-                    && transport.ValueKind == JsonValueKind.String
-                    && String.Equals(transport.GetString(), "hook", StringComparison.Ordinal)
                     && root.TryGetProperty("event", out var evt)
                     && evt.ValueKind == JsonValueKind.String
                     && String.Equals(evt.GetString(), "PermissionRequest", StringComparison.Ordinal);

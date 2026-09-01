@@ -119,7 +119,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         internal String HookCommand(String eventName, Boolean windows) =>
             windows
-                ? $"\"{this.HookExe}\" codex {eventName}"
+                // Codex runs commandWindows through PowerShell. A quoted path by itself is only a
+                // string expression there, so the following `codex` token produces a parser error
+                // and exit code 1 before the helper starts. The call operator makes the quoted
+                // path executable; single-quote escaping keeps ordinary Windows profile names
+                // (including apostrophes or dollar signs) literal.
+                ? $"& '{this.HookExe.Replace("'", "''")}' codex {eventName}"
                 : $"/bin/sh '{this.HookScript}' {eventName}";
 
         /// <summary>

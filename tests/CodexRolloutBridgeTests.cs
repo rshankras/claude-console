@@ -3,6 +3,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Text.Json;
 
     using Loupedeck.ClaudeConsolePlugin.Agents;
 
@@ -62,6 +63,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         private const String TurnAborted =
             "{\"timestamp\":\"2026-08-20T14:00:05.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"turn_aborted\"}}";
+
+        private static String CodeModeExec(String callId, String command, String permission = "require_escalated")
+        {
+            var input = "const r = await tools.exec_command({cmd:"
+                + JsonSerializer.Serialize(command)
+                + ",workdir:\"C:\\\\Users\\\\me\\\\proj\",sandbox_permissions:"
+                + JsonSerializer.Serialize(permission)
+                + "});\ntext(r.output);";
+            return JsonSerializer.Serialize(new
+            {
+                timestamp = "2026-08-20T14:00:02.000Z",
+                type = "response_item",
+                payload = new { type = "custom_tool_call", name = "exec", call_id = callId, input },
+            });
+        }
+
+        private static String CodeModeOutput(String callId) => JsonSerializer.Serialize(new
+        {
+            timestamp = "2026-08-20T14:00:03.000Z",
+            type = "response_item",
+            payload = new { type = "custom_tool_call_output", call_id = callId, output = Array.Empty<Object>() },
+        });
 
         // ------------------------------------------------------------------------------------
         // The translation: rollout events become the hook's envelope
@@ -211,6 +234,76 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             this.Append(path, TaskComplete);
             Assert.Equal(1, bridge.Poll());
             Assert.Equal("done", CodexStateReader.Parse(this.SharedState()).Activity);
+        }
+
+        [Fact]
+        public void A_code_mode_escalation_becomes_a_keyed_cli_approval()
+        {
+            var path = this.Rollout(
+                "code-approval", Today, SessionMeta, TaskStarted,
+                CodeModeExec("call-approval", "git push origin feature"));
+            var bridge = this.New();
+            bridge.LiveSessions = new List<(String, DateTime)>
+            {
+                ("pid-100-cli", new DateTime(2026, 8, 20, 14, 0, 0, DateTimeKind.Utc)),
+            };
+
+            Assert.Equal(1, bridge.Poll());
+
+            var shared = CodexStateReader.Parse(this.SharedState());
+            Assert.Equal("waiting", shared.Activity);
+            Assert.Equal("Bash", shared.PendingTool);
+            Assert.Equal("git push origin feature", shared.PendingCommand);
+            Assert.Contains("\"transport\":\"rollout-code-mode\"", this.SharedState());
+
+            var keyed = CodexStateReader.Parse(File.ReadAllText(Path.Combine(this._ipc, "pid-100-cli.json")));
+            Assert.Equal("waiting", keyed.Activity);
+            Assert.Equal("git push origin feature", keyed.PendingCommand);
+        }
+
+        [Fact]
+        public void Matching_code_mode_output_clears_the_cli_approval()
+        {
+            var path = this.Rollout("code-output", Today, TaskStarted, CodeModeExec("call-1", "git push"));
+            var bridge = this.New();
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal("waiting", CodexStateReader.Parse(this.SharedState()).Activity);
+
+            this.Append(path, CodeModeOutput("some-other-call"));
+            Assert.Equal(0, bridge.Poll());
+            Assert.Equal("waiting", CodexStateReader.Parse(this.SharedState()).Activity);
+
+            this.Append(path, CodeModeOutput("call-1"));
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal("busy", CodexStateReader.Parse(this.SharedState()).Activity);
+            Assert.Null(CodexStateReader.Parse(this.SharedState()).PendingCommand);
+        }
+
+        [Fact]
+        public void A_non_escalated_exec_never_claims_an_approval()
+        {
+            var diagnostic = "rg 'sandbox_permissions:\"require_escalated\"' src";
+            var path = this.Rollout(
+                "ordinary-exec", Today, TaskStarted,
+                CodeModeExec("call-ordinary", diagnostic, permission: "use_default"));
+            var bridge = this.New();
+
+            Assert.Equal(1, bridge.Poll());
+            var snap = CodexStateReader.Parse(this.SharedState());
+            Assert.Equal("busy", snap.Activity);
+            Assert.Null(snap.PendingTool);
+        }
+
+        [Fact]
+        public void A_rollout_heartbeat_cannot_overwrite_a_synthetic_cli_approval()
+        {
+            var path = this.Rollout("approval-heartbeat", Today, TaskStarted, CodeModeExec("call-1", "git push"));
+            var bridge = this.New();
+            Assert.Equal(1, bridge.Poll());
+
+            this.Append(path, "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\"}}");
+            Assert.Equal(0, bridge.Poll());
+            Assert.Equal("waiting", CodexStateReader.Parse(this.SharedState()).Activity);
         }
 
         [Fact]
