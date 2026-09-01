@@ -30,6 +30,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public AnswerCommand()
             : base()
         {
+            var agentName = BridgeManager.Instance.Agent.DisplayName;
             // Yes/No are full coloured live faces in the supplied design. Widget rendering
             // bypasses Options+' inset icon layer without freezing the action into a static .ict.
             // This flag applies to the whole dynamic command, so Up/Down/Enter also render their
@@ -44,13 +45,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             };
 
             this.AddParameter(Yes, "Yes", "Answer")
-                .SetDescription("Approve the permission prompt Claude is waiting on (confirms the highlighted option); beeps if there is nothing to approve");
+                .SetDescription($"Approve the permission prompt {agentName} is waiting on (confirms the highlighted option); beeps if there is nothing to approve");
             this.AddParameter(No, "No", "Answer")
-                .SetDescription("Reject the permission prompt Claude is waiting on (dismisses it, the tool does not run); beeps if there is nothing to reject");
+                .SetDescription($"Reject the permission prompt {agentName} is waiting on (dismisses it, the tool does not run); beeps if there is nothing to reject");
             this.AddParameter(Up, "Arrow Up", "Answer")
-                .SetDescription("Move the selection up in a Claude Code menu (Up arrow)");
+                .SetDescription($"Move the selection up in a {agentName} menu (Up arrow)");
             this.AddParameter(Down, "Arrow Down", "Answer")
-                .SetDescription("Move the selection down in a Claude Code menu (Down arrow)");
+                .SetDescription($"Move the selection down in a {agentName} menu (Down arrow)");
             this.AddParameter(Enter, "Return", "Answer")
                 .SetDescription("Confirm the highlighted menu option / submit (Return)");
         }
@@ -169,12 +170,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             switch (Decide(approve, hasPending))
             {
                 case AnswerVia.MenuConfirm:
-                    bridge.InjectKey(KeyStroke.Return);
+                    if (bridge.InjectKeyTo(target, KeyStroke.Return) == InjectionOutcome.Ok)
+                    {
+                        bridge.Grid.AcknowledgePendingApproval(target);
+                    }
                     PluginLog.Info($"AnswerCommand: approved the pending prompt on {target} by key");
                     break;
 
                 case AnswerVia.MenuReject:
-                    bridge.InjectKey(KeyStroke.Escape);
+                    if (bridge.InjectKeyTo(target, KeyStroke.Escape) == InjectionOutcome.Ok)
+                    {
+                        bridge.Grid.AcknowledgePendingApproval(target);
+                    }
                     PluginLog.Info($"AnswerCommand: rejected the pending prompt on {target} by key");
                     break;
 

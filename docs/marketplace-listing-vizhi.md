@@ -2,7 +2,7 @@
 
 Draft text for the Logitech Marketplace submission form
 ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)) for **Vizhi
-for Codex 1.5.3**. Same structure and field limits as Claude Console's
+for Codex 1.6.0**. Same structure and field limits as Claude Console's
 [marketplace-listing.md](marketplace-listing.md); process and packaging live in
 [SUBMISSION.md](../SUBMISSION.md).
 
@@ -20,7 +20,7 @@ Read out of the uploaded `.lplug4`; the form fills them itself. To change any, e
 | Name | Vizhi for Codex |
 | Author | S.Ravi Shankar |
 | Operating system | macOS, Windows (from `pluginFolderMac` + `pluginFolderWin`) |
-| Version | 1.5.3 |
+| Version | 1.6.0 |
 | Content licence | MIT — https://opensource.org/licenses/MIT |
 | Support | https://github.com/rshankras/claude-console/issues |
 | Homepage | https://github.com/rshankras/claude-console |
@@ -54,36 +54,36 @@ Markdown supported: **bold**, *cursive*, `-` lists, `1.` lists, `[links](url)`, 
 - **Screenshot** — capture a region into the conversation
 - **Git** — commit, push, PR
 
-Install one console plugin per machine.
+Coexists with Claude Console.
 ```
 
 ## Release notes — limit 1000 characters
 
 First Marketplace release for this product, so written as an introduction rather than a
-changelog. No version heading — the page shows the version from the package. **977 characters** (23 spare):
+changelog. No version heading — the page shows the version from the package. **995 characters**
+(5 spare):
 
 ```markdown
-First Marketplace release. Vizhi for Codex turns the MX Creative Keypad's nine LCD keys into a control surface for OpenAI's Codex CLI, on macOS and Windows.
+First Marketplace release. Vizhi for Codex makes the MX Creative Keypad a control surface for OpenAI Codex CLI on macOS and Windows.
 
 - **A key per session** — run up to 3 Codex sessions, each key showing its project, state & context; press one to focus it
-- **Answer Codex** — Yes/No and menu navigation from the keypad; keys light amber when Codex asks approval, red when the pending command is risky (macOS)
-- **One-press prompts** — Fix Bug, Write Tests, Review & more, fully customizable
+- **Answer Codex** — Yes/No and menu navigation; approval keys light amber or red when Codex reports risk (macOS)
+- **One-press prompts** — Fix Bug, Write Tests, Review & more, customizable
 - **Screenshot** — capture a screen region into the running conversation
-- **Git & /review** — commit, diff, push, PR, and Codex's own review picker
+- **Native Codex controls** — Plan, Agent, Fork, Skills, Status, Resume and Review
+- **Git** — commit, diff, push and PR
 - **Offline voice** — dictate a prompt or jump to a project by speaking its name; local transcription, no cloud
+- **Safer targeting** — stable session pins and identity-based Terminal tab switching
 
-**Install only one console plugin per machine** — this and Claude Console both bind the terminal, and only one can be active.
-
-Setup: install, then import the ready-made keypad layout (`VizhiCodex-Keypad.lp5`) from the GitHub release — or drag the Vizhi for Codex actions onto your own Terminal profile.
+Setup: install, then import `VizhiCodex-Keypad.lp5` on macOS or `VizhiCodex-Windows.lp5` on Windows. The universal plugin can coexist with Claude Console.
 ```
 
 ## Notes for the reviewer / support answers
 
 Things a QA reviewer is likely to hit, with the honest answer ready:
 
-- **Two plugins, one terminal.** If Claude Console is already installed on the test machine, one
-  of the two will be unreachable — the plugin service activates a single plugin per application.
-  This is why the release notes lead with it. Test on a machine with only one installed.
+- **Two plugins can coexist.** Vizhi and Claude Console are universal plugins and claim no
+  application. Their downloadable layouts use distinct identities and can both be imported.
 - **The keys need Codex running in a terminal.** No sessions, no live keys — by design, and the
   keypad says so rather than inventing state.
 - **macOS asks for permissions**, once each: Accessibility (typing into Terminal), Microphone

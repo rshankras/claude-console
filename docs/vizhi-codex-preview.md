@@ -1,25 +1,20 @@
-# Vizhi for Codex 1.5.3 — preview notes
+# Vizhi for Codex 1.6.0 — preview notes
 
-*Preview build, pending Marketplace submission. Claude Console 2.0.1 is in Marketplace review
-separately — install only one of the two (see below).*
+*Preview build, pending Marketplace submission. It can be installed beside Claude Console 2.2.0;
+both products are universal and claim no terminal application.*
 
-*1.5.3 rolls up the Windows hardware-verification fixes on top of 1.5.0 (which never installed
-cleanly on Windows and was not re-released):*
+*1.6.0 brings the shared Claude Console 2.2.0 QA work into the Codex product:*
 
-- *Install fixed: 1.5.0's sandbox ACL grants ran on the plugin's Load path and their recursive
-  `icacls /T` walk of the Logi tree ate the service's 10-second Load budget — Options+ showed
-  the plugin stuck "waiting" and the install failed. The grants now run in the background and
-  let NTFS inheritance do the propagation.*
-- *Session keys show the project's folder name: the rollout transport now carries the session's
-  cwd in its state envelope, where 1.5.0 wrote none and every key could only say "Codex".*
-- *Context percent fills on Windows: the rollout envelope now names the transcript the context
-  reader sizes the window from — the file the transport is already tailing — where before it
-  named none and the context key stayed blank however much the session had used.*
-- *Tab switching selects by identity: two sessions started in the same directory share a tab
-  label, and the switcher used to take the first match — it now briefly retitles the target's
-  own console to a nonce, selects the tab that repaints, and restores the title.*
-- *The Screenshot key works on Windows: a new `claude-console-shot.exe` helper drives the
-  ms-screenclip: overlay and lands the snip as a PNG (Esc detected within ~2s).*
+- *Universal packaging lets Vizhi and Claude Console coexist; neither owns Terminal.*
+- *The Logitech 2026-08 key design, state palette and Yes/No tiles are shared. The active session
+  bar follows product identity: Codex blue in Vizhi, Claude orange in Claude Console; inactive
+  sessions remain grey.*
+- *Session pinning, retention, interruption recovery, approval targeting, voice failure handling,
+  non-US keyboard injection and project discovery carry the QA fixes verified for 2.2.0.*
+- *Windows ships the fixed No/Esc injector, identity-based tab selection, Terminal navigation
+  guard, Screenshot helper and smoke-tested offline voice payload.*
+- *Separate macOS and Windows Vizhi profile downloads now bind the correct terminal and plugin,
+  with previews that match the imported first page.*
 
 ## What this is
 
@@ -31,7 +26,7 @@ is macOS-only** — see Windows, below.
 
 The point of the preview is as much the **architecture** as the product: one engine now builds
 a package per agent. `src/Core` is agent-neutral (platform bridges, session grid, file IPC,
-actions, voice, self-registration); `src/Agents/<agent>` is a small adapter (~a file per
+actions, voice, universal packaging); `src/Agents/<agent>` is a small adapter (~a file per
 concern) declaring what the agent can honestly report; `src/Products/<name>` pairs them with
 branding, a profile, and a version. Supporting a new terminal agent is an adapter plus a thin
 product folder — the engine, tests, and packaging are shared.
@@ -40,15 +35,15 @@ product folder — the engine, tests, and packaging are shared.
 
 | Page | Keys |
 |---|---|
-| 1 — Sessions & answers | Codex sessions ×3 (live state per tab) · **Screenshot** · **Voice** · **Voice Draft** · Yes · No · Esc |
-| 2 — Session control | **Review** (native `/review` picker) · Model · Compact · Up · Enter · Down · Scroll ↑ · Scroll ↓ · Clear (`/new`) |
-| 3 — Prompts | Explore · Explain · Review (prompt) · Optimize · Refactor · Write Tests · Document · Fix Bug · Security |
-| 4 — Terminal & sessions | Voice "Go to Project" · New Tab · Next Tab · Prev Tab · **New Codex** · Exit |
-| 5 — Git | Commit · Create PR · Diff · Log · Push · Status |
+| 1 — Sessions & interaction | Codex sessions ×3 (live state per tab) · **Screenshot** · **Voice** · **Voice Draft** · Esc · No · Yes |
+| 2 — Codex controls | Model · Plan · Skills · Agent · Fork · Resume · **Review** · **Context gauge** · Compact |
+| 3 — Prompts | Explore · Explain · Document · Optimize · Refactor · Fix Bug · Code Audit · Write Tests · Security |
+| 4 — Terminal | Voice "Go to Project" · New Tab · **New Codex** · Prev Tab · Next Tab · Exit · Up · Enter · Down |
+| 5 — Git | Git Status · Diff · Log · Commit · Push · Create PR |
 
 Session keys and Yes/No light **amber** when Codex asks permission, **red** when the pending
 command is destructive (`git push`, `rm -rf`, `sudo`…). The full key-by-key story is in the
-[product README](https://github.com/rshankras/claude-console/blob/vizhi-codex/v1.4.4/src/Products/VizhiCodex/README.md).
+[product README](https://github.com/rshankras/claude-console/blob/main/src/Products/VizhiCodex/README.md).
 
 Two design rules the product is built around:
 
@@ -96,15 +91,10 @@ runner, hooks light up with no plugin update needed.
 
 ## Install
 
-> **Preview on a machine without Claude Console installed** — the two plugins both bind
-> Terminal.app and the plugin service activates only one, so a keypad that already runs
-> Claude Console will show that plugin's keys, not this one's. Uninstall it first
-> (Options+ → Plugins) or use a different machine.
-
 1. Logi Options+ **6.4+**, MX Creative Keypad, [Codex CLI](https://developers.openai.com/codex/cli) installed natively.
-2. Double-click `VizhiCodex_1.5.3.lplug4` → install via Options+.
-3. Wait ~1 minute: the plugin self-registers its application + layout and restarts the plugin
-   service once (Options+ blinks and returns on its own).
+2. Double-click `VizhiCodex_1.6.0.lplug4` → install via Options+.
+3. Import `VizhiCodex-Keypad.lp5` on macOS or `VizhiCodex-Windows.lp5` on Windows. The plugin is
+   universal and intentionally installs no application or layout of its own.
 4. **macOS only — trust the hooks.** At your next Codex session start you'll see **"Hooks need
    review — 7 hooks are new or changed"**. That's this plugin: one entry per lifecycle event
    (SessionStart, PreToolUse, PermissionRequest, …), all running the same one-line launcher,
@@ -138,9 +128,8 @@ They do two separate things, and only one of them is cross-platform:
   platform, and no other Codex channel announces an approval, so the capability is declared
   absent rather than guessed. A working prototype exists behind Codex's app-server websocket;
   it is documented, not shipped.
-- **One console per machine** — this and Claude Console both bind Terminal.app; the plugin
-  service activates one plugin per application, so installing both leaves one silently dead.
-  A unified dual-agent console is the planned answer for users of both.
+- **Profiles are OS-specific downloads.** Import the macOS profile on Terminal.app and the Windows
+  profile on Windows Terminal. The packages themselves can coexist with Claude Console.
 - Context % is read best-effort from a Codex transcript format documented as unstable — the
   key shows nothing rather than a stale number when parsing surprises us.
 - Layout changes in a future package don't reach an already-imported profile (import

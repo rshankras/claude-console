@@ -1,9 +1,12 @@
 namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
+    using System.Collections.Generic;
     using System.IO;
 
     using Loupedeck.ClaudeConsolePlugin.Agents;
+    using Loupedeck.ClaudeConsolePlugin.Actions;
+    using Loupedeck.ClaudeConsolePlugin.Models;
 
     using Xunit;
 
@@ -137,6 +140,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var state = new CodexCliAdapter().ParseSessionState(envelope);
 
             Assert.Equal(12, state.CtxPercent);
+        }
+
+        [Fact]
+        public void The_gauge_uses_the_displayed_codex_session_and_preserves_unknown()
+        {
+            var sessions = new Dictionary<String, GridSession>
+            {
+                ["ttys001"] = new GridSession { SessionKey = "ttys001", CtxPercent = 75 },
+                ["ttys002"] = new GridSession { SessionKey = "ttys002", CtxPercent = null },
+            };
+
+            Assert.Equal(75, ContextCommand.CodexPercentFor("ttys001", sessions));
+            Assert.Null(ContextCommand.CodexPercentFor("ttys002", sessions));
+            Assert.Null(ContextCommand.CodexPercentFor("ttys999", sessions));
+            Assert.Null(ContextCommand.CodexPercentFor(null, sessions));
         }
     }
 }

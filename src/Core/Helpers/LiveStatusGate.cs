@@ -77,7 +77,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// short action (<paramref name="shortPress"/>) runs on Release when no long press happened
         /// during the hold and live status does not need setting up.
         /// </summary>
-        public Boolean HandleButton(DeviceButtonEventType type, Action shortPress)
+        public Boolean HandleButton(DeviceButtonEventType type, Action shortPress, Action longPress = null)
         {
             switch (type)
             {
@@ -87,7 +87,14 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 case DeviceButtonEventType.LongPress:
                     _longPressed = true;
-                    this.LongPress();
+                    if (_applies)
+                    {
+                        this.LongPress();
+                    }
+                    else
+                    {
+                        longPress?.Invoke();
+                    }
                     return true;
 
                 case DeviceButtonEventType.Release:

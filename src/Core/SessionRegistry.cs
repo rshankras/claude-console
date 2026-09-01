@@ -58,6 +58,11 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         // Test seam for the five-second post-Escape quiet window. Production always uses wall time.
         internal Func<Int64> NowUnix { get; set; } = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        // A Yes/No press may resolve a permission menu without Codex emitting a following hook
+        // event. Remember the exact approval-source write we answered so the next 500ms refresh
+        // does not resurrect its stale badge. A later file write is a new event and is shown.
+        private readonly Dictionary<String, Int64> _acknowledgedApprovals =
+            new Dictionary<String, Int64>(StringComparer.Ordinal);
 
         private readonly Object _lock = new Object();
         private RegistryRecord _registry = new RegistryRecord();
@@ -128,6 +133,45 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 return _interrupts.TryGetValue(tty, out var at) ? at : (Int64?)null;
             }
+        }
+
+        /// <summary>
+        /// Optimistically clear a permission request after its answer key was delivered. Returns
+        /// false when the session no longer carries a captured approval. The source file itself is
+        /// left untouched; its write version suppresses only that one event, so another request—
+        /// including the same command asked again—reappears after the agent writes it.
+        /// </summary>
+        internal Boolean AcknowledgePendingApproval(String tty)
+        {
+            if (String.IsNullOrEmpty(tty))
+            {
+                return false;
+            }
+
+            var changed = false;
+            lock (_lock)
+            {
+                if (!_sessions.TryGetValue(tty, out var session) || String.IsNullOrEmpty(session.PendingTool))
+                {
+                    return false;
+                }
+
+                _acknowledgedApprovals[tty] = this.ApprovalSourceVersion(tty);
+                session.PendingTool = null;
+                session.PendingCommand = null;
+                session.Risk = ApprovalRisk.None;
+                if (session.State == "waiting")
+                {
+                    session.State = "ready";
+                }
+                changed = true;
+            }
+
+            if (changed)
+            {
+                OnGridChanged?.Invoke();
+            }
+            return changed;
         }
 
         private String StateFor(String tty) => Path.Combine(_sessionsDir, tty + ".json");
@@ -384,6 +428,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     this.ApplyPendingApproval(session);
                 }
 
+                this.ApplyApprovalAcknowledgement(session);
+
                 sessions[tty] = session;
             }
 
@@ -461,6 +507,37 @@ namespace Loupedeck.ClaudeConsolePlugin
             session.PendingTool = pending.Value.Tool;
             session.PendingCommand = pending.Value.Command;
             session.Risk = RiskClassifier.Classify(pending.Value.Tool, pending.Value.Command);
+        }
+
+        private void ApplyApprovalAcknowledgement(GridSession session)
+        {
+            if (!_acknowledgedApprovals.TryGetValue(session.SessionKey, out var answeredVersion))
+            {
+                return;
+            }
+
+            if (this.ApprovalSourceVersion(session.SessionKey) != answeredVersion)
+            {
+                // The agent wrote something new. If it is another PermissionRequest, it deserves
+                // a fresh badge even when the tool and command text happen to be identical.
+                _acknowledgedApprovals.Remove(session.SessionKey);
+                return;
+            }
+
+            session.PendingTool = null;
+            session.PendingCommand = null;
+            session.Risk = ApprovalRisk.None;
+            if (session.State == "waiting")
+            {
+                session.State = "ready";
+            }
+        }
+
+        private Int64 ApprovalSourceVersion(String tty)
+        {
+            var pending = this.PendingFor(tty);
+            var source = File.Exists(pending) ? pending : this.StateFor(tty);
+            return LastWrite(source).Ticks;
         }
 
         /// <summary>
@@ -552,6 +629,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             // against the old occupant must not follow it (#30). ActivityStall also guards this by
             // timestamp — belt and braces, because the failure is a new session reading as idle.
             lock (_lock) { _interrupts.Remove(tty); }
+            lock (_lock) { _acknowledgedApprovals.Remove(tty); }
         }
 
         // Persist slot→tty so assignments survive a plugin reload (a rebuild shouldn't reshuffle your

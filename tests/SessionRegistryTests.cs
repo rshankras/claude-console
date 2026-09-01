@@ -48,7 +48,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         private SessionRegistry NewRegistry() => new SessionRegistry(_sessionsDir, _activityDir, _registryFile) { Agent = new Agents.ClaudeCodeAdapter() };
 
-        private SessionRegistry NewCodexRegistry() => new SessionRegistry(_sessionsDir, _activityDir, _registryFile) { Agent = new Agents.CodexCliAdapter() };
+        private SessionRegistry NewCodexRegistry() =>
+            new SessionRegistry(_sessionsDir, _activityDir, _registryFile) { Agent = new Agents.CodexCliAdapter() };
 
         private String StateFor(String tty) => Path.Combine(_sessionsDir, tty + ".json");
         private String ActivityFor(String tty) => Path.Combine(_activityDir, tty + ".json");
@@ -167,6 +168,41 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             WriteActivity("ttys001", "waiting");
 
             Assert.Equal("waiting", RefreshedWith("ttys001").SlotSession(1).State);
+        }
+
+        [Fact]
+        public void Answered_codex_approval_stays_cleared_until_a_new_event_arrives()
+        {
+            var path = this.StateFor("ttys002");
+            var approval = """
+                {"schema":1,"agent":"codex-cli","event":"PermissionRequest","ts":1,
+                 "payload":{"session_id":"sid","cwd":"/Users/x/project","tool_name":"Bash",
+                 "tool_input":{"command":"touch /Users/x/Desktop/test.txt"}}}
+                """;
+            File.WriteAllText(path, approval);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(-5));
+
+            var registry = this.NewCodexRegistry();
+            registry.Refresh(new HashSet<String> { "ttys002" });
+            Assert.Equal("Bash", registry.SlotSession(1).PendingTool);
+
+            Assert.True(registry.AcknowledgePendingApproval("ttys002"));
+            Assert.Null(registry.SlotSession(1).PendingTool);
+            Assert.Equal(ApprovalRisk.None, registry.SlotSession(1).Risk);
+            Assert.Equal("ready", registry.SlotSession(1).State);
+
+            // The stale PermissionRequest is still the newest hook document. Polling it again must
+            // not resurrect Allow? or the Yes badge after the user has already answered it.
+            registry.Refresh(new HashSet<String> { "ttys002" });
+            Assert.Null(registry.SlotSession(1).PendingTool);
+            Assert.Equal("ready", registry.SlotSession(1).State);
+
+            // A later write is a genuinely new request, even if its command text is identical.
+            File.WriteAllText(path, approval.Replace("\"ts\":1", "\"ts\":2"));
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(5));
+            registry.Refresh(new HashSet<String> { "ttys002" });
+            Assert.Equal("Bash", registry.SlotSession(1).PendingTool);
+            Assert.Equal("waiting", registry.SlotSession(1).State);
         }
 
         [Fact]

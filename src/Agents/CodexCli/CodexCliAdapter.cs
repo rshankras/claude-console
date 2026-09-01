@@ -148,16 +148,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 AgentVerb.Compact => "/compact",
                 AgentVerb.Clear => "/new",
                 AgentVerb.Exit => "/exit",
-                // No context command: the number isn't exposed, so the key hides rather than
-                // typing something Codex would reject.
-                AgentVerb.Context => null,
+                // Codex's /status includes current token usage and remaining context capacity.
+                AgentVerb.Context => "/status",
                 // Review is a first-class TUI command (tui/chatwidget/review_popups.rs in the
                 // 0.148 binary): typing "/review" opens the picker — uncommitted, against a base
                 // branch, or a commit. The earlier note here called it subcommand-only; that was
                 // the CLI's `codex review`, and it missed the TUI door. Same trap as images.
                 AgentVerb.Review => "/review",
-                // ResumeLast really is launch-only (`codex resume --last`) — a launch path verb.
-                AgentVerb.ResumeLast => null,
+                // Current Codex exposes both the launch form (`codex resume`) and an in-session
+                // picker (`/resume`). The latter is the right hardware interaction: it preserves
+                // the running terminal and lets the user choose the saved chat on screen.
+                AgentVerb.ResumeLast => "/resume",
+                AgentVerb.Plan => "/plan",
+                AgentVerb.Agent => "/agent",
+                AgentVerb.Fork => "/fork",
+                AgentVerb.Skills => "/skills",
+                AgentVerb.SessionStatus => "/status",
                 _ => null,
             };
     }

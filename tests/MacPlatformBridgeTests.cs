@@ -221,9 +221,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var calls = new List<List<String>>();
             WithResult("ok", calls).LaunchClaudeInProject("/Users/me/my project");
 
-            var script = Assert.Single(calls)[1];
+            var args = Assert.Single(calls);
+            var script = args[1];
             Assert.Contains("busy of selected tab of front window is false", script);
-            Assert.Contains("cd '/Users/me/my project' && claude", script);
+            Assert.DoesNotContain("/Users/me/my project", script);
+            Assert.Equal("cd '/Users/me/my project' && claude", args[2]);
+        }
+
+        [Fact]
+        public void Opening_a_project_safely_quotes_realistic_folder_names()
+        {
+            var calls = new List<List<String>>();
+            var codex = new MacPlatformBridge(cliCommand: "codex")
+            {
+                OsascriptRunner = (args, timeout, wantOutput) => { calls.Add(args); return "ok"; },
+            };
+
+            codex.LaunchClaudeInProject("/Users/me/Ravi's \"Codex\" \\ demo");
+
+            var args = Assert.Single(calls);
+            Assert.DoesNotContain("Ravi", args[1]);
+            Assert.Equal("cd '/Users/me/Ravi'\"'\"'s \"Codex\" \\ demo' && codex", args[2]);
         }
     }
 }

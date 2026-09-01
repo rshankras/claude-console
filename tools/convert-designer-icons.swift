@@ -9,7 +9,8 @@
 // brain_haiku/sonnet/opus) are produced by swapping the SVG's fill hex before rendering, so the
 // designer's glyph stays the single source of truth.
 //
-// Usage: swift tools/convert-designer-icons.swift            (from the repo root)
+// Usage: swift tools/convert-designer-icons.swift                (from the repo root)
+//        swift tools/convert-designer-icons.swift --codex-only   (only Vizhi's blue set)
 import AppKit
 
 let repo = FileManager.default.currentDirectoryPath
@@ -20,9 +21,18 @@ let repo = FileManager.default.currentDirectoryPath
 let whiteDir = repo + "/assets/designer-icons/White"
 let coloursDir = repo + "/assets/designer-icons/Colours"
 let outDir = repo + "/src/Core/Resources/icons"   // #39: the embedded-resource path (was src/Resources/icons)
+let codexOutDir = repo + "/src/Products/VizhiCodex/Resources/icons_codex"
+let codexOnly = CommandLine.arguments.contains("--codex-only")
 guard FileManager.default.fileExists(atPath: outDir) else {
     print("error: output directory does not exist: \(outDir)")
     print("       (run from the repo root; the embedded icons live in src/Core/Resources)")
+    exit(1)
+}
+do {
+    try FileManager.default.createDirectory(atPath: codexOutDir, withIntermediateDirectories: true)
+}
+catch {
+    print("error: cannot create Codex icon directory: \(codexOutDir)")
     exit(1)
 }
 
@@ -80,6 +90,15 @@ let mapping: [(String, String)] = [
     ("WindowAdd", "new_claude_window"),
     ("WindowNext", "next_window"),
     ("WindowPrevious", "prev_window"),
+]
+
+// Codex-only controls. They follow the same 43-unit line geometry and are tinted with the same
+// identity blue, but Claude Console does not register these actions and should not ship dead art.
+let codexMapping: [(String, String)] = [
+    ("Branch", "agent"),
+    ("Fork", "fork"),
+    ("Skills", "skills"),
+    ("Resume", "resume"),
 ]
 
 // (source SVG, output name, fill hex) — colour variants of a designer glyph.
@@ -142,12 +161,16 @@ func tintWhite(_ svgText: String, to hex: String) -> String {
 // three rounded wave bars whose width matches the pack's stroke weight (~3.2 units on a 43 grid
 // ≈ 7px at 96). The pack predates the Voice Draft key, so this is the one icon built from
 // designer parts rather than shipped whole.
-func renderVoiceDraft(micSvg: String, to path: String) -> Bool {
+func renderVoiceDraft(micSvg: String, tintHex: String, to path: String) -> Bool {
     guard let data = micSvg.data(using: .utf8), let mic = NSImage(data: data) else { return false }
     let target = NSImage(size: NSSize(width: size, height: size))
     target.lockFocus()
     mic.draw(in: NSRect(x: 34, y: 6, width: 66, height: 66))   // right-of-centre, slightly low
-    NSColor(srgbRed: 0xCC / 255.0, green: 0x7C / 255.0, blue: 0x5E / 255.0, alpha: 1).set()  // copper bars, matching the copper mic
+    var tint: UInt64 = 0
+    Scanner(string: String(tintHex.dropFirst())).scanHexInt64(&tint)
+    NSColor(srgbRed: CGFloat((tint >> 16) & 0xff) / 255.0,
+            green: CGFloat((tint >> 8) & 0xff) / 255.0,
+            blue: CGFloat(tint & 0xff) / 255.0, alpha: 1).set()
     let barW: CGFloat = 7
     for (x, h) in [(CGFloat(10), CGFloat(30)), (23, 52), (36, 38)] {
         NSBezierPath(roundedRect: NSRect(x: x, y: (size - h) / 2, width: barW, height: h),
@@ -165,27 +188,37 @@ func renderVoiceDraft(micSvg: String, to path: String) -> Bool {
 }
 
 var ok: [String] = [], fail: [String] = []
-if let micText = try? String(contentsOfFile: whiteDir + "/VoiceDictation.svg", encoding: .utf8),
-   renderVoiceDraft(micSvg: tintWhite(micText, to: COPPER), to: outDir + "/voice_draft.png")
-{
-    ok.append("voice_draft")
-}
-else
-{
-    fail.append("voice_draft")
+if let micText = try? String(contentsOfFile: whiteDir + "/VoiceDictation.svg", encoding: .utf8) {
+    let claudeOK = codexOnly || renderVoiceDraft(
+        micSvg: tintWhite(micText, to: COPPER), tintHex: COPPER,
+        to: outDir + "/voice_draft.png")
+    let codexOK = renderVoiceDraft(
+        micSvg: tintWhite(micText, to: BLUE), tintHex: BLUE,
+        to: codexOutDir + "/voice_draft.png")
+    if claudeOK && codexOK { ok.append("voice_draft") } else { fail.append("voice_draft") }
+} else {
+    fail.append("voice_draft(missing VoiceDictation.svg)")
 }
 for (svg, name) in mapping {
     let svgPath = whiteDir + "/" + svg + ".svg"
     guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
-    // Neutral glyphs take the copper identity colour (the White mask tinted to COPPER).
-    if renderSvg(tintWhite(text, to: COPPER), to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
+    // Each product gets the same geometry in its identity colour. State-specific variants below
+    // stay shared: warning red, approval white, model-tier colours and listening green.
+    let claudeOK = codexOnly || renderSvg(tintWhite(text, to: COPPER), to: outDir + "/" + name + ".png")
+    let codexOK = renderSvg(tintWhite(text, to: BLUE), to: codexOutDir + "/" + name + ".png")
+    if claudeOK && codexOK { ok.append(name) } else { fail.append(name) }
 }
-for (svg, name, hex) in recolors {
+for (svg, name) in codexMapping {
+    let svgPath = whiteDir + "/" + svg + ".svg"
+    guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
+    if renderSvg(tintWhite(text, to: BLUE), to: codexOutDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
+}
+for (svg, name, hex) in codexOnly ? [] : recolors {
     let svgPath = coloursDir + "/" + svg + ".svg"
     guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
     if renderSvg(recolor(text, to: hex), to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }
 }
-for (svg, name) in whites {
+for (svg, name) in codexOnly ? [] : whites {
     let svgPath = whiteDir + "/" + svg + ".svg"
     guard let text = try? String(contentsOfFile: svgPath, encoding: .utf8) else { fail.append(name + "(missing \(svg).svg)"); continue }
     if renderSvg(text, to: outDir + "/" + name + ".png") { ok.append(name) } else { fail.append(name) }

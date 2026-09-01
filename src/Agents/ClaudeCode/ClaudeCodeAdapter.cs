@@ -98,6 +98,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // and a key that typed "/review" would just produce an unknown-command error.
                 AgentVerb.Review => null,
                 AgentVerb.ResumeLast => null,
+                AgentVerb.Plan => null,
+                AgentVerb.Agent => null,
+                AgentVerb.Fork => null,
+                AgentVerb.Skills => null,
+                AgentVerb.SessionStatus => null,
                 _ => null,
             };
     }

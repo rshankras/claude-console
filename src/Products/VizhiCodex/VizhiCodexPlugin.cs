@@ -30,6 +30,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             PluginLog.Init(this.Log);
             PluginResources.Init(this.Assembly);
+            KeyImage.UseIdentityIconFolder("icons_codex");
 
             // Before any action is constructed — see the ordering note above.
             IpcPaths.UseProduct(this._agent.ProductSlug);

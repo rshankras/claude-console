@@ -17,6 +17,6 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Claude Console transcribes your spoken prompt so you can dictate to Claude Code from the Keypad.</string>
+    <string>The keypad console plugin transcribes your spoken prompt locally for voice input.</string>
 </dict>
 </plist>

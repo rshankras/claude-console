@@ -8,8 +8,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// Press once to start listening (you'll hear a "Tink"), say the project name
     /// (e.g. "indie app autopilot", "headroom", "asc metadata"), press again to stop.
     /// The bundled whisper helper transcribes locally, the plugin fuzzy-matches the phrase
-    /// against your project folders (scanned live under ~/Work/MyApps and ~/Work), then opens
-    /// a new Terminal tab, cd's into the match, and launches claude — one gesture, no typing.
+    /// against discovered or configured project folders, then opens a new terminal tab, cd's into
+    /// the match, and launches the active agent — one gesture, no typing.
     ///
     /// Reuses the same recorder as VoiceCommand; only the stop handler differs
     /// (BridgeManager.StopVoiceCaptureForProject → NavigateToProjectByVoice). It also reuses the
@@ -21,7 +21,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private readonly FailureFace _fail;
 
         public ProjectVoiceCommand()
-            : base(displayName: "Go to Project", description: "Speak a project name — opens a new tab, cd's there, and launches claude", groupName: "Terminal")
+            : base(displayName: "Go to Project", description: $"Speak a project name — opens a new tab, cd's there, and launches {BridgeManager.Instance.Agent.DisplayName}", groupName: "Terminal")
         {
             _face = new ListeningFace(() => this.ActionImageChanged());
             _fail = new FailureFace(() => this.ActionImageChanged());

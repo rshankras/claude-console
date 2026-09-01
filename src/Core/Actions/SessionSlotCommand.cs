@@ -19,9 +19,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// do nothing on press.
     ///
     /// Face layout (2026-08-30 design): the project (directory) name is centred in the black title
-    /// region, with the live state in a bar along the bottom. Claude copper identifies the currently
-    /// active/routed session; inactive sessions use grey. The word in the bar says what that session
-    /// is doing (Thinking / Allow? / Waiting / Complete), independently of the bar colour.
+    /// region, with the live state in a bar along the bottom. The active/routed session uses its
+    /// product identity colour (Claude orange or Codex blue); inactive sessions use grey. The word
+    /// in the bar says what that session is doing (Thinking / Allow? / Waiting / Complete),
+    /// independently of the bar colour.
     /// </summary>
     public class SessionSlotCommand : PluginDynamicCommand
     {
@@ -41,7 +42,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             for (var slot = 1; slot <= SessionRegistry.SlotCount; slot++)
             {
                 this.AddParameter(slot.ToString(), $"Session {slot}", "Sessions")
-                    .SetDescription($"Claude session {slot}: shows its project and what it is doing; press to focus that Terminal tab and keep every other key aimed at it until you pick another session (press again to release)");
+                    .SetDescription($"{_bridge.Agent.DisplayName} session {slot}: shows its project and what it is doing; press to focus that terminal tab and keep every other key aimed at it until you pick another session (press again to release)");
             }
 
             _bridge.Grid.OnGridChanged += this.OnGridChanged;
@@ -90,12 +91,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             var active = session.SessionKey == _bridge.RoutingTty();
             var name = String.IsNullOrWhiteSpace(session.Project) ? _bridge.Agent.DisplayName : session.Project;
-            // Routing is a distinct state cue, not Claude branding: use the golden orange sampled
-            // from the approved mockup rather than the coral used by the action icons. The mockup
-            // keeps the state word white on both active and inactive bars.
-            var barColor = active ? KeyImage.SelectionOrange : KeyImage.Gray;
+            // Routing stays the cue: inactive sessions remain grey. Only the selected bar follows
+            // product identity — approved orange for Claude, the supplied #81A8ED for Codex.
+            var selectedColor = SelectedBarColor(_bridge.Agent.Id);
+            var barColor = active ? selectedColor : KeyImage.Gray;
             return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session), barColor, darkText: false);
         }
+
+        internal static BitmapColor SelectedBarColor(String agentId) =>
+            agentId == "codex-cli" ? KeyImage.Blue : KeyImage.SelectionOrange;
 
         // Colour communicates routing; this word communicates session state. Keeping those two
         // signals independent means an inactive session can still say "Allow?" without looking active.

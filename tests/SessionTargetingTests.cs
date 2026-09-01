@@ -19,6 +19,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class SessionTargetingTests : IDisposable
     {
+        [Fact]
+        public void Selected_session_bar_follows_the_agent_identity()
+        {
+            Assert.Equal(KeyImage.Blue, SessionSlotCommand.SelectedBarColor("codex-cli"));
+            Assert.Equal(KeyImage.SelectionOrange, SessionSlotCommand.SelectedBarColor("claude-code"));
+        }
+
         private readonly String _root =
             Path.Combine(Path.GetTempPath(), "cc-target-" + Guid.NewGuid().ToString("N"));
 

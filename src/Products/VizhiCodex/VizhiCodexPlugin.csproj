@@ -11,7 +11,7 @@
          crash-disable marker (Logs/plugin_crashes/) by assembly version; if this stays
          1.0.0.0 forever, any one load-crash disables the plugin permanently. Bumping it
          per release lets a new build dodge a stale marker. -->
-    <Version>1.5.3</Version>
+    <Version>1.6.0</Version>
 
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -66,6 +66,9 @@
     <EmbeddedResource Include="..\..\Core\Resources\**\*.png">
       <Link>Resources\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </EmbeddedResource>
+    <!-- Same approved glyph geometry as Claude Console, tinted to the Codex/ChatGPT identity
+         blue. KeyImage keeps state-semantic art (Yes/No, warnings and listening) shared. -->
+    <EmbeddedResource Include="Resources\icons_codex\*.png" />
   </ItemGroup>
 
   <ItemGroup>

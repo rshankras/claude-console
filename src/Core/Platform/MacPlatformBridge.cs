@@ -444,7 +444,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         }
 
         /// <summary>
-        /// cd into the project and run claude. Smart about where:
+        /// cd into the project and run the configured agent. Smart about where:
         ///   • no Terminal window open      → open one and run there
         ///   • front tab is an IDLE shell   → reuse it (this is the "empty terminal" case)
         ///   • front tab is BUSY (claude/cmd running) → open a NEW tab, so we never type into a
@@ -458,8 +458,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return;
             }
 
-            // Single-quote the path for the shell so spaces are safe (project paths have no quotes).
-            this.LaunchShellCommand("cd '" + projectDir + "' && " + this._cliCommand);
+            this.LaunchShellCommand("cd " + ShellQuote(projectDir) + " && " + this._cliCommand);
         }
 
         // The busy-aware launch shared by LaunchClaudeInProject and LaunchAgentSession: reuse an
@@ -471,27 +470,35 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return;
             }
 
+            // Pass the command as an osascript argument instead of interpolating it into the
+            // AppleScript source. Project names may legitimately contain quotes or backslashes.
             var script =
+                "on run argv\n" +
+                "set shellCommand to item 1 of argv\n" +
                 "tell application \"Terminal\"\n" +
                 "  activate\n" +
                 "  if (count of windows) is 0 then\n" +
-                "    do script \"" + cmd + "\"\n" +
+                "    do script shellCommand\n" +
                 "  else\n" +
                 "    set isIdle to false\n" +
                 "    try\n" +
                 "      set isIdle to (busy of selected tab of front window is false)\n" +
                 "    end try\n" +
                 "    if isIdle then\n" +
-                "      do script \"" + cmd + "\" in front window\n" +   // reuses the idle tab (NOT 'selected tab of' — that form no-ops)
+                "      do script shellCommand in front window\n" +   // reuses the idle tab (NOT 'selected tab of' — that form no-ops)
                 "    else\n" +
                 "      tell application \"System Events\" to key code 17 using command down\n" +
                 "      delay 0.5\n" +
-                "      do script \"" + cmd + "\" in front window\n" +
+                "      do script shellCommand in front window\n" +
                 "    end if\n" +
                 "  end if\n" +
-                "end tell";
-            this.RunAppleScript(script);
+                "end tell\n" +
+                "end run";
+            this.RunOsascriptCore(new List<String> { "-e", script, cmd }, 15000, wantOutput: false);
         }
+
+        private static String ShellQuote(String value) =>
+            "'" + (value ?? String.Empty).Replace("'", "'\"'\"'") + "'";
 
         /// <summary>
         /// `screencapture -i`: the system's own region/window picker (the Shift+Cmd+4 gesture).
@@ -522,9 +529,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             var quoted = new List<String>();
             foreach (var arg in extraArgs ?? Array.Empty<String>())
             {
-                // Single-quote for the shell, the same discipline LaunchClaudeInProject applies to
-                // its path; embedded quotes get the standard '\'' splice.
-                quoted.Add("'" + arg.Replace("'", "'\''") + "'");
+                quoted.Add(ShellQuote(arg));
             }
 
             this.LaunchShellCommand(this._cliCommand + " " + String.Join(" ", quoted));

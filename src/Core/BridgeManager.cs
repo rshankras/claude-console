@@ -905,7 +905,14 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// <summary>
         /// Send a single key chord to the tracked Claude session, e.g. Shift+Tab to cycle modes.
         /// </summary>
-        public void InjectKey(KeyStroke key) => _platform.InjectKey(RoutingTty(), key);
+        public InjectionOutcome InjectKey(KeyStroke key) => this.InjectKeyTo(RoutingTty(), key);
+
+        /// <summary>
+        /// Send a key to an already-resolved target. Approval actions use this so the session they
+        /// acknowledge is exactly the session that received the decision, even if focus changes.
+        /// </summary>
+        internal InjectionOutcome InjectKeyTo(String sessionKey, KeyStroke key) =>
+            _platform.InjectKey(sessionKey, key);
 
         /// <summary>
         /// Accept the highlighted autocomplete AND submit it in one press.

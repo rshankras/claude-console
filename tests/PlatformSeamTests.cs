@@ -140,11 +140,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var (bridge, fake) = Rig("ttys003");
 
-            bridge.InjectKey(KeyStroke.Escape);
+            var outcome = bridge.InjectKey(KeyStroke.Escape);
 
             var call = Assert.Single(fake.Keys);
             Assert.Equal("ttys003", call.Session);
             Assert.Equal(KeyStroke.Escape, call.Key);
+            Assert.Equal(InjectionOutcome.Ok, outcome);
         }
 
         [Fact]
