@@ -18,7 +18,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// then made the amber badge require a captured payload — because an idle prompt is "waiting"
     /// too. So a session idling with nothing to approve got Return (Yes) / Escape (No) at it. The
     /// decision now keys on the captured PAYLOAD, exactly like the badge: an approval we can see →
-    /// Return/Escape; anything else → do nothing.
+    /// Return/Escape; anything else → do nothing when the transport is expected to report it.
+    /// Windows Codex is the explicit exception: its transport cannot report approvals, so a manual
+    /// Yes/No press sends Return/Escape without ever typing a word.
     ///
     /// These tests are about the DECISION, not the AppleScript: which delivery a press should use
     /// given whether the targeted session has a pending approval.
@@ -49,6 +51,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // captured payload → NoOp (beep), for BOTH keys.
             Assert.Equal(AnswerCommand.AnswerVia.NoOp, AnswerCommand.Decide(approve: true, hasPendingApproval: false));
             Assert.Equal(AnswerCommand.AnswerVia.NoOp, AnswerCommand.Decide(approve: false, hasPendingApproval: false));
+        }
+
+        [Fact]
+        public void An_agent_without_approval_observation_can_still_answer_a_visible_prompt()
+        {
+            Assert.Equal(
+                AnswerCommand.AnswerVia.UnobservedConfirm,
+                AnswerCommand.Decide(approve: true, hasPendingApproval: false, canObserveApprovals: false));
+            Assert.Equal(
+                AnswerCommand.AnswerVia.UnobservedReject,
+                AnswerCommand.Decide(approve: false, hasPendingApproval: false, canObserveApprovals: false));
+        }
+
+        [Fact]
+        public void The_unobserved_No_path_is_never_the_confirm_path()
+        {
+            var yes = AnswerCommand.Decide(approve: true, hasPendingApproval: false, canObserveApprovals: false);
+            var no = AnswerCommand.Decide(approve: false, hasPendingApproval: false, canObserveApprovals: false);
+
+            Assert.Equal(AnswerCommand.AnswerVia.UnobservedConfirm, yes);
+            Assert.Equal(AnswerCommand.AnswerVia.UnobservedReject, no);
+            Assert.NotEqual(yes, no);
         }
 
         [Fact]

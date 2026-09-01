@@ -73,7 +73,8 @@ on that platform**. The transport differs; the state files, the grid and every k
 The honest gap: **risk-graded approval lighting is unavailable on Windows.** Codex publishes no
 approval event outside the hook runner, so the keypad declares the capability absent rather
 than lighting keys amber on evidence that does not exist — the same rule that gives Codex no
-Cost key. Yes/No still answer prompts; they type, they do not observe. Tab-switching on Windows
+Cost key. Yes/No still answer a prompt you can see: Yes sends Return and No sends Escape, without
+typing a word or claiming the prompt was observed. Tab-switching on Windows
 selects by identity, even for identically-titled tabs (verified on hardware): unique titles
 match directly, and on a duplicate the switcher briefly retitles the target session's own
 console to a nonce, selects the one tab that repaints to it, and restores the title — the tab
@@ -114,13 +115,14 @@ runner, hooks light up with no plugin update needed.
 
 They do two separate things, and only one of them is cross-platform:
 
-- **Answering** — pressing Yes or No types the answer into the focused Codex session. This
-  works on **macOS and Windows**, always: the keys type, they do not observe.
+- **Answering** — on macOS, pressing Yes or No acts only on a captured approval. On Windows,
+  where Codex supplies no approval event, press them only while you can see the prompt: Yes sends
+  Return and No sends Escape. Neither key types the words `yes` or `no`, avoiding the failure where
+  a trailing Return approves the highlighted option.
 - **Lighting** — the same keys (and the session key) turn **amber** when Codex is waiting for
   an approval and **red** when the pending command is destructive. This needs Codex to announce
   the approval, which it does through a lifecycle hook — so it works on **macOS only**. On
-  Windows the keys stay dark and answer exactly as well; you just don't get the glance-from-
-  across-the-room signal.
+  Windows the keys stay dark; answering is a deliberate manual action based on the visible prompt.
 
 ## Known limitations (preview)
 

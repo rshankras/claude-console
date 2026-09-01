@@ -28,8 +28,9 @@ plugin can fix ([the spike](../../../docs/spike-windows-codex-hooks.md)). So Win
 codex's own rollout transcript instead: sessions, project, busy/done/ready and best-effort
 context all work, with **no hooks installed and no `/hooks` trust prompt**. Risk-graded
 approval lighting is unavailable there — codex publishes no approval event outside the hook
-runner, and this keypad never shows a state the agent did not report. Yes/No keys still answer
-prompts. Windows tab-switching selects the intended session by console identity, including when
+runner, and this keypad never shows a state the agent did not report. Yes/No still answer a prompt
+you can see: Yes sends Return and No sends Escape, without typing a word or claiming the prompt was
+observed. Windows tab-switching selects the intended session by console identity, including when
 two tabs have the same title.
 
 ## The layout

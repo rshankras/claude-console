@@ -23,7 +23,8 @@ focus and tab switching, model, best-effort context, offline voice + Voice Draft
 the running conversation, native `/review`, prompts, git, navigation.
 
 **Windows — everything except approval LIGHTING.** Sessions, project, busy/done/ready, context,
-tab focus by identity, screenshot, prompts, git, nav, voice. Yes/No keys still *answer* (they
+tab focus by identity, screenshot, prompts, git, nav, voice. Yes/No keys still *answer* (Yes sends
+Return and No sends Escape while the user can see the prompt; neither types a word), but they
 type); they just don't *glow* when Codex is waiting. That gap is upstream and deliberate — see
 Still open.
 
