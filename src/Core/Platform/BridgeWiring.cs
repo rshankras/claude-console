@@ -109,17 +109,26 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
         /// <summary>
         /// The command Claude Code should run to render the status line.
+        ///
+        /// On macOS the command checks that the script still exists before running it. An Options+
+        /// uninstall removes the plugin but not the wiring (the SDK gives a plugin no uninstall
+        /// moment — #55), so a user who then deletes ~/.claude/claude-console/ was left with five
+        /// hooks and a status line pointing at nothing: Claude Code raised "Stop hook error occurred"
+        /// on every turn (reproduced 2026-09-03). With the guard, a missing script is a silent no-op
+        /// and the script's own exit code still propagates when it is there. The Windows form is
+        /// unchanged: which shell runs a hook command there has not been verified.
         /// </summary>
         /// <param name="handlerPath">bash script path (macOS) or hook exe path (Windows).</param>
         internal static String StatuslineCommand(Boolean isWindows, String handlerPath) =>
-            isWindows ? $"{Quote(handlerPath)} statusline" : $"bash {handlerPath}";
+            isWindows ? $"{Quote(handlerPath)} statusline" : $"[ ! -f {Quote(handlerPath)} ] || bash {Quote(handlerPath)}";
 
         /// <summary>
         /// The command Claude Code should run for an activity transition. <paramref name="state"/>
-        /// is one of busy / waiting / done / permission.
+        /// is one of busy / waiting / done / permission. Same missing-script guard as the status
+        /// line on macOS (#55).
         /// </summary>
         internal static String ActivityCommand(Boolean isWindows, String handlerPath, String state) =>
-            isWindows ? $"{Quote(handlerPath)} activity {state}" : $"bash {handlerPath} {state}";
+            isWindows ? $"{Quote(handlerPath)} activity {state}" : $"[ ! -f {Quote(handlerPath)} ] || bash {Quote(handlerPath)} {state}";
 
         /// <summary>
         /// Is this settings.json command already ours? Checked before rewriting, so a second

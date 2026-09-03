@@ -16,6 +16,14 @@ Answers to Logitech QA's retest of 2.2.0 (1 September).
   fails puts the old bundle back; and the install path reports the exit code and error of every
   tool it runs instead of logging success unconditionally.
 
+- **A leftover hook no longer errors on every turn** (#55, retest bug B). An Options+ uninstall
+  removes the plugin and nothing else — the SDK gives a plugin no uninstall moment — so the five
+  hooks and the status line stay in `~/.claude/settings.json` pointing into
+  `~/.claude/claude-console/`, on macOS as on Windows. A user who then deleted that folder got
+  "Stop hook error occurred" on every turn. On macOS each command now checks that its script
+  exists before running it, so a leftover entry is a silent no-op; the Turn on dialog says how to
+  take the wiring out and to do it before uninstalling; the README says the same. Existing
+  installs keep the old form until live status is turned off and on again.
 - **The shipped PDB no longer names the build machine** (#62). The 2.2.0 symbol file carried the
   author's worktree path twice — in the document paths of the engine's sources, which sit outside
   the folder the Release PathMap covered, and in a Source Link map pointing at a repository that

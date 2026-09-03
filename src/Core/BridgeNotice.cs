@@ -71,7 +71,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal static String TurnOnDialog(String keyName, Int32 seconds) =>
             "Turn on the live keys? This adds 5 hooks and a status line to ~/.claude/settings.json so " +
             "Cost, Context and Activity show live data. Your own entries are kept and the file is backed " +
-            $"up first. (Pressing {keyName} again within {seconds} s also turns it on.)";
+            $"up first. (Pressing {keyName} again within {seconds} s also turns it on.)\n\n" +
+            // Options+ cannot undo this edit when the plugin is uninstalled (#55): the moment of
+            // consent is the one place the user is guaranteed to read how to take it out again.
+            "To take it out later, hold a live key and choose Turn off — do that before uninstalling " +
+            "the plugin, because uninstalling does not.";
 
         /// <summary>The dialog a long press opens once live status is on: the mirror question.</summary>
         internal static String TurnOffDialog(String keyName, Int32 seconds) =>

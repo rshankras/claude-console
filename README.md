@@ -242,6 +242,8 @@ bash ~/.claude/claude-console/scripts/uninstall.sh --dry-run  # preview only
 
 It unwires the live status hooks surgically, removes `~/.claude/claude-console/` (voice helper, speech model, your `prompts.json`), the IPC files, the Microphone grant and any dev `.link`, and asks before deleting. What it touches, why the order matters, and the Windows caveat: [docs/uninstall.md](docs/uninstall.md).
 
+**Options+ cannot do any of that for you.** Its uninstall removes the plugin and nothing else, on macOS as on Windows: the hooks, the status line and `~/.claude/claude-console/` stay ([#55](https://github.com/rshankras/claude-console/issues/55)). If you would rather not run the script, hold a live key and choose **Turn off** *before* uninstalling. On macOS the hooks now check that their script still exists before running it, so a leftover entry pointing at a deleted folder is a silent no-op rather than a "hook error" on every turn.
+
 ## Developing
 
 Build, test, package and release notes are in [docs/development.md](docs/development.md); contributor rules in [CLAUDE.md](CLAUDE.md).

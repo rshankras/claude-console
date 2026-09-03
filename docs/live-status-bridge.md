@@ -12,17 +12,19 @@ When you turn it on, the plugin merges exactly this — appending only hooks tha
 {
   "statusLine": {
     "type": "command",
-    "command": "bash ~/.claude/claude-console/scripts/statusline-handler.sh"
+    "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/statusline-handler.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/statusline-handler.sh\""
   },
   "hooks": {
-    "UserPromptSubmit":  [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh busy" }] }],
-    "PostToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh busy" }] }],
-    "Notification":      [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh waiting" }] }],
-    "Stop":              [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh done" }] }],
-    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh permission" }] }]
+    "UserPromptSubmit":  [{ "hooks": [{ "type": "command", "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" busy" }] }],
+    "PostToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" busy" }] }],
+    "Notification":      [{ "hooks": [{ "type": "command", "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" waiting" }] }],
+    "Stop":              [{ "hooks": [{ "type": "command", "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" done" }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" permission" }] }]
   }
 }
 ```
+
+(The plugin writes the absolute path rather than `$HOME`.) Each command checks that its script still exists before running it: an Options+ uninstall removes the plugin but cannot remove this wiring, and without the guard a user who then deleted `~/.claude/claude-console/` saw "Stop hook error occurred" on every turn (#55). With it, a missing script is a silent no-op.
 
 The status‑line handler captures session state for the plugin and prints no visible status line. Claude Code reads hooks and `statusLine` at session start, so the keys come alive on your **next** session.
 

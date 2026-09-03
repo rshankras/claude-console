@@ -52,10 +52,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void MacOS_wiring_is_unchanged()
         {
-            // Phase 4 must not disturb the working macOS wiring.
-            Assert.Equal("bash /home/me/.claude/claude-console/scripts/statusline-handler.sh",
+            // Phase 4 must not disturb the working macOS wiring. The macOS form itself changed once
+            // since, deliberately, for #55 (the command checks that its script still exists) — the
+            // guard here is that the Windows flag never leaks into it. TolerantWiringTests owns the
+            // macOS form's meaning.
+            Assert.Equal("[ ! -f \"/home/me/.claude/claude-console/scripts/statusline-handler.sh\" ] || bash \"/home/me/.claude/claude-console/scripts/statusline-handler.sh\"",
                 BridgeWiring.StatuslineCommand(false, "/home/me/.claude/claude-console/scripts/statusline-handler.sh"));
-            Assert.Equal("bash /x/activity-hook.sh waiting",
+            Assert.Equal("[ ! -f \"/x/activity-hook.sh\" ] || bash \"/x/activity-hook.sh\" waiting",
                 BridgeWiring.ActivityCommand(false, "/x/activity-hook.sh", "waiting"));
         }
 
