@@ -110,25 +110,90 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>
         /// The command Claude Code should run to render the status line.
         ///
-        /// On macOS the command checks that the script still exists before running it. An Options+
+        /// On both platforms the command checks that the handler still exists before running it. An Options+
         /// uninstall removes the plugin but not the wiring (the SDK gives a plugin no uninstall
         /// moment — #55), so a user who then deletes ~/.claude/claude-console/ was left with five
         /// hooks and a status line pointing at nothing: Claude Code raised "Stop hook error occurred"
         /// on every turn (reproduced 2026-09-03). With the guard, a missing script is a silent no-op
-        /// and the script's own exit code still propagates when it is there. The Windows form is
-        /// unchanged: which shell runs a hook command there has not been verified.
+        /// and the handler's own exit code still propagates when it is there. Windows names cmd.exe
+        /// explicitly so the guard has stable semantics instead of depending on Claude Code's
+        /// current command runner.
         /// </summary>
         /// <param name="handlerPath">bash script path (macOS) or hook exe path (Windows).</param>
         internal static String StatuslineCommand(Boolean isWindows, String handlerPath) =>
-            isWindows ? $"{Quote(handlerPath)} statusline" : $"[ ! -f {Quote(handlerPath)} ] || bash {Quote(handlerPath)}";
+            isWindows
+                ? $"cmd.exe /d /c if exist {Quote(handlerPath)} {Quote(handlerPath)} statusline"
+                : $"[ ! -f {Quote(handlerPath)} ] || bash {Quote(handlerPath)}";
 
         /// <summary>
         /// The command Claude Code should run for an activity transition. <paramref name="state"/>
         /// is one of busy / waiting / done / permission. Same missing-script guard as the status
-        /// line on macOS (#55).
+        /// line on both platforms (#55).
         /// </summary>
         internal static String ActivityCommand(Boolean isWindows, String handlerPath, String state) =>
-            isWindows ? $"{Quote(handlerPath)} activity {state}" : $"[ ! -f {Quote(handlerPath)} ] || bash {Quote(handlerPath)} {state}";
+            isWindows
+                ? $"cmd.exe /d /c if exist {Quote(handlerPath)} {Quote(handlerPath)} activity {state}"
+                : $"[ ! -f {Quote(handlerPath)} ] || bash {Quote(handlerPath)} {state}";
+
+        /// <summary>
+        /// Upgrade commands that are already recognisably ours to the current guarded form, without
+        /// adding any wiring or touching a user's entries. This is intentionally narrower than an
+        /// enable/repair: existing 2.2.0 installs need the #55 missing-handler guard without making
+        /// installation itself an opt-in settings write. Returns whether the document changed.
+        /// </summary>
+        internal static Boolean UpgradeOwnedCommands(
+            JsonObject root,
+            Boolean isWindows,
+            String statusHandler,
+            String activityHandler)
+        {
+            var changed = false;
+
+            if (root?["statusLine"] is JsonObject statusLine &&
+                IsOurs(Str(statusLine["command"])))
+            {
+                var desired = StatuslineCommand(isWindows, statusHandler);
+                if (!String.Equals(Str(statusLine["command"]), desired, StringComparison.Ordinal))
+                {
+                    statusLine["command"] = desired;
+                    changed = true;
+                }
+            }
+
+            if (root?["hooks"] is not JsonObject hooks)
+            {
+                return changed;
+            }
+
+            foreach (var spec in HookSpecs)
+            {
+                if (hooks[spec.Event] is not JsonArray entries)
+                {
+                    continue;
+                }
+
+                var desired = ActivityCommand(isWindows, activityHandler, spec.State);
+                foreach (var entry in entries)
+                {
+                    if (entry?["hooks"] is not JsonArray inner)
+                    {
+                        continue;
+                    }
+
+                    foreach (var node in inner)
+                    {
+                        if (node is JsonObject hook && IsOurHook(Str(hook["command"])) &&
+                            !String.Equals(Str(hook["command"]), desired, StringComparison.Ordinal))
+                        {
+                            hook["command"] = desired;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+
+            return changed;
+        }
 
         /// <summary>
         /// Is this settings.json command already ours? Checked before rewriting, so a second

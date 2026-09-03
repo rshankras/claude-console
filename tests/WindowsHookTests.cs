@@ -27,8 +27,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Windows_wires_the_shim_with_a_verb()
         {
-            Assert.Equal($"\"{Exe}\" statusline", BridgeWiring.StatuslineCommand(true, Exe));
-            Assert.Equal($"\"{Exe}\" activity busy", BridgeWiring.ActivityCommand(true, Exe, "busy"));
+            Assert.Equal($"cmd.exe /d /c if exist \"{Exe}\" \"{Exe}\" statusline", BridgeWiring.StatuslineCommand(true, Exe));
+            Assert.Equal($"cmd.exe /d /c if exist \"{Exe}\" \"{Exe}\" activity busy", BridgeWiring.ActivityCommand(true, Exe, "busy"));
         }
 
         [Fact]
@@ -38,7 +38,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // shell. Unquoted, a path with spaces runs the wrong program with the rest as args.
             var spacey = @"C:\Program Files\Logi\ClaudeConsole\claude-console-hook.exe";
 
-            Assert.StartsWith($"\"{spacey}\"", BridgeWiring.StatuslineCommand(true, spacey));
+            var command = BridgeWiring.StatuslineCommand(true, spacey);
+            Assert.Contains($"if exist \"{spacey}\"", command);
+            Assert.EndsWith($"\"{spacey}\" statusline", command);
         }
 
         [Fact]
@@ -46,7 +48,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var quoted = "\"" + Exe + "\"";
 
-            Assert.Equal($"{quoted} statusline", BridgeWiring.StatuslineCommand(true, quoted));
+            Assert.Equal($"cmd.exe /d /c if exist {quoted} {quoted} statusline", BridgeWiring.StatuslineCommand(true, quoted));
         }
 
         [Fact]
@@ -146,16 +148,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var source = ReadShimSource();
             var main = source.Substring(source.IndexOf("private static Int32 Main(", StringComparison.Ordinal));
 
-            var watchdog = main.IndexOf("StartWatchdog(args);", StringComparison.Ordinal);
+            var watchdog = main.IndexOf("StartWatchdog()", StringComparison.Ordinal);
+            var breadcrumb = main.IndexOf("EntryBreadcrumb(args);", StringComparison.Ordinal);
             var dispatch = main.IndexOf("args[0] == \"statusline\"", StringComparison.Ordinal);
             Assert.True(watchdog >= 0, "Main no longer arms the watchdog");
+            Assert.True(watchdog < breadcrumb, "the watchdog must be armed before even diagnostic file I/O");
             Assert.True(watchdog < dispatch, "the watchdog must be armed before the verb dispatch");
 
             // Background, so it can never be the thing keeping the process alive; exit 0, so a
-            // timed-out hook is not a hook error in the user's session.
+            // timed-out hook is not a hook error in the user's session. Nothing may log before the
+            // exit on this thread: a blocked log write would defeat the watchdog itself.
             Assert.Contains("IsBackground = true", source);
             Assert.Contains("Environment.Exit(0)", source);
             Assert.Matches(@"WatchdogSeconds\s*=\s*\d+;", source);
+            var watchdogBody = source.Substring(source.IndexOf("private static Boolean StartWatchdog()", StringComparison.Ordinal));
+            watchdogBody = watchdogBody.Substring(0, watchdogBody.IndexOf("private static", 10, StringComparison.Ordinal));
+            Assert.DoesNotContain("Breadcrumb(", watchdogBody);
+            Assert.Contains("return false;", watchdogBody);
         }
 
         [Fact]
@@ -197,6 +206,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Matches(@"MaxConcurrentHooks\s*=\s*\d+;", source);
             Assert.Contains("Process.GetProcessesByName(name).Length", source);
             Assert.Contains("if (TooManyOfUs())", source);
+            Assert.Contains("MaxConcurrentHooks = 8", source);   // below QA's ~15-process freeze
+        }
+
+        [Fact]
+        public void A_timed_out_chained_status_line_is_killed_with_its_children()
+        {
+            var source = ReadShimSource();
+            var chained = source.Substring(source.IndexOf("private static void RunChained(", StringComparison.Ordinal));
+
+            Assert.Contains("p.StandardInput.WriteAsync(stdin)", chained);
+            Assert.Contains("if (!write.Wait(2000))", chained);
+            Assert.Contains("exited = p.WaitForExit(2000)", chained);
+            Assert.Contains("if (!exited)", chained);
+            Assert.Contains("KillTree(p)", chained);
+            Assert.Contains("process.Kill(entireProcessTree: true)", chained);
         }
 
         [Fact]

@@ -265,6 +265,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             return bridge.Grid.Sessions.TryGetValue(target, out var session) ? session.Risk : ApprovalRisk.None;
         }
 
+        /// <summary>
+        /// The pending indicator belongs on both decisions: it tells the user that either key can
+        /// answer now. Yes preserves the request's actual risk (amber or red); No is always amber
+        /// because rejecting never authorizes the destructive command. Kept pure for #60 tests.
+        /// </summary>
+        internal static ApprovalRisk IndicatorRisk(Boolean approve, ApprovalRisk pendingRisk) =>
+            approve ? pendingRisk : pendingRisk == ApprovalRisk.None ? ApprovalRisk.None : ApprovalRisk.Normal;
+
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             // Icon basename == actionParameter (yes/no/up/down/enter .png in Resources/icons), matching
@@ -296,12 +304,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     return KeyImage.RenderDecisionTile(imageSize, setup, KeyImage.Gray, approve: actionParameter == Yes, risk: ApprovalRisk.None);
                 }
 
+                var pendingRisk = TargetRisk();
                 return KeyImage.RenderDecisionTile(
                     imageSize, label, color,
                     approve: actionParameter == Yes,
-                    // The badge belongs on the action that authorizes the request. Rejecting is
-                    // safe, and duplicating the same dot on No made both choices look cautionary.
-                    risk: actionParameter == Yes ? TargetRisk() : ApprovalRisk.None);
+                    risk: IndicatorRisk(actionParameter == Yes, pendingRisk));
             }
 
             return KeyImage.RenderWidgetAction(imageSize, label, actionParameter);

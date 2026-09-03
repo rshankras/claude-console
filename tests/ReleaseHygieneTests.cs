@@ -47,6 +47,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void The_pack_clears_release_intermediates_and_verifies_embedded_resources()
+        {
+            // A direct Release Compile target can leave a newer intermediate DLL containing no
+            // resources. Unless obj/Release is cleared, the following normal build may reuse it and
+            // ship no icons, bridge scripts, uninstall script, or PluginConfiguration.xml.
+            var pack = File.ReadAllText(Path.Combine(RepoRoot(), "tools", "voice", "pack-release.sh"));
+
+            Assert.Contains("INTERMEDIATE_DIR=", pack);
+            Assert.Contains("rm -rf \"$BUILD_DIR\" \"$INTERMEDIATE_DIR\"", pack);
+            Assert.Contains("Loupedeck.ClaudeConsolePlugin.PluginConfiguration.xml", pack);
+            Assert.Contains("Loupedeck.ClaudeConsolePlugin.Resources.icons.allow.png", pack);
+            Assert.Contains("ClaudeConsole.statusline-handler.sh", pack);
+            Assert.Contains("CodexConsole.codex-hook.sh", pack);
+            Assert.Contains("grep -aFq \"$resource\" \"$PLUGIN_DLL\"", pack);
+        }
+
+        [Fact]
         public void The_pack_strips_the_smoke_marker_from_both_whisper_bundles()
         {
             var pack = File.ReadAllText(Path.Combine(RepoRoot(), "tools", "voice", "pack-release.sh"));

@@ -20,6 +20,7 @@ VER="${1:-1_1}"
 PRODUCT="${2:-ClaudeConsole}"
 OUT="$ROOT/${PRODUCT}_${VER}.lplug4"
 BUILD_DIR="$ROOT/bin/$PRODUCT/Release"
+INTERMEDIATE_DIR="$ROOT/src/Products/$PRODUCT/obj/Release"
 
 HOME_DIR="$HOME/.claude/claude-console"
 APP="$HOME_DIR/ClaudeVoiceHelper.app"
@@ -38,7 +39,10 @@ WIN_WBIN="${WINDOWS_WHISPER_DIR:-$HOME_DIR/whisper-bin-win}"
 # both packages gets one notarized helper, one Microphone grant and one 141 MB model download.
 case "$PRODUCT" in
   ClaudeConsole|VizhiCodex) SHIPS_VOICE=1 ;;
-  *)                        SHIPS_VOICE=0 ;;
+  *)
+    echo "error: unsupported product '$PRODUCT' (expected ClaudeConsole or VizhiCodex)." >&2
+    exit 2
+    ;;
 esac
 
 # --- preflight: the voice payload must exist and be notarized ------------------------------------
@@ -84,14 +88,37 @@ fi
 # twice ("already loaded") and it fails to load — which looks like "the plugin installed but the
 # profile didn't import", because the app registration never runs. A release build must never
 # touch the live plugin directory.
-# Wipe the output tree first. CopyPackage copies package/** in but never removes what has been
-# deleted since, so a file dropped from the repo lingers in bin/Release and ships anyway — a
-# retired profile rode along into 1.8.4 exactly this way.
-echo ">>> clearing stale build output"
-rm -rf "$BUILD_DIR"
+# Wipe BOTH halves of the Release build first. CopyPackage never removes deleted payload files from
+# bin/Release, so stale output has shipped before. The intermediate directory is just as important:
+# `dotnet build -t:Compile -c Release` writes a newer DLL there without first generating embedded
+# resources; a later incremental build can copy that DLL unchanged and ship zero icons, bridge
+# scripts, or PluginConfiguration.xml. A release must never depend on what command ran before it.
+echo ">>> clearing stale Release output and intermediates"
+rm -rf "$BUILD_DIR" "$INTERMEDIATE_DIR"
 
 echo ">>> building plugin (Release)"
 ( cd "$ROOT/src/Products/$PRODUCT" && dotnet build -c Release -p:SkipPluginLink=true >/dev/null )
+
+# Catch a resource-less incremental DLL at the artifact boundary as well as preventing it above.
+# These names live in the assembly manifest and therefore appear literally in the managed binary.
+# One common icon plus the product-specific bridge resource proves the three resource item groups
+# (icons, PluginConfiguration, bridge scripts) all reached the DLL that will actually be packed.
+PLUGIN_DLL="$BUILD_DIR/bin/${PRODUCT}Plugin.dll"
+case "$PRODUCT" in
+  ClaudeConsole) BRIDGE_RESOURCE="ClaudeConsole.statusline-handler.sh" ;;
+  VizhiCodex)    BRIDGE_RESOURCE="CodexConsole.codex-hook.sh" ;;
+esac
+for resource in \
+  "Loupedeck.ClaudeConsolePlugin.PluginConfiguration.xml" \
+  "Loupedeck.ClaudeConsolePlugin.Resources.icons.allow.png" \
+  "$BRIDGE_RESOURCE"
+do
+  if ! LC_ALL=C grep -aFq "$resource" "$PLUGIN_DLL"; then
+    echo "error: $PLUGIN_DLL is missing embedded resource '$resource'." >&2
+    echo "       Refusing to package an incomplete incremental build." >&2
+    exit 1
+  fi
+done
 
 # A shipped binary must not name the machine it was built on. Release builds set PathMap
 # (src/Directory.Build.props) so the recorded PDB path becomes /src/... instead of the author's

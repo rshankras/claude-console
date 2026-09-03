@@ -12,7 +12,7 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 
 - **A key per session** — run Claude in several Terminal tabs and each gets its own key: the project name on a black face, and a bar along the bottom saying what it's doing — **Thinking**, **Waiting**, **Allow?**, **Complete**. Press one to focus that tab and point every other key at it; the pinned session's bar is highlighted.
 - **Answer permission prompts** — **Yes** confirms the request Claude is waiting on, **No** dismisses it, and neither guesses: with nothing to approve they beep and do nothing. **Up / Down / Return** walk any menu. [Details](#answering-claudes-questions).
-- **See what you're approving** — the Yes key lights **amber** when Claude wants permission and **red** when the pending command is destructive (`git push`, `rm -rf`, `sudo`…); the session's own key reads **Allow?**. [Legend](#the-approval-badge).
+- **See what needs an answer** — both answer keys light **amber** when Claude wants permission; Yes turns **red** when approving would run a destructive command (`git push`, `rm -rf`, `sudo`…), while No stays amber. The session's own key reads **Allow?**. [Legend](#the-approval-badge).
 - **Live status** — Model, live cost and context usage read straight from Claude Code's status line (opt‑in: [the keys are the switch](#the-live-status-bridge)).
 - **One‑press prompts** — Fix Bug, Write Tests, Explore, Explain, Refactor, Review, Optimize, Security, Document, Deploy. One‑word keys, **full structured prompts** underneath — all [customizable](#customizing-prompt-keys), including **draft** keys you edit before sending.
 - **Git, through Claude** — Commit, Diff, Push, Create PR, Status, Log.
@@ -62,7 +62,7 @@ The Windows build reaches Claude a different way than macOS does, and a few diff
 
 **Elevated sessions cannot be controlled.** Options+ runs unelevated, and Windows blocks the console attach across integrity levels. Run Claude unelevated.
 
-**Before uninstalling on Windows, turn live status off** (hold a live key → *Turn off*). The cleanup script that does this on macOS is not installed on Windows yet ([#55](https://github.com/rshankras/claude-console/issues/55)), and an Options+ uninstall leaves the hooks in `~/.claude/settings.json` pointing at a deleted helper.
+**Before uninstalling on Windows, turn live status off** (hold a live key → *Turn off*). The cleanup script that does this on macOS is not installed on Windows yet ([#55](https://github.com/rshankras/claude-console/issues/55)), and an Options+ uninstall leaves the hooks in `~/.claude/settings.json`. Current wiring checks that the helper still exists, so a leftover is a silent no-op rather than an error, but it is still a leftover.
 
 ## Install (released plugin)
 
@@ -102,7 +102,7 @@ Notes:
 
 The live keys read state files under a private `/tmp/claude-console/` directory that Claude Code writes via a status‑line handler (Cost / Model / Context) and five hooks (Activity, and the approval badge). Everything in it is owner‑only (0700 dirs / 0600 files), so your prompts and session state are never readable by other users on the Mac.
 
-**Turning this on edits your Claude Code settings, so it happens only when you ask — nothing is written on install.** The switch is the key itself: press a live key once and it flashes *Press again*, posts a card in Options+ stating the change and, on macOS, asks on screen — **Not now** / **Turn on**. *Turn on*, or a second press of the same key within 15 seconds, merges a `statusLine` handler + five hooks into `~/.claude/settings.json`. It only **appends** hooks that aren't already there, **chains** an existing `statusLine` (yours still renders), and takes a **rolling backup** — `settings.json.claude-console.bak` is rewritten before *every* change the plugin makes. On macOS the keys come alive with each running session's **next activity** — no restart; on Windows start a **new Claude Code session**. Whenever live status is off, the **Yes / No** keys read the same **Set up** / **Off** word the live keys do, and every session key's state bar reads **Set up** / **Status off**: the approval badge, the answer keys and the state bars all depend on this wiring, and without it nothing they could show would be current.
+**Turning this on edits your Claude Code settings, so adding the wiring happens only when you ask — installation never opts you in.** The switch is the key itself: press a live key once and it flashes *Press again*, posts a card in Options+ stating the change and, on macOS, asks on screen — **Not now** / **Turn on**. *Turn on*, or a second press of the same key within 15 seconds, merges a `statusLine` handler + five hooks into `~/.claude/settings.json`. It only **appends** hooks that aren't already there, **chains** an existing `statusLine` (yours still renders), and takes a **rolling backup** — `settings.json.claude-console.bak` is rewritten before *every* change the plugin makes. An update may replace only commands already recognisably owned by Claude Console with their current missing-handler-safe form; it never adds wiring or touches user commands. On macOS the keys come alive with each running session's **next activity** — no restart; on Windows start a **new Claude Code session**. Whenever live status is off, the **Yes / No** keys read the same **Set up** / **Off** word the live keys do, and every session key's state bar reads **Set up** / **Status off**: the approval badge, the answer keys and the state bars all depend on this wiring, and without it nothing they could show would be current.
 
 **To take it back out:** hold a live key (a long press) and choose **Turn off** — or hold it again within 15 s — or, without the keypad, `bash ~/.claude/claude-console/scripts/uninstall.sh --unwire`. Either removes *only* the plugin's entries and leaves a marker (`~/.claude/claude-console/no-autowire`) so the keys read **Off** rather than **Set up**. Pressing a live key turns it back on.
 
@@ -141,13 +141,13 @@ When Claude asks something, answer from the keypad instead of the keyboard:
 
 ### The approval badge
 
-**The keys tell you what you'd be approving.** When Claude asks for permission, the **Yes** key carries a small filled dot in its top-right corner and the session's own key reads **Allow?**:
+**The keys tell you that an answer is pending and what Yes would approve.** When Claude asks for permission, both **Yes** and **No** carry a small filled dot in their top-right corner and the session's own key reads **Allow?**:
 
-| Badge on Yes | Meaning | What to do |
+| Badges | Meaning | What to do |
 |-------|---------|------------|
-| *(none)* | Nothing is waiting for an answer. | — |
-| 🟡 **Amber** | Waiting on you, and it's **routine** — reading a file, running a test, an edit. | Press **Yes** without looking. |
-| 🔴 **Red** | Waiting on something **destructive or outward-facing**. | Look at the screen first. |
+| *(none on either key)* | Nothing is waiting for an answer. | — |
+| 🟡 **Amber on Yes and No** | Waiting on you, and approving is **routine** — reading a file, running a test, an edit. | Press **Yes** or **No**. |
+| 🔴 **Red on Yes**, 🟡 **amber on No** | Yes would run something **destructive or outward-facing**; No would reject it. | Look before pressing **Yes**, or press **No** to reject. |
 
 Red is triggered by the pending command matching one of the patterns in [`src/Core/RiskClassifier.cs`](src/Core/RiskClassifier.cs) — `sudo`, `rm -rf`, `git push`, `git reset --hard`, `git clean -fd`, `--force`, `dd of=`, `mkfs`, `chmod 777`, `drop table`, `delete from`, piping a download into a shell, `kubectl delete`, `terraform apply`/`destroy`, `npm publish`, `gh release create`, `killall`, `shutdown`…
 
@@ -242,7 +242,7 @@ bash ~/.claude/claude-console/scripts/uninstall.sh --dry-run  # preview only
 
 It unwires the live status hooks surgically, removes `~/.claude/claude-console/` (voice helper, speech model, your `prompts.json`), the IPC files, the Microphone grant and any dev `.link`, and asks before deleting. What it touches, why the order matters, and the Windows caveat: [docs/uninstall.md](docs/uninstall.md).
 
-**Options+ cannot do any of that for you.** Its uninstall removes the plugin and nothing else, on macOS as on Windows: the hooks, the status line and `~/.claude/claude-console/` stay ([#55](https://github.com/rshankras/claude-console/issues/55)). If you would rather not run the script, hold a live key and choose **Turn off** *before* uninstalling. On macOS the hooks now check that their script still exists before running it, so a leftover entry pointing at a deleted folder is a silent no-op rather than a "hook error" on every turn.
+**Options+ cannot do any of that for you.** Its uninstall removes the plugin and nothing else, on macOS as on Windows: the hooks, the status line and `~/.claude/claude-console/` stay ([#55](https://github.com/rshankras/claude-console/issues/55)). If you would rather not run the script, hold a live key and choose **Turn off** *before* uninstalling. On both platforms current wiring checks that its script or exe exists before running it, so an entry left after the handler disappears is a silent no-op rather than a "hook error" on every turn. Existing owned commands are upgraded to this guarded form when this version first loads.
 
 ## Developing
 

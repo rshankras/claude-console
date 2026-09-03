@@ -106,6 +106,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void A_quarantine_failure_is_not_reported_as_a_success()
+        {
+            // Quarantine is metadata and therefore invisible to RuntimeTreeMatchesPackage. Simulate
+            // a successful copy followed by xattr failure: the new bundle must not be accepted as
+            // installed, and the previous working copy must come back.
+            WriteBundle(_runtime, "26 June build");
+            var sawXattr = false;
+
+            Int32 Run(String file, String[] args)
+            {
+                if (file == "/usr/bin/ditto")
+                {
+                    CopyBundle(args[0], args[1]);
+                    return 0;
+                }
+
+                sawXattr = true;
+                return 1;
+            }
+
+            Assert.False(BridgeManager.InstallBundleByReplacement(_package, _runtime, Run));
+
+            Assert.True(sawXattr);
+            Assert.Equal("26 June build", File.ReadAllText(Path.Combine(_runtime, "Contents", "MacOS", "Helper")));
+            Assert.False(Directory.Exists(_runtime + ".previous"));
+        }
+
+        [Fact]
         public void The_install_path_never_dittos_into_an_existing_helper_again()
         {
             // Pinned at the source: the in-place ditto is the bug, and it is one tempting line.
@@ -131,6 +159,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }
 
             throw new InvalidOperationException("could not locate the repo root");
+        }
+
+        private static void CopyBundle(String source, String destination)
+        {
+            foreach (var directory in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+            {
+                Directory.CreateDirectory(Path.Combine(destination, Path.GetRelativePath(source, directory)));
+            }
+            foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(destination, Path.GetRelativePath(source, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                File.Copy(file, target, overwrite: true);
+            }
         }
     }
 }

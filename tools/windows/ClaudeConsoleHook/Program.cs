@@ -29,14 +29,23 @@ internal static class Program
 {
     private static Int32 Main(String[] args)
     {
-        // FIRST, before anything that could hang, throw, or depend on the spawn environment:
-        // prove we were launched at all. Windows hardware reported hooks "exited with code 1"
+        // FIRST — literally before file I/O, process enumeration, console inspection, or any other
+        // work — arm the lifetime bound. The first #57 fix wrote its entry breadcrumb before this;
+        // a blocked append to the shared log would therefore hang outside the very watchdog meant
+        // to contain every hang. If a watchdog thread cannot be created, fail closed and leave: a
+        // dropped status update is safe, an unbounded hook is not.
+        if (!StartWatchdog())
+        {
+            return 0;
+        }
+
+        // Now prove we were launched. Windows hardware reported hooks "exited with code 1"
         // while the exe's every internal path was already guarded — the remaining question is
         // whether codex ever spawns the process. This line is the answer: if hook-invoked.log
         // is silent while codex reports failures, the exe was never the patient.
         EntryBreadcrumb(args);
 
-        // SECOND: make it impossible for this process to outlive its usefulness. Logitech QA's
+        // The watchdog makes it impossible for this process to outlive its usefulness. Logitech QA's
         // 2.2.0 retest found ~15 claude-console-hook processes left behind after one terminal
         // session had been opened and closed following a reboot, and the machine froze until the
         // plugin service was shut down (#57). Every path below that could block — a stdin that
@@ -44,7 +53,6 @@ internal static class Program
         // bounded, but the watchdog is what makes the guarantee: after WatchdogSeconds this
         // process exits whatever it is doing. A hook that has not finished by then has nothing
         // left to write, and a dropped status update is survivable; an unbounded process is not.
-        StartWatchdog(args);
         if (TooManyOfUs())
         {
             return 0;
@@ -112,30 +120,32 @@ internal static class Program
     /// event and lives for milliseconds; a count above this means they are stuck, and one more
     /// stuck copy helps nobody. Checked once, after the watchdog is armed.
     /// </summary>
-    private const Int32 MaxConcurrentHooks = 16;
+    private const Int32 MaxConcurrentHooks = 8;
 
     /// <summary>
     /// A background thread that ends the process after <see cref="WatchdogSeconds"/> regardless
     /// of what the main thread is blocked on (#57). Background so it never keeps the process
     /// alive itself; exit code 0 so a hook that timed out does not surface as a hook error in the
-    /// user's session — the breadcrumb beside the exe is where the timeout is recorded.
+    /// user's session. There is deliberately no logging before Environment.Exit here: synchronous
+    /// diagnostics can themselves block, which would defeat the only thread that guarantees
+    /// termination. EntryBreadcrumb already records which verb started.
     /// </summary>
-    private static void StartWatchdog(String[] args)
+    private static Boolean StartWatchdog()
     {
         try
         {
             var t = new Thread(() =>
             {
                 Thread.Sleep(TimeSpan.FromSeconds(WatchdogSeconds));
-                Breadcrumb($"watchdog: still running after {WatchdogSeconds}s, args=[{String.Join(" ", args)}] — exiting");
                 Environment.Exit(0);
             })
             { IsBackground = true, Name = "claude-console-hook watchdog" };
             t.Start();
+            return true;
         }
         catch
         {
-            // No watchdog is worse than a late one, but it must never stop the hook from running.
+            return false;
         }
     }
 
@@ -726,13 +736,39 @@ internal static class Program
             {
                 return;
             }
-            p.StandardInput.Write(stdin);
-            p.StandardInput.Close();
-            p.WaitForExit(4000);
+
+            var exited = false;
+            try
+            {
+                // A child that never reads stdin can fill the pipe and block Write forever. Bound
+                // the write separately from the process wait; the finally below kills the whole
+                // tree after any timeout or exception, so our watchdog cannot leave cmd.exe behind.
+                var write = p.StandardInput.WriteAsync(stdin);
+                if (!write.Wait(2000))
+                {
+                    return;
+                }
+                p.StandardInput.Close();
+                exited = p.WaitForExit(2000);
+            }
+            finally
+            {
+                if (!exited)
+                {
+                    KillTree(p);
+                }
+            }
         }
         catch
         {
             // The user's own status line failing must not take ours down with it.
         }
+    }
+
+    private static void KillTree(Process process)
+    {
+        // A child does not necessarily die when this hook exits. Kill the command tree so a stuck
+        // chained status line cannot replace the hook pile-up with orphaned cmd.exe processes.
+        try { process.Kill(entireProcessTree: true); } catch { /* gone */ }
     }
 }

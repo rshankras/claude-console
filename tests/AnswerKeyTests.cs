@@ -64,6 +64,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.NotEqual(yes, no);
         }
 
+        [Theory]
+        [InlineData(ApprovalRisk.None, ApprovalRisk.None, ApprovalRisk.None)]
+        [InlineData(ApprovalRisk.Normal, ApprovalRisk.Normal, ApprovalRisk.Normal)]
+        [InlineData(ApprovalRisk.High, ApprovalRisk.High, ApprovalRisk.Normal)]
+        public void Both_answer_keys_show_pending_while_only_yes_carries_destructive_risk(
+            ApprovalRisk pending,
+            ApprovalRisk yes,
+            ApprovalRisk no)
+        {
+            // #60: the dot is an availability cue, so hiding it from No made that key look inert.
+            // A dangerous command remains red on Yes; No stays amber because it rejects the action.
+            Assert.Equal(yes, AnswerCommand.IndicatorRisk(approve: true, pending));
+            Assert.Equal(no, AnswerCommand.IndicatorRisk(approve: false, pending));
+        }
+
         [Fact]
         public void A_press_before_setup_is_answered_before_the_decision_is_even_asked()
         {

@@ -11,10 +11,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using Xunit;
 
     /// <summary>
-    /// Opt-in live status, end to end against a real settings.json in a temp home (#31): a load
-    /// writes nothing; Enable writes exactly our entries and says so; Disable takes exactly them out
-    /// and leaves the Off marker; the keys' state follows the file. These are the facts Logitech QA
-    /// will retest by hand — pinned here first.
+    /// Opt-in live status, end to end against a real settings.json in a temp home (#31): a load never
+    /// adds wiring (but upgrades legacy commands already ours); Enable writes exactly our entries and
+    /// says so; Disable takes exactly them out and leaves the Off marker; the keys' state follows the
+    /// file. These are the facts Logitech QA will retest by hand — pinned here first.
     /// </summary>
     public class LiveStatusRoundTripTests
     {
@@ -241,6 +241,49 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Equal(LiveStatusState.Enabled, again.Bridge.LiveStatus);
             Assert.Equal(wired, rig.Home.ReadSettings());
+            Assert.Empty(again.Cards);
+        }
+
+        [Fact]
+        public void A_load_migrates_only_legacy_owned_commands_and_backs_up_the_old_form()
+        {
+            using var rig = new Rig();
+            rig.Bridge.RunLoadWiringForTests();
+            Assert.True(rig.Bridge.EnableLiveStatus());
+
+            // Recreate the unguarded form written by 2.2.0, plus a user's hook beside ours. A
+            // plugin update must make already-owned entries safe when their handler disappears,
+            // but must not treat that migration as permission to add or rewrite anything else.
+            var root = rig.Settings();
+            var statusHandler = rig.Bridge.BridgeHandlerPath(null);
+            var activityHandler = rig.Bridge.BridgeHandlerPath("busy");
+            root["statusLine"]["command"] = $"bash \"{statusHandler}\"";
+            foreach (var spec in BridgeWiring.HookSpecs)
+            {
+                var inner = root["hooks"][spec.Event][0]["hooks"].AsArray();
+                inner[0]["command"] = $"bash \"{activityHandler}\" {spec.State}";
+            }
+            root["hooks"]["Stop"][0]["hooks"].AsArray().Add(
+                new JsonObject { ["type"] = "command", ["command"] = "my-stop-handler" });
+            rig.Home.WriteSettings(root.ToJsonString());
+            var legacy = rig.Home.ReadSettings();
+
+            using var again = new Rig2(rig.Home);
+            again.Bridge.RunLoadWiringForTests();
+
+            var migrated = rig.Settings();
+            Assert.Equal(
+                BridgeWiring.StatuslineCommand(false, statusHandler),
+                migrated["statusLine"]["command"].GetValue<String>());
+            foreach (var spec in BridgeWiring.HookSpecs)
+            {
+                Assert.Equal(
+                    BridgeWiring.ActivityCommand(false, activityHandler, spec.State),
+                    migrated["hooks"][spec.Event][0]["hooks"][0]["command"].GetValue<String>());
+            }
+            Assert.Equal("my-stop-handler", migrated["hooks"]["Stop"][0]["hooks"][1]["command"].GetValue<String>());
+            Assert.Equal(legacy, File.ReadAllText(rig.Home.Backup));
+            Assert.Equal(LiveStatusState.Enabled, again.Bridge.LiveStatus);
             Assert.Empty(again.Cards);
         }
 

@@ -3,6 +3,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System;
     using System.Diagnostics;
     using System.IO;
+    using System.Text.Json.Nodes;
 
     using Loupedeck.ClaudeConsolePlugin.Platform;
 
@@ -43,14 +44,48 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void The_windows_commands_are_unchanged()
+        public void The_windows_commands_check_for_the_exe_before_running_it()
         {
-            // Which shell runs a hook command on Windows has not been verified, so the exe form
-            // stays exactly as the 2.2.0 Windows QA pass saw it.
             const String exe = @"C:\Users\me\.claude\claude-console\claude-console-hook.exe";
 
-            Assert.Equal($"\"{exe}\" activity busy", BridgeWiring.ActivityCommand(true, exe, "busy"));
-            Assert.Equal($"\"{exe}\" statusline", BridgeWiring.StatuslineCommand(true, exe));
+            Assert.Equal($"cmd.exe /d /c if exist \"{exe}\" \"{exe}\" activity busy", BridgeWiring.ActivityCommand(true, exe, "busy"));
+            Assert.Equal($"cmd.exe /d /c if exist \"{exe}\" \"{exe}\" statusline", BridgeWiring.StatuslineCommand(true, exe));
+        }
+
+        [Fact]
+        public void Existing_owned_commands_are_migrated_but_user_commands_are_not()
+        {
+            const String exe = @"C:\Users\me\.claude\claude-console\claude-console-hook.exe";
+            var root = new JsonObject
+            {
+                ["statusLine"] = new JsonObject
+                {
+                    ["type"] = "command",
+                    ["command"] = $"\"{exe}\" statusline",
+                },
+                ["hooks"] = new JsonObject
+                {
+                    ["Stop"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["hooks"] = new JsonArray
+                            {
+                                new JsonObject { ["type"] = "command", ["command"] = $"\"{exe}\" activity done" },
+                                new JsonObject { ["type"] = "command", ["command"] = "my-stop-handler" },
+                            },
+                        },
+                    },
+                },
+            };
+
+            Assert.True(BridgeWiring.UpgradeOwnedCommands(root, true, exe, exe));
+
+            Assert.Equal(BridgeWiring.StatuslineCommand(true, exe), root["statusLine"]["command"].GetValue<String>());
+            var commands = root["hooks"]["Stop"][0]["hooks"].AsArray();
+            Assert.Equal(BridgeWiring.ActivityCommand(true, exe, "done"), commands[0]["command"].GetValue<String>());
+            Assert.Equal("my-stop-handler", commands[1]["command"].GetValue<String>());
+            Assert.False(BridgeWiring.UpgradeOwnedCommands(root, true, exe, exe));
         }
 
         [Fact]
