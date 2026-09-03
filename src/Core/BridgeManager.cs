@@ -212,6 +212,19 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal IPlatformBridge Platform => _platform;
 
         /// <summary>
+        /// The platform's word on whether a running Claude Code session picks up the new wiring
+        /// by itself (IPlatformBridge.SettingsApplyLive) — decides "Turned on" vs "Restart Claude" (#58).
+        /// </summary>
+        internal Boolean SettingsApplyLive => _platform?.SettingsApplyLive ?? false;
+
+        /// <summary>
+        /// Whether this product's agent has a live-status switch at all. The answer keys and the
+        /// session faces gate their setup words on it, exactly as LiveStatusGate does: Codex keeps
+        /// its own hooks file and its keys must never say "Set up" (#58).
+        /// </summary>
+        internal Boolean LiveStatusApplies => this.Agent?.Capabilities.SettingsFileWiring ?? false;
+
+        /// <summary>
         /// Which agent the keys are driving. Actions read this to ask for the agent's own word for
         /// a verb, and to decide whether a key should exist at all — a Cost key on an agent that
         /// reports no cost hides rather than rendering a zero.
@@ -1380,7 +1393,9 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (outcome == WiringOutcome.Wrote)
                 {
                     _justEnabled = true;
-                    PluginLog.Info("Live status: enabled — wrote settings.json; start a NEW Claude Code session to activate the live keys");
+                    PluginLog.Info(this.SettingsApplyLive
+                        ? "Live status: enabled — wrote settings.json; running sessions pick it up on their next activity"
+                        : "Live status: enabled — wrote settings.json; start a NEW Claude Code session to activate the live keys");
                 }
                 else
                 {
@@ -1393,8 +1408,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     // Say so where the user is looking: a system notification now, and the message
                     // centre in Options+ as the record, with the undo one click away.
-                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
-                    this.Toast?.Invoke("Live status on", BridgeNotice.Wired(WiredHookCount));
+                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount, this.SettingsApplyLive), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    this.Toast?.Invoke("Live status on", BridgeNotice.Wired(WiredHookCount, this.SettingsApplyLive));
                 }
                 return true;
             }

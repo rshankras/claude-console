@@ -28,7 +28,7 @@ The status‑line handler captures session state for the plugin and prints no vi
 
 ## Wiring it by hand
 
-Add the block above to `~/.claude/settings.json` yourself (the scripts live at `~/.claude/claude-console/scripts/`, or use `scripts/` from a clone), merging the `hooks` into any existing block. Restart Claude Code.
+Add the block above to `~/.claude/settings.json` yourself (the scripts live at `~/.claude/claude-console/scripts/`, or use `scripts/` from a clone), merging the `hooks` into any existing block. On macOS a running session picks the change up on its next activity (verified 2026-09-02, Claude Code 2.1.258); on Windows restart Claude Code.
 
 ## Turning it off
 

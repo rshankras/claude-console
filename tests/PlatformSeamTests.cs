@@ -41,6 +41,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             public String Name => "fake";
             public Boolean IsSupported => true;
+            public Boolean SettingsApplyLive { get; set; } = true;
 
             public List<(String Session, String Text, Boolean Enter)> Texts { get; } = new();
             public List<(String Session, KeyStroke Key)> Keys { get; } = new();

@@ -3,6 +3,26 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+Answers to Logitech QA's retest of 2.2.0 (1 September).
+
+### Changed
+- **Yes / No say when they cannot work** (#58, retest item 2). The answer keys see a permission
+  prompt only through the `PermissionRequest` hook, which is part of the opt-in live-status wiring;
+  with it off they looked ready, beeped, and did nothing at a real prompt. They now read
+  **Set up** / **Off** on a grey tile, keeping the check and cross, and the first press posts a
+  card in Options+ naming the key that turns live status on. Every session key's state bar reads
+  **Set up** / **Status off** while the wiring is off, instead of a frozen **Complete** or
+  **Waiting** — nothing can update a session's state without the hooks, so nothing the bar could
+  say would be current.
+- **"Restart Claude" only where a restart is needed.** On macOS a running Claude Code session
+  picks the new hooks and status line up by itself (measured 2026-09-02 on Claude Code 2.1.258:
+  status line one second after *Turn on*, the approval hook three minutes later, no restart), so
+  the face after *Turn on* reads **Turned on** and the Options+ card no longer sends you to start a
+  new session. Windows keeps the restart wording: QA saw the keys stay inert there until Claude Code
+  was restarted, and the cause is not yet known.
+
 ## [2.2.0] — 2026-08-30
 
 The Logitech QA retest release. Twenty-five findings were filed against 2.0.1; this release

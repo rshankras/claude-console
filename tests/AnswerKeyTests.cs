@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
+    using System.IO;
 
     using Loupedeck.ClaudeConsolePlugin.Actions;
 
@@ -61,6 +62,40 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var no = AnswerCommand.Decide(approve: false, hasPendingApproval: true);
 
             Assert.NotEqual(yes, no);
+        }
+
+        [Fact]
+        public void A_press_before_setup_is_answered_before_the_decision_is_even_asked()
+        {
+            // #58, reproduced 2026-09-02: live status off, a real permission menu on screen, and four
+            // Yes presses logged as "no pending approval — ignored" with only a beep to say so. The
+            // PermissionRequest hook that would show the plugin the prompt is part of the opt-in
+            // wiring, so the press must be explained BEFORE Decide() — which can only ever say NoOp
+            // there — and the explanation must reach Options+, not just the log.
+            var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Core", "Actions", "AnswerCommand.cs"));
+            var body = source.Substring(source.IndexOf("private static void AnswerApproval(", StringComparison.Ordinal));
+
+            var setup = body.IndexOf("LiveStatusFace.SetupWord(bridge.LiveStatusApplies, bridge.LiveStatus)", StringComparison.Ordinal);
+            var decide = body.IndexOf("Decide(approve, hasPending)", StringComparison.Ordinal);
+            Assert.True(setup >= 0, "AnswerApproval no longer checks the live-status setup word");
+            Assert.True(decide > setup, "the setup check must come before the menu decision");
+            Assert.Contains("BridgeNotice.AnswerNeedsSetup()", body.Substring(setup, decide - setup));
+        }
+
+        private static String RepoRoot()
+        {
+            var dir = AppContext.BaseDirectory;
+            for (var i = 0; i < 8 && dir != null; i++)
+            {
+                if (Directory.Exists(Path.Combine(dir, "src", "Core")))
+                {
+                    return dir;
+                }
+
+                dir = Path.GetDirectoryName(dir);
+            }
+
+            throw new InvalidOperationException("could not locate the repo root");
         }
     }
 }

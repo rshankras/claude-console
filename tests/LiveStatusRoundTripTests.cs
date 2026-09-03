@@ -93,7 +93,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(LiveStatusState.JustEnabled, rig.Bridge.LiveStatus);
             var card = Assert.Single(rig.Cards);
             Assert.Equal(PluginStatus.Warning, card.Status);
-            Assert.Equal(BridgeNotice.Wired(5), card.Message);
+            Assert.Equal(BridgeNotice.Wired(5, settingsApplyLive: true), card.Message);
             Assert.Empty(rig.Home.LeftoverTemps());
         }
 

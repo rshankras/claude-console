@@ -110,9 +110,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(LiveStatusState.JustEnabled, rig.Bridge.LiveStatus);
             Assert.Equal(LiveStatusWiring.Enabled, BridgeWiring.Inspect(System.Text.Json.Nodes.JsonNode.Parse(rig.Home.ReadSettings()).AsObject()));
             Assert.False(rig.Gate.Armed);
-            Assert.Equal("Restart Claude", rig.Gate.Label);
+            // The fake platform applies settings live, so the moment after Turn on reads "Turned on";
+            // a platform that needs a restart would read "Restart Claude" here (#58).
+            Assert.Equal("Turned on", rig.Gate.Label);
             Assert.Equal(0, rig.ShortPresses);
-            Assert.Equal(BridgeNotice.Wired(5), rig.Cards[1].Message);
+            Assert.Equal(BridgeNotice.Wired(5, settingsApplyLive: true), rig.Cards[1].Message);
         }
 
         [Fact]

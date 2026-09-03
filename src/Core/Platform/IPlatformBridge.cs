@@ -37,6 +37,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// </summary>
         Boolean IsSupported { get; }
 
+        /// <summary>
+        /// Whether a Claude Code session that is ALREADY RUNNING picks up an edit to the user's
+        /// settings file — the hooks and status line the live keys depend on — without being
+        /// restarted. Decides the wording after Turn on: "Turned on" where the keys come alive on
+        /// the session's next activity, "Restart Claude" where they do not (#58).
+        ///
+        /// Verified true on macOS on 2026-09-02 (Claude Code 2.1.258): a session started with no
+        /// hooks wrote its status line one second after Turn on, and its PermissionRequest hook
+        /// fired three minutes later, with no restart. Logitech QA reported the opposite on
+        /// Windows (retest item 2: nothing until Claude Code is restarted) and the cause is not
+        /// known, so Windows keeps the restart wording until a Windows log says otherwise.
+        /// </summary>
+        Boolean SettingsApplyLive { get; }
+
         // ------------------------------------------------------------------------------------
         // Discovery
         // ------------------------------------------------------------------------------------

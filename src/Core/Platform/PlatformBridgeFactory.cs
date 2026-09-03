@@ -45,6 +45,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
         public Boolean IsSupported => false;
 
+        // Unknown OS, unknown behaviour: the restart wording is the one that cannot mislead.
+        public Boolean SettingsApplyLive => false;
+
         // null, not an empty set: "I don't know" — an empty set would tell the registry to reap
         // every live session (see IPlatformBridge.DiscoverSessions).
         public HashSet<String> DiscoverSessions() => null;

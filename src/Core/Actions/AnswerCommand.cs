@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Actions
 {
     using System;
+    using System.Threading;
 
     using Loupedeck.ClaudeConsolePlugin.Platform;
 
@@ -38,6 +39,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             // Repaint Yes/No when the targeted session starts or stops waiting, so the badge is live.
             BridgeManager.Instance.Grid.OnGridChanged += () =>
+            {
+                this.ActionImageChanged(Yes);
+                this.ActionImageChanged(No);
+            };
+
+            // And when live status is turned on or off: without that wiring the faces read
+            // "Set up" / "Off" instead of looking ready (#58).
+            BridgeManager.Instance.OnLiveStatusChanged += _ =>
             {
                 this.ActionImageChanged(Yes);
                 this.ActionImageChanged(No);
@@ -155,8 +164,29 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             return approve ? AnswerVia.MenuConfirm : AnswerVia.MenuReject;
         }
 
+        // The Options+ card that explains an inert Yes/No is posted once per load, not per press.
+        private static Int32 _setupNoticePosted;
+
         private static void AnswerApproval(BridgeManager bridge, Boolean approve)
         {
+            // Yes/No see a prompt only through the PermissionRequest hook, which is part of the
+            // opt-in wiring. With it absent this press cannot do anything — and a bare beep left
+            // the owner pressing Yes four times at a real prompt (#58). Say why, once, where the
+            // user is looking; the face already says "Set up" / "Off".
+            var setup = LiveStatusFace.SetupWord(bridge.LiveStatusApplies, bridge.LiveStatus);
+            if (setup != null)
+            {
+                bridge.Alert();
+                if (Interlocked.Exchange(ref _setupNoticePosted, 1) == 0)
+                {
+                    // Same README section as the live-status cards, but this card changed nothing,
+                    // so its button must not claim it did.
+                    bridge.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.AnswerNeedsSetup(), BridgeNotice.SupportUrl, BridgeNotice.AnswerNeedsSetupTitle);
+                }
+                PluginLog.Info($"AnswerCommand: {(approve ? "Yes" : "No")} pressed while live status reads '{setup}' — the PermissionRequest hook is not installed; press a live key to turn it on");
+                return;
+            }
+
             var target = bridge.RoutingTty();
             var hasPending = false;
             if (!String.IsNullOrEmpty(target) && bridge.Grid.Sessions.TryGetValue(target, out var session))
@@ -240,6 +270,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // you can see an answer is wanted, and whether to look first, before pressing anything.
             if (actionParameter == Yes || actionParameter == No)
             {
+                // Not wired: a grey tile keeps the check / cross, so the key is still recognisably
+                // Yes or No, and the word says what to do about it. No badge — nothing can be
+                // pending that the plugin could see (#58).
+                var bridge = BridgeManager.Instance;
+                var setup = LiveStatusFace.SetupWord(bridge.LiveStatusApplies, bridge.LiveStatus);
+                if (setup != null)
+                {
+                    return KeyImage.RenderDecisionTile(imageSize, setup, KeyImage.Gray, approve: actionParameter == Yes, risk: ApprovalRisk.None);
+                }
+
                 return KeyImage.RenderDecisionTile(
                     imageSize, label, color,
                     approve: actionParameter == Yes,

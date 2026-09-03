@@ -45,6 +45,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // backend's own statement of whether it has a working implementation, and Windows now does.
         public Boolean IsSupported => OperatingSystem.IsWindows();
 
+        // QA's 2.2.0 retest (item 2) saw Yes/No stay inert until Claude Code was restarted, and
+        // the cause is unexplained; the honest face there is still "Restart Claude". Flip this
+        // only on the strength of a Windows log — see IPlatformBridge.SettingsApplyLive (#58).
+        public Boolean SettingsApplyLive => false;
+
         /// <summary>
         /// Enumerates the process table. Injectable so the discovery logic is testable on any OS —
         /// the default implementation is the only Windows-only code in this class.
