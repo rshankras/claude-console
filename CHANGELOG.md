@@ -16,6 +16,13 @@ Answers to Logitech QA's retest of 2.2.0 (1 September).
   fails puts the old bundle back; and the install path reports the exit code and error of every
   tool it runs instead of logging success unconditionally.
 
+- **The service no longer warns about a missing `PluginConfiguration.xml`** (#63). The SDK looks
+  for a static plugin declaration embedded in every plugin and logged two WARN lines per load
+  when it found none — as it does for Zoom and for Logitech's own Generic plugin. Each product now
+  embeds one that declares nothing but its display name (every action is built at runtime), so
+  the load reads "Reading PluginConfiguration.xml" instead. The 2.2.0 retest response claimed a
+  load with zero WARN lines; that was wrong, and QA was right to say so.
+
 ### Changed
 - **Yes / No say when they cannot work** (#58, retest item 2). The answer keys see a permission
   prompt only through the `PermissionRequest` hook, which is part of the opt-in live-status wiring;

@@ -69,6 +69,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The SDK's static plugin declaration (see ClaudeConsolePlugin.csproj, #63). Both products
+         share the Loupedeck.ClaudeConsolePlugin namespace, so the logical name is the same; the
+         file differs only in the display name. -->
+    <EmbeddedResource Include="PluginConfiguration.xml">
+      <LogicalName>Loupedeck.ClaudeConsolePlugin.PluginConfiguration.xml</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The Codex launcher, embedded so scripts/ stays the single source of truth. Its CONTENT is
          part of Codex's hook-trust hash: changing this file asks every user to re-approve, so keep
          it a stable launcher and put churn in the C# (see CodexStateBridge). -->

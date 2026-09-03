@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+    <plugin displayName="Claude Console" homepage="https://www.rshankar.com/keypad-profiles/" />
+    <aliases />
+    <modes>
+        <mode name="Main" />
+    </modes>
+    <actions />
+    <layouts>
+        <layout name="Main" />
+    </layouts>
+</configuration>
