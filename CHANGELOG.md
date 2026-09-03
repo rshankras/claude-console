@@ -7,6 +7,15 @@ All notable changes to Claude Console are documented here. Format based on
 
 Answers to Logitech QA's retest of 2.2.0 (1 September).
 
+### Fixed
+- **The voice helper is replaced when the package carries a newer one** (#59, retest bug D). It
+  never was: macOS does not let another app write inside a signed app bundle that has been
+  launched and granted a permission — the system said so ("LogiPluginService was prevented from
+  modifying apps on your Mac") while the plugin logged "installing voice helper" and moved on. The
+  install now renames the old bundle aside and creates the new one, which macOS allows; a copy that
+  fails puts the old bundle back; and the install path reports the exit code and error of every
+  tool it runs instead of logging success unconditionally.
+
 ### Changed
 - **Yes / No say when they cannot work** (#58, retest item 2). The answer keys see a permission
   prompt only through the `PermissionRequest` hook, which is part of the opt-in live-status wiring;

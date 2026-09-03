@@ -1136,8 +1136,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     PluginLog.Info($"BridgeManager: installing voice helper from package -> {VoiceHelperApp}");
                     Directory.CreateDirectory(ClaudeConsoleHome);
-                    RunSync("/usr/bin/ditto", pkgHelper, VoiceHelperApp);
-                    RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", VoiceHelperApp);
+                    // Never ditto INTO an existing helper bundle — macOS refuses it (#59, below).
+                    if (InstallBundleByReplacement(pkgHelper, VoiceHelperApp))
+                    {
+                        PluginLog.Info("BridgeManager: voice helper installed");
+                    }
                 }
 
                 var pkgWhisper = Path.Combine(pkgVoice, "whisper-bin");
@@ -1250,15 +1253,120 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // Run a process and wait for it (ditto/xattr install steps must finish before launching).
-        private static void RunSync(String file, params String[] args)
+        /// <summary>
+        /// Installs a packaged app bundle by REPLACING the runtime one, never by writing into it.
+        ///
+        /// macOS refuses writes inside a signed app bundle that has been launched and granted a
+        /// permission unless the writer holds App Management: on 2026-09-03 every ditto and xattr
+        /// call into the installed helper returned "Operation not permitted" and the system posted
+        /// "LogiPluginService was prevented from modifying apps on your Mac" — while renaming the
+        /// bundle and creating a new one at the same path were allowed. That is how 2.2.0 logged
+        /// "installing voice helper" on every press and left the 26 June build on QA's disk, and
+        /// why the whisper folder (not an app bundle) was replaced fine on the same press (#59).
+        ///
+        /// So: move the old bundle aside, copy the package in as a NEW bundle, then remove the old
+        /// one — best effort, because deleting it may be refused for the same reason, in which case
+        /// it stays under a ".previous" name and is retried next time. If the copy fails, the old
+        /// bundle is put back so voice keeps working on what was there. Returns whether the runtime
+        /// bundle now matches the package. Internal for the test that drives it against temp dirs.
+        /// </summary>
+        internal static Boolean InstallBundleByReplacement(String packageBundle, String runtimeBundle)
         {
-            var psi = new ProcessStartInfo { FileName = file, UseShellExecute = false, CreateNoWindow = true };
+            var previous = runtimeBundle + ".previous";
+            try
+            {
+                if (Directory.Exists(previous))
+                {
+                    TryDeleteDirectory(previous);   // an earlier attempt's leftover; if it will not go, do not block on it
+                    if (Directory.Exists(previous))
+                    {
+                        previous = runtimeBundle + ".previous-" + DateTime.UtcNow.Ticks;
+                    }
+                }
+
+                if (Directory.Exists(runtimeBundle))
+                {
+                    Directory.Move(runtimeBundle, previous);
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, $"BridgeManager: could not move {runtimeBundle} aside — leaving it as it is");
+                return false;
+            }
+
+            RunSync("/usr/bin/ditto", packageBundle, runtimeBundle);
+            RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", runtimeBundle);
+
+            if (!RuntimeTreeMatchesPackage(packageBundle, runtimeBundle))
+            {
+                PluginLog.Warning($"BridgeManager: {runtimeBundle} still differs from the package after install — restoring the previous copy");
+                TryDeleteDirectory(runtimeBundle);   // a fresh, half-copied bundle: deletable
+                if (Directory.Exists(previous) && !Directory.Exists(runtimeBundle))
+                {
+                    try { Directory.Move(previous, runtimeBundle); }
+                    catch (Exception ex) { PluginLog.Warning(ex, $"BridgeManager: could not restore {runtimeBundle}"); }
+                }
+                return false;
+            }
+
+            TryDeleteDirectory(previous);
+            if (Directory.Exists(previous))
+            {
+                PluginLog.Info($"BridgeManager: the previous helper could not be deleted and stays at {previous} (harmless; it goes on the next install)");
+            }
+            return true;
+        }
+
+        private static void TryDeleteDirectory(String path)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    Directory.Delete(path, recursive: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, $"BridgeManager: could not delete {path}");
+            }
+        }
+
+        // Runs a tool to completion and reports how it went. The first version discarded the exit
+        // code and stderr, so an install that failed was logged as "installing …" and nothing else —
+        // QA watched a helper stay byte-for-byte the same across three presses under exactly that
+        // line (#59). Returns the exit code (-1 when the process could not start).
+        private static Int32 RunSync(String file, params String[] args)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = file,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true,
+            };
             foreach (var a in args)
             {
                 psi.ArgumentList.Add(a);
             }
-            using var p = Process.Start(psi);
-            p.WaitForExit();
+
+            try
+            {
+                using var p = Process.Start(psi);
+                var stderr = p.StandardError.ReadToEnd();
+                p.WaitForExit();
+                if (p.ExitCode != 0)
+                {
+                    PluginLog.Warning($"BridgeManager: {Path.GetFileName(file)} {String.Join(" ", args)} exited {p.ExitCode}: {stderr.Trim()}");
+                }
+                return p.ExitCode;
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, $"BridgeManager: could not run {file}");
+                return -1;
+            }
         }
 
         // ==========================================================================================
