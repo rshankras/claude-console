@@ -127,6 +127,43 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
         }
 
+        /// <summary>
+        /// The keypad answered this session's permission prompt, so the captured payload no longer
+        /// describes anything pending. An approval clears itself when the tool runs (PostToolUse
+        /// fires within ~170 ms); a rejection fires no hook at all, so the Yes dot and the "Allow?"
+        /// bar stayed lit until the session's NEXT prompt (#60). Drops the file and the in-memory
+        /// fields together, so the next poll cannot resurrect it, and repaints. Returns whether
+        /// anything was pending to clear.
+        /// </summary>
+        internal Boolean ClearPendingApproval(String tty)
+        {
+            if (String.IsNullOrEmpty(tty))
+            {
+                return false;
+            }
+
+            TryDelete(this.PendingFor(tty));
+
+            Boolean cleared;
+            lock (_lock)
+            {
+                cleared = _sessions.TryGetValue(tty, out var session) && !String.IsNullOrEmpty(session.PendingTool);
+                if (cleared)
+                {
+                    session.PendingTool = null;
+                    session.PendingCommand = null;
+                    session.Risk = ApprovalRisk.None;
+                }
+            }
+
+            if (cleared)
+            {
+                OnGridChanged?.Invoke();
+            }
+
+            return cleared;
+        }
+
         private String StateFor(String tty) => Path.Combine(_sessionsDir, tty + ".json");
         private String ActivityFor(String tty) => Path.Combine(_activityDir, tty + ".json");
         private String PendingFor(String tty) => Path.Combine(_activityDir, "pending-" + tty + ".json");

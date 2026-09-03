@@ -199,13 +199,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             switch (Decide(approve, hasPending))
             {
                 case AnswerVia.MenuConfirm:
-                    bridge.InjectKey(KeyStroke.Return);
-                    PluginLog.Info($"AnswerCommand: approved the pending prompt on {target} by key");
+                    Answered(bridge, target, bridge.InjectKey(KeyStroke.Return), "approved");
                     break;
 
                 case AnswerVia.MenuReject:
-                    bridge.InjectKey(KeyStroke.Escape);
-                    PluginLog.Info($"AnswerCommand: rejected the pending prompt on {target} by key");
+                    Answered(bridge, target, bridge.InjectKey(KeyStroke.Escape), "rejected");
                     break;
 
                 default:
@@ -215,6 +213,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     PluginLog.Info($"AnswerCommand: {(approve ? "Yes" : "No")} with no pending approval on {target ?? "(no target)"} — ignored");
                     break;
             }
+        }
+
+        // The keystroke landed or it did not — injection is atomic, so there is no third case. Only
+        // a keystroke that landed answered the prompt, so only then is the captured payload cleared:
+        // the rejection path fires no hook, and left the Yes dot and the "Allow?" bar lit until the
+        // session's next prompt (#60). A keystroke that did not land leaves the badge, which is
+        // still the truth, and says so.
+        private static void Answered(BridgeManager bridge, String target, InjectionOutcome outcome, String verb)
+        {
+            if (outcome == InjectionOutcome.Ok)
+            {
+                bridge.Grid.ClearPendingApproval(target);
+                PluginLog.Info($"AnswerCommand: {verb} the pending prompt on {target} by key");
+                return;
+            }
+
+            bridge.Alert();
+            PluginLog.Warning($"AnswerCommand: could not answer the pending prompt on {target} — {outcome}; the badge stays");
         }
 
         private static String LabelFor(String actionParameter)

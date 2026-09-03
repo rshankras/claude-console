@@ -16,6 +16,12 @@ Answers to Logitech QA's retest of 2.2.0 (1 September).
   **Set up** / **Status off** while the wiring is off, instead of a frozen **Complete** or
   **Waiting** — nothing can update a session's state without the hooks, so nothing the bar could
   say would be current.
+- **A No press clears the approval badge** (#60, retest bug C). An approval clears itself when
+  the tool runs and the next hook fires; a rejection fires no hook, so the Yes dot and the
+  session's **Allow?** bar stayed lit until that session's next prompt. The answer key now clears
+  the captured payload itself the moment its keystroke lands, and leaves it — and says so — if the
+  keystroke did not. Where the pending cue lives (Yes only, or both answer keys) is a design
+  question for Logitech's UX team and is unchanged.
 - **"Restart Claude" only where a restart is needed.** On macOS a running Claude Code session
   picks the new hooks and status line up by itself (measured 2026-09-02 on Claude Code 2.1.258:
   status line one second after *Turn on*, the approval hook three minutes later, no restart), so

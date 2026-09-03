@@ -82,6 +82,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("BridgeNotice.AnswerNeedsSetup()", body.Substring(setup, decide - setup));
         }
 
+        [Fact]
+        public void An_answer_that_landed_clears_the_badge_and_one_that_did_not_leaves_it()
+        {
+            // #60: after a No the menu was gone but the Yes dot and the "Allow?" bar stayed until
+            // the session's next prompt, because a rejection fires no hook. The answer key now
+            // clears the payload itself — but only on a keystroke the platform reports as landed.
+            // A badge left over a failed injection is still true; a badge cleared over one is a lie.
+            var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Core", "Actions", "AnswerCommand.cs"));
+            var body = source.Substring(source.IndexOf("private static void Answered(", StringComparison.Ordinal));
+
+            var landed = body.IndexOf("outcome == InjectionOutcome.Ok", StringComparison.Ordinal);
+            var clear = body.IndexOf("bridge.Grid.ClearPendingApproval(target)", StringComparison.Ordinal);
+            Assert.True(landed >= 0, "Answered() no longer checks whether the keystroke landed");
+            Assert.True(clear > landed, "the badge must be cleared only after the keystroke is known to have landed");
+            Assert.Contains("the badge stays", body);
+        }
+
         private static String RepoRoot()
         {
             var dir = AppContext.BaseDirectory;

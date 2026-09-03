@@ -156,7 +156,7 @@ Two things worth knowing:
 - It's a **hint, not a gate.** Claude Code's own prompt is still what actually holds the command, and the classifier deliberately leans toward warning you unnecessarily — a badge that stayed quiet on a real `git push --force` would be worse than one that cries wolf. (Bare generic flags like a lone `-f` are *not* flagged: a badge that lights on every other command teaches you to ignore it.)
 - The badge describes the session the answer keys are **pinned to**; with several sessions, the **Allow?** bar shows *which* one wants attention.
 
-The badge clears itself as soon as the session stops waiting. It's powered by a `PermissionRequest` hook the plugin wires up for you (see [The live status bridge](#the-live-status-bridge)); without it Yes/No have nothing to see and will beep.
+The badge clears itself as soon as the session stops waiting, or the moment you answer from the keypad — a rejection fires no hook, so the plugin clears it on its own. It's powered by a `PermissionRequest` hook the plugin wires up for you (see [The live status bridge](#the-live-status-bridge)); without it Yes/No have nothing to see — they read **Set up** / **Off** and a press beeps and explains itself in Options+.
 
 These keys focus Claude's Terminal tab automatically before typing (verified by its TTY), so they work even when another app is frontmost — if Terminal isn't running or the tab is gone, they beep and type nothing.
 

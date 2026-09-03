@@ -917,8 +917,10 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         /// <summary>
         /// Send a single key chord to the tracked Claude session, e.g. Shift+Tab to cycle modes.
+        /// Returns the platform's outcome, so a caller that must act only on a keystroke that
+        /// actually landed (the answer keys clearing a badge, #60) can tell.
         /// </summary>
-        public void InjectKey(KeyStroke key) => _platform.InjectKey(RoutingTty(), key);
+        public InjectionOutcome InjectKey(KeyStroke key) => _platform.InjectKey(RoutingTty(), key);
 
         /// <summary>
         /// Accept the highlighted autocomplete AND submit it in one press.
