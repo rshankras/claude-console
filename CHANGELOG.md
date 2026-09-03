@@ -16,6 +16,11 @@ Answers to Logitech QA's retest of 2.2.0 (1 September).
   fails puts the old bundle back; and the install path reports the exit code and error of every
   tool it runs instead of logging success unconditionally.
 
+- **The shipped PDB no longer names the build machine** (#62). The 2.2.0 symbol file carried the
+  author's worktree path twice — in the document paths of the engine's sources, which sit outside
+  the folder the Release PathMap covered, and in a Source Link map pointing at a repository that
+  is now private. Every source root is now mapped to `/_/`, Source Link is off, and the release
+  script's leak check reads the PDB as well as the DLL.
 - **Both whisper bundles are packed the same way** (#64). 2.2.0 stripped the transcription smoke
   marker from the Windows bundle but shipped the macOS one, which QA read as the smoke test having
   run for Mac only. Neither marker ships now, and the release script prints when each bundle last

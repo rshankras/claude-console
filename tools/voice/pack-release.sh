@@ -97,13 +97,23 @@ echo ">>> building plugin (Release)"
 # (src/Directory.Build.props) so the recorded PDB path becomes /src/... instead of the author's
 # home directory, which 2.0.1 disclosed to anyone running `strings` on the plugin (#26). Verify it
 # here rather than trusting the property: this is the only place a Release DLL actually exists.
-echo ">>> checking the Release DLL for build-machine paths"
-LEAKED="$(python3 - "$BUILD_DIR" <<'PY'
+echo ">>> checking the Release DLL and PDB for build-machine paths"
+# The PDB needs its own check: a portable PDB stores each path SEGMENT as a separate blob, so the
+# whole-path pattern below never matches one, and 2.2.0 shipped the author's worktree in the PDB
+# twice (document paths of the engine's sources + the Source Link map) with this check green (#62).
+# The user name and the checkout folder are the two segments that identify a machine.
+LEAKED="$(python3 - "$BUILD_DIR" "$(basename "$HOME")" "$(basename "$ROOT")" <<'PY'
 import pathlib, re, sys
+root, user, checkout = pathlib.Path(sys.argv[1]), sys.argv[2].encode(), sys.argv[3].encode()
 pat = re.compile(rb'(?:/Users/|[A-Za-z]:\\\\Users\\\\)[^\x00]{0,160}')
-for dll in pathlib.Path(sys.argv[1]).rglob('*.dll'):
+for dll in root.rglob('*.dll'):
     for hit in pat.findall(dll.read_bytes()):
         print(f"{dll.name}: {hit.decode(errors='replace')}")
+for pdb in root.rglob('*.pdb'):
+    data = pdb.read_bytes()
+    for needle in (user, checkout, b'raw.githubusercontent.com'):
+        if needle and needle in data:
+            print(f"{pdb.name}: contains '{needle.decode(errors='replace')}'")
 PY
 )"
 if [ -n "$LEAKED" ]; then

@@ -20,6 +20,33 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     public class ReleaseHygieneTests
     {
         [Fact]
+        public void Release_builds_map_every_source_root_and_ship_no_source_link()
+        {
+            var props = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Directory.Build.props"));
+            var release = Regex.Match(props, @"<PropertyGroup Condition=""'\$\(Configuration\)' == 'Release'"">(.*?)</PropertyGroup>", RegexOptions.Singleline).Groups[1].Value;
+
+            Assert.Contains("<Deterministic>true</Deterministic>", release);
+            // PathMap alone covers $(MSBuildProjectDirectory) — the product folder — and the
+            // engine's sources are two levels up. DeterministicSourcePaths maps every root to /_/.
+            Assert.Contains("<DeterministicSourcePaths>true</DeterministicSourcePaths>", release);
+            // The repo is private; a Source Link map into it is a leak with no benefit.
+            Assert.Contains("<EnableSourceLink>false</EnableSourceLink>", release);
+        }
+
+        [Fact]
+        public void The_pack_checks_the_pdb_as_well_as_the_dll()
+        {
+            // A portable PDB stores path segments as separate blobs, so the whole-path pattern that
+            // guards the DLL never matches one; the PDB check looks for the two segments that name
+            // a machine, and for the Source Link host.
+            var pack = File.ReadAllText(Path.Combine(RepoRoot(), "tools", "voice", "pack-release.sh"));
+
+            Assert.Contains("rglob('*.pdb')", pack);
+            Assert.Contains("basename \"$HOME\"", pack);
+            Assert.Contains("raw.githubusercontent.com", pack);
+        }
+
+        [Fact]
         public void The_pack_strips_the_smoke_marker_from_both_whisper_bundles()
         {
             var pack = File.ReadAllText(Path.Combine(RepoRoot(), "tools", "voice", "pack-release.sh"));
