@@ -88,6 +88,66 @@ reinstall the `.lplug4` and rerun it. If the service is not present, retain the 
 evidence. If Claude discovery fails, confirm that `claude` is still running in the other Windows
 Terminal tab.
 
+## Recorded result — 2026-09-03
+
+**Outcome: PASS at the package level only. Installed-plugin and end-to-end #57 coverage remain
+unverified. Do not close #57 from this result.**
+
+Environment:
+
+- Windows 10.0.26200, x64; MX Creative Keypad disconnected.
+- Logi Options+ 2.7.1922.0; LogiPluginService 6.4.1.3246 on .NET 10.0.6.
+- Native Claude Code 2.1.251.
+- QA branch tip `e41c199`; reviewed package SHA-256 matched
+  `464b1608bc2ec2a5bbfa1ed8e6f8a95a614d57502966780d2ddd558fa300d854`.
+
+`LogiPluginTool` 6.1.4.22672 verified the package, but installation returned `Plugin installation
+cannot start` while LogiPluginService was running. No installed `claude-console-hook.exe` appeared,
+so the installed-helper identity assertion remained a warning. The harness then exercised the
+helpers directly from the reviewed package, as permitted by this runbook.
+
+The Codex test runner supplied duplicate `PATH` and `Path` entries. They were normalized only in the
+PowerShell test process before invoking the unmodified branch harness; no persistent environment,
+Claude settings, package, or repository file was changed for the run.
+
+Repository check: the pre-commit `dotnet test` run reported 898 passed and 23 failed. The failures
+were confined to the branch's live-status round-trip/action/prompt tests; the staged change was this
+Markdown file only. A representative Windows failure expects the macOS scripts directory even though
+`EnsureBridgeInstalled()` intentionally returns without extracting those scripts on Windows. This is
+recorded as existing branch test debt, separate from the package-level helper result above.
+
+Combined evidence:
+
+```text
+PASS  package SHA-256 matches the final 91921cb build
+PASS  Windows hook, voice, and injection helpers are present
+WARN  Installed helper was not found. The package stress test will still run, but the Options+ install is not verified.
+PASS  statusline bounded-input check exited cleanly in 1667 ms with its input pipe deliberately left open
+PASS  PermissionRequest bounded-input check exited cleanly in 285 ms with its input pipe deliberately left open
+PASS  PermissionRequest helper wrote state in the isolated temp root
+PASS  Codex hook bounded-input check exited cleanly in 1827 ms with its input pipe deliberately left open
+PASS  Codex hook wrote state and returned its non-breaking {} contract
+INFO  starting 24 concurrent hook processes with every input pipe held open
+PASS  all 24 concurrent hooks exited within 5 seconds; no test-owned process piled up
+INFO  running the one-second Windows microphone self-test
+claude-console-voice selftest
+
+  capture devices: 1
+  recording 1s from the default mic...
+  captured 32578 bytes, RMS 732.3
+  mic is live
+PASS  Windows microphone helper self-test completed
+INFO  running Claude session discovery; keep a native Claude Code session open
+claude-console-inject selftest
+
+  claude.exe discovered with a readable start time and command line
+
+PASS  Windows injection helper discovered at least one candidate session
+
+RESULT: PASS — #57 no-keypad Windows helper checks
+The keypad-only #58 answer faces and #61 navigation notice still require Logitech hardware.
+```
+
 ## Return the evidence
 
 Copy the complete PowerShell output back into the Claude Console review conversation. It will be
