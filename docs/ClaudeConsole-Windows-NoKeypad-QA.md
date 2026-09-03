@@ -14,6 +14,9 @@ Put these two files together in the Windows `Downloads` folder:
 - `ClaudeConsole_2.2.0-retest-91921cb.lplug4`
 - `ClaudeConsole-Windows-NoKeypad-QA.ps1`
 
+Both files are published only on the `qa/windows-no-keypad` branch. This is a temporary QA branch;
+do not merge it into the release branch.
+
 Expected package SHA-256:
 
 ```text
