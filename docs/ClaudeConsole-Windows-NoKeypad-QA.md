@@ -2,10 +2,11 @@
 
 This runbook tests the final `fix/qa-retest-2.2.0` package built from commit `91921cb`.
 
-It can validate the release-blocking Windows hook-process fix (#57) without Logitech hardware. It
-also checks the packaged Windows microphone and Claude-session discovery helpers. The physical
-Yes/No faces and key behavior (#58), and the Windows Terminal navigation notice (#61), still require
-an MX Creative Keypad.
+Without Logitech hardware it validates the core lifetime and pile-up safeguards added for the
+release-blocking Windows hook-process defect (#57). It also checks the packaged Windows microphone
+and Claude-session discovery helpers. Closing #57 end to end still requires the plugin service to
+load the package and exercise its real hook wiring. The physical Yes/No faces and key behavior
+(#58), and the Windows Terminal navigation notice (#61), require an MX Creative Keypad.
 
 ## Files
 
@@ -27,10 +28,15 @@ The PowerShell script verifies this hash before running any test.
 
 ## 1. Install the package
 
-Double-click `ClaudeConsole_2.2.0-retest-91921cb.lplug4` and let Logi Options+ install it. Wait until
-the installation finishes.
+If the Windows laptop already has Logi Options+ **and LogiPluginService**, double-click
+`ClaudeConsole_2.2.0-retest-91921cb.lplug4` and let the service install it. A disconnected keypad
+does not itself prevent installation; the service, not the device, owns package installation.
 
-A keypad does not need to be connected for the helper and package checks below.
+If the laptop has never installed the Creative Console/plugin-service components, the `.lplug4`
+association or service may be absent. Do not treat that as a package failure. Continue with the
+helper checks below: the harness extracts and runs the Windows executables directly from the
+package. It will print a warning instead of the installed-helper identity PASS, and the result is
+then a package-level #57 safeguard test only—not an installed-plugin or end-to-end pass.
 
 ## 2. Start Claude Code
 
@@ -69,15 +75,18 @@ RESULT: PASS — #57 no-keypad Windows helper checks
 The run verifies:
 
 - The package is exactly the reviewed `91921cb` artifact.
-- The installed `claude-console-hook.exe` is byte-for-byte identical to the package.
+- When LogiPluginService installed the package, its `claude-console-hook.exe` is byte-for-byte
+  identical to the reviewed package. If the service is unavailable, this line is a warning.
 - Status-line, permission, and Codex hook invocations exit even when their input pipe remains open.
 - Twenty-four concurrent blocked-input hooks all exit within five seconds.
 - No test-owned hook process remains piled up.
 - The Windows microphone helper can access the default microphone.
 - The injection helper can discover a native Claude Code session.
 
-If the script reports that the installed helper was not found, reinstall the `.lplug4` and rerun it.
-If Claude discovery fails, confirm that `claude` is still running in the other Windows Terminal tab.
+If the script reports that the installed helper was not found and LogiPluginService is present,
+reinstall the `.lplug4` and rerun it. If the service is not present, retain the warning in the test
+evidence. If Claude discovery fails, confirm that `claude` is still running in the other Windows
+Terminal tab.
 
 ## Return the evidence
 
