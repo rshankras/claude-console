@@ -71,7 +71,7 @@
   <ItemGroup>
     <!-- The SDK's static plugin declaration (see ClaudeConsolePlugin.csproj, #63). Both products
          share the Loupedeck.ClaudeConsolePlugin namespace, so the logical name is the same; the
-         file differs only in the display name. -->
+         file differs only in the product display name (the inert parser sentinel is shared). -->
     <EmbeddedResource Include="PluginConfiguration.xml">
       <LogicalName>Loupedeck.ClaudeConsolePlugin.PluginConfiguration.xml</LogicalName>
     </EmbeddedResource>

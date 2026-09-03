@@ -14,11 +14,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// Logitech QA's 2.2.0 retest noted two WARN lines on every load, "'PluginConfiguration.xml'
     /// file not found for 'ClaudeConsole' plugin", where the 2.2.0 response had claimed zero. The
     /// file is an SDK mechanism (Logitech's Spotify and DefaultMac plugins embed it; Zoom and
-    /// Logitech's own @Generic do not and warn the same way). Every action here is dynamic, so the
-    /// file declares nothing — but the parser is strict about its SHAPE, and each missing piece was
-    /// found on 2026-09-03 by a load that failed with the keys dead ("'actions' tag not found",
-    /// then "'layout' tags not found", each refusing every dynamic action with a
-    /// NullReferenceException). These tests pin that shape so the next edit cannot repeat it.
+    /// Logitech's own @Generic do not and warn the same way). The parser is strict about its SHAPE,
+    /// and an empty actions collection still emits "Action tags not found". Because every real
+    /// action here is dynamic, the declaration contains one uniquely named command restricted to
+    /// deviceType 0 (None): it satisfies the legacy parser without appearing on a real device or
+    /// colliding with a runtime action. These tests pin that deliberately odd compatibility shim.
     /// </summary>
     public class PluginConfigurationTests
     {
@@ -40,7 +40,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Theory]
         [InlineData("ClaudeConsole")]
         [InlineData("VizhiCodex")]
-        public void The_declaration_has_every_tag_the_parser_insists_on_and_declares_no_actions(String product)
+        public void The_declaration_satisfies_the_legacy_parser_without_exposing_a_static_action(String product)
         {
             var doc = XDocument.Load(Path.Combine(RepoRoot(), "src", "Products", product, "PluginConfiguration.xml"));
             var root = doc.Root;
@@ -52,9 +52,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.NotNull(root.Element("actions"));                            // "'actions' tag not found"
             Assert.NotEmpty(root.Element("layouts").Elements("layout"));        // "'layout' tags not found"
 
-            // Nothing static: a declared action here would sit beside the dynamic one of the same
-            // name, and the two can disagree. The layout stays empty for the same reason.
-            Assert.Empty(root.Element("actions").Elements());
+            // An empty collection produces a second SDK warning, "Action tags not found". One
+            // command must therefore parse, but deviceType None ensures it is filtered from every
+            // real keypad. A unique name prevents AddDynamicAction from hitting a duplicate key.
+            var groups = root.Element("actions").Elements("group").ToArray();
+            var commands = groups.SelectMany(group => group.Elements("command")).ToArray();
+            var sentinel = Assert.Single(commands);
+
+            Assert.Single(groups);
+            Assert.Equal("Compatibility", (String)groups[0].Attribute("name"));
+            Assert.Equal("LegacyParserSentinel", (String)sentinel.Attribute("name"));
+            Assert.Equal("0", (String)sentinel.Attribute("deviceType"));
+            Assert.DoesNotContain(
+                Directory.GetFiles(Path.Combine(RepoRoot(), "src", "Core", "Actions"), "*.cs"),
+                file => Path.GetFileNameWithoutExtension(file) == (String)sentinel.Attribute("name"));
+
+            // The sentinel must not be assigned to a layout either.
             Assert.All(root.Element("layouts").Elements("layout"), layout => Assert.Empty(layout.Elements()));
         }
 

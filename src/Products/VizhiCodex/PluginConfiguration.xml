@@ -5,7 +5,12 @@
     <modes>
         <mode name="Main" />
     </modes>
-    <actions />
+    <actions>
+        <!-- See ClaudeConsole/PluginConfiguration.xml. This is hidden from all real devices. -->
+        <group name="Compatibility" displayName="Compatibility">
+            <command name="LegacyParserSentinel" displayName="Legacy parser sentinel" deviceType="0" />
+        </group>
+    </actions>
     <layouts>
         <layout name="Main" />
     </layouts>

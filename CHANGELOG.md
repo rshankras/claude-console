@@ -35,12 +35,14 @@ Answers to Logitech QA's retest of 2.2.0 (1 September).
   run for Mac only. Neither marker ships now, and the release script prints when each bundle last
   transcribed instead. The runtime comparison only looks at packaged files, so a marker left in
   the runtime home by an earlier install changes nothing.
-- **The service no longer warns about a missing `PluginConfiguration.xml`** (#63). The SDK looks
-  for a static plugin declaration embedded in every plugin and logged two WARN lines per load
-  when it found none — as it does for Zoom and for Logitech's own Generic plugin. Each product now
-  embeds one that declares nothing but its display name (every action is built at runtime), so
-  the load reads "Reading PluginConfiguration.xml" instead. The 2.2.0 retest response claimed a
-  load with zero WARN lines; that was wrong, and QA was right to say so.
+- **The service no longer warns about `PluginConfiguration.xml`** (#63). The SDK looks for a static
+  plugin declaration embedded in every plugin and logged two WARN lines per load when it found
+  none. A first fix embedded the required shape but left `<actions>` empty; a fresh packaged install
+  proved the parser merely replaced the old warnings with two `Action tags not found` warnings.
+  Every real action is dynamic, so each product now declares one uniquely named compatibility
+  command with `deviceType="0"` (None). It satisfies the legacy parser but is unavailable on every
+  real device, is absent from the layout, and cannot collide with a runtime action. The 2.2.0 retest
+  response claimed a load with zero WARN lines; that was wrong, and QA was right to say so.
 - **Release builds cannot reuse a resource-less intermediate DLL.** The packer now clears both
   `bin/Release` and `obj/Release`, then refuses the artifact unless the actual DLL being packed
   contains `PluginConfiguration.xml`, a common icon, and the product-specific bridge script. This

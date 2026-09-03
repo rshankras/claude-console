@@ -63,11 +63,10 @@
   <ItemGroup>
     <!-- The SDK's static plugin declaration, looked up at load as an embedded resource named
          <plugin class namespace>.PluginConfiguration.xml — Logitech's own Spotify plugin embeds
-         Loupedeck.SpotifyPlugin.PluginConfiguration.xml. Every action here is built at runtime, so
-         the file declares nothing but the display name; it exists so the service stops logging
-         "'PluginConfiguration.xml' file not found for 'ClaudeConsole' plugin" on every load (#63).
-         Keep it free of actions and layouts, or the static declaration and the dynamic actions can
-         disagree. -->
+         Loupedeck.SpotifyPlugin.PluginConfiguration.xml. Every real action here is built at
+         runtime. The legacy parser nevertheless warns when <actions> is empty, so the file carries
+         one uniquely named command restricted to deviceType 0 (None). That inert sentinel cannot
+         appear on a supported device or collide with a dynamic action; keep its layout empty (#63). -->
     <EmbeddedResource Include="PluginConfiguration.xml">
       <LogicalName>Loupedeck.ClaudeConsolePlugin.PluginConfiguration.xml</LogicalName>
     </EmbeddedResource>
