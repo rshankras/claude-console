@@ -16,6 +16,11 @@ Answers to Logitech QA's retest of 2.2.0 (1 September).
   fails puts the old bundle back; and the install path reports the exit code and error of every
   tool it runs instead of logging success unconditionally.
 
+- **Both whisper bundles are packed the same way** (#64). 2.2.0 stripped the transcription smoke
+  marker from the Windows bundle but shipped the macOS one, which QA read as the smoke test having
+  run for Mac only. Neither marker ships now, and the release script prints when each bundle last
+  transcribed instead. The runtime comparison only looks at packaged files, so a marker left in
+  the runtime home by an earlier install changes nothing.
 - **The service no longer warns about a missing `PluginConfiguration.xml`** (#63). The SDK looks
   for a static plugin declaration embedded in every plugin and logged two WARN lines per load
   when it found none — as it does for Zoom and for Logitech's own Generic plugin. Each product now

@@ -133,10 +133,13 @@ if [ "$SHIPS_VOICE" = "1" ]; then
   mkdir -p "$PKG_VOICE"
   ditto "$APP"  "$PKG_VOICE/ClaudeVoiceHelper.app"   # ditto preserves signature + exec bits
   ditto "$WBIN" "$PKG_VOICE/whisper-bin"
-  # The marker is proof for THIS script, not payload: RuntimeTreeMatchesPackage compares every
-  # packaged file, so anything copied here lands in every user's runtime home.
   ditto "$WIN_WBIN" "$PKG_VOICE/whisper-bin-win"
-  rm -f "$PKG_VOICE/whisper-bin-win/TRANSCRIPTION_SMOKE_OK"
+  # The markers are proof for THIS script, not payload: RuntimeTreeMatchesPackage compares every
+  # packaged file, so anything copied here lands in every user's runtime home. 2.2.0 stripped
+  # only the Windows one, and Logitech QA read the asymmetry as "the smoke test was run for Mac
+  # only" (#64). Both go; the attestation lives in this script's output instead.
+  rm -f "$PKG_VOICE/whisper-bin/TRANSCRIPTION_SMOKE_OK" "$PKG_VOICE/whisper-bin-win/TRANSCRIPTION_SMOKE_OK"
+  echo "   smoke-tested: macOS bundle $(date -r "$WBIN/TRANSCRIPTION_SMOKE_OK" '+%Y-%m-%d %H:%M'), Windows bundle $(date -r "$WIN_WBIN/TRANSCRIPTION_SMOKE_OK" '+%Y-%m-%d %H:%M') (markers not shipped)"
 else
   rm -rf "$PKG_VOICE"
 fi
