@@ -41,6 +41,17 @@ Answers to Logitech QA's retest of 2.2.0 (1 September).
   the load reads "Reading PluginConfiguration.xml" instead. The 2.2.0 retest response claimed a
   load with zero WARN lines; that was wrong, and QA was right to say so.
 
+### Fixed — Windows (code change; not yet run on Windows hardware)
+- **Hook processes can no longer pile up** (#57, retest bug A). QA found around fifteen
+  `claude-console-hook` processes left behind after one session following a reboot, and the
+  machine froze until the plugin service was stopped. The hook now ends itself after eight
+  seconds whatever it is blocked on, bounds every read of its input, bounds the PowerShell
+  lookup it falls back to when the kernel cannot name a parent process (the old code read that
+  output before applying its time limit, so a slow PowerShell start after boot held every hook
+  open), and refuses to start when more than sixteen copies are already running. Each timeout
+  is recorded in `hook-invoked.log` beside the exe. Built here, contract-tested, awaiting a
+  Windows retest.
+
 ### Changed
 - **Yes / No say when they cannot work** (#58, retest item 2). The answer keys see a permission
   prompt only through the `PermissionRequest` hook, which is part of the opt-in live-status wiring;

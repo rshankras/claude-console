@@ -133,6 +133,72 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("shared", source);
         }
 
+        // ---------------------------------------------------------------------------------------
+        // #57 — a hook must not be able to outlive its usefulness. Logitech QA's 2.2.0 retest
+        // found ~15 claude-console-hook processes left behind after one session following a
+        // reboot; the machine froze until the plugin service was shut down. Cannot be run here
+        // (win-x64 exe); the shape of the guarantee is pinned at the source instead.
+        // ---------------------------------------------------------------------------------------
+
+        [Fact]
+        public void The_shim_arms_a_watchdog_before_it_does_anything_that_could_block()
+        {
+            var source = ReadShimSource();
+            var main = source.Substring(source.IndexOf("private static Int32 Main(", StringComparison.Ordinal));
+
+            var watchdog = main.IndexOf("StartWatchdog(args);", StringComparison.Ordinal);
+            var dispatch = main.IndexOf("args[0] == \"statusline\"", StringComparison.Ordinal);
+            Assert.True(watchdog >= 0, "Main no longer arms the watchdog");
+            Assert.True(watchdog < dispatch, "the watchdog must be armed before the verb dispatch");
+
+            // Background, so it can never be the thing keeping the process alive; exit 0, so a
+            // timed-out hook is not a hook error in the user's session.
+            Assert.Contains("IsBackground = true", source);
+            Assert.Contains("Environment.Exit(0)", source);
+            Assert.Matches(@"WatchdogSeconds\s*=\s*\d+;", source);
+        }
+
+        [Fact]
+        public void The_shim_never_reads_stdin_without_a_time_limit()
+        {
+            // One unbounded ReadToEnd on Console.In is one way to live forever. The bounded reader
+            // is the only place allowed to call it.
+            var source = ReadShimSource();
+            var bounded = source.IndexOf("private static String ReadStdinBounded(", StringComparison.Ordinal);
+            var body = source.Substring(bounded);
+            var outside = source.Substring(0, bounded);
+
+            Assert.DoesNotContain("Console.In.ReadToEnd()", outside);
+            Assert.Contains("Console.In.ReadToEnd()", body.Substring(0, body.IndexOf("private static", 10, StringComparison.Ordinal)));
+            Assert.Contains("ReadStdinBounded(1500)", source.Substring(source.IndexOf("private static Int32 Statusline()", StringComparison.Ordinal), 400));
+            Assert.Contains("ReadStdinBounded(1500)", source.Substring(source.IndexOf("if (state == \"permission\")", StringComparison.Ordinal), 200));
+        }
+
+        [Fact]
+        public void The_powershell_fallback_waits_with_its_limit_before_reading()
+        {
+            // ReadToEnd() returns when PowerShell exits, so "read, then WaitForExit(4000)" waited
+            // for a PowerShell cold start however long it took — per hop, per hook. The read must
+            // be in the background and the wait must come first.
+            var source = ReadShimSource();
+            var wmic = source.Substring(source.IndexOf("private static String? Wmic(", StringComparison.Ordinal));
+
+            var read = wmic.IndexOf("ReadToEndAsync()", StringComparison.Ordinal);
+            var wait = wmic.IndexOf("WaitForExit(4000)", StringComparison.Ordinal);
+            Assert.True(read >= 0 && wait > read, "Wmic must start the read in the background and then wait with the limit");
+            Assert.DoesNotContain("StandardOutput.ReadToEnd()", wmic.Substring(0, wmic.IndexOf("private static", 10, StringComparison.Ordinal)));
+        }
+
+        [Fact]
+        public void The_shim_refuses_to_join_a_pile_up()
+        {
+            var source = ReadShimSource();
+
+            Assert.Matches(@"MaxConcurrentHooks\s*=\s*\d+;", source);
+            Assert.Contains("Process.GetProcessesByName(name).Length", source);
+            Assert.Contains("if (TooManyOfUs())", source);
+        }
+
         [Fact]
         public void The_shim_writes_atomically()
         {

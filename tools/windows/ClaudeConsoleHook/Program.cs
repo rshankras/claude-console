@@ -36,6 +36,20 @@ internal static class Program
         // is silent while codex reports failures, the exe was never the patient.
         EntryBreadcrumb(args);
 
+        // SECOND: make it impossible for this process to outlive its usefulness. Logitech QA's
+        // 2.2.0 retest found ~15 claude-console-hook processes left behind after one terminal
+        // session had been opened and closed following a reboot, and the machine froze until the
+        // plugin service was shut down (#57). Every path below that could block — a stdin that
+        // never reaches EOF, a PowerShell cold start after boot, a chained status line — is now
+        // bounded, but the watchdog is what makes the guarantee: after WatchdogSeconds this
+        // process exits whatever it is doing. A hook that has not finished by then has nothing
+        // left to write, and a dropped status update is survivable; an unbounded process is not.
+        StartWatchdog(args);
+        if (TooManyOfUs())
+        {
+            return 0;
+        }
+
         // A hook must never break the user's session. Any failure is silent and non-zero at worst;
         // Claude Code keeps going either way.
         try
@@ -90,6 +104,87 @@ internal static class Program
         }
     }
 
+    /// <summary>Longer than any healthy hook run (tens of milliseconds) by two orders of magnitude.</summary>
+    private const Int32 WatchdogSeconds = 8;
+
+    /// <summary>
+    /// More live copies of this exe than any healthy session produces. A hook is spawned per
+    /// event and lives for milliseconds; a count above this means they are stuck, and one more
+    /// stuck copy helps nobody. Checked once, after the watchdog is armed.
+    /// </summary>
+    private const Int32 MaxConcurrentHooks = 16;
+
+    /// <summary>
+    /// A background thread that ends the process after <see cref="WatchdogSeconds"/> regardless
+    /// of what the main thread is blocked on (#57). Background so it never keeps the process
+    /// alive itself; exit code 0 so a hook that timed out does not surface as a hook error in the
+    /// user's session — the breadcrumb beside the exe is where the timeout is recorded.
+    /// </summary>
+    private static void StartWatchdog(String[] args)
+    {
+        try
+        {
+            var t = new Thread(() =>
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(WatchdogSeconds));
+                Breadcrumb($"watchdog: still running after {WatchdogSeconds}s, args=[{String.Join(" ", args)}] — exiting");
+                Environment.Exit(0);
+            })
+            { IsBackground = true, Name = "claude-console-hook watchdog" };
+            t.Start();
+        }
+        catch
+        {
+            // No watchdog is worse than a late one, but it must never stop the hook from running.
+        }
+    }
+
+    /// <summary>Refuse to add to a pile-up: see <see cref="MaxConcurrentHooks"/>.</summary>
+    private static Boolean TooManyOfUs()
+    {
+        try
+        {
+            var name = Path.GetFileNameWithoutExtension(Environment.ProcessPath) ?? "claude-console-hook";
+            var count = Process.GetProcessesByName(name).Length;
+            if (count <= MaxConcurrentHooks)
+            {
+                return false;
+            }
+
+            Breadcrumb($"{count} copies of {name} are running (cap {MaxConcurrentHooks}) — not adding to the pile");
+            return true;
+        }
+        catch
+        {
+            return false;   // if the count itself fails, run normally: the watchdog still bounds us
+        }
+    }
+
+    /// <summary>A line in the breadcrumb log beside the exe (same file as EntryBreadcrumb).</summary>
+    private static void Breadcrumb(String message)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(Environment.ProcessPath);
+            if (dir == null)
+            {
+                return;
+            }
+
+            var path = Path.Combine(dir, "hook-invoked.log");
+            if (File.Exists(path) && new FileInfo(path).Length > 256 * 1024)
+            {
+                return;
+            }
+
+            File.AppendAllText(path, $"{DateTime.UtcNow:o} {message}{Environment.NewLine}");
+        }
+        catch
+        {
+            // Diagnostics must never become the failure they exist to explain.
+        }
+    }
+
     private static Int32 Usage()
     {
         Console.Error.WriteLine("usage: claude-console-hook statusline | activity <state> | codex <event> | selftest");
@@ -112,7 +207,10 @@ internal static class Program
 
     private static Int32 Statusline()
     {
-        var json = Console.In.ReadToEnd();
+        // Bounded, like the codex path: a stdin that never reaches EOF is the simplest way for
+        // this process to live forever (#57). Claude writes the JSON and closes the pipe at once,
+        // so 1.5 s is generous; on timeout there is nothing to write and the exe exits clean.
+        var json = ReadStdinBounded(1500);
         if (String.IsNullOrWhiteSpace(json))
         {
             return 0;
@@ -176,7 +274,7 @@ internal static class Program
         {
             if (state == "permission")
             {
-                var stdin = Console.IsInputRedirected ? Console.In.ReadToEnd() : "";
+                var stdin = ReadStdinBounded(1500);   // bounded: see Statusline (#57)
                 if (!String.IsNullOrWhiteSpace(stdin))
                 {
                     WriteAtomic(pending, stdin);
@@ -550,12 +648,18 @@ internal static class Program
                 return null;
             }
 
-            var outp = p.StandardOutput.ReadToEnd();
+            // The 4 s limit only means something if the read does not block first: ReadToEnd()
+            // returns when PowerShell closes its stdout, i.e. when it exits — so the old order
+            // (read, then wait) waited for a PowerShell cold start however long it took, per hop,
+            // per hook. Right after a reboot that is the pile-up QA saw (#57). Read in the
+            // background, wait with the limit, and kill what has not answered.
+            var output = p.StandardOutput.ReadToEndAsync();
             if (!p.WaitForExit(4000))
             {
                 try { p.Kill(entireProcessTree: true); } catch { /* gone */ }
                 return null;
             }
+            var outp = output.Wait(500) ? output.Result : "";
             return String.IsNullOrWhiteSpace(outp) ? null : outp.Trim();
         }
         catch
