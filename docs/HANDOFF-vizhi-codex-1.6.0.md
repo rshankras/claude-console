@@ -1,9 +1,31 @@
 # Handoff — Vizhi Codex 1.6.0 on Windows
 
-**Last updated:** 2026-09-01
+**Last updated:** 2026-09-04
 **Branch:** `feat/vizhi-codex-1.6.0`
 **Remote:** `origin/feat/vizhi-codex-1.6.0`
 **Worktree:** `C:\Users\sahan\ravi\claude-console\.worktrees\vizhi-codex-1.6.0`
+
+## Deferred Windows hardware pass — 2026-09-04
+
+The owner does not currently have the Windows laptop, and the available remote Windows tester
+does not have an MX Creative Keypad. The Windows implementation is committed and pushed, but the
+final physical-device pass is intentionally deferred while Logitech's findings against Vizhi 1.5.3
+are addressed. Do not interpret the pause as a failed test, and do not redesign the transport before
+reproducing a problem on the current build.
+
+A Windows machine without the keypad may still run the build, hook, state, approval-envelope and
+multi-session checks below. It cannot close the release gate. When keypad hardware is available,
+resume at **First actions for the next session** and complete these physical checks after a clean
+Logi Plugin Service restart:
+
+1. Approval state lights the targeted Session and Yes/No keys.
+2. Physical **Yes** confirms only the visible pending approval.
+3. Physical **No** rejects it and never approves the highlighted action.
+4. Two session keys focus the corresponding Windows Terminal tabs and retain distinct folder names.
+
+Until those four checks pass, describe Windows as implemented and automation-tested, not
+hardware-verified. The branch remains the source of truth; no Windows release/tag should be cut from
+an older local checkout.
 
 ## Current outcome
 
