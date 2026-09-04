@@ -211,6 +211,40 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Answering_from_the_keypad_clears_the_badge_without_waiting_for_a_hook()
+        {
+            // #60: a rejection fires no hook, so the payload — and with it the Yes dot and the
+            // "Allow?" bar — stayed lit until the session's NEXT prompt. Reproduced 2026-09-02 and
+            // twice more on the #58 hardware pass. The answer key clears it, file and fields
+            // together, so the next poll cannot bring it back.
+            WriteSession("ttys001");
+            WriteActivity("ttys001", "waiting");
+            var pending = WritePending(@"{""tool_name"":""Bash"",""tool_input"":{""command"":""rm ~/Desktop/test58.txt""}}");
+
+            var grid = new SessionRegistry(_sessionsDir, _activityDir, Path.Combine(_root, "registry.json")) { Agent = new Agents.ClaudeCodeAdapter() };
+            grid.Refresh(new HashSet<String> { "ttys001" });
+            Assert.Equal("Bash", grid.SlotSession(1).PendingTool);
+            var repaints = 0;
+            grid.OnGridChanged += () => repaints++;
+
+            Assert.True(grid.ClearPendingApproval("ttys001"));
+
+            Assert.False(File.Exists(pending));
+            Assert.Null(grid.SlotSession(1).PendingTool);
+            Assert.Null(grid.SlotSession(1).PendingCommand);
+            Assert.Equal(ApprovalRisk.None, grid.SlotSession(1).Risk);
+            Assert.Equal(1, repaints);
+
+            // The next poll reads the disk again and must find nothing to resurrect.
+            grid.Refresh(new HashSet<String> { "ttys001" });
+            Assert.Equal(ApprovalRisk.None, grid.SlotSession(1).Risk);
+
+            // Nothing left to clear: no repaint, and the caller is told so.
+            Assert.False(grid.ClearPendingApproval("ttys001"));
+            Assert.Equal(1, repaints);
+        }
+
+        [Fact]
         public void Risk_change_repaints_the_keys()
         {
             WriteSession("ttys001");

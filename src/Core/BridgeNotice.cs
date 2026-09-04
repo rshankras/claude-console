@@ -28,10 +28,25 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// in it, duplicating the button underneath. Those live in the README section the button
         /// opens (pinned by test), so the card says only what happened and that it is reversible.
         /// </summary>
-        internal static String Wired(Int32 hookCount) =>
+        internal static String Wired(Int32 hookCount, Boolean settingsApplyLive) =>
             $"Claude Console added its status line and {hookCount} hooks to ~/.claude/settings.json so the " +
-            "live keys work from your next Claude Code session. Your own entries were kept and the previous " +
-            "file was backed up.";
+            (settingsApplyLive
+                ? "live keys work — running sessions pick it up on their next activity. "
+                : "live keys work from your next Claude Code session. ") +
+            "Your own entries were kept and the previous file was backed up.";
+
+        /// <summary>
+        /// Posted once per load when Yes or No is pressed while the live keys are not set up. The
+        /// answer keys see a permission prompt only through the PermissionRequest hook, which is
+        /// part of the opt-in wiring — so a press then can do nothing, and the card says what would
+        /// make it work instead of leaving a beep to explain itself (#58).
+        /// </summary>
+        internal const String AnswerNeedsSetupTitle = "How to turn the live keys on";
+
+        internal static String AnswerNeedsSetup() =>
+            "Yes and No can only see a permission prompt once the live keys are on: press Cost, Context or " +
+            "Activity and choose Turn on (or press it twice). That adds 5 hooks and a status line to " +
+            "~/.claude/settings.json; nothing changes until you do.";
 
         /// <summary>The message posted when Disable Live Status (or a marker found at load) removed the wiring.</summary>
         internal static String Unwired() =>
@@ -56,7 +71,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal static String TurnOnDialog(String keyName, Int32 seconds) =>
             "Turn on the live keys? This adds 5 hooks and a status line to ~/.claude/settings.json so " +
             "Cost, Context and Activity show live data. Your own entries are kept and the file is backed " +
-            $"up first. (Pressing {keyName} again within {seconds} s also turns it on.)";
+            $"up first. (Pressing {keyName} again within {seconds} s also turns it on.)\n\n" +
+            // Options+ cannot undo this edit when the plugin is uninstalled (#55): the moment of
+            // consent is the one place the user is guaranteed to read how to take it out again.
+            "To take it out later, hold a live key and choose Turn off — do that before uninstalling " +
+            "the plugin, because uninstalling does not.";
 
         /// <summary>The dialog a long press opens once live status is on: the mirror question.</summary>
         internal static String TurnOffDialog(String keyName, Int32 seconds) =>

@@ -165,8 +165,26 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData(LiveStatusState.Enabled, null, false)]
         public void Each_state_has_its_words_and_knows_whether_setup_is_owed(LiveStatusState state, String label, Boolean needsSetup)
         {
-            Assert.Equal(label, LiveStatusFace.Label(state));
+            // Words for a platform where a running session does NOT pick the wiring up (Windows,
+            // on QA's evidence). The macOS variant differs in one state only — see the next test.
+            Assert.Equal(label, LiveStatusFace.Label(state, settingsApplyLive: false));
             Assert.Equal(needsSetup, LiveStatusFace.NeedsSetup(state));
+        }
+
+        [Fact]
+        public void Where_settings_apply_live_the_only_word_that_changes_is_the_one_after_turn_on()
+        {
+            // Measured on macOS 2026-09-02: a session started without hooks wrote its status line
+            // a second after Turn on and fired PermissionRequest three minutes later — no restart.
+            // "Restart Claude" there sends the user to do something unnecessary (#58).
+            Assert.Equal("Turned on", LiveStatusFace.Label(LiveStatusState.JustEnabled, settingsApplyLive: true));
+            foreach (var state in Enum.GetValues<LiveStatusState>())
+            {
+                if (state != LiveStatusState.JustEnabled)
+                {
+                    Assert.Equal(LiveStatusFace.Label(state, settingsApplyLive: false), LiveStatusFace.Label(state, settingsApplyLive: true));
+                }
+            }
         }
 
         [Fact]
@@ -175,8 +193,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // The voice failure faces are held to thirteen characters; these live on the same keys.
             foreach (var state in Enum.GetValues<LiveStatusState>())
             {
-                var label = LiveStatusFace.Label(state);
-                Assert.True(label == null || label.Length <= 14, $"'{label}' is too long for a key face");
+                foreach (var live in new[] { true, false })
+                {
+                    var label = LiveStatusFace.Label(state, live);
+                    Assert.True(label == null || label.Length <= 14, $"'{label}' is too long for a key face");
+                }
             }
             Assert.True(LiveStatusFace.PressHint.Length <= 13, $"'{LiveStatusFace.PressHint}' is too long for a flash");
         }

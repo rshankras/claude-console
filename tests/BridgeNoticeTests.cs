@@ -24,14 +24,43 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void The_wired_notice_says_what_was_added_and_that_it_is_reversible()
         {
-            var text = BridgeNotice.Wired(5);
+            foreach (var text in new[] { BridgeNotice.Wired(5, settingsApplyLive: true), BridgeNotice.Wired(5, settingsApplyLive: false) })
+            {
+                Assert.Contains("5 hooks", text);
+                Assert.Contains("status line", text);
+                Assert.Contains("~/.claude/settings.json", text);
+                Assert.Contains("backed up", text);
+                // The reassurance that matters most to someone who did not ask for the edit.
+                Assert.Contains("Your own entries were kept", text);
+            }
+        }
 
-            Assert.Contains("5 hooks", text);
-            Assert.Contains("status line", text);
+        [Fact]
+        public void The_wired_notice_promises_a_restart_only_where_the_platform_needs_one()
+        {
+            // macOS was measured on 2026-09-02: a running session picked the hooks up by itself, so
+            // "your next Claude Code session" there sends the user to restart for nothing (#58).
+            // Windows still has QA's word that a restart was needed, so the sentence stays there.
+            Assert.Contains("next activity", BridgeNotice.Wired(5, settingsApplyLive: true));
+            Assert.DoesNotContain("next Claude Code session", BridgeNotice.Wired(5, settingsApplyLive: true));
+            Assert.Contains("next Claude Code session", BridgeNotice.Wired(5, settingsApplyLive: false));
+        }
+
+        [Fact]
+        public void The_answer_keys_notice_names_the_switch_and_changes_nothing_by_itself()
+        {
+            // Posted when Yes/No is pressed before setup (#58): it must say which keys are the
+            // switch, and that reading the card has not edited anything.
+            var text = BridgeNotice.AnswerNeedsSetup();
+
+            Assert.Contains("Yes and No", text);
+            Assert.Contains("Turn on", text);
             Assert.Contains("~/.claude/settings.json", text);
-            Assert.Contains("backed up", text);
-            // The reassurance that matters most to someone who did not ask for the edit.
-            Assert.Contains("Your own entries were kept", text);
+            Assert.Contains("nothing changes until you do", text);
+            // Seen on the hardware pass: the generic button read "What was changed, and how to undo
+            // it" under a card that had changed nothing. This card has its own button.
+            Assert.NotEqual(BridgeNotice.SupportTitle, BridgeNotice.AnswerNeedsSetupTitle);
+            Assert.DoesNotContain("changed", BridgeNotice.AnswerNeedsSetupTitle);
         }
 
         [Fact]
@@ -40,7 +69,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // The first version was eight lines: the backup's absolute path (with the user's home
             // directory in it) and the undo command, under a button that already led to both. The
             // mechanics belong behind the button; the card says what happened.
-            foreach (var text in new[] { BridgeNotice.Wired(5), BridgeNotice.Unwired(), BridgeNotice.PressAgain("Activity", 10) })
+            foreach (var text in new[] { BridgeNotice.Wired(5, true), BridgeNotice.Wired(5, false), BridgeNotice.Unwired(), BridgeNotice.PressAgain("Activity", 10), BridgeNotice.AnswerNeedsSetup() })
             {
                 Assert.DoesNotContain("/Users/", text);
                 Assert.DoesNotContain("uninstall.sh", text);

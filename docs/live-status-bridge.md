@@ -2,7 +2,7 @@
 
 The live keys (Cost / Model / Context / Activity, and the approval badge) read state files under a private `/tmp/claude-console/` directory that Claude Code writes via a status‑line handler (`sessions/`) and five hooks (`activity/`). Everything in it is owner‑only (0700 dirs / 0600 files).
 
-Turning this on edits `~/.claude/settings.json`, so the plugin does it only when you ask — by pressing a live key (see the [README](../README.md#the-live-status-bridge)). On every load the plugin writes its two scripts to `~/.claude/claude-console/scripts/` (its own folder) and leaves `settings.json` alone until then.
+Turning this on edits `~/.claude/settings.json`, so the plugin adds wiring only when you ask — by pressing a live key (see the [README](../README.md#the-live-status-bridge)). On every macOS load the plugin writes its two scripts to `~/.claude/claude-console/scripts/` (its own folder). An update may migrate only commands already marked as Claude Console's to their current guarded form; it never adds wiring or touches another command.
 
 ## What the switch writes
 
@@ -12,23 +12,25 @@ When you turn it on, the plugin merges exactly this — appending only hooks tha
 {
   "statusLine": {
     "type": "command",
-    "command": "bash ~/.claude/claude-console/scripts/statusline-handler.sh"
+    "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/statusline-handler.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/statusline-handler.sh\""
   },
   "hooks": {
-    "UserPromptSubmit":  [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh busy" }] }],
-    "PostToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh busy" }] }],
-    "Notification":      [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh waiting" }] }],
-    "Stop":              [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh done" }] }],
-    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "bash ~/.claude/claude-console/scripts/activity-hook.sh permission" }] }]
+    "UserPromptSubmit":  [{ "hooks": [{ "type": "command", "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" busy" }] }],
+    "PostToolUse":       [{ "matcher": "*", "hooks": [{ "type": "command", "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" busy" }] }],
+    "Notification":      [{ "hooks": [{ "type": "command", "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" waiting" }] }],
+    "Stop":              [{ "hooks": [{ "type": "command", "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" done" }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "[ ! -f \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" ] || bash \"$HOME/.claude/claude-console/scripts/activity-hook.sh\" permission" }] }]
   }
 }
 ```
+
+(The plugin writes the absolute path rather than `$HOME`.) Each command checks that its handler still exists before running it: an Options+ uninstall removes the plugin but cannot remove this wiring, and without the guard a user who then deleted `~/.claude/claude-console/` saw "Stop hook error occurred" on every turn (#55). With it, a missing handler is a silent no-op. Windows uses the same entries with an explicit command-shell guard, for example `cmd.exe /d /c if exist "C:\…\claude-console-hook.exe" "C:\…\claude-console-hook.exe" activity busy`.
 
 The status‑line handler captures session state for the plugin and prints no visible status line. Claude Code reads hooks and `statusLine` at session start, so the keys come alive on your **next** session.
 
 ## Wiring it by hand
 
-Add the block above to `~/.claude/settings.json` yourself (the scripts live at `~/.claude/claude-console/scripts/`, or use `scripts/` from a clone), merging the `hooks` into any existing block. Restart Claude Code.
+Add the block above to `~/.claude/settings.json` yourself (the scripts live at `~/.claude/claude-console/scripts/`, or use `scripts/` from a clone), merging the `hooks` into any existing block. On macOS a running session picks the change up on its next activity (verified 2026-09-02, Claude Code 2.1.258); on Windows restart Claude Code.
 
 ## Turning it off
 

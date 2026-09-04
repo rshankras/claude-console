@@ -45,6 +45,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             }
 
             _bridge.Grid.OnGridChanged += this.OnGridChanged;
+            _bridge.OnLiveStatusChanged += _ => this.OnGridChanged();   // the setup word comes and goes with the wiring (#58)
         }
 
         private void OnGridChanged()
@@ -94,13 +95,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // from the approved mockup rather than the coral used by the action icons. The mockup
             // keeps the state word white on both active and inactive bars.
             var barColor = active ? KeyImage.SelectionOrange : KeyImage.Gray;
-            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session), barColor, darkText: false);
+            var setupWord = LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
+            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord), barColor, darkText: false);
         }
 
         // Colour communicates routing; this word communicates session state. Keeping those two
         // signals independent means an inactive session can still say "Allow?" without looking active.
-        private static String StateWord(GridSession session)
+        // setupWord is the bar's live-status word ("Set up" / "Status off") while the wiring is absent, else null.
+        internal static String StateWord(GridSession session, String setupWord)
         {
+            // With the wiring off, nothing can write a session's state or its pending payload, so
+            // whatever the registry holds is frozen at best — the owner read "Complete" under a
+            // live permission prompt, and a relaunched tab wore its predecessor's "Waiting" (#58).
+            // The bar says what would change that, for every session, until the wiring is on.
+            if (setupWord != null)
+            {
+                return setupWord;
+            }
+
             if (session.Risk != ApprovalRisk.None)
             {
                 return "Allow?";

@@ -212,6 +212,19 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal IPlatformBridge Platform => _platform;
 
         /// <summary>
+        /// The platform's word on whether a running Claude Code session picks up the new wiring
+        /// by itself (IPlatformBridge.SettingsApplyLive) — decides "Turned on" vs "Restart Claude" (#58).
+        /// </summary>
+        internal Boolean SettingsApplyLive => _platform?.SettingsApplyLive ?? false;
+
+        /// <summary>
+        /// Whether this product's agent has a live-status switch at all. The answer keys and the
+        /// session faces gate their setup words on it, exactly as LiveStatusGate does: Codex keeps
+        /// its own hooks file and its keys must never say "Set up" (#58).
+        /// </summary>
+        internal Boolean LiveStatusApplies => this.Agent?.Capabilities.SettingsFileWiring ?? false;
+
+        /// <summary>
         /// Which agent the keys are driving. Actions read this to ask for the agent's own word for
         /// a verb, and to decide whether a key should exist at all — a Cost key on an agent that
         /// reports no cost hides rather than rendering a zero.
@@ -904,8 +917,10 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         /// <summary>
         /// Send a single key chord to the tracked Claude session, e.g. Shift+Tab to cycle modes.
+        /// Returns the platform's outcome, so a caller that must act only on a keystroke that
+        /// actually landed (the answer keys clearing a badge, #60) can tell.
         /// </summary>
-        public void InjectKey(KeyStroke key) => _platform.InjectKey(RoutingTty(), key);
+        public InjectionOutcome InjectKey(KeyStroke key) => _platform.InjectKey(RoutingTty(), key);
 
         /// <summary>
         /// Accept the highlighted autocomplete AND submit it in one press.
@@ -1121,8 +1136,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     PluginLog.Info($"BridgeManager: installing voice helper from package -> {VoiceHelperApp}");
                     Directory.CreateDirectory(ClaudeConsoleHome);
-                    RunSync("/usr/bin/ditto", pkgHelper, VoiceHelperApp);
-                    RunSync("/usr/bin/xattr", "-dr", "com.apple.quarantine", VoiceHelperApp);
+                    // Never ditto INTO an existing helper bundle — macOS refuses it (#59, below).
+                    if (InstallBundleByReplacement(pkgHelper, VoiceHelperApp))
+                    {
+                        PluginLog.Info("BridgeManager: voice helper installed");
+                    }
                 }
 
                 var pkgWhisper = Path.Combine(pkgVoice, "whisper-bin");
@@ -1235,15 +1253,142 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // Run a process and wait for it (ditto/xattr install steps must finish before launching).
-        private static void RunSync(String file, params String[] args)
+        /// <summary>
+        /// Installs a packaged app bundle by REPLACING the runtime one, never by writing into it.
+        ///
+        /// macOS refuses writes inside a signed app bundle that has been launched and granted a
+        /// permission unless the writer holds App Management: on 2026-09-03 every ditto and xattr
+        /// call into the installed helper returned "Operation not permitted" and the system posted
+        /// "LogiPluginService was prevented from modifying apps on your Mac" — while renaming the
+        /// bundle and creating a new one at the same path were allowed. That is how 2.2.0 logged
+        /// "installing voice helper" on every press and left the 26 June build on QA's disk, and
+        /// why the whisper folder (not an app bundle) was replaced fine on the same press (#59).
+        ///
+        /// So: move the old bundle aside, copy the package in as a NEW bundle, then remove the old
+        /// one — best effort, because deleting it may be refused for the same reason, in which case
+        /// it stays under a ".previous" name and is retried next time. If the copy fails, the old
+        /// bundle is put back so voice keeps working on what was there. Returns whether the runtime
+        /// bundle now matches the package. Internal for the test that drives it against temp dirs.
+        /// </summary>
+        internal static Boolean InstallBundleByReplacement(
+            String packageBundle,
+            String runtimeBundle,
+            Func<String, String[], Int32> runTool = null)
         {
-            var psi = new ProcessStartInfo { FileName = file, UseShellExecute = false, CreateNoWindow = true };
+            runTool ??= (file, args) => RunSync(file, args);
+            var previous = runtimeBundle + ".previous";
+            try
+            {
+                if (Directory.Exists(previous))
+                {
+                    TryDeleteDirectory(previous);   // an earlier attempt's leftover; if it will not go, do not block on it
+                    if (Directory.Exists(previous))
+                    {
+                        previous = runtimeBundle + ".previous-" + DateTime.UtcNow.Ticks;
+                    }
+                }
+
+                if (Directory.Exists(runtimeBundle))
+                {
+                    Directory.Move(runtimeBundle, previous);
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, $"BridgeManager: could not move {runtimeBundle} aside — leaving it as it is");
+                return false;
+            }
+
+            var copyExit = runTool("/usr/bin/ditto", new[] { packageBundle, runtimeBundle });
+            if (copyExit != 0)
+            {
+                return RestorePreviousBundle(runtimeBundle, previous, "copy failed");
+            }
+
+            // A byte-for-byte match does not prove the app is launchable: quarantine is filesystem
+            // metadata, outside RuntimeTreeMatchesPackage. The first fix logged an xattr failure but
+            // still returned true and announced "voice helper installed". Treat it as an install
+            // failure and restore the known-working helper instead.
+            var quarantineExit = runTool("/usr/bin/xattr", new[] { "-dr", "com.apple.quarantine", runtimeBundle });
+            if (quarantineExit != 0)
+            {
+                return RestorePreviousBundle(runtimeBundle, previous, "quarantine removal failed");
+            }
+
+            if (!RuntimeTreeMatchesPackage(packageBundle, runtimeBundle))
+            {
+                return RestorePreviousBundle(runtimeBundle, previous, "installed tree still differs from the package");
+            }
+
+            TryDeleteDirectory(previous);
+            if (Directory.Exists(previous))
+            {
+                PluginLog.Info($"BridgeManager: the previous helper could not be deleted and stays at {previous} (harmless; it goes on the next install)");
+            }
+            return true;
+        }
+
+        private static Boolean RestorePreviousBundle(String runtimeBundle, String previous, String reason)
+        {
+            PluginLog.Warning($"BridgeManager: {reason} for {runtimeBundle} — restoring the previous copy");
+            TryDeleteDirectory(runtimeBundle);   // a fresh, half-copied bundle: deletable
+            if (Directory.Exists(previous) && !Directory.Exists(runtimeBundle))
+            {
+                try { Directory.Move(previous, runtimeBundle); }
+                catch (Exception ex) { PluginLog.Warning(ex, $"BridgeManager: could not restore {runtimeBundle}"); }
+            }
+            return false;
+        }
+
+        private static void TryDeleteDirectory(String path)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    Directory.Delete(path, recursive: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, $"BridgeManager: could not delete {path}");
+            }
+        }
+
+        // Runs a tool to completion and reports how it went. The first version discarded the exit
+        // code and stderr, so an install that failed was logged as "installing …" and nothing else —
+        // QA watched a helper stay byte-for-byte the same across three presses under exactly that
+        // line (#59). Returns the exit code (-1 when the process could not start).
+        private static Int32 RunSync(String file, params String[] args)
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = file,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardError = true,
+            };
             foreach (var a in args)
             {
                 psi.ArgumentList.Add(a);
             }
-            using var p = Process.Start(psi);
-            p.WaitForExit();
+
+            try
+            {
+                using var p = Process.Start(psi);
+                var stderr = p.StandardError.ReadToEnd();
+                p.WaitForExit();
+                if (p.ExitCode != 0)
+                {
+                    PluginLog.Warning($"BridgeManager: {Path.GetFileName(file)} {String.Join(" ", args)} exited {p.ExitCode}: {stderr.Trim()}");
+                }
+                return p.ExitCode;
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, $"BridgeManager: could not run {file}");
+                return -1;
+            }
         }
 
         // ==========================================================================================
@@ -1296,8 +1441,9 @@ namespace Loupedeck.ClaudeConsolePlugin
             { IsBackground = true, Name = "claude-bridge-autowire" }.Start();
         }
 
-        // The load-time body. Installs scripts, honours a marker, and reads the state — it never
-        // writes our wiring INTO settings.json; only EnableLiveStatus does that.
+        // The load-time body. Installs scripts, honours a marker, and reads the state. It never ADDS
+        // wiring to settings.json; only EnableLiveStatus does that. It may replace commands already
+        // recognisably ours with their current uninstall-safe form (#55).
         private void LoadWiring()
         {
             lock (_wiringLock)
@@ -1315,6 +1461,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Unwired(), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
                     }
+                }
+                else
+                {
+                    this.UpgradeOwnedWiringIfNeeded();
                 }
 
                 this.RefreshLiveStatusLocked();
@@ -1380,7 +1530,9 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (outcome == WiringOutcome.Wrote)
                 {
                     _justEnabled = true;
-                    PluginLog.Info("Live status: enabled — wrote settings.json; start a NEW Claude Code session to activate the live keys");
+                    PluginLog.Info(this.SettingsApplyLive
+                        ? "Live status: enabled — wrote settings.json; running sessions pick it up on their next activity"
+                        : "Live status: enabled — wrote settings.json; start a NEW Claude Code session to activate the live keys");
                 }
                 else
                 {
@@ -1393,8 +1545,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     // Say so where the user is looking: a system notification now, and the message
                     // centre in Options+ as the record, with the undo one click away.
-                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
-                    this.Toast?.Invoke("Live status on", BridgeNotice.Wired(WiredHookCount));
+                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.Wired(WiredHookCount, this.SettingsApplyLive), BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                    this.Toast?.Invoke("Live status on", BridgeNotice.Wired(WiredHookCount, this.SettingsApplyLive));
                 }
                 return true;
             }
@@ -1724,6 +1876,30 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         // The number of hooks the notice prints — the length of the one table the wirer iterates.
         internal static Int32 WiredHookCount => BridgeWiring.HookSpecs.Length;
+
+        // A normal plugin update cannot add wiring without the user's opt-in. It can, however,
+        // repair the commands that user already asked us to own. In particular, 2.2.0 commands
+        // invoked a now-missing script/exe after Options+ removed the package. Replace only entries
+        // carrying our marker, through the same backed-up and race-checked writer as every other
+        // settings change. No card: this is an idempotent safety migration, not a new opt-in.
+        private void UpgradeOwnedWiringIfNeeded()
+        {
+            var isWindows = OperatingSystem.IsWindows();
+            var statusHandler = this.BridgeHandlerPath(null);
+            var activityHandler = this.BridgeHandlerPath("busy");
+            if (isWindows && (statusHandler == null || activityHandler == null))
+            {
+                PluginLog.Warning("Live status: hook shim is unavailable — existing wiring was not migrated");
+                return;
+            }
+
+            if (RewriteSettings(
+                root => BridgeWiring.UpgradeOwnedCommands(root, isWindows, statusHandler, activityHandler),
+                out var wrote) && wrote)
+            {
+                PluginLog.Info("Live status: upgraded existing owned commands to the missing-handler-safe form");
+            }
+        }
 
         // The opt-out's other direction (#31): take our wiring back out if it is there. Reads the
         // chained status line we recorded so the user's own status bar comes back exactly as it was.

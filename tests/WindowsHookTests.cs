@@ -27,8 +27,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Windows_wires_the_shim_with_a_verb()
         {
-            Assert.Equal($"\"{Exe}\" statusline", BridgeWiring.StatuslineCommand(true, Exe));
-            Assert.Equal($"\"{Exe}\" activity busy", BridgeWiring.ActivityCommand(true, Exe, "busy"));
+            Assert.Equal($"cmd.exe /d /c if exist \"{Exe}\" \"{Exe}\" statusline", BridgeWiring.StatuslineCommand(true, Exe));
+            Assert.Equal($"cmd.exe /d /c if exist \"{Exe}\" \"{Exe}\" activity busy", BridgeWiring.ActivityCommand(true, Exe, "busy"));
         }
 
         [Fact]
@@ -38,7 +38,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // shell. Unquoted, a path with spaces runs the wrong program with the rest as args.
             var spacey = @"C:\Program Files\Logi\ClaudeConsole\claude-console-hook.exe";
 
-            Assert.StartsWith($"\"{spacey}\"", BridgeWiring.StatuslineCommand(true, spacey));
+            var command = BridgeWiring.StatuslineCommand(true, spacey);
+            Assert.Contains($"if exist \"{spacey}\"", command);
+            Assert.EndsWith($"\"{spacey}\" statusline", command);
         }
 
         [Fact]
@@ -46,16 +48,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var quoted = "\"" + Exe + "\"";
 
-            Assert.Equal($"{quoted} statusline", BridgeWiring.StatuslineCommand(true, quoted));
+            Assert.Equal($"cmd.exe /d /c if exist {quoted} {quoted} statusline", BridgeWiring.StatuslineCommand(true, quoted));
         }
 
         [Fact]
         public void MacOS_wiring_is_unchanged()
         {
-            // Phase 4 must not disturb the working macOS wiring.
-            Assert.Equal("bash /home/me/.claude/claude-console/scripts/statusline-handler.sh",
+            // Phase 4 must not disturb the working macOS wiring. The macOS form itself changed once
+            // since, deliberately, for #55 (the command checks that its script still exists) — the
+            // guard here is that the Windows flag never leaks into it. TolerantWiringTests owns the
+            // macOS form's meaning.
+            Assert.Equal("[ ! -f \"/home/me/.claude/claude-console/scripts/statusline-handler.sh\" ] || bash \"/home/me/.claude/claude-console/scripts/statusline-handler.sh\"",
                 BridgeWiring.StatuslineCommand(false, "/home/me/.claude/claude-console/scripts/statusline-handler.sh"));
-            Assert.Equal("bash /x/activity-hook.sh waiting",
+            Assert.Equal("[ ! -f \"/x/activity-hook.sh\" ] || bash \"/x/activity-hook.sh\" waiting",
                 BridgeWiring.ActivityCommand(false, "/x/activity-hook.sh", "waiting"));
         }
 
@@ -128,6 +133,94 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Contains("SharedName", source);
             Assert.Contains("shared", source);
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // #57 — a hook must not be able to outlive its usefulness. Logitech QA's 2.2.0 retest
+        // found ~15 claude-console-hook processes left behind after one session following a
+        // reboot; the machine froze until the plugin service was shut down. Cannot be run here
+        // (win-x64 exe); the shape of the guarantee is pinned at the source instead.
+        // ---------------------------------------------------------------------------------------
+
+        [Fact]
+        public void The_shim_arms_a_watchdog_before_it_does_anything_that_could_block()
+        {
+            var source = ReadShimSource();
+            var main = source.Substring(source.IndexOf("private static Int32 Main(", StringComparison.Ordinal));
+
+            var watchdog = main.IndexOf("StartWatchdog()", StringComparison.Ordinal);
+            var breadcrumb = main.IndexOf("EntryBreadcrumb(args);", StringComparison.Ordinal);
+            var dispatch = main.IndexOf("args[0] == \"statusline\"", StringComparison.Ordinal);
+            Assert.True(watchdog >= 0, "Main no longer arms the watchdog");
+            Assert.True(watchdog < breadcrumb, "the watchdog must be armed before even diagnostic file I/O");
+            Assert.True(watchdog < dispatch, "the watchdog must be armed before the verb dispatch");
+
+            // Background, so it can never be the thing keeping the process alive; exit 0, so a
+            // timed-out hook is not a hook error in the user's session. Nothing may log before the
+            // exit on this thread: a blocked log write would defeat the watchdog itself.
+            Assert.Contains("IsBackground = true", source);
+            Assert.Contains("Environment.Exit(0)", source);
+            Assert.Matches(@"WatchdogSeconds\s*=\s*\d+;", source);
+            var watchdogBody = source.Substring(source.IndexOf("private static Boolean StartWatchdog()", StringComparison.Ordinal));
+            watchdogBody = watchdogBody.Substring(0, watchdogBody.IndexOf("private static", 10, StringComparison.Ordinal));
+            Assert.DoesNotContain("Breadcrumb(", watchdogBody);
+            Assert.Contains("return false;", watchdogBody);
+        }
+
+        [Fact]
+        public void The_shim_never_reads_stdin_without_a_time_limit()
+        {
+            // One unbounded ReadToEnd on Console.In is one way to live forever. The bounded reader
+            // is the only place allowed to call it.
+            var source = ReadShimSource();
+            var bounded = source.IndexOf("private static String ReadStdinBounded(", StringComparison.Ordinal);
+            var body = source.Substring(bounded);
+            var outside = source.Substring(0, bounded);
+
+            Assert.DoesNotContain("Console.In.ReadToEnd()", outside);
+            Assert.Contains("Console.In.ReadToEnd()", body.Substring(0, body.IndexOf("private static", 10, StringComparison.Ordinal)));
+            Assert.Contains("ReadStdinBounded(1500)", source.Substring(source.IndexOf("private static Int32 Statusline()", StringComparison.Ordinal), 400));
+            Assert.Contains("ReadStdinBounded(1500)", source.Substring(source.IndexOf("if (state == \"permission\")", StringComparison.Ordinal), 200));
+        }
+
+        [Fact]
+        public void The_powershell_fallback_waits_with_its_limit_before_reading()
+        {
+            // ReadToEnd() returns when PowerShell exits, so "read, then WaitForExit(4000)" waited
+            // for a PowerShell cold start however long it took — per hop, per hook. The read must
+            // be in the background and the wait must come first.
+            var source = ReadShimSource();
+            var wmic = source.Substring(source.IndexOf("private static String? Wmic(", StringComparison.Ordinal));
+
+            var read = wmic.IndexOf("ReadToEndAsync()", StringComparison.Ordinal);
+            var wait = wmic.IndexOf("WaitForExit(4000)", StringComparison.Ordinal);
+            Assert.True(read >= 0 && wait > read, "Wmic must start the read in the background and then wait with the limit");
+            Assert.DoesNotContain("StandardOutput.ReadToEnd()", wmic.Substring(0, wmic.IndexOf("private static", 10, StringComparison.Ordinal)));
+        }
+
+        [Fact]
+        public void The_shim_refuses_to_join_a_pile_up()
+        {
+            var source = ReadShimSource();
+
+            Assert.Matches(@"MaxConcurrentHooks\s*=\s*\d+;", source);
+            Assert.Contains("Process.GetProcessesByName(name).Length", source);
+            Assert.Contains("if (TooManyOfUs())", source);
+            Assert.Contains("MaxConcurrentHooks = 8", source);   // below QA's ~15-process freeze
+        }
+
+        [Fact]
+        public void A_timed_out_chained_status_line_is_killed_with_its_children()
+        {
+            var source = ReadShimSource();
+            var chained = source.Substring(source.IndexOf("private static void RunChained(", StringComparison.Ordinal));
+
+            Assert.Contains("p.StandardInput.WriteAsync(stdin)", chained);
+            Assert.Contains("if (!write.Wait(2000))", chained);
+            Assert.Contains("exited = p.WaitForExit(2000)", chained);
+            Assert.Contains("if (!exited)", chained);
+            Assert.Contains("KillTree(p)", chained);
+            Assert.Contains("process.Kill(entireProcessTree: true)", chained);
         }
 
         [Fact]

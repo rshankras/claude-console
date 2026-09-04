@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Actions
 {
     using System;
+    using System.Threading;
 
     using Loupedeck.ClaudeConsolePlugin.Platform;
 
@@ -38,6 +39,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             // Repaint Yes/No when the targeted session starts or stops waiting, so the badge is live.
             BridgeManager.Instance.Grid.OnGridChanged += () =>
+            {
+                this.ActionImageChanged(Yes);
+                this.ActionImageChanged(No);
+            };
+
+            // And when live status is turned on or off: without that wiring the faces read
+            // "Set up" / "Off" instead of looking ready (#58).
+            BridgeManager.Instance.OnLiveStatusChanged += _ =>
             {
                 this.ActionImageChanged(Yes);
                 this.ActionImageChanged(No);
@@ -155,8 +164,29 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             return approve ? AnswerVia.MenuConfirm : AnswerVia.MenuReject;
         }
 
+        // The Options+ card that explains an inert Yes/No is posted once per load, not per press.
+        private static Int32 _setupNoticePosted;
+
         private static void AnswerApproval(BridgeManager bridge, Boolean approve)
         {
+            // Yes/No see a prompt only through the PermissionRequest hook, which is part of the
+            // opt-in wiring. With it absent this press cannot do anything — and a bare beep left
+            // the owner pressing Yes four times at a real prompt (#58). Say why, once, where the
+            // user is looking; the face already says "Set up" / "Off".
+            var setup = LiveStatusFace.SetupWord(bridge.LiveStatusApplies, bridge.LiveStatus);
+            if (setup != null)
+            {
+                bridge.Alert();
+                if (Interlocked.Exchange(ref _setupNoticePosted, 1) == 0)
+                {
+                    // Same README section as the live-status cards, but this card changed nothing,
+                    // so its button must not claim it did.
+                    bridge.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.AnswerNeedsSetup(), BridgeNotice.SupportUrl, BridgeNotice.AnswerNeedsSetupTitle);
+                }
+                PluginLog.Info($"AnswerCommand: {(approve ? "Yes" : "No")} pressed while live status reads '{setup}' — the PermissionRequest hook is not installed; press a live key to turn it on");
+                return;
+            }
+
             var target = bridge.RoutingTty();
             var hasPending = false;
             if (!String.IsNullOrEmpty(target) && bridge.Grid.Sessions.TryGetValue(target, out var session))
@@ -169,13 +199,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             switch (Decide(approve, hasPending))
             {
                 case AnswerVia.MenuConfirm:
-                    bridge.InjectKey(KeyStroke.Return);
-                    PluginLog.Info($"AnswerCommand: approved the pending prompt on {target} by key");
+                    Answered(bridge, target, bridge.InjectKey(KeyStroke.Return), "approved");
                     break;
 
                 case AnswerVia.MenuReject:
-                    bridge.InjectKey(KeyStroke.Escape);
-                    PluginLog.Info($"AnswerCommand: rejected the pending prompt on {target} by key");
+                    Answered(bridge, target, bridge.InjectKey(KeyStroke.Escape), "rejected");
                     break;
 
                 default:
@@ -185,6 +213,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     PluginLog.Info($"AnswerCommand: {(approve ? "Yes" : "No")} with no pending approval on {target ?? "(no target)"} — ignored");
                     break;
             }
+        }
+
+        // The keystroke landed or it did not — injection is atomic, so there is no third case. Only
+        // a keystroke that landed answered the prompt, so only then is the captured payload cleared:
+        // the rejection path fires no hook, and left the Yes dot and the "Allow?" bar lit until the
+        // session's next prompt (#60). A keystroke that did not land leaves the badge, which is
+        // still the truth, and says so.
+        private static void Answered(BridgeManager bridge, String target, InjectionOutcome outcome, String verb)
+        {
+            if (outcome == InjectionOutcome.Ok)
+            {
+                bridge.Grid.ClearPendingApproval(target);
+                PluginLog.Info($"AnswerCommand: {verb} the pending prompt on {target} by key");
+                return;
+            }
+
+            bridge.Alert();
+            PluginLog.Warning($"AnswerCommand: could not answer the pending prompt on {target} — {outcome}; the badge stays");
         }
 
         private static String LabelFor(String actionParameter)
@@ -219,6 +265,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             return bridge.Grid.Sessions.TryGetValue(target, out var session) ? session.Risk : ApprovalRisk.None;
         }
 
+        /// <summary>
+        /// The pending indicator belongs on both decisions: it tells the user that either key can
+        /// answer now. Yes preserves the request's actual risk (amber or red); No is always amber
+        /// because rejecting never authorizes the destructive command. Kept pure for #60 tests.
+        /// </summary>
+        internal static ApprovalRisk IndicatorRisk(Boolean approve, ApprovalRisk pendingRisk) =>
+            approve ? pendingRisk : pendingRisk == ApprovalRisk.None ? ApprovalRisk.None : ApprovalRisk.Normal;
+
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             // Icon basename == actionParameter (yes/no/up/down/enter .png in Resources/icons), matching
@@ -240,12 +294,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // you can see an answer is wanted, and whether to look first, before pressing anything.
             if (actionParameter == Yes || actionParameter == No)
             {
+                // Not wired: a grey tile keeps the check / cross, so the key is still recognisably
+                // Yes or No, and the word says what to do about it. No badge — nothing can be
+                // pending that the plugin could see (#58).
+                var bridge = BridgeManager.Instance;
+                var setup = LiveStatusFace.SetupWord(bridge.LiveStatusApplies, bridge.LiveStatus);
+                if (setup != null)
+                {
+                    return KeyImage.RenderDecisionTile(imageSize, setup, KeyImage.Gray, approve: actionParameter == Yes, risk: ApprovalRisk.None);
+                }
+
+                var pendingRisk = TargetRisk();
                 return KeyImage.RenderDecisionTile(
                     imageSize, label, color,
                     approve: actionParameter == Yes,
-                    // The badge belongs on the action that authorizes the request. Rejecting is
-                    // safe, and duplicating the same dot on No made both choices look cautionary.
-                    risk: actionParameter == Yes ? TargetRisk() : ApprovalRisk.None);
+                    risk: IndicatorRisk(actionParameter == Yes, pendingRisk));
             }
 
             return KeyImage.RenderWidgetAction(imageSize, label, actionParameter);

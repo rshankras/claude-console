@@ -10,7 +10,7 @@
          crash-disable marker (Logs/plugin_crashes/) by assembly version; if this stays
          1.0.0.0 forever, any one load-crash disables the plugin permanently. Bumping it
          per release lets a new build dodge a stale marker. -->
-    <Version>2.2.0</Version>
+    <Version>2.2.1</Version>
 
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -57,6 +57,18 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\Core\Resources\**\*.png">
       <Link>Resources\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The SDK's static plugin declaration, looked up at load as an embedded resource named
+         <plugin class namespace>.PluginConfiguration.xml — Logitech's own Spotify plugin embeds
+         Loupedeck.SpotifyPlugin.PluginConfiguration.xml. Every real action here is built at
+         runtime. The legacy parser nevertheless warns when <actions> is empty, so the file carries
+         one uniquely named command restricted to deviceType 0 (None). That inert sentinel cannot
+         appear on a supported device or collide with a dynamic action; keep its layout empty (#63). -->
+    <EmbeddedResource Include="PluginConfiguration.xml">
+      <LogicalName>Loupedeck.ClaudeConsolePlugin.PluginConfiguration.xml</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

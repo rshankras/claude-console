@@ -249,7 +249,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             { IsBackground = true, Name = "claude-live-status-prompt" }.Start();
         }
 
-        private String StateLabel() => LiveStatusFace.Label(_bridge.LiveStatus);
+        private String StateLabel() => LiveStatusFace.Label(_bridge.LiveStatus, _bridge.SettingsApplyLive);
 
         private void Refresh()
         {
