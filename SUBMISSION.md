@@ -2,7 +2,7 @@
 
 Path to a submittable `.lplug4` for the [Logitech Marketplace](https://marketplace.logitech.com/contribute), per the [Actions SDK approval guidelines](https://logitech.github.io/actions-sdk-docs/marketplace-approval-guidelines/).
 
-**Status:** 2.0.1 is **live on the Marketplace** (it is what Logitech QA installed for the 2026‑08‑25 retest). `ClaudeConsole_2.2.0.lplug4` is built, released on GitHub (`v2.2.0`) and ready to submit as an **update** — every box below is ticked and the 2.2.0 listing copy is written up in [docs/marketplace-listing.md](docs/marketplace-listing.md). History: 2.0.0 submitted 2026‑08‑12, QA flagged the bundled `PluginApi.dll` (host-provided assembly, must not ship); resubmitted as 2.0.1 on 2026‑08‑13 with `<Private>false</Private>` on the reference; review takes ≈10 working days.
+**Status:** 2.0.1 is **in Logitech's Marketplace portal** and their QA installs it from there (it is what they used for the 2026‑08‑25 retest) — whether it is *publicly* listed is unverified: the PM's 2026‑09‑04 mail speaks of the "first release" as still ahead, so treat 2.2.1 (submitted 2026‑09‑04) as the first public release until the contributor dashboard says otherwise. `ClaudeConsole_2.2.0.lplug4` is built, released on GitHub (`v2.2.0`) and ready to submit as an **update** — every box below is ticked and the 2.2.0 listing copy is written up in [docs/marketplace-listing.md](docs/marketplace-listing.md). History: 2.0.0 submitted 2026‑08‑12, QA flagged the bundled `PluginApi.dll` (host-provided assembly, must not ship); resubmitted as 2.0.1 on 2026‑08‑13 with `<Private>false</Private>` on the reference; review takes ≈10 working days.
 
 **Before submitting 2.2.0, decide two things that are cheaper to settle now than to re-version:**
 
