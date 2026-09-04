@@ -192,7 +192,10 @@ echo "   size: $(du -h "$OUT" | cut -f1)"
 if [ "$SHIPS_VOICE" = "1" ]; then
   echo "   voice payload in package:"
   unzip -l "$OUT" | grep -iE "voice/.*(ClaudeVoiceHelper|whisper-cli)" | sed 's/^/     /'
-  unzip -l "$OUT" | grep -q "voice/whisper-bin-win/whisper-cli.exe" || {
+  # Not `grep -q`: under `set -o pipefail` its early exit can SIGPIPE unzip, and the pipeline then
+  # fails a package that carries the bundle (3 of 30 runs on 2026-09-04; it failed the first 2.2.1
+  # pack). Reading the whole listing costs nothing and cannot race.
+  unzip -l "$OUT" | grep "voice/whisper-bin-win/whisper-cli.exe" >/dev/null || {
     echo "error: the package carries no Windows whisper bundle — packaged Windows voice would fail (#47)." >&2
     exit 1
   }
