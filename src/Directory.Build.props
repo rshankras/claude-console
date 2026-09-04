@@ -18,9 +18,19 @@
          log, and those traces are how field crashes get diagnosed. Deterministic + PathMap is also
          what makes two builds of the same source produce identical bytes, which is how a "did this
          package actually get rebuilt?" question gets answered.
-         Debug builds keep real paths so a debugger can still find the sources. -->
+         Debug builds keep real paths so a debugger can still find the sources.
+
+         The PathMap above covers the PRODUCT directory only. The engine's sources live two levels
+         up, and Source Link keys its document map on the git root, so the 2.2.0 PDB still carried
+         /Users/<author>/.../claude-console-p0/ twice: once in every Core file's document path and
+         once in the Source Link JSON — which also pointed at raw.githubusercontent.com for a repo
+         that is now private (#62, found by Logitech QA). DeterministicSourcePaths maps every source
+         root, the git root included, to /_/ for the compiler and the PDB alike; Source Link is off
+         because a link into a private repo helps nobody who has the PDB. -->
     <PropertyGroup Condition="'$(Configuration)' == 'Release'">
         <PathMap>$(MSBuildProjectDirectory)=/src</PathMap>
         <Deterministic>true</Deterministic>
+        <DeterministicSourcePaths>true</DeterministicSourcePaths>
+        <EnableSourceLink>false</EnableSourceLink>
     </PropertyGroup>
 </Project>

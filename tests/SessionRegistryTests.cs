@@ -192,7 +192,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             registry.Refresh(new HashSet<String> { "ttys002" });
             Assert.Equal("Bash", registry.SlotSession(1).PendingTool);
 
-            Assert.True(registry.AcknowledgePendingApproval("ttys002"));
+            Assert.True(registry.ClearPendingApproval("ttys002"));
             Assert.Null(registry.SlotSession(1).PendingTool);
             Assert.Equal(ApprovalRisk.None, registry.SlotSession(1).Risk);
             Assert.Equal("ready", registry.SlotSession(1).State);

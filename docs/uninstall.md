@@ -25,7 +25,7 @@ Don't restore `settings.json.claude-console.bak` by hand to undo the plugin — 
 
 ## Windows
 
-The cleanup script is a bash script and is **not installed on Windows** yet ([#55](https://github.com/rshankras/claude-console/issues/55)). An Options+ uninstall there leaves the five hooks and the `statusLine` in `~/.claude/settings.json` pointing at a deleted `claude-console-hook.exe`, so every Claude Code prompt runs a dead command. Until a Windows remedy ships, **turn live status off first** — hold a live key → *Turn off* (or a second long press within 15 s) — then uninstall in Options+.
+The cleanup script is a bash script and is **not installed on Windows** yet ([#55](https://github.com/rshankras/claude-console/issues/55)). An Options+ uninstall there leaves the five hooks and the `statusLine` in `~/.claude/settings.json`. Current commands check that `claude-console-hook.exe` still exists before invoking it, so a leftover after the helper is removed is a silent no-op; commands already owned by an older install are migrated to this form when the current version loads. The entries still remain, so **turn live status off first** for a clean uninstall — hold a live key → *Turn off* (or a second long press within 15 s) — then uninstall in Options+.
 
 ## Clean reinstall
 

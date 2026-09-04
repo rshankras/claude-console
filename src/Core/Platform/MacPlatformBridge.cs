@@ -18,6 +18,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
         public Boolean IsSupported => OperatingSystem.IsMacOS();
 
+        // Measured, not assumed — see IPlatformBridge.SettingsApplyLive (#58, 2026-09-02).
+        public Boolean SettingsApplyLive => true;
+
         // WHAT counts as a session, supplied at construction. The bridge never learns which agent
         // this describes — that is the whole point of keeping the two seams orthogonal. Defaults to
         // matching NOTHING: a bridge built before its product declares an agent must find no

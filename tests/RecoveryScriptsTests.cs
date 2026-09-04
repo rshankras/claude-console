@@ -90,8 +90,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.True(optOut > 0, "the opt-out check moved — re-check this test's premise");
             Assert.True(install < optOut, "the recovery scripts are installed AFTER the opt-out, so opting out loses the uninstall remedy");
 
-            // And since 2.2.0 the load path installs scripts but never WRITES our wiring into
-            // settings.json — that is Enable Live Status's job, on the user's press (#31).
+            // And since 2.2.0 the load path never ADDS our wiring to settings.json — that is Enable
+            // Live Status's job, on the user's press (#31). It may safely migrate commands already
+            // recognisably ours, but must not call the additive wirer.
             var load = body.Substring(0, body.IndexOf("internal void RunLoadWiringForTests()", StringComparison.Ordinal));
             Assert.DoesNotContain("EnsureBridgeWired()", load);
             Assert.Contains("EnsureBridgeInstalled();", load);

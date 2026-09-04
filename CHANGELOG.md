@@ -3,6 +3,86 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.2.1] — 2026-09-04
+
+Answers to Logitech QA's retest of 2.2.0 (1 September).
+
+### Fixed
+- **The voice helper is replaced when the package carries a newer one** (#59, retest bug D). It
+  never was: macOS does not let another app write inside a signed app bundle that has been
+  launched and granted a permission — the system said so ("LogiPluginService was prevented from
+  modifying apps on your Mac") while the plugin logged "installing voice helper" and moved on. The
+  install now renames the old bundle aside and creates the new one, which macOS allows; a copy that
+  fails puts the old bundle back; failure to remove quarantine does the same; and the install path
+  reports the exit code and error of every tool it runs instead of logging success unconditionally.
+
+- **A leftover hook no longer errors on every turn** (#55, retest bug B). An Options+ uninstall
+  removes the plugin and nothing else — the SDK gives a plugin no uninstall moment — so the five
+  hooks and the status line stay in `~/.claude/settings.json` pointing into
+  `~/.claude/claude-console/`, on macOS as on Windows. A user who then deleted that folder got
+  "Stop hook error occurred" on every turn. On both platforms each command now checks that its
+  script or exe exists before running it, so a leftover entry is a silent no-op. On load, commands
+  already recognisably ours are migrated from the 2.2.0 form through the normal rolling-backup
+  writer; no wiring is added and user commands are untouched. The Turn on dialog and README still
+  explain how to remove the wiring before uninstalling because Options+ cannot clean it up.
+- **The shipped PDB no longer names the build machine** (#62). The 2.2.0 symbol file carried the
+  author's worktree path twice — in the document paths of the engine's sources, which sit outside
+  the folder the Release PathMap covered, and in a Source Link map pointing at a repository that
+  is now private. Every source root is now mapped to `/_/`, Source Link is off, and the release
+  script's leak check reads the PDB as well as the DLL.
+- **Both whisper bundles are packed the same way** (#64). 2.2.0 stripped the transcription smoke
+  marker from the Windows bundle but shipped the macOS one, which QA read as the smoke test having
+  run for Mac only. Neither marker ships now, and the release script prints when each bundle last
+  transcribed instead. The runtime comparison only looks at packaged files, so a marker left in
+  the runtime home by an earlier install changes nothing.
+- **The service no longer warns about `PluginConfiguration.xml`** (#63). The SDK looks for a static
+  plugin declaration embedded in every plugin and logged two WARN lines per load when it found
+  none. A first fix embedded the required shape but left `<actions>` empty; a fresh packaged install
+  proved the parser merely replaced the old warnings with two `Action tags not found` warnings.
+  Every real action is dynamic, so each product now declares one uniquely named compatibility
+  command with `deviceType="0"` (None). It satisfies the legacy parser but is unavailable on every
+  real device, is absent from the layout, and cannot collide with a runtime action. The 2.2.0 retest
+  response claimed a load with zero WARN lines; that was wrong, and QA was right to say so.
+- **Release builds cannot reuse a resource-less intermediate DLL.** The packer now clears both
+  `bin/Release` and `obj/Release`, then refuses the artifact unless the actual DLL being packed
+  contains `PluginConfiguration.xml`, a common icon, and the product-specific bridge script. This
+  closes the incremental-build path that could silently undo #63 and omit every embedded asset.
+
+### Fixed — Windows (code change; not yet run on Windows hardware)
+- **Hook processes can no longer pile up** (#57, retest bug A). QA found around fifteen
+  `claude-console-hook` processes left behind after one session following a reboot, and the
+  machine froze until the plugin service was stopped. The hook now ends itself after eight
+  seconds whatever it is blocked on; the watchdog is armed before even diagnostic file I/O and
+  fails closed if its thread cannot start. It bounds every read of its input, bounds the PowerShell
+  lookup it falls back to when the kernel cannot name a parent process (the old code read that
+  output before applying its time limit, so a slow PowerShell start after boot held every hook
+  open), refuses to run above eight concurrent copies (below QA's approximately fifteen-process
+  freeze), and kills a timed-out chained status-line command with its descendants. The watchdog
+  deliberately performs no synchronous logging before exit. Built here, contract-tested and
+  cross-published, awaiting a Windows retest.
+
+### Changed
+- **Yes / No say when they cannot work** (#58, retest item 2). The answer keys see a permission
+  prompt only through the `PermissionRequest` hook, which is part of the opt-in live-status wiring;
+  with it off they looked ready, beeped, and did nothing at a real prompt. They now read
+  **Set up** / **Off** on a grey tile, keeping the check and cross, and the first press posts a
+  card in Options+ naming the key that turns live status on. Every session key's state bar reads
+  **Set up** / **Status off** while the wiring is off, instead of a frozen **Complete** or
+  **Waiting** — nothing can update a session's state without the hooks, so nothing the bar could
+  say would be current.
+- **Both answer keys show a pending approval, and a No press clears it** (#60, retest bug C). An approval clears itself when
+  the tool runs and the next hook fires; a rejection fires no hook, so the Yes dot and the
+  session's **Allow?** bar stayed lit until that session's next prompt. The answer key now clears
+  the captured payload itself the moment its keystroke lands, and leaves it — and says so — if the
+  keystroke did not. Both Yes and No now show the amber pending cue; for a destructive request Yes
+  turns red while No remains amber because rejecting does not authorize the command.
+- **"Restart Claude" only where a restart is needed.** On macOS a running Claude Code session
+  picks the new hooks and status line up by itself (measured 2026-09-02 on Claude Code 2.1.258:
+  status line one second after *Turn on*, the approval hook three minutes later, no restart), so
+  the face after *Turn on* reads **Turned on** and the Options+ card no longer sends you to start a
+  new session. Windows keeps the restart wording: QA saw the keys stay inert there until Claude Code
+  was restarted, and the cause is not yet known.
+
 ## [2.2.0] — 2026-08-30
 
 The Logitech QA retest release. Twenty-five findings were filed against 2.0.1; this release

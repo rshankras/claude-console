@@ -18,7 +18,7 @@ description: Control Claude Code in Apple Terminal or Windows Terminal from the 
 pluginFileName: ClaudeConsolePlugin.dll
 
 # Plugin version.
-version: 2.2.0
+version: 2.2.1
 
 # Author of the plugin. The author can be a company or an individual developer.
 author: S.Ravi Shankar
@@ -90,7 +90,7 @@ licenseUrl: https://opensource.org/licenses/MIT
 # URL of the support page where the users can send improvement suggestions and report bugs.
 # The URL is shown in Loupedeck Marketplace. The page can be for example a GitHub issues page.
 # NOTE: This setting is recommended when publishing the plugin in Loupedeck Marketplace.
-supportPageUrl: https://github.com/rshankras/claude-console/issues
+supportPageUrl: https://github.com/rshankras/keypad-profiles/issues
 
 # URL of the plugin homepage. The URL is shown in Loupedeck Marketplace.
-homePageUrl: https://github.com/rshankras/claude-console
+homePageUrl: https://www.rshankar.com/keypad-profiles/

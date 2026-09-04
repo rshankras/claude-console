@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
+    using System.IO;
 
     using Loupedeck.ClaudeConsolePlugin.Actions;
 
@@ -85,6 +86,72 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var no = AnswerCommand.Decide(approve: false, hasPendingApproval: true);
 
             Assert.NotEqual(yes, no);
+        }
+
+        [Theory]
+        [InlineData(ApprovalRisk.None, ApprovalRisk.None, ApprovalRisk.None)]
+        [InlineData(ApprovalRisk.Normal, ApprovalRisk.Normal, ApprovalRisk.Normal)]
+        [InlineData(ApprovalRisk.High, ApprovalRisk.High, ApprovalRisk.Normal)]
+        public void Both_answer_keys_show_pending_while_only_yes_carries_destructive_risk(
+            ApprovalRisk pending,
+            ApprovalRisk yes,
+            ApprovalRisk no)
+        {
+            // #60: the dot is an availability cue, so hiding it from No made that key look inert.
+            // A dangerous command remains red on Yes; No stays amber because it rejects the action.
+            Assert.Equal(yes, AnswerCommand.IndicatorRisk(approve: true, pending));
+            Assert.Equal(no, AnswerCommand.IndicatorRisk(approve: false, pending));
+        }
+
+        [Fact]
+        public void A_press_before_setup_is_answered_before_the_decision_is_even_asked()
+        {
+            // #58, reproduced 2026-09-02: live status off, a real permission menu on screen, and four
+            // Yes presses logged as "no pending approval — ignored" with only a beep to say so. The
+            // PermissionRequest hook that would show the plugin the prompt is part of the opt-in
+            // wiring, so the press must be explained BEFORE Decide() — which can only ever say NoOp
+            // there — and the explanation must reach Options+, not just the log.
+            var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Core", "Actions", "AnswerCommand.cs"));
+            var body = source.Substring(source.IndexOf("private static void AnswerApproval(", StringComparison.Ordinal));
+
+            var setup = body.IndexOf("LiveStatusFace.SetupWord(bridge.LiveStatusApplies, bridge.LiveStatus)", StringComparison.Ordinal);
+            var decide = body.IndexOf("Decide(approve, hasPending", StringComparison.Ordinal);
+            Assert.True(setup >= 0, "AnswerApproval no longer checks the live-status setup word");
+            Assert.True(decide > setup, "the setup check must come before the menu decision");
+            Assert.Contains("BridgeNotice.AnswerNeedsSetup()", body.Substring(setup, decide - setup));
+        }
+
+        [Fact]
+        public void An_answer_that_landed_clears_the_badge_and_one_that_did_not_leaves_it()
+        {
+            // #60: after a No the menu was gone but the Yes dot and the "Allow?" bar stayed until
+            // the session's next prompt, because a rejection fires no hook. The answer key now
+            // clears the payload itself — but only on a keystroke the platform reports as landed.
+            // A badge left over a failed injection is still true; a badge cleared over one is a lie.
+            var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Core", "Actions", "AnswerCommand.cs"));
+            var body = source.Substring(source.IndexOf("private static void Answered(", StringComparison.Ordinal));
+
+            var landed = body.IndexOf("outcome == InjectionOutcome.Ok", StringComparison.Ordinal);
+            var clear = body.IndexOf("bridge.Grid.ClearPendingApproval(target)", StringComparison.Ordinal);
+            Assert.True(landed >= 0, "Answered() no longer checks whether the keystroke landed");
+            Assert.True(clear > landed, "the badge must be cleared only after the keystroke is known to have landed");
+            Assert.Contains("the badge stays", body);
+        }
+
+        private static String RepoRoot()
+        {
+            var dir = AppContext.BaseDirectory;
+            for (var i = 0; i < 8 && dir != null; i++)
+            {
+                if (Directory.Exists(Path.Combine(dir, "src", "Core")))
+                {
+                    return dir;
+                }
+
+                dir = Path.GetDirectoryName(dir);
+            }
+
+            throw new InvalidOperationException("could not locate the repo root");
         }
     }
 }

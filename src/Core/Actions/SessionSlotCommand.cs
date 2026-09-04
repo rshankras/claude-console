@@ -46,6 +46,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             }
 
             _bridge.Grid.OnGridChanged += this.OnGridChanged;
+            _bridge.OnLiveStatusChanged += _ => this.OnGridChanged();   // the setup word comes and goes with the wiring (#58)
         }
 
         private void OnGridChanged()
@@ -95,7 +96,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // product identity — approved orange for Claude, the supplied #81A8ED for Codex.
             var selectedColor = SelectedBarColor(_bridge.Agent.Id);
             var barColor = active ? selectedColor : KeyImage.Gray;
-            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session), barColor, darkText: false);
+            var setupWord = LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
+            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord), barColor, darkText: false);
         }
 
         internal static BitmapColor SelectedBarColor(String agentId) =>
@@ -103,8 +105,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         // Colour communicates routing; this word communicates session state. Keeping those two
         // signals independent means an inactive session can still say "Allow?" without looking active.
-        private static String StateWord(GridSession session)
+        // setupWord is the bar's live-status word ("Set up" / "Status off") while the wiring is absent, else null.
+        internal static String StateWord(GridSession session, String setupWord)
         {
+            // With the wiring off, nothing can write a session's state or its pending payload, so
+            // whatever the registry holds is frozen at best — the owner read "Complete" under a
+            // live permission prompt, and a relaunched tab wore its predecessor's "Waiting" (#58).
+            // The bar says what would change that, for every session, until the wiring is on.
+            if (setupWord != null)
+            {
+                return setupWord;
+            }
+
             if (session.Risk != ApprovalRisk.None)
             {
                 return "Allow?";

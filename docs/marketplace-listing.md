@@ -1,6 +1,6 @@
 # Marketplace Listing Copy
 
-The exact text entered in the Logitech Marketplace submission form ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)) for the 2.0.0 submission on 2026‑08‑12, resubmitted unchanged as 2.0.1 on 2026‑08‑13 after QA flagged the bundled `PluginApi.dll` (packaging fix only — see CHANGELOG). Reuse and adapt for future submissions; process/packaging steps live in [SUBMISSION.md](../SUBMISSION.md).
+The exact text entered in the Logitech Marketplace submission form ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)). **The 2.2.0 copy below is current**; the 2.0.x copy it replaced is kept at the bottom for reference. Process and packaging steps live in [SUBMISSION.md](../SUBMISSION.md).
 
 ## Auto-filled fields (from `LoupedeckPackage.yaml`)
 
@@ -11,11 +11,69 @@ These are read out of the uploaded `.lplug4` — the form fills them itself. To 
 | Name | Claude Console |
 | Author | S.Ravi Shankar |
 | Operating system | macOS, Windows (from `pluginFolderMac` + `pluginFolderWin`) |
-| Version | 2.0.1 (2.0.0 + the PluginApi.dll packaging fix) |
+| Capabilities | `HasNoApplication` — universal, binds no application (#23) |
+| Version | 2.2.0 |
 | Content licence | MIT — https://opensource.org/licenses/MIT |
 | Support | https://github.com/rshankras/claude-console/issues |
 | Homepage | https://github.com/rshankras/claude-console |
 | Copyright | Copyright © 2026 S.Ravi Shankar. All rights reserved. |
+
+## Teaser card description — limit 120 characters
+
+Unchanged from 2.0.x — still accurate, still 109 characters:
+
+```
+Physical hardware controls for Claude Code in Apple Terminal or Windows Terminal, on the MX Creative Keypad.
+```
+
+## Detail page description — limit 500 characters
+
+Markdown supported: **bold**, *cursive*, `-` lists, `1.` lists, `[links](url)`, emojis. 2.2.0 rewrite (480 characters): the Answer line now describes what the keys actually do since #21, and "Voice" is dictation rather than a key name.
+
+```markdown
+**Physical hardware controls for Claude Code. Press a button. Ship code.**
+
+- **A key per session** — project & state on each; press to focus
+- **Answer prompts** — Yes approves, No rejects; amber when asked, red when risky
+- **Offline voice** — dictate a prompt or open a project by name
+- **Live status** — model, cost & context keys, opt-in
+- **One-press prompts** — Fix Bug, Write Tests, Review
+- **Git** — commit, diff, push, PR
+
+Works in Apple Terminal or Windows Terminal.
+```
+
+## Release notes — limit 1000 characters
+
+2.2.0 is the first release Marketplace users see as an *update*, so this is a real what's-changed rather than the 2.0.0 introduction. Leads with the two things that change their setup — the universal plugin (they must import the layout) and opt-in live status. 974 characters:
+
+```markdown
+**2.2.0 — the QA retest release.**
+
+- **Now a universal plugin**: it binds to no application. After installing, import the keypad layout from the GitHub release (linked below) onto your Terminal profile, or drag the Claude Console actions where you want them.
+- **Live status is opt-in.** The plugin no longer edits your Claude Code settings on its own — press a live key and confirm; hold it to turn back off.
+- **The No key now rejects.** Yes confirms the permission prompt, No dismisses it, and neither acts when there's nothing to approve.
+- **Typing works on every keyboard layout** — no more wrong characters on AZERTY or QWERTZ.
+- **Offline voice works from a package install** on macOS and Windows, and a failed dictation now says why.
+- **New keypad design** from Logitech: session keys show project + state, coloured approval keys, refreshed icons.
+- Fixes for stuck "working" indicators, idle CPU, session slots taken by terminals the keys can't drive, and more.
+```
+
+**Ask QA to confirm** (worth stating in the submission notes): the SDK exposes no plugin-wide settings page (`PluginPreferenceType` is `{None, Account}`), so a deliberate key press with an on-screen dialog is the closest discoverable consent control it offers for the `settings.json` edit (#31).
+
+## Lessons for next time
+
+- **Don't paste from a terminal window.** Selection picks up invisible indent and trailing spaces that count against the limit — a 491-char draft overflowed the 500-char field that way. Put the text on the clipboard directly (`pbcopy < file`) and ⌘V into the form.
+- **Count characters, not bytes**: `wc -m` with a UTF-8 locale (em-dashes are 1 character but 3 bytes; `wc -c` overcounts). Leave ≥15 characters of headroom in case the form counts newlines differently.
+- **Feature order is the message**: sessions first, voice second — the differentiators no other keypad plugin has (per-session keys, amber/red approval lighting, fully offline voice).
+- Always name the supported terminals (Apple Terminal / Windows Terminal) — "your terminal" wrongly implies iTerm2/Ghostty/Warp work.
+- Homepage and Support URLs have their own form fields, so don't spend description characters on links.
+
+---
+
+## Archive — the 2.0.x copy
+
+Entered for the 2.0.0 submission on 2026‑08‑12 and resubmitted unchanged as 2.0.1 on 2026‑08‑13 after QA flagged the bundled `PluginApi.dll`.
 
 ## Teaser card description — limit 120 characters
 
@@ -60,11 +118,3 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 
 Setup: install, then import the ready-made keypad layout from the GitHub release — or drag the Claude Console actions onto your own Terminal profile. Live keys are opt-in: one press turns them on. Works with Apple Terminal (macOS) or Windows Terminal; sessions in other terminals are not shown.
 ```
-
-## Lessons for next time
-
-- **Don't paste from a terminal window.** Selection picks up invisible indent and trailing spaces that count against the limit — a 491-char draft overflowed the 500-char field that way. Put the text on the clipboard directly (`pbcopy < file`) and ⌘V into the form.
-- **Count characters, not bytes**: `wc -m` with a UTF-8 locale (em-dashes are 1 character but 3 bytes; `wc -c` overcounts). Leave ≥15 characters of headroom in case the form counts newlines differently.
-- **Feature order is the message**: sessions first, voice second — the differentiators no other keypad plugin has (per-session keys, amber/red approval lighting, fully offline voice).
-- Always name the supported terminals (Apple Terminal / Windows Terminal) — "your terminal" wrongly implies iTerm2/Ghostty/Warp work.
-- Homepage and Support URLs have their own form fields, so don't spend description characters on links.

@@ -136,19 +136,27 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>
-        /// Optimistically clear a permission request after its answer key was delivered. Returns
-        /// false when the session no longer carries a captured approval. The source file itself is
-        /// left untouched; its write version suppresses only that one event, so another request—
-        /// including the same command asked again—reappears after the agent writes it.
+        /// The keypad answered this session's permission prompt, so the captured payload no longer
+        /// describes anything pending. An approval clears itself when the tool runs (PostToolUse
+        /// fires within ~170 ms); a rejection fires no hook at all, so the Yes dot and the "Allow?"
+        /// bar stayed lit until the session's NEXT prompt (#60). Claude stores the payload in a
+        /// separate pending file, which is removed. Codex stores it in the session event itself, so
+        /// that exact file version is acknowledged until Codex writes a new event. Returns whether
+        /// anything was pending to clear and repaints only when it was.
         /// </summary>
-        internal Boolean AcknowledgePendingApproval(String tty)
+        internal Boolean ClearPendingApproval(String tty)
         {
             if (String.IsNullOrEmpty(tty))
             {
                 return false;
             }
 
-            var changed = false;
+            var pendingPath = this.PendingFor(tty);
+            var hasSeparatePendingFile = File.Exists(pendingPath);
+            var answeredVersion = this.ApprovalSourceVersion(tty);
+            TryDelete(pendingPath);
+
+            Boolean cleared;
             lock (_lock)
             {
                 if (!_sessions.TryGetValue(tty, out var session) || String.IsNullOrEmpty(session.PendingTool))
@@ -156,22 +164,33 @@ namespace Loupedeck.ClaudeConsolePlugin
                     return false;
                 }
 
-                _acknowledgedApprovals[tty] = this.ApprovalSourceVersion(tty);
+                if (hasSeparatePendingFile)
+                {
+                    _acknowledgedApprovals.Remove(tty);
+                }
+                else
+                {
+                    _acknowledgedApprovals[tty] = answeredVersion;
+                }
                 session.PendingTool = null;
                 session.PendingCommand = null;
                 session.Risk = ApprovalRisk.None;
-                if (session.State == "waiting")
+                // Claude's separate activity file still owns its state; changing it here would
+                // cause a false ready->waiting repaint on the next poll. Codex's approval event is
+                // the state source itself, so suppress its stale waiting state with the payload.
+                if (!hasSeparatePendingFile && session.State == "waiting")
                 {
                     session.State = "ready";
                 }
-                changed = true;
+                cleared = true;
             }
 
-            if (changed)
+            if (cleared)
             {
                 OnGridChanged?.Invoke();
             }
-            return changed;
+
+            return cleared;
         }
 
         private String StateFor(String tty) => Path.Combine(_sessionsDir, tty + ".json");
