@@ -3,7 +3,7 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [2.2.1] — 2026-09-04
 
 Answers to Logitech QA's retest of 2.2.0 (1 September).
 
