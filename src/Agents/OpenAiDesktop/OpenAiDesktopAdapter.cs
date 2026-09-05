@@ -63,7 +63,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         // The Review surface, from the live button inventory; first match wins. Verify on
         // hardware which of these opens vs toggles — fails safe (logged no-match) either way.
-        public String[] ShowDiffLabels => new[] { "Toggle file diff", "Show files" };
+        public String[] ShowDiffLabels => this.ControlLabels(DesktopControl.Changes);
+
+        public String[] ControlLabels(DesktopControl control) => control switch
+        {
+            DesktopControl.Search => new[] { "Search" },
+            // Current Codex builds name this button "Changes +7 -2". Keep the earlier labels as
+            // fallbacks so an app rollback does not strand the key.
+            DesktopControl.Changes => new[] { "Changes +", "Changes -", "Toggle file diff", "Show files" },
+            DesktopControl.Projects => new[] { "Projects" },
+            DesktopControl.Plugins => new[] { "Plugins" },
+            DesktopControl.AttachFiles => new[] { "Add files and more" },
+            DesktopControl.Permissions => new[] { "Change permissions" },
+            DesktopControl.Scheduled => new[] { "Scheduled" },
+            DesktopControl.PullRequests => new[] { "Pull requests" },
+            DesktopControl.Explore => new[] { "Explore" },
+            DesktopControl.QuickChat => new[] { "Quick chat" },
+            _ => Array.Empty<String>(),
+        };
 
         // The menu items pair each mode name with its tagline; match on the distinctive full
         // label, not the bare mode word — "Codex" alone would also match the switcher itself.

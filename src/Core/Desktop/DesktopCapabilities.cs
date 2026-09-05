@@ -29,4 +29,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>The composer accepts an external write (AX value / selected-text insert).</summary>
         public Boolean ComposerWrite { get; init; }
     }
+
+    /// <summary>
+    /// Controls visible in the focused desktop-app window on the latest snapshot. Unlike
+    /// <see cref="DesktopCapabilities"/> (what an adapter can ever support), these flags are
+    /// live: a Codex task has Changes only after it has produced a diff, for example.
+    /// </summary>
+    [Flags]
+    internal enum DesktopControl
+    {
+        None = 0,
+        Search = 1 << 0,
+        Changes = 1 << 1,
+        Projects = 1 << 2,
+        Plugins = 1 << 3,
+        AttachFiles = 1 << 4,
+        Permissions = 1 << 5,
+        Scheduled = 1 << 6,
+        PullRequests = 1 << 7,
+        Explore = 1 << 8,
+        QuickChat = 1 << 9,
+    }
 }

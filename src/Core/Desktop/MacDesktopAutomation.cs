@@ -63,6 +63,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 AddEach(args, "--state-awaiting", new[] { _app.ConversationAwaitingText });
                 AddEach(args, "--state-unread", new[] { _app.ConversationUnreadText });
             }
+            AddContextLabels(args);
 
             // 2.5s budget: the walk measured ~130ms end-to-end; the margin covers a cold
             // Chromium tree, not a hung one — BoundedProcess kills anything slower.
@@ -168,6 +169,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                     args.Add(v);
                 }
             }
+        }
+
+        private void AddContextLabels(List<String> args)
+        {
+            AddEach(args, "--search", _app.ControlLabels(DesktopControl.Search));
+            AddEach(args, "--changes", _app.ControlLabels(DesktopControl.Changes));
+            AddEach(args, "--projects", _app.ControlLabels(DesktopControl.Projects));
+            AddEach(args, "--plugins", _app.ControlLabels(DesktopControl.Plugins));
+            AddEach(args, "--attach-files", _app.ControlLabels(DesktopControl.AttachFiles));
+            AddEach(args, "--permissions", _app.ControlLabels(DesktopControl.Permissions));
+            AddEach(args, "--scheduled", _app.ControlLabels(DesktopControl.Scheduled));
+            AddEach(args, "--pull-requests", _app.ControlLabels(DesktopControl.PullRequests));
+            AddEach(args, "--explore", _app.ControlLabels(DesktopControl.Explore));
+            AddEach(args, "--quick-chat", _app.ControlLabels(DesktopControl.QuickChat));
         }
 
         private static Boolean TryParseOk(String json, out JsonElement root)

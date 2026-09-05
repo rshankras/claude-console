@@ -56,18 +56,32 @@ one placement, once.
 
 Bound to the app, so they appear while ChatGPT is frontmost.
 
+The profile is **mode-aware**. ChatGPT and Codex share one app and one profile; common keys stay
+put, while contextual keys follow the mode of the focused ChatGPT window. If a ChatGPT window and
+a Codex window are both open, the frontmost one wins. An unavailable control says so and does
+nothing rather than searching another window.
+
 **Page 1 · Conversations — the home page.** Three large, readable keys are your three most recent
 conversations. Each card keeps the title in its upper area and reports **Ready**, **Thinking**,
 **Allow?**, or **Complete** in a coloured bar below it. Complete means ChatGPT marked the finished
 result unread; a conversation already open when it finishes returns directly to Ready. Positions
-stay stable while the sidebar reorders. The middle row is **All Chats · New Chat · Show Diff**:
-All Chats opens a paged folder containing every conversation the app makes visible; press one to
-jump. The bottom row answers the one that's waiting: **Approve · Deny · Voice** — the same
+stay stable while the sidebar reorders. The middle row is **All Chats · New Chat · Search** in
+ChatGPT and **All Chats · New Chat · Files** in Codex. Files becomes **No Changes** and is disabled
+until the focused Codex task exposes a diff. All Chats opens a paged folder containing every
+conversation the focused window makes visible; press one to jump. The bottom row answers the one
+that's waiting: **Approve · Deny · Voice** — the same
 sessions-above/answers-below shape as the terminal consoles, so one muscle memory covers the
 whole family.
 
-**Page 2 · Actions.** **Mode** (ChatGPT ⇄ Codex — the key shows the mode you're in), **Stop**, and
-**Voice Draft**.
+**Page 2 · Actions.** The top row is always **Mode · Stop · Voice Draft**. The remaining verified
+controls adapt by mode: **Projects · Plugins · Scheduled · Explore** in ChatGPT and
+**Permissions · Attach Files · Pull Requests · Quick Chat** in Codex.
+
+**Page 3 · Workflows.** The nine stable positions become general conversation workflows in
+ChatGPT (**Summarize, Explain, Rewrite, Draft, Compare, Research, Brainstorm, Plan, Continue**) and
+development workflows in Codex (**Review PR, Debug, Refactor, Write Tests, Explain Diff, Fix CI,
+Security, Update Dependencies, Continue**). Workflows missing a target are drafts: Vizhi fills the
+composer and brings the app forward for editing instead of sending an incomplete request.
 
 ## What it will not do
 

@@ -77,7 +77,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             switch (actionParameter)
             {
                 case Stop:
-                    if (DesktopServices.Monitor.Current.Activity != DesktopActivity.Working)
+                    // Press-time truth: a different ChatGPT/Codex window may have become focused
+                    // since the keypad face last refreshed.
+                    if (!auto.Status().StopPresent)
                     {
                         PluginLog.Info("DesktopControlCommand(stop): nothing running — ignored");
                         return;
@@ -92,7 +94,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 case Mode:
                     // Toggle to the other mode. Unknown current mode (surface just came back,
                     // or the label drifted) → do nothing rather than guess a direction.
-                    var current = DesktopServices.Monitor.Current.Mode;
+                    var current = auto.Status().Mode;
                     var target = app.ModeNames.FirstOrDefault(n => !String.Equals(n, current, StringComparison.Ordinal));
                     if (String.IsNullOrEmpty(current) || target == null)
                     {

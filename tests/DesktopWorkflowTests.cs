@@ -26,6 +26,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         private String ConfigPath => Path.Combine(this._root, "desktop-workflows.json");
+        private String ChatGptConfigPath => Path.Combine(this._root, "desktop-chatgpt-workflows.json");
 
         [Fact]
         public void A_missing_file_seeds_an_editable_starter_and_returns_defaults()
@@ -76,11 +77,46 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // live as PNGs in Core/Resources/icons and this pins the mapping to real files.
             var iconsDir = RepoDir("src", "Core", "Resources", "icons");
 
-            foreach (var w in DesktopWorkflowCommand.LoadWorkflows(this.ConfigPath))
+            var defaults = DesktopWorkflowCommand.LoadWorkflows(this.ConfigPath)
+                .Concat(DesktopWorkflowCommand.LoadChatGptWorkflows(this.ChatGptConfigPath));
+
+            foreach (var w in defaults)
             {
                 Assert.True(File.Exists(Path.Combine(iconsDir, w.Icon + ".png")),
                     $"workflow '{w.Id}' names icon '{w.Icon}' which is not an embedded resource");
             }
+        }
+
+        [Fact]
+        public void Chatgpt_has_nine_separate_editable_workflows()
+        {
+            var list = DesktopWorkflowCommand.LoadChatGptWorkflows(this.ChatGptConfigPath).ToList();
+
+            Assert.Equal(9, list.Count);
+            Assert.True(File.Exists(this.ChatGptConfigPath));
+            Assert.Equal("summarize", list[0].Id);
+            Assert.Equal("continue", list[8].Id);
+        }
+
+        [Fact]
+        public void Adaptive_slots_follow_mode_without_changing_position()
+        {
+            var chat = DesktopWorkflowCommand.LoadChatGptWorkflows(this.ChatGptConfigPath).ToList();
+            var codex = DesktopWorkflowCommand.LoadWorkflows(this.ConfigPath).ToList();
+
+            Assert.Equal("summarize", DesktopWorkflowCommand.WorkflowAt("ChatGPT", 1, chat, codex).Id);
+            Assert.Equal("review_pr", DesktopWorkflowCommand.WorkflowAt("Codex", 1, chat, codex).Id);
+            Assert.Null(DesktopWorkflowCommand.WorkflowAt("", 1, chat, codex));
+        }
+
+        [Fact]
+        public void Chatgpt_workflows_with_missing_targets_are_drafts()
+        {
+            var list = DesktopWorkflowCommand.LoadChatGptWorkflows(this.ChatGptConfigPath).ToList();
+            var drafts = new[] { "rewrite", "draft", "compare", "research" };
+
+            Assert.All(list.Where(w => drafts.Contains(w.Id)), w => Assert.False(w.Submits));
+            Assert.All(list.Where(w => !drafts.Contains(w.Id)), w => Assert.True(w.Submits));
         }
 
         private static String RepoDir(params String[] parts)

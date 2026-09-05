@@ -44,6 +44,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 AddOne(args, "--state-awaiting", _app.ConversationAwaitingText);
                 AddOne(args, "--state-unread", _app.ConversationUnreadText);
             }
+            AddContextLabels(args);
 
             return DesktopSnapshot.Parse(this.Runner(args, 3000));
         }
@@ -135,6 +136,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             {
                 AddOne(args, flag, value);
             }
+        }
+
+        private void AddContextLabels(List<String> args)
+        {
+            AddEach(args, "--search", _app.ControlLabels(DesktopControl.Search));
+            AddEach(args, "--changes", _app.ControlLabels(DesktopControl.Changes));
+            AddEach(args, "--projects", _app.ControlLabels(DesktopControl.Projects));
+            AddEach(args, "--plugins", _app.ControlLabels(DesktopControl.Plugins));
+            AddEach(args, "--attach-files", _app.ControlLabels(DesktopControl.AttachFiles));
+            AddEach(args, "--permissions", _app.ControlLabels(DesktopControl.Permissions));
+            AddEach(args, "--scheduled", _app.ControlLabels(DesktopControl.Scheduled));
+            AddEach(args, "--pull-requests", _app.ControlLabels(DesktopControl.PullRequests));
+            AddEach(args, "--explore", _app.ControlLabels(DesktopControl.Explore));
+            AddEach(args, "--quick-chat", _app.ControlLabels(DesktopControl.QuickChat));
         }
 
         private static void AddOne(List<String> args, String flag, String value)

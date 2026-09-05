@@ -123,7 +123,22 @@ struct Node {
     let depth: Int      // DFS depth — what lets a flat scan recover subtree boundaries
 }
 
-// One DFS over the app's WINDOWS (never the menu bar — thousands of AXMenuItems of pure noise).
+// The app can have ChatGPT and Codex windows open at once. Scope every read and press to the
+// focused (or main) window; walking every window lets the first mode label win and can press a
+// control in a background window. If AX names neither and there is more than one window, fail
+// closed with no surface rather than guessing.
+func targetWindows() -> [AXUIElement] {
+    if let focused = attr(appEl, kAXFocusedWindowAttribute as String) {
+        return [focused as! AXUIElement]
+    }
+    if let main = attr(appEl, kAXMainWindowAttribute as String) {
+        return [main as! AXUIElement]
+    }
+    let windows = (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+    return windows.count == 1 ? windows : []
+}
+
+// One DFS over the target window (never the menu bar — thousands of AXMenuItems of pure noise).
 // Returns tree order, which the card-text heuristic depends on.
 func scanWindows() -> (nodes: [Node], webArea: Bool) {
     var nodes: [Node] = []
@@ -138,7 +153,7 @@ func scanWindows() -> (nodes: [Node], webArea: Bool) {
                           pressable: actionNames(el).contains(kAXPressAction as String), depth: depth))
         for c in children(el) { rec(c, depth + 1) }
     }
-    for w in (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? [] { rec(w, 0) }
+    for w in targetWindows() { rec(w, 0) }
     return (nodes, webArea)
 }
 
@@ -209,6 +224,10 @@ case "status":
     let deny = firstPressable(matching: argValues("--deny"), in: nodes)
     let stop = firstPressable(matching: argValues("--stop"), in: nodes)
 
+    func present(_ argument: String) -> Bool {
+        firstPressable(matching: argValues(argument), in: nodes) != nil
+    }
+
     var attention = false
     if let marker = argValue("--attention")?.lowercased(), !marker.isEmpty {
         attention = nodes.contains { $0.text.lowercased().contains(marker) }
@@ -228,14 +247,14 @@ case "status":
     // app-specific per-row control, e.g. a pin button, passed as --conv-marker so this stays
     // app-agnostic). DFS order is the sidebar's own order, i.e. recency. State, verified live
     // 2026-08-25: "awaiting"/"unread" are literal static texts on the row; "running" has NO text,
-    // only an extra activity image beyond the pin icon the row now always carries — a heuristic,
-    // and the reason it ranks below the text states.
-    var conversations: [[String: String]] = []
+    // only an extra activity image. The idle baseline differs by mode (ChatGPT: pin; Codex:
+    // pin + archive), so derive it from the focused window rather than hardcoding either count.
+    var readings: [(title: String, state: String, selected: Bool, images: Int)] = []
     if let convMarker = argValue("--conv-marker"), !convMarker.isEmpty {
         let awaiting = argValue("--state-awaiting") ?? ""
         let unread = argValue("--state-unread") ?? ""
         var i = 0
-        while i < nodes.count && conversations.count < 8 {
+        while i < nodes.count && readings.count < 8 {
             let n = nodes[i]
             guard n.pressable && !n.text.isEmpty else { i += 1; continue }
 
@@ -255,7 +274,6 @@ case "status":
             }
 
             if hasMarker {
-                if state == "idle" && images > 1 { state = "running" }   // pin owns one; spinner adds one
                 // Which conversation is OPEN matters to approval identity: the card only ever
                 // belongs to the open one. AXSelected is the app's own answer — carried by the
                 // row's container, not the button (checked live), so climb a couple of parents.
@@ -266,12 +284,20 @@ case "status":
                     cur = p as! AXUIElement
                     selected = (attr(cur, "AXSelected" as String) as? Bool) ?? false
                 }
-                conversations.append(["title": n.text, "state": state, "selected": selected ? "true" : "false"])
+                readings.append((n.text, state, selected, images))
                 i = j          // skip the subtree so row controls never read as items
             } else {
                 i += 1
             }
         }
+    }
+
+    let baselineImages = readings.map { $0.images }.min() ?? 0
+    let conversations: [[String: String]] = readings.map { reading in
+        let state = reading.state == "idle" && reading.images > baselineImages
+            ? "running" : reading.state
+        return ["title": reading.title, "state": state,
+                "selected": reading.selected ? "true" : "false"]
     }
 
     emit([
@@ -280,6 +306,16 @@ case "status":
         "approvalPresent": approve != nil,
         "denyPresent": deny != nil,
         "stopPresent": stop != nil,
+        "searchPresent": present("--search"),
+        "changesPresent": present("--changes"),
+        "projectsPresent": present("--projects"),
+        "pluginsPresent": present("--plugins"),
+        "attachFilesPresent": present("--attach-files"),
+        "permissionsPresent": present("--permissions"),
+        "scheduledPresent": present("--scheduled"),
+        "pullRequestsPresent": present("--pull-requests"),
+        "explorePresent": present("--explore"),
+        "quickChatPresent": present("--quick-chat"),
         "cardText": card,
         "mode": mode,
         "conversations": conversations,

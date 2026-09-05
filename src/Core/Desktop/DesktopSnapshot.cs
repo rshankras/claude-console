@@ -23,6 +23,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public Boolean StopPresent { get; init; }
         public String CardText { get; init; } = "";
         public String Mode { get; init; } = "";
+        public DesktopControl AvailableControls { get; init; }
 
         /// <summary>Sidebar conversations in the app's own order (recency first).</summary>
         public IReadOnlyList<DesktopConversation> Conversations { get; init; } = Array.Empty<DesktopConversation>();
@@ -79,6 +80,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                     StopPresent = ReadBool(root, "stopPresent"),
                     CardText = ReadString(root, "cardText"),
                     Mode = ReadString(root, "mode"),
+                    AvailableControls = ReadControls(root),
                     Conversations = ReadConversations(root),
                 };
             }
@@ -119,6 +121,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             }
 
             return list;
+        }
+
+        private static DesktopControl ReadControls(JsonElement root)
+        {
+            var controls = DesktopControl.None;
+            if (ReadBool(root, "searchPresent")) controls |= DesktopControl.Search;
+            if (ReadBool(root, "changesPresent")) controls |= DesktopControl.Changes;
+            if (ReadBool(root, "projectsPresent")) controls |= DesktopControl.Projects;
+            if (ReadBool(root, "pluginsPresent")) controls |= DesktopControl.Plugins;
+            if (ReadBool(root, "attachFilesPresent")) controls |= DesktopControl.AttachFiles;
+            if (ReadBool(root, "permissionsPresent")) controls |= DesktopControl.Permissions;
+            if (ReadBool(root, "scheduledPresent")) controls |= DesktopControl.Scheduled;
+            if (ReadBool(root, "pullRequestsPresent")) controls |= DesktopControl.PullRequests;
+            if (ReadBool(root, "explorePresent")) controls |= DesktopControl.Explore;
+            if (ReadBool(root, "quickChatPresent")) controls |= DesktopControl.QuickChat;
+            return controls;
         }
 
         private static Boolean ReadBool(JsonElement root, String name) =>

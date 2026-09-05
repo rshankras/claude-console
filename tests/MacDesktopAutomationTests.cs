@@ -50,9 +50,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("--attention", args);
             Assert.Contains("needs attention", args);
             Assert.Contains("--mode-prefix", args);
+            Assert.Contains("--search", args);
+            Assert.Contains("--changes", args);
+            Assert.Contains("--projects", args);
+            Assert.Contains("--permissions", args);
             Assert.True(snap.SurfaceAvailable);
             Assert.True(snap.ApprovalPresent);
             Assert.Equal("Codex", snap.Mode);
+        }
+
+        [Fact]
+        public void Status_parses_live_contextual_control_availability()
+        {
+            var (auto, _) = Build(
+                "{\"ok\":true,\"surface\":true,\"searchPresent\":true," +
+                "\"changesPresent\":true,\"permissionsPresent\":true}");
+
+            var controls = auto.Status().AvailableControls;
+
+            Assert.True(controls.HasFlag(DesktopControl.Search));
+            Assert.True(controls.HasFlag(DesktopControl.Changes));
+            Assert.True(controls.HasFlag(DesktopControl.Permissions));
+            Assert.False(controls.HasFlag(DesktopControl.Projects));
         }
 
         [Fact]

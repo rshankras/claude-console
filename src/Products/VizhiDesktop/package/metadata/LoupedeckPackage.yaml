@@ -12,13 +12,13 @@ name: VizhiDesktop
 displayName: Vizhi Desktop
 
 # Short description of the plugin.
-description: Physical hardware controls for the ChatGPT / Codex desktop app on the MX Creative Keypad. Approve from the keypad. Never lose focus.
+description: Mode-aware physical controls for the ChatGPT / Codex desktop app on the MX Creative Keypad. Approve from the keypad. Never lose focus.
 
 # Name of the plugin library file.
 pluginFileName: VizhiDesktopPlugin.dll
 
 # Plugin version.
-version: 0.9.4
+version: 0.10.0
 
 # Author of the plugin. The author can be a company or an individual developer.
 author: S.Ravi Shankar

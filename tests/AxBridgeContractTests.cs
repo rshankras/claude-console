@@ -37,6 +37,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("--conv-marker")]
         [InlineData("--state-awaiting")]
         [InlineData("--state-unread")]
+        [InlineData("--search")]
+        [InlineData("--changes")]
+        [InlineData("--projects")]
+        [InlineData("--plugins")]
+        [InlineData("--attach-files")]
+        [InlineData("--permissions")]
+        [InlineData("--scheduled")]
+        [InlineData("--pull-requests")]
+        [InlineData("--explore")]
+        [InlineData("--quick-chat")]
         [InlineData("--label")]
         [InlineData("--text")]
         [InlineData("--send-label")]
@@ -58,6 +68,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("title")]
         [InlineData("state")]
         [InlineData("selected")]
+        [InlineData("searchPresent")]
+        [InlineData("changesPresent")]
+        [InlineData("projectsPresent")]
+        [InlineData("pluginsPresent")]
+        [InlineData("attachFilesPresent")]
+        [InlineData("permissionsPresent")]
+        [InlineData("scheduledPresent")]
+        [InlineData("pullRequestsPresent")]
+        [InlineData("explorePresent")]
+        [InlineData("quickChatPresent")]
         public void The_status_json_keys_match_what_the_snapshot_parses(String key)
         {
             Assert.Contains($"\"{key}\"", Source());
@@ -92,12 +112,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void Running_uses_the_current_one_icon_sidebar_baseline()
+        public void Running_uses_the_focused_modes_observed_sidebar_baseline()
         {
-            // Current ChatGPT rows expose one empty AXImage for Pin chat. A running row adds
-            // the spinner as a second image; the old >2 threshold left every card at Ready.
-            Assert.Contains("images > 1", Source());
-            Assert.DoesNotContain("images > 2", Source());
+            // ChatGPT idle rows expose one image; Codex exposes two. Deriving the minimum makes
+            // the additional spinner readable in either mode without mislabelling all Codex rows.
+            Assert.Contains("let baselineImages = readings.map", Source());
+            Assert.Contains("reading.images > baselineImages", Source());
+        }
+
+        [Fact]
+        public void Every_operation_is_scoped_to_the_focused_window()
+        {
+            var source = Source();
+
+            Assert.Contains("kAXFocusedWindowAttribute", source);
+            Assert.Contains("kAXMainWindowAttribute", source);
+            Assert.Contains("for w in targetWindows()", source);
+            Assert.Contains("windows.count == 1 ? windows : []", source);
         }
 
         /// <summary>Walks up from the test binary to a repo-relative file.</summary>

@@ -70,12 +70,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 }
 
                 var appsRoot = RegistrationHeal.ApplicationsRoot();
+                var icon = Path.Combine(payloadRoot, "metadata", "Icon256x256.png");
                 if (RegistrationExists(appsRoot, appName))
                 {
+                    if (UpdateOwnedDefaultProfileIfNeeded(
+                        lp5, File.Exists(icon) ? icon : null, appsRoot,
+                        OperatingSystem.IsWindows(), windowsProcessName))
+                    {
+                        PluginLog.Info(
+                            "SelfRegistration: installed a new packaged default profile without " +
+                            "overwriting the previous profile; restarting Logi Plugin Service in 10s");
+                        Process.Start(OperatingSystem.IsWindows()
+                            ? RegistrationHeal.WindowsRestart()
+                            : RegistrationHeal.MacRestart());
+                        return true;
+                    }
                     return false;
                 }
-
-                var icon = Path.Combine(payloadRoot, "metadata", "Icon256x256.png");
                 CreateRegistration(
                     lp5, File.Exists(icon) ? icon : null, appsRoot, OperatingSystem.IsWindows(), windowsProcessName);
 
@@ -142,6 +153,97 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         }
 
         /// <summary>
+        /// Adopt a newly versioned packaged profile into an existing self-registered application.
+        /// The old profile directory is deliberately retained: it may contain user customization
+        /// or icon snapshots. Only registrations stamped as ours or naming this plugin as their
+        /// native owner are eligible, and the application document is replaced atomically after
+        /// the new profile is complete. Options+ may remove the custom ownership stamp when it
+        /// rewrites an application, but it preserves nativePluginName.
+        /// </summary>
+        internal static Boolean UpdateOwnedDefaultProfileIfNeeded(
+            String lp5Path, String iconPath, String appsRoot, Boolean windows,
+            String windowsProcessName = null)
+        {
+            using var zip = ZipFile.OpenRead(lp5Path);
+            var packaged = ReadApplicationInfo(zip, windows, windowsProcessName);
+            var deviceType = (String)packaged["deviceType"] ?? "Loupedeck70";
+            var appName = (String)packaged["name"];
+            var nextProfile = (String)packaged["defaultProfileName"];
+            var pluginName = (String)packaged["nativePluginName"];
+            if (String.IsNullOrWhiteSpace(appName) || String.IsNullOrWhiteSpace(nextProfile)
+                || String.IsNullOrWhiteSpace(pluginName))
+            {
+                return false;
+            }
+
+            var appDir = Path.Combine(appsRoot, deviceType, appName);
+            var infoPath = Path.Combine(appDir, "ApplicationInfo.json");
+            if (!File.Exists(infoPath))
+            {
+                return false;
+            }
+
+            var installed = JsonNode.Parse(File.ReadAllText(infoPath));
+            var stampedOwner = (String)installed?[RegistrationCleanup.OwnerKey];
+            var nativeOwner = (String)installed?["nativePluginName"];
+            var ours = String.Equals(stampedOwner, pluginName, StringComparison.Ordinal)
+                || String.Equals(nativeOwner, pluginName, StringComparison.Ordinal);
+            if (!ours
+                || String.Equals((String)installed?["defaultProfileName"], nextProfile,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var profilesDir = Path.Combine(appDir, "Profiles");
+            var profileDir = Path.Combine(profilesDir, nextProfile);
+            String staging = null;
+            try
+            {
+                if (!Directory.Exists(profileDir))
+                {
+                    Directory.CreateDirectory(profilesDir);
+                    staging = profileDir + ".staging-" + Guid.NewGuid().ToString("N");
+                    Directory.CreateDirectory(staging);
+                    ExtractProfile(zip, staging);
+                    Directory.Move(staging, profileDir);
+                    staging = null;
+                }
+
+                // Keep service/user settings from the installed document, but refresh the
+                // package-owned identity and binding fields alongside the new default pointer.
+                foreach (var field in new[]
+                {
+                    "name", "displayName", "description", "deviceType", "nativePluginName",
+                    "hasNativePlugin", "processOrBundleName", "modes", "defaultProfileName",
+                })
+                {
+                    installed[field] = packaged[field]?.DeepClone();
+                }
+                installed[RegistrationCleanup.OwnerKey] = pluginName;
+
+                var tempInfo = infoPath + ".tmp-" + Guid.NewGuid().ToString("N");
+                File.WriteAllText(tempInfo,
+                    installed.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                File.Move(tempInfo, infoPath, overwrite: true);
+
+                if (iconPath != null)
+                {
+                    File.Copy(iconPath, Path.Combine(appDir, "ApplicationIcon.png"), overwrite: true);
+                }
+                return true;
+            }
+            catch
+            {
+                if (staging != null)
+                {
+                    try { Directory.Delete(staging, recursive: true); } catch { }
+                }
+                throw;
+            }
+        }
+
+        /// <summary>
         /// Write the registration directory from the packaged profile: the lp5's own
         /// ApplicationInfo.json at the top (patched for Windows), the icon beside it, and the
         /// profile content under Profiles/&lt;defaultProfileName&gt;/ — the exact layout of a
@@ -153,43 +255,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         {
             using var zip = ZipFile.OpenRead(lp5Path);
 
-            var appInfoEntry = zip.GetEntry("ApplicationInfo.json")
-                ?? throw new InvalidDataException("packaged profile has no ApplicationInfo.json");
-            JsonNode appInfo;
-            using (var stream = appInfoEntry.Open())
-            {
-                appInfo = JsonNode.Parse(stream);
-            }
+            var appInfo = ReadApplicationInfo(zip, windows, windowsProcessName);
 
             var deviceType = (String)appInfo["deviceType"] ?? "Loupedeck70";
             var profileName = (String)appInfo["defaultProfileName"]
                 ?? throw new InvalidDataException("packaged ApplicationInfo has no defaultProfileName");
-
-            if (windows && (String)appInfo["processOrBundleName"] == "com.apple.Terminal")
-            {
-                // The document in the package is authored for macOS; Windows binds the same
-                // layout to Windows Terminal (the shipped platform default). The description is
-                // rewritten rather than replaced so it keeps whatever the product called itself.
-                //
-                // TERMINAL products only — hence the guard on the packaged value. A product bound
-                // to a desktop app's bundle (Vizhi Desktop: com.openai.codex) must pass through
-                // untouched: rewriting it to WindowsTerminal here would silently rebind the whole
-                // registration to an app the product does not drive, the same class of quiet
-                // wrong-name failure as the 1.8.0 hardcoded "WindowsTerminal". Such products ship
-                // their real Windows identity in the package once it is known (recon W0).
-                appInfo["processOrBundleName"] = "WindowsTerminal";
-                var description = (String)appInfo["description"];
-                appInfo["description"] = String.IsNullOrEmpty(description)
-                    ? "Controls for Windows Terminal."
-                    : description.Replace("Terminal.app", "Windows Terminal");
-            }
-            else if (windows && !String.IsNullOrWhiteSpace(windowsProcessName))
-            {
-                // Desktop products package their macOS bundle id in the shared profile. Once W0
-                // has proven the real Windows executable identity, write that identity into the
-                // Windows registration instead of silently binding com.openai.codex as a process.
-                appInfo["processOrBundleName"] = windowsProcessName;
-            }
 
             var appName = (String)appInfo["name"]
                 ?? throw new InvalidDataException("packaged ApplicationInfo has no name");
@@ -213,28 +283,60 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                     File.Copy(iconPath, Path.Combine(appDir, "ApplicationIcon.png"), overwrite: true);
                 }
 
-                var profileRoot = Path.GetFullPath(profileDir) + Path.DirectorySeparatorChar;
-                foreach (var entry in zip.Entries)
-                {
-                    if (entry.FullName == "ApplicationInfo.json" || entry.Name.Length == 0)
-                    {
-                        continue;                                    // app-level document / directory entry
-                    }
-
-                    var target = Path.GetFullPath(Path.Combine(profileDir, entry.FullName));
-                    if (!target.StartsWith(profileRoot, StringComparison.Ordinal))
-                    {
-                        continue;                                    // zip-slip guard
-                    }
-
-                    Directory.CreateDirectory(Path.GetDirectoryName(target));
-                    entry.ExtractToFile(target, overwrite: true);
-                }
+                ExtractProfile(zip, profileDir);
             }
             catch
             {
                 try { Directory.Delete(appDir, recursive: true); } catch { }
                 throw;
+            }
+        }
+
+        private static JsonNode ReadApplicationInfo(
+            ZipArchive zip, Boolean windows, String windowsProcessName)
+        {
+            var appInfoEntry = zip.GetEntry("ApplicationInfo.json")
+                ?? throw new InvalidDataException("packaged profile has no ApplicationInfo.json");
+            JsonNode appInfo;
+            using (var stream = appInfoEntry.Open())
+            {
+                appInfo = JsonNode.Parse(stream);
+            }
+
+            if (windows && (String)appInfo["processOrBundleName"] == "com.apple.Terminal")
+            {
+                appInfo["processOrBundleName"] = "WindowsTerminal";
+                var description = (String)appInfo["description"];
+                appInfo["description"] = String.IsNullOrEmpty(description)
+                    ? "Controls for Windows Terminal."
+                    : description.Replace("Terminal.app", "Windows Terminal");
+            }
+            else if (windows && !String.IsNullOrWhiteSpace(windowsProcessName))
+            {
+                appInfo["processOrBundleName"] = windowsProcessName;
+            }
+
+            return appInfo;
+        }
+
+        private static void ExtractProfile(ZipArchive zip, String profileDir)
+        {
+            var profileRoot = Path.GetFullPath(profileDir) + Path.DirectorySeparatorChar;
+            foreach (var entry in zip.Entries)
+            {
+                if (entry.FullName == "ApplicationInfo.json" || entry.Name.Length == 0)
+                {
+                    continue;
+                }
+
+                var target = Path.GetFullPath(Path.Combine(profileDir, entry.FullName));
+                if (!target.StartsWith(profileRoot, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(target));
+                entry.ExtractToFile(target, overwrite: true);
             }
         }
     }

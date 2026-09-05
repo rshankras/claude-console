@@ -128,6 +128,64 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Adaptive_profile_upgrade_preserves_the_previous_profile()
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(DesktopLp5());
+            using var reader = new StreamReader(zip.GetEntry("ApplicationInfo.json").Open());
+            var packaged = JsonNode.Parse(reader.ReadToEnd());
+            var next = (String)packaged["defaultProfileName"];
+            const String previous = "EF7972524F2B4BEABD3B7D8BD57DB350";
+
+            var appDir = Path.Combine(this._root, "upgrade", "Loupedeck70", "@_vizhidesktop");
+            var previousDir = Path.Combine(appDir, "Profiles", previous);
+            Directory.CreateDirectory(previousDir);
+            File.WriteAllText(Path.Combine(previousDir, "user-customization.ict"), "keep me");
+            File.WriteAllText(Path.Combine(appDir, "ApplicationInfo.json"),
+                $"{{\"name\":\"@_vizhidesktop\",\"deviceType\":\"Loupedeck70\"," +
+                $"\"nativePluginName\":\"VizhiDesktop\",\"selfRegisteredBy\":\"VizhiDesktop\"," +
+                $"\"defaultProfileName\":\"{previous}\",\"isEnabled\":true}}");
+
+            Assert.True(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(
+                DesktopLp5(), null, Path.Combine(this._root, "upgrade"), windows: false));
+
+            var installed = JsonNode.Parse(File.ReadAllText(Path.Combine(appDir, "ApplicationInfo.json")));
+            Assert.Equal(next, (String)installed["defaultProfileName"]);
+            Assert.True(File.Exists(Path.Combine(appDir, "Profiles", next, "ProfileInfo.json")));
+            Assert.True(File.Exists(Path.Combine(previousDir, "user-customization.ict")));
+            Assert.False(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(
+                DesktopLp5(), null, Path.Combine(this._root, "upgrade"), windows: false));
+        }
+
+        [Fact]
+        public void Adaptive_profile_upgrade_never_touches_an_unowned_registration()
+        {
+            var appDir = Path.Combine(this._root, "unowned", "Loupedeck70", "@_vizhidesktop");
+            Directory.CreateDirectory(appDir);
+            File.WriteAllText(Path.Combine(appDir, "ApplicationInfo.json"),
+                "{\"name\":\"@_vizhidesktop\",\"deviceType\":\"Loupedeck70\"," +
+                "\"nativePluginName\":\"SomeoneElse\",\"defaultProfileName\":\"someone-elses\"}");
+
+            Assert.False(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(
+                DesktopLp5(), null, Path.Combine(this._root, "unowned"), windows: false));
+            Assert.Equal("someone-elses", (String)JsonNode.Parse(
+                File.ReadAllText(Path.Combine(appDir, "ApplicationInfo.json")))["defaultProfileName"]);
+        }
+
+        [Fact]
+        public void Adaptive_profile_upgrade_accepts_native_ownership_when_options_removed_the_stamp()
+        {
+            var root = Path.Combine(this._root, "native-owner");
+            var appDir = Path.Combine(root, "Loupedeck70", "@_vizhidesktop");
+            Directory.CreateDirectory(appDir);
+            File.WriteAllText(Path.Combine(appDir, "ApplicationInfo.json"),
+                "{\"name\":\"@_vizhidesktop\",\"deviceType\":\"Loupedeck70\"," +
+                "\"nativePluginName\":\"VizhiDesktop\",\"defaultProfileName\":\"OLD\"}");
+
+            Assert.True(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(
+                DesktopLp5(), null, root, windows: false));
+        }
+
+        [Fact]
         public void Page_one_is_the_appendix_home_page()
         {
             // The home page: conversations above, answers below — the appendix's shape, with
@@ -156,17 +214,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // so a second global Activity key would duplicate the grid.
             Assert.Equal("$VizhiDesktop___#DynamicFolder___DynamicFolder#Loupedeck.ClaudeConsolePlugin.DesktopActions.AllChatsDynamicFolder", pageOne[3]);
             Assert.EndsWith("DesktopControlCommand___new_chat", pageOne[4]);
-            Assert.EndsWith("DesktopControlCommand___show_diff", pageOne[5]);
+            Assert.EndsWith("DesktopContextCommand___primary", pageOne[5]);
 
             // Bottom row: Approve / Deny / Voice.
             Assert.EndsWith("DesktopApprovalCommand___approve", pageOne[6]);
             Assert.EndsWith("DesktopApprovalCommand___deny", pageOne[7]);
             Assert.EndsWith("DesktopVoiceCommand", pageOne[8]);
 
-            // New Chat is no longer duplicated on Actions.
+            // Actions: stable controls first, then four mode-aware positions.
             var pageTwo = pages[1]["controls"].AsArray()
                 .Select(c => (String)c["pressAction"]).ToList();
-            Assert.Null(pageTwo[3]);
+            Assert.EndsWith("DesktopControlCommand___mode", pageTwo[0]);
+            Assert.EndsWith("DesktopControlCommand___stop", pageTwo[1]);
+            Assert.EndsWith("DesktopVoiceDraftCommand", pageTwo[2]);
+            for (var slot = 1; slot <= 4; slot++)
+            {
+                Assert.EndsWith($"DesktopContextCommand___secondary_{slot}", pageTwo[slot + 2]);
+            }
+
+            // Workflows keep physical positions and resolve by focused mode at runtime.
+            var pageThree = pages[2]["controls"].AsArray()
+                .Select(c => (String)c["pressAction"]).ToList();
+            for (var slot = 1; slot <= 9; slot++)
+            {
+                Assert.EndsWith($"DesktopWorkflowCommand___slot_{slot}", pageThree[slot - 1]);
+            }
         }
 
         private static String RepoFile(params String[] parts)

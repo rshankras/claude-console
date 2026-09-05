@@ -31,11 +31,13 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 DONOR = ROOT / "src/Products/ClaudeConsole/package/profiles/DefaultProfile70.lp5"
 OUT = ROOT / "src/Products/VizhiDesktop/package/profiles/DefaultProfile70.lp5"
 
-# The product's permanent identity. Minted 2026-08-25; never regenerate — the service dedupes
-# imports by this GUID, and a changed GUID re-imports as a second profile on every update.
-GUID = "EF7972524F2B4BEABD3B7D8BD57DB350"
+# Adaptive-profile identity. Rotated once for the mode-aware layout: the updater installs this as
+# a new default and RETAINS the earlier profile, so existing user customization is never overwritten.
+# Never regenerate for ordinary updates or Options+ will accumulate duplicate profiles.
+GUID = "F2C5D1F769AD4BE19B5902EF3309213A"
 APP = "@_vizhidesktop"
 DISPLAY = "Vizhi Desktop"
+PROFILE_DISPLAY = "Vizhi Adaptive"
 PLUGIN = "VizhiDesktop"
 BUNDLE = "com.openai.codex"
 DESCRIPTION = "Codex agent controls for the ChatGPT desktop app."
@@ -72,7 +74,7 @@ PAGE_ONE = [
     act("DesktopConversationCommand", "3"),       # 2  ┘ state faces, press to jump
     folder("AllChatsDynamicFolder"),              # 3  ┐ overflow: every AX-visible conversation
     act("DesktopControlCommand", "new_chat"),    # 4  │ start work; status already lives in cards
-    act("DesktopControlCommand", "show_diff"),    # 5  ┘
+    act("DesktopContextCommand", "primary"),     # 5  ┘ Search in ChatGPT · Files in Codex
     act("DesktopApprovalCommand", "approve"),     # 6  ┐
     act("DesktopApprovalCommand", "deny"),        # 7  │ the bottom row answers
     act("DesktopVoiceCommand"),                   # 8  ┘
@@ -83,27 +85,17 @@ PAGE_TWO = [
     act("DesktopControlCommand", "mode"),         # 0
     act("DesktopControlCommand", "stop"),         # 1
     act("DesktopVoiceDraftCommand"),              # 2  transcribe, review, send yourself
-    None,                                         # 3  New Chat now lives on the home page
-    None,                                         # 4
-    None,                                         # 5
-    None,                                         # 6
+    act("DesktopContextCommand", "secondary_1"), # 3  Projects · Permissions
+    act("DesktopContextCommand", "secondary_2"), # 4  Plugins · Attach Files
+    act("DesktopContextCommand", "secondary_3"), # 5  Scheduled · Pull Requests
+    act("DesktopContextCommand", "secondary_4"), # 6  Explore · Quick Chat
     None,                                         # 7
     None,                                         # 8
 ]
 
-# Page 3 · Workflows (appendix Codex Desktop · Page 2's nine, one press = one Codex task brief).
-# Ids must match DesktopWorkflowCommand.Defaults — bindings name parameters, not labels.
-PAGE_THREE = [
-    act("DesktopWorkflowCommand", "review_pr"),   # 0
-    act("DesktopWorkflowCommand", "debug"),       # 1
-    act("DesktopWorkflowCommand", "refactor"),    # 2
-    act("DesktopWorkflowCommand", "write_tests"), # 3
-    act("DesktopWorkflowCommand", "explain_diff"),# 4
-    act("DesktopWorkflowCommand", "fix_ci"),      # 5
-    act("DesktopWorkflowCommand", "security"),    # 6
-    act("DesktopWorkflowCommand", "update_deps"), # 7
-    act("DesktopWorkflowCommand", "continue"),    # 8
-]
+# Page 3 · adaptive workflows. The physical slots stay fixed; DesktopWorkflowCommand resolves
+# each slot against the focused window's ChatGPT/Codex mode at render time and again at press time.
+PAGE_THREE = [act("DesktopWorkflowCommand", f"slot_{slot}") for slot in range(1, 10)]
 
 
 def main() -> None:
@@ -114,7 +106,7 @@ def main() -> None:
     profile = json.loads(entries["ProfileInfo.json"])
     profile["name"] = GUID
     profile["packageName"] = GUID          # self-owning: installs refresh instead of skipping
-    profile["displayName"] = DISPLAY
+    profile["displayName"] = PROFILE_DISPLAY
     profile["description"] = DESCRIPTION
     profile["applicationName"] = APP
     profile["nativePluginName"] = PLUGIN
@@ -154,7 +146,7 @@ def main() -> None:
         if line.startswith("name:"):
             fixed.append(f"name: {GUID}")
         elif line.startswith("displayName:"):
-            fixed.append(f"displayName: {DISPLAY}")
+            fixed.append(f"displayName: {PROFILE_DISPLAY}")
         else:
             fixed.append(line)
     entries["metadata/LoupedeckPackage.yaml"] = ("\n".join(fixed) + "\n").encode()

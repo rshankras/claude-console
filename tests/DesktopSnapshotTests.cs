@@ -31,6 +31,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Live_control_flags_are_parsed_without_inventing_absent_controls()
+        {
+            var snap = DesktopSnapshot.Parse(
+                "{\"ok\":true,\"surface\":true,\"searchPresent\":true," +
+                "\"changesPresent\":true,\"quickChatPresent\":true}");
+
+            Assert.True(snap.AvailableControls.HasFlag(DesktopControl.Search));
+            Assert.True(snap.AvailableControls.HasFlag(DesktopControl.Changes));
+            Assert.True(snap.AvailableControls.HasFlag(DesktopControl.QuickChat));
+            Assert.False(snap.AvailableControls.HasFlag(DesktopControl.Plugins));
+        }
+
+        [Fact]
         public void A_full_report_round_trips_every_field()
         {
             var snap = DesktopSnapshot.Parse(

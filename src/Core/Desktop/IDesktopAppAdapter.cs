@@ -104,6 +104,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Controls that open the current task's diff/review surface. Empty hides the key.</summary>
         String[] ShowDiffLabels { get; }
 
+        /// <summary>
+        /// Accessibility labels for a contextual control. Empty means this app cannot expose
+        /// that control. Labels remain app knowledge; the platform helpers stay app-agnostic.
+        /// </summary>
+        String[] ControlLabels(DesktopControl control);
+
         /// <summary>What this app's UI honestly exposes. Keys hide where a capability is false.</summary>
         DesktopCapabilities Capabilities { get; }
     }
