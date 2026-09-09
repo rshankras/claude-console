@@ -177,6 +177,22 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         internal event Action<VoiceIntent, String> OnVoiceFailed;
 
+        /// <summary>
+        /// The first packaged Windows voice launch verifies and, when needed, copies the bundled
+        /// whisper runtime. That work can take several seconds, so voice keys show an explicit
+        /// setup face until the recorder is actually ready.
+        /// </summary>
+        internal event Action<VoiceIntent, Boolean> OnVoiceSetupChanged;
+
+        private Int32 _windowsVoiceRuntimeChecked;
+        private Int32 _windowsVoiceSetupInProgress;
+
+        private void SetVoiceSetup(VoiceIntent intent, Boolean active)
+        {
+            try { OnVoiceSetupChanged?.Invoke(intent, active); }
+            catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: OnVoiceSetupChanged handler failed"); }
+        }
+
         // The single exit for a dictation that did not produce text: log the detail, beep, and put
         // the user-facing words on the key that was pressed. Before this, three of the four ways a
         // capture could end badly ended in a log line and nothing else — and the fourth (a denied
@@ -1059,7 +1075,54 @@ namespace Loupedeck.ClaudeConsolePlugin
         // helper has no embedded fallback, so recording without it would always type nothing.
         private Boolean StartVoiceCaptureWindows()
         {
-            EnsureVoiceRuntimeInstalled();
+            // Package verification hashes every bundled runtime file and a first install copies the
+            // whole tree. Keep that work off the SDK key thread: otherwise the key appears dead and
+            // users start speaking before the recorder exists. Voice remains in its Recording phase
+            // while setup runs; ToggleVoice rejects another press until this worker either launches
+            // the helper or returns the state to Idle.
+            if (Volatile.Read(ref _windowsVoiceRuntimeChecked) == 0)
+            {
+                if (Interlocked.CompareExchange(ref _windowsVoiceSetupInProgress, 1, 0) != 0)
+                {
+                    return true;
+                }
+
+                var intent = Voice.Intent;
+                this.SetVoiceSetup(intent, true);
+                new Thread(() =>
+                {
+                    var started = false;
+                    try
+                    {
+                        this.EnsureVoiceRuntimeInstalledWindows();
+                        if (File.Exists(WindowsWhisperCli))
+                        {
+                            Volatile.Write(ref _windowsVoiceRuntimeChecked, 1);
+                        }
+                        started = this.StartVoiceCaptureWindowsReady();
+                    }
+                    catch (Exception ex)
+                    {
+                        PluginLog.Warning(ex, "BridgeManager.StartVoiceCapture: Windows voice setup failed");
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref _windowsVoiceSetupInProgress, 0);
+                        this.SetVoiceSetup(intent, false);
+                        if (!started)
+                        {
+                            Voice.Finish();
+                        }
+                    }
+                }) { IsBackground = true, Name = "claude-voice-setup" }.Start();
+                return true;
+            }
+
+            return this.StartVoiceCaptureWindowsReady();
+        }
+
+        private Boolean StartVoiceCaptureWindowsReady()
+        {
 
             EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
@@ -2238,6 +2301,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (!VoiceSupported)
             {
                 PluginLog.Info("BridgeManager.ToggleVoice: voice is not supported on this platform");
+                return;
+            }
+
+            if (OperatingSystem.IsWindows() && Volatile.Read(ref _windowsVoiceSetupInProgress) != 0)
+            {
+                PluginLog.Info($"BridgeManager.ToggleVoice: ignoring {intent} press while voice is setting up");
+                _platform.Alert();
                 return;
             }
 

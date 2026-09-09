@@ -18,7 +18,7 @@ description: Control OpenAI Codex in Apple Terminal or Windows Terminal from the
 pluginFileName: VizhiCodexPlugin.dll
 
 # Plugin version.
-version: 1.6.0
+version: 1.6.1
 
 # Author of the plugin. The author can be a company or an individual developer.
 author: S.Ravi Shankar
