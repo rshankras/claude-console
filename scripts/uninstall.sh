@@ -112,7 +112,7 @@ if mode == "report":
 shutil.copy2(settings, backup)
 tmp = settings + ".cc.tmp"
 with open(tmp, "w") as f:
-    json.dump(root, f, indent=2); f.write("\n")
+    json.dump(root, f, indent=2, ensure_ascii=False); f.write("\n")
 os.replace(tmp, settings)
 print(f"  settings.json: removed {what}  (backup: {backup})")
 PY

@@ -73,9 +73,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             "Cost, Context and Activity show live data. Your own entries are kept and the file is backed " +
             $"up first. (Pressing {keyName} again within {seconds} s also turns it on.)\n\n" +
             // Options+ cannot undo this edit when the plugin is uninstalled (#55): the moment of
-            // consent is the one place the user is guaranteed to read how to take it out again.
-            "To take it out later, hold a live key and choose Turn off — do that before uninstalling " +
-            "the plugin, because uninstalling does not.";
+            // consent is the one place the user is guaranteed to read how to take it out again. On
+            // macOS the hooks now notice the uninstall and take it out themselves (#73); Windows
+            // still needs the user to do it first.
+            "To take it out later, hold a live key and choose Turn off. Uninstalling the plugin does not " +
+            "remove it at once: on macOS the hooks notice within a minute and take it out themselves; " +
+            "on Windows turn it off before uninstalling.";
 
         /// <summary>The dialog a long press opens once live status is on: the mirror question.</summary>
         internal static String TurnOffDialog(String keyName, Int32 seconds) =>

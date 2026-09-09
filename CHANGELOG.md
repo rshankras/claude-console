@@ -3,6 +3,42 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+Answers to Logitech QA's retest of 2.2.1 on macOS (8 September; #71–#73).
+
+### Fixed
+- **A settings.json write hands the file back the way it was found** (#72, retest finding B).
+  The plugin parses the whole document and serialises it again, and the default writer made that
+  visible: every quote, ampersand, apostrophe, angle bracket and non-ASCII character came back as
+  a `\uXXXX` escape and the trailing newline was gone — valid JSON, functionally identical, and a
+  whole-file diff for anyone who keeps `~/.claude` in git, applied to entries the plugin does not
+  own (on QA's machine, another plugin's ten hooks), on every write including the on-load
+  migration 2.2.1 added. Reproduced against the shipped 2.2.1: one write turned an em dash inside
+  the user's own permission description into `—`. The writer now uses the relaxed encoder,
+  and reads the indentation, line ending, trailing newline and byte-order mark off the file and
+  writes them back as found; a file that does not exist yet gets Claude Code's own shape. The
+  cleanup script's `--unwire` had the same defect for non-ASCII text and is fixed the same way.
+- **The hooks take themselves out after an Options+ uninstall** (#73, retest finding C; #55).
+  Options+ removes the plugin folder and nothing else — the SDK gives a plugin no uninstall
+  moment — so the five hooks and the status line kept running against a plugin that was gone,
+  recording every prompt and permission request with nothing left to read them, at three
+  status-line runs a second, and 2.2.1's guard only helped once the runtime folder was deleted
+  too. The hooks can see what the plugin cannot. On every load the plugin now records where it is
+  installed (the package folder under the service's Plugins directory, or the dev `.link`) in
+  `~/.claude/claude-console/plugin-home`; a hook that finds that place missing records nothing,
+  and once it has been missing for over a minute across two runs it runs the surgical unwire
+  itself (rolling backup, your own entries untouched, the Off marker set) and leaves an
+  `unwired-after-uninstall` breadcrumb. One miss is not enough on purpose: an Options+ update
+  replaces the folder for a few seconds, and the service restarts on its own — QA's suggested
+  unwire-on-Unload would have switched live status off on every one of those. The runtime home
+  (voice helper, speech model) is left for `uninstall.sh`, which the plugin still installs.
+  macOS only for now; the Windows shim keeps the 2.2.1 behaviour (#55).
+
+### Changed
+- **The card button link works again** (#71, retest finding A; #68). The repository it points
+  at is public again as of 9 September; nothing in the package changed.
+
 ## [2.2.1] — 2026-09-04
 
 Answers to Logitech QA's retest of 2.2.0 (1 September).

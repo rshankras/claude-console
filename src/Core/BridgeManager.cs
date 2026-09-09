@@ -8,6 +8,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.Net.Http;
     using System.Security.Cryptography;
     using System.Text;
+    using System.Text.Encodings.Web;
     using System.Text.Json;
     using System.Text.Json.Nodes;
     using System.Threading;
@@ -87,6 +88,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static readonly String[] RecoveryScripts = { "uninstall.sh" };
         private static String StatuslineChainFile => Path.Combine(ClaudeConsoleHome, "statusline-chain");
         private static String BridgeOptOutFile => Path.Combine(ClaudeConsoleHome, "no-autowire");
+        // Where the plugin is installed, written on every load for the hooks' liveness check (#73):
+        // an Options+ uninstall removes that place and nothing else, and the hooks — which outlive
+        // the plugin — take the wiring out themselves once it has been gone for over a minute.
+        private static String PluginHomeFile => Path.Combine(ClaudeConsoleHome, "plugin-home");
+        private static String PluginMissingSinceFile => Path.Combine(ClaudeConsoleHome, "plugin-missing-since");
 
         // Speech model — fetched on first use if absent (see EnsureVoiceModel). base.en ≈ 142 MB.
         private static String VoiceModelFile => Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
@@ -1451,6 +1457,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // Before anything conditional, on purpose — see RecoveryScripts.
                 EnsureRecoveryScriptsInstalled();
                 EnsureBridgeInstalled();
+                RecordPluginHome();
 
                 if (File.Exists(BridgeOptOutFile))
                 {
@@ -1739,6 +1746,105 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
         }
 
+        // Tell the hooks where the plugin lives (#73). The SDK gives a plugin no uninstall moment:
+        // Options+ deletes the package folder and the hooks in settings.json carry on, recording
+        // every prompt and permission request with nothing left to read them. The hooks can see
+        // what the plugin cannot — that its folder is gone — so on every load the plugin writes its
+        // installed location here and clears any "missing since" note a hook left while the
+        // service was restarting or Options+ was replacing the folder during an update. Unload()
+        // is the wrong place to unwire: it runs on every service restart and update as well.
+        private static void RecordPluginHome()
+        {
+            var home = InstalledPluginHome(PluginPaths.PluginAssemblyFilePath, PluginPaths.PluginsRoot);
+            if (home == null)
+            {
+                PluginLog.Warning("Live status: plugin path unknown — the hooks cannot tell an uninstall apart");
+                return;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(ClaudeConsoleHome);
+                if (!File.Exists(PluginHomeFile) || File.ReadAllText(PluginHomeFile) != home)
+                {
+                    File.WriteAllText(PluginHomeFile, home);
+                }
+                TryDelete(PluginMissingSinceFile);
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "Live status: couldn't record the plugin's location for the hooks");
+            }
+        }
+
+        /// <summary>
+        /// The thing whose disappearance means "uninstalled": for a package, the plugin's own folder
+        /// directly under the service's Plugins root (what Options+ deletes); for a dev build, the
+        /// <c>.link</c> file in that root pointing at the build output (a build output outlives
+        /// many links); otherwise the directory holding the DLL. Null when the SDK has not said
+        /// where the plugin is.
+        /// </summary>
+        internal static String InstalledPluginHome(String assemblyPath, String pluginsRoot)
+        {
+            if (String.IsNullOrEmpty(assemblyPath))
+            {
+                return null;
+            }
+
+            String dir;
+            try
+            {
+                dir = Path.GetDirectoryName(Path.GetFullPath(assemblyPath));
+            }
+            catch
+            {
+                return null;
+            }
+            if (String.IsNullOrEmpty(dir))
+            {
+                return null;
+            }
+
+            if (!String.IsNullOrEmpty(pluginsRoot))
+            {
+                var root = TrimSeparators(Path.GetFullPath(pluginsRoot));
+                for (var cursor = dir; !String.IsNullOrEmpty(cursor); cursor = Path.GetDirectoryName(cursor))
+                {
+                    var parent = Path.GetDirectoryName(cursor);
+                    if (parent != null && String.Equals(TrimSeparators(parent), root, StringComparison.Ordinal))
+                    {
+                        return cursor;
+                    }
+                }
+
+                try
+                {
+                    if (Directory.Exists(root))
+                    {
+                        foreach (var link in Directory.GetFiles(root, "*.link"))
+                        {
+                            // The csproj writes the output path with `echo`, trailing separator and all.
+                            var target = File.ReadAllText(link).Trim().TrimEnd('\\', '/', ' ');
+                            if (target.Length > 0 &&
+                                dir.StartsWith(TrimSeparators(Path.GetFullPath(target)), StringComparison.Ordinal))
+                            {
+                                return link;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "Live status: couldn't look for a dev link in the Plugins root");
+                }
+            }
+
+            return dir;
+        }
+
+        private static String TrimSeparators(String path) =>
+            path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
         /// <summary>
         /// The handler Claude Code should invoke: the bash script on macOS, the packaged shim on
         /// Windows. Null on Windows when the shim is missing from the package — we then leave
@@ -1939,7 +2045,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             changed = false;
             for (var attempt = 0; attempt < 2; attempt++)
             {
-                var root = ReadSettingsForRewrite(out var fingerprint);
+                var root = ReadSettingsForRewrite(out var fingerprint, out var layout);
                 if (root == null)
                 {
                     return false;
@@ -1948,7 +2054,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     return true;
                 }
-                if (WriteSettings(root, fingerprint))
+                if (WriteSettings(root, fingerprint, layout))
                 {
                     changed = true;
                     return true;
@@ -1983,9 +2089,15 @@ namespace Loupedeck.ClaudeConsolePlugin
         // A missing or empty file is an empty object — wiring a fresh install is the common case.
         // The fingerprint is of exactly the bytes that were parsed, so a write can prove nothing
         // slipped in between.
-        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint)
+        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint) =>
+            ReadSettingsForRewrite(out fingerprint, out _);
+
+        // The layout is read alongside the document so the write can hand the file back the way it
+        // was found (#72): same indentation, same line ending, same trailing newline.
+        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint, out SettingsLayout layout)
         {
             fingerprint = null;
+            layout = SettingsLayout.Default;
             if (new FileInfo(SettingsFile).LinkTarget != null)
             {
                 PluginLog.Warning("Live status: settings.json is a symlink — leaving it untouched");
@@ -2008,6 +2120,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 return new JsonObject();
             }
+            layout = SettingsLayout.Detect(bytes, text);
 
             JsonNode parsed;
             try
@@ -2041,14 +2154,19 @@ namespace Loupedeck.ClaudeConsolePlugin
         // on the first load, and never again: on QA's machine it was a month stale, so "restore the
         // backup" would have rolled back every unrelated change the user had made since. A backup
         // that is always the state one write ago is the only kind worth telling people about.
-        private static Boolean WriteSettings(JsonObject root, Byte[] expected)
+        //
+        // The bytes are laid out the way the file was found (#72). The default writer escaped every
+        // quote, ampersand, apostrophe, angle bracket and non-ASCII character to \uXXXX and dropped
+        // the trailing newline — valid JSON, but a whole-file diff for anyone who keeps ~/.claude in
+        // git, applied to every entry in the file including the ones the plugin does not own.
+        private static Boolean WriteSettings(JsonObject root, Byte[] expected, SettingsLayout layout)
         {
             Directory.CreateDirectory(ClaudeDir);
-            var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            var json = layout.Render(root);
             var tmp = SettingsFile + ".cc." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                File.WriteAllText(tmp, json);
+                File.WriteAllText(tmp, json, layout.Encoding);
 
                 if (!SameBytes(Fingerprint(SettingsFile), expected))
                 {

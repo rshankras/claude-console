@@ -9,6 +9,34 @@
 # /tmp/claude-console, 0700 dir / 0600 files — matching the plugin's PrivateFiles rules.
 
 umask 077
+
+# Liveness (#73) — same block as activity-hook.sh, and it matters more here: the status line runs
+# about three times a second, not once per event. An Options+ uninstall removes the plugin and
+# nothing else, so this wiring outlived the plugin and kept running. The plugin writes where it is
+# installed on every load; once that place has been gone for over a minute across two runs, the
+# plugin was uninstalled: take the wiring out via the cleanup script the plugin installed beside
+# us, leave a breadcrumb, and stop. One missing run is not enough — an Options+ update replaces
+# the folder, and the service restarts on its own. While it is missing, record nothing.
+RUNTIME="$HOME/.claude/claude-console"
+if [ -s "$RUNTIME/plugin-home" ]; then
+  plugin_home="$(cat "$RUNTIME/plugin-home" 2>/dev/null)"
+  missing="$RUNTIME/plugin-missing-since"
+  if [ -n "$plugin_home" ] && [ ! -e "$plugin_home" ]; then
+    now="$(date +%s)"
+    first="$(cat "$missing" 2>/dev/null)"
+    case "$first" in ''|*[!0-9]*) first="" ;; esac
+    if [ -z "$first" ]; then
+      printf '%s' "$now" > "$missing"
+    elif [ $((now - first)) -ge 60 ]; then
+      rm -f "$missing"
+      printf '%s\n' "$now" > "$RUNTIME/unwired-after-uninstall"
+      [ -f "$RUNTIME/scripts/uninstall.sh" ] && bash "$RUNTIME/scripts/uninstall.sh" --unwire >/dev/null 2>&1
+    fi
+    exit 0
+  fi
+  rm -f "$missing" 2>/dev/null
+fi
+
 # CLAUDE_CONSOLE_IPC_ROOT is a test hook (tests/scripts/test-bridge-scripts.sh) so the suite can
 # run against a temp root. Don't set it in your shell — the plugin always reads the default path.
 ROOT="${CLAUDE_CONSOLE_IPC_ROOT:-/tmp/claude-console}"

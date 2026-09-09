@@ -205,6 +205,82 @@ AFTER_SUM="$(cksum < "$HOME/.claude/settings.json")"
 bash "$UNINSTALL" --unwire >/dev/null 2>&1
 check_eq "a second --unwire is a no-op" "$AFTER_SUM" "$(cksum < "$HOME/.claude/settings.json")"
 
+# --- liveness (#73): the hooks unwire themselves once the plugin is gone ------------------------
+# An Options+ uninstall removes the plugin folder and nothing else, so the hooks kept running
+# with nothing to read them. The plugin writes its installed location to plugin-home on every
+# load; a hook that finds that place missing records nothing, and once it has been missing for
+# over a minute across two runs, runs the surgical unwire itself. One miss is not enough: an
+# Options+ update replaces the folder, and the service restarts on its own.
+echo
+echo "liveness (#73)"
+RUNTIME_HOME="$HOME/.claude/claude-console"
+mkdir -p "$RUNTIME_HOME/scripts"
+cp "$UNINSTALL" "$RUNTIME_HOME/scripts/uninstall.sh"   # what the plugin installs beside the hooks
+rm -f "$RUNTIME_HOME/no-autowire" "$RUNTIME_HOME/plugin-missing-since" "$RUNTIME_HOME/unwired-after-uninstall"
+PLUGIN_DIR="$ROOT/Plugins/ClaudeConsole"
+mkdir -p "$PLUGIN_DIR"
+printf '%s' "$PLUGIN_DIR" > "$RUNTIME_HOME/plugin-home"
+ACT="$CLAUDE_CONSOLE_IPC_ROOT/activity/shared.json"
+SES="$CLAUDE_CONSOLE_IPC_ROOT/sessions/shared.json"
+present() { [ -f "$1" ] && echo 1 || echo 0; }
+
+rm -f "$ACT"
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
+check_file "plugin present: the hook records as before" "$ACT"
+check_eq   "plugin present: no missing-since note" "0" "$(present "$RUNTIME_HOME/plugin-missing-since")"
+
+rmdir "$PLUGIN_DIR"
+rm -f "$ACT" "$SES"
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1; RC=$?
+check_eq "plugin gone: the first run exits 0" "0" "$RC"
+check_eq "plugin gone: the first run records nothing" "0" "$(present "$ACT")"
+check_eq "plugin gone: the first run leaves a missing-since note" "1" \
+         "$(grep -cE '^[0-9]+$' "$RUNTIME_HOME/plugin-missing-since" 2>/dev/null)"
+
+# Under a minute: still wired, still silent (an update replaces the folder for a few seconds).
+cat > "$HOME/.claude/settings.json" <<'JSON'
+{
+  "statusLine": { "type": "command", "command": "[ ! -f \"/x/statusline-handler.sh\" ] || bash \"/x/statusline-handler.sh\"" },
+  "hooks": {
+    "Stop": [ { "hooks": [
+      { "type": "command", "command": "[ ! -f \"/x/activity-hook.sh\" ] || bash \"/x/activity-hook.sh\" done" },
+      { "type": "command", "command": "echo user-hook — keep me" } ] } ]
+  }
+}
+JSON
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
+check_eq "plugin gone under a minute: still wired" "1" "$(grep -c 'activity-hook.sh' "$HOME/.claude/settings.json")"
+check_eq "plugin gone under a minute: records nothing" "0" "$(present "$ACT")"
+
+# Over a minute across two runs: unwired, surgically, and that run records nothing either.
+printf '%s' "$(( $(date +%s) - 120 ))" > "$RUNTIME_HOME/plugin-missing-since"
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1; RC=$?
+check_eq   "plugin gone over a minute: exits 0" "0" "$RC"
+check_eq   "plugin gone over a minute: our wiring is taken out" "0" \
+           "$(grep -c 'activity-hook.sh\|statusline-handler.sh' "$HOME/.claude/settings.json")"
+check_eq   "plugin gone over a minute: the user's hook survives, unescaped (#72)" "1" \
+           "$(grep -c 'echo user-hook — keep me' "$HOME/.claude/settings.json")"
+check_file "plugin gone over a minute: the Off marker is set" "$RUNTIME_HOME/no-autowire"
+check_file "plugin gone over a minute: a breadcrumb says when" "$RUNTIME_HOME/unwired-after-uninstall"
+check_eq   "plugin gone over a minute: the note is cleared" "0" "$(present "$RUNTIME_HOME/plugin-missing-since")"
+check_eq   "plugin gone over a minute: records nothing" "0" "$(present "$ACT")"
+
+# The status line runs the same check.
+printf '%s' "$(date +%s)" > "$RUNTIME_HOME/plugin-missing-since"
+printf '%s' "$SESSION_JSON" | bash "$STATUSLINE" >/dev/null 2>&1
+check_eq "statusline: plugin gone records nothing" "0" "$(present "$SES")"
+
+# The folder comes back (an update finished): the note clears and recording resumes.
+mkdir -p "$PLUGIN_DIR"
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
+check_file "plugin back: recording resumes" "$ACT"
+check_eq   "plugin back: the note is cleared" "0" "$(present "$RUNTIME_HOME/plugin-missing-since")"
+
+# No plugin-home at all (a runtime home from before this check): nothing changes.
+rm -f "$RUNTIME_HOME/plugin-home" "$ACT"
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
+check_file "no plugin-home file: the hook behaves as before" "$ACT"
+
 echo
 printf 'bridge scripts: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
