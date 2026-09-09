@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
-    <plugin displayName="Claude Console" homepage="https://www.rshankar.com/keypad-profiles/" />
+    <plugin displayName="Claude Console" homepage="https://vizhi.dev/claude-console/" />
     <aliases />
     <modes>
         <mode name="Main" />

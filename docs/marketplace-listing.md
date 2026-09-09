@@ -13,10 +13,12 @@ These are read out of the uploaded `.lplug4` — the form fills them itself. To 
 | Operating system | macOS, Windows (from `pluginFolderMac` + `pluginFolderWin`) |
 | Capabilities | `HasNoApplication` — universal, binds no application (#23) |
 | Version | 2.2.1 |
-| Content licence | MIT — https://opensource.org/licenses/MIT |
-| Support | https://github.com/rshankras/keypad-profiles/issues — the source repo is private since 2026-09-02, so every user-facing link must point at the public profiles site |
-| Homepage | https://www.rshankar.com/keypad-profiles/ |
+| Content licence | Proprietary — https://vizhi.dev/eula/ (2.2.1 as submitted said MIT; changed 2026-09-09 ahead of closing the source — if the form's licence list has no "Proprietary" entry, pick the nearest and keep the EULA URL) |
+| Support | https://vizhi.dev/faq/ (2.2.1 as submitted: the keypad-profiles issue tracker, which the FAQ still links to) |
+| Homepage | https://vizhi.dev/claude-console/ (2.2.1 as submitted: the keypad-profiles site) |
 | Copyright | Copyright © 2026 S.Ravi Shankar. All rights reserved. |
+
+Every user-facing link — these fields, the three card buttons baked into the plugin DLL, the README download links — points at **vizhi.dev** as of 2026-09-09. The source repository will be closed, so nothing a user can reach may point at github.com/rshankras/claude-console (#68, #71: every card button was a 404 for a week when it went private). The vizhi.dev anchors the DLL uses (`claude-console/#live-status-bridge`, `faq/#windows`, `faq/#voice`) are baked into shipped packages: treat them as frozen, or add redirects before renaming.
 
 ## Teaser card description — limit 120 characters
 

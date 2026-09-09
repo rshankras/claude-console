@@ -77,6 +77,16 @@ Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and 
 ### Changed
 - **The card button link works again** (#71, retest finding A; #68). The repository it points
   at is public again as of 9 September; nothing in the package changed.
+- **Every user-facing link points at vizhi.dev, and the licence is the EULA.** The three card
+  buttons baked into the plugin (how to undo the settings edit, the Windows Terminal rule, voice),
+  both packages' homepage, support and licence fields, and the README's download and support
+  links now open vizhi.dev — its product pages and FAQ carry the same content the README sections
+  did. Nothing a user can reach points at the source repository any more: it went private on
+  2 September and every card button was a 404 for a week (#68, #71), and it will be closed for
+  good. With that, the MIT licence file is gone and the packages declare the
+  [EULA](https://vizhi.dev/eula/) as their licence; whisper.cpp and the Whisper model stay MIT and
+  ship their licence texts. The vizhi.dev anchors the plugin uses are frozen — a rename needs a
+  redirect first — and `CC_CHECK_LINKS=1` makes the test suite fetch them.
 - **The Windows Terminal notice no longer claims Yes/No and voice "still work here"** (#61,
   Windows retest item 16). QA caught it mid-way through a run in which neither did. It now says
   they do not need Windows Terminal but do need a target session, and to pin a session slot if a

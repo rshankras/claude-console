@@ -82,15 +82,15 @@ minimumLoupedeckVersion: 6.4
 
 # Name of the license that the plugin is licensed under. Select the one that you prefer.
 # NOTE: GPL license is not compatible with Loupedeck Marketplace.
-license: MIT
+license: Proprietary
 
 # URL of the plugin license.
-licenseUrl: https://opensource.org/licenses/MIT
+licenseUrl: https://vizhi.dev/eula/
 
 # URL of the support page where the users can send improvement suggestions and report bugs.
 # The URL is shown in Loupedeck Marketplace. The page can be for example a GitHub issues page.
 # NOTE: This setting is recommended when publishing the plugin in Loupedeck Marketplace.
-supportPageUrl: https://github.com/rshankras/keypad-profiles/issues
+supportPageUrl: https://vizhi.dev/faq/
 
 # URL of the plugin homepage. The URL is shown in Loupedeck Marketplace.
-homePageUrl: https://www.rshankar.com/keypad-profiles/
+homePageUrl: https://vizhi.dev/claude-console/
