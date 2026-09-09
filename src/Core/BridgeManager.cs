@@ -1065,24 +1065,26 @@ namespace Loupedeck.ClaudeConsolePlugin
             TryDelete(VoiceErrorFile);
             TryDelete(VoiceStopFile);
 
+            // Each refusal goes through ReportVoiceFailure so the pressed key says why, as the
+            // macOS path already did. Here they were a log line and a beep: on QA's machine the
+            // first press started the 142 MB model download and the key said nothing at all
+            // (2.2.1 Windows retest, item 6).
             var helper = PluginPaths.PackagedFile("claude-console-voice.exe");
             if (helper == null)
             {
-                PluginLog.Warning("BridgeManager.StartVoiceCapture: claude-console-voice.exe not found in the plugin package");
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.NoHelper, "claude-console-voice.exe not found in the plugin package");
                 return false;
             }
 
             if (!File.Exists(WindowsWhisperCli))
             {
-                PluginLog.Warning($"BridgeManager.StartVoiceCapture: whisper-cli.exe missing at {WhisperBinDir} — voice needs the whisper bundle installed");
-                _platform.Alert();
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.NoWhisper, $"whisper-cli.exe missing at {WhisperBinDir} — voice needs the whisper bundle installed");
                 return false;
             }
 
             if (!EnsureVoiceModel())
             {
-                PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
-                _platform.Alert();
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.ModelLoading, "speech model not ready (downloading) — try again shortly");
                 return false;
             }
 
@@ -2263,6 +2265,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (Interlocked.CompareExchange(ref _modelDownloading, 1, 0) == 0)
             {
                 new Thread(DownloadVoiceModel) { IsBackground = true, Name = "claude-voice-model-download" }.Start();
+                // Say so where the user will see it. The key says Model loading for two seconds,
+                // but 142 MB on a slow connection is a multi-minute cliff, and the only other notice
+                // was a log line (2.2.1 Windows retest, item 6).
+                this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelDownloading(), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
             }
             return false;
         }
@@ -2291,17 +2297,22 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     PluginLog.Warning($"BridgeManager: model checksum mismatch (got {sha}) — discarding download");
                     TryDelete(partFile);
+                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelDownloadFailed("checksum mismatch"), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
                     return;
                 }
 
                 TryDelete(VoiceModelFile);
                 File.Move(partFile, VoiceModelFile);
                 PluginLog.Info("BridgeManager: whisper model ready");
+                this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelReady(), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
             }
             catch (Exception ex)
             {
+                // A failed download used to be a log line only, and the next press silently started
+                // the 142 MB over again.
                 PluginLog.Warning(ex, "BridgeManager: whisper model download failed");
                 TryDelete(partFile);
+                this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelDownloadFailed(ex.Message), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
             }
             finally
             {
@@ -2329,7 +2340,31 @@ namespace Loupedeck.ClaudeConsolePlugin
         // user to correct before sending — the Voice Draft key. Whisper mishears often enough that
         // "fix it, then press Return yourself" deserves a first-class path.
         public void StopVoiceCapture(Boolean submit = true) =>
-            StopVoiceCaptureThen(text => InjectText(text, pressEnter: submit));
+            StopVoiceCaptureThen(text => this.DeliverDictation(text, submit));
+
+        // Type a transcript into the routed session, and SAY SO when it cannot be typed. The
+        // injection's outcome used to be discarded here, so a dictation with no target session —
+        // nothing pinned and no single obvious session; Windows has no frontmost query — was
+        // transcribed and then dropped with a WARN line, indistinguishable on the device from one
+        // that landed (2.2.1 Windows retest, item 6). The key now says No target / Not typed like
+        // every other voice failure, and the log keeps the words so nothing dictated is lost.
+        internal void DeliverDictation(String text, Boolean submit)
+        {
+            var intent = submit ? VoiceIntent.Send : VoiceIntent.Draft;
+            var target = RoutingTty();
+            if (target == null)
+            {
+                this.ReportVoiceFailure(intent, VoiceFailure.NoTarget,
+                    $"no session to type into — pin a session slot, or leave one session running. Dropped: \"{text}\"");
+                return;
+            }
+
+            var outcome = _platform.InjectText(target, text, submit);
+            if (outcome != InjectionOutcome.Ok)
+            {
+                this.ReportVoiceFailure(intent, VoiceFailure.NotTyped, $"{outcome} for {target}. Dropped: \"{text}\"");
+            }
+        }
 
         // Stop voice capture and use the transcript to OPEN a project (new tab + cd + claude).
         public void StopVoiceCaptureForProject() => StopVoiceCaptureThen(NavigateToProjectByVoice);
@@ -2544,6 +2579,9 @@ namespace Loupedeck.ClaudeConsolePlugin
                 .ToList();
 
         // Match a spoken phrase to a project folder, then open it (new Terminal tab + cd + claude).
+        // The roots-file hint is posted once per load: the first miss teaches, the rest would nag.
+        private Boolean _projectRootsHintShown;
+
         private void NavigateToProjectByVoice(String transcript)
         {
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -2553,13 +2591,23 @@ namespace Loupedeck.ClaudeConsolePlugin
             var match = MatchProject(transcript, candidates.Paths);
             if (match == null)
             {
-                // Say what was searched. The whole of #26 reached us as "it does nothing" — a line
-                // naming the candidate count and where they came from would have diagnosed itself.
-                PluginLog.Warning(
-                    $"NavigateToProjectByVoice: no project matched \"{transcript}\" among "
+                // Say what was searched, and what it was compared AS. The whole of #26 reached us as
+                // "it does nothing"; the 2.2.1 Windows retest (item 8) then read the raw phrase in this
+                // line as proof that the carrier words were never stripped. The key says No match like
+                // every other voice failure, and the first miss per load posts the roots-file hint in
+                // Options+ — until now the only place that file was named was this log line.
+                var rootsFile = ProjectDiscovery.DefaultRootsFile(home);
+                this.ReportVoiceFailure(VoiceIntent.Project, VoiceFailure.NoMatch,
+                    $"no project matched \"{transcript}\" (compared as \"{NormalizeForMatch(transcript)}\") among "
                     + $"{candidates.Paths.Count} candidate(s) — {candidates.Source}. If your projects "
-                    + $"live elsewhere, list their roots in {ProjectDiscovery.DefaultRootsFile(home)}");
-                _platform.Alert(); // audible "didn't catch a project" feedback
+                    + $"live elsewhere, list their roots in {rootsFile}");
+                if (!_projectRootsHintShown)
+                {
+                    _projectRootsHintShown = true;
+                    this.Notify?.Invoke(PluginStatus.Warning,
+                        BridgeNotice.ProjectNoMatch(transcript, candidates.Paths.Count, candidates.Source, rootsFile),
+                        BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
+                }
                 return;
             }
             PluginLog.Info($"NavigateToProjectByVoice: \"{transcript}\" -> {match} (of {candidates.Paths.Count} candidates)");
@@ -2568,8 +2616,15 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         internal static String MatchProject(String transcript, IEnumerable<String> candidates)
         {
-            var t = NormalizeForMatch(transcript);
-            if (t.Length < 2)
+            // Two readings of the phrase: with the carrier words stripped ("go to the X project" → X)
+            // and exactly as spoken. The best score over both wins, so a project whose NAME contains
+            // a carrier word — claude-console, open-source-kit — still matches exactly when said in
+            // full, and "go to project claude" reaches a project called claude.
+            var keys = new[] { NormalizeForMatch(transcript), SquashForMatch(transcript) }
+                .Where(k => k.Length >= 2)
+                .Distinct()
+                .ToArray();
+            if (keys.Length == 0)
             {
                 return null;
             }
@@ -2585,12 +2640,12 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 // Match on the folder NAME, so a trailing separator can't reduce it to nothing.
                 var name = Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                var f = NormalizeForMatch(name);
+                var f = SquashForMatch(name);
                 if (f.Length == 0)
                 {
                     continue;
                 }
-                var score = MatchScore(t, f);
+                var score = keys.Max(k => MatchScore(k, f));
                 if (score > bestScore)
                 {
                     bestScore = score;
@@ -2602,15 +2657,67 @@ namespace Loupedeck.ClaudeConsolePlugin
             return bestScore >= 300 ? best : null;
         }
 
-        // Lowercase, drop common filler/command words ("open the X project"), keep letters+digits only.
-        internal static String NormalizeForMatch(String s)
+        // The words a person puts around a project name — "go to", "open the … project" — dropped
+        // from the EDGES of the phrase, whole words only. The old version ran a blind substring
+        // Replace for each word over the phrase AND the folder name: "the" ate the middle of
+        // "theme", "open" the front of "openai", and "claude" was cut out of every folder called
+        // claude-* (2.2.1 Windows retest, item 8). Folder names are never stripped now (SquashForMatch).
+        private static readonly HashSet<String> LeadingCarrierWords = new(StringComparer.Ordinal)
         {
-            s = (s ?? "").ToLowerInvariant();
-            foreach (var w in new[] { "go to", "switch to", "open", "launch", "the", "project", "folder", "claude" })
+            "go", "to", "switch", "open", "launch", "the", "a", "my", "please", "project", "folder",
+        };
+
+        private static readonly HashSet<String> TrailingCarrierWords = new(StringComparer.Ordinal)
+        {
+            "project", "folder", "please",
+        };
+
+        /// <summary>The spoken phrase as a match key: carrier words off the edges, then letters and digits only.</summary>
+        internal static String NormalizeForMatch(String spoken)
+        {
+            var words = WordsOf(spoken);
+            var start = 0;
+            while (start < words.Count && LeadingCarrierWords.Contains(words[start]))
             {
-                s = s.Replace(w, " ");
+                start++;
             }
-            return new String(s.Where(Char.IsLetterOrDigit).ToArray());
+            var end = words.Count;
+            while (end > start && TrailingCarrierWords.Contains(words[end - 1]))
+            {
+                end--;
+            }
+
+            // Nothing but carrier words ("open the project"): keep the phrase whole — a project may
+            // be called exactly that, and an empty key matches nothing anyway.
+            return start >= end
+                ? String.Concat(words)
+                : String.Concat(words.Skip(start).Take(end - start));
+        }
+
+        /// <summary>A folder name, or a phrase as spoken, as lowercase letters and digits only. Nothing stripped.</summary>
+        internal static String SquashForMatch(String s) => String.Concat(WordsOf(s));
+
+        private static List<String> WordsOf(String s)
+        {
+            var words = new List<String>();
+            var current = new StringBuilder();
+            foreach (var c in (s ?? "").ToLowerInvariant())
+            {
+                if (Char.IsLetterOrDigit(c))
+                {
+                    current.Append(c);
+                }
+                else if (current.Length > 0)
+                {
+                    words.Add(current.ToString());
+                    current.Clear();
+                }
+            }
+            if (current.Length > 0)
+            {
+                words.Add(current.ToString());
+            }
+            return words;
         }
 
         internal static Int32 MatchScore(String t, String f)

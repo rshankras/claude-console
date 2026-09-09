@@ -5,9 +5,48 @@ All notable changes to Claude Console are documented here. Format based on
 
 ## [Unreleased]
 
-Answers to Logitech QA's retest of 2.2.1 on macOS (8 September; #71–#73).
+Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and Windows (#74–#80).
+
+### Fixed — Windows (code change; not yet run on Windows hardware)
+- **Yes/No answer again** (#74, Windows retest item 2 — every press was discarded as "no pending
+  approval on (no target)"). The Windows hook exe wrote the PermissionRequest hook's argv verb,
+  `permission`, as the session's state; the plugin only ever recognises `waiting`, which is the word
+  the bash hook translates to on macOS. So on Windows no session ever counted as waiting: the
+  pending payload sat correctly on disk beside it and was never read (a pinned session "yields no
+  pending approval"), and the routing fallback "exactly one session waiting" could never fire (an
+  un-pinned press found "no target"). Discovery, pinning and the status data all worked, which is
+  why it looked like a routing defect. The exe now translates like the bash hook and the plugin
+  normalises the word whichever hook wrote it; the slot key reads **Allow?** while a menu is up
+  instead of **Complete**. Nothing had asserted the word; `ActivityWordTests` does now.
+- **Voice refusals show their reason on the key** (#76, item 6). The three Windows refusals in
+  `StartVoiceCapture` — no helper exe, no `whisper-cli.exe`, speech model not ready — were a log
+  line and a beep; macOS already put **Model loading** on the key. They now go through the same
+  path: **No helper**, **No whisper**, **Model loading**.
 
 ### Fixed
+- **A dictation that cannot be typed says so** (#75, item 6). The transcript path discarded the
+  platform's injection outcome, so a dictation with no target session — nothing pinned, no single
+  obvious session — was transcribed and dropped with a WARN line, indistinguishable on the device
+  from one that landed (QA: three delivered while pinned, four of five lost after un-pinning). The
+  pressed key now reads **No target**, or **Not typed** when the session was known but the
+  keystrokes did not land, and the log keeps the words. `VoiceDeliveryTests`.
+- **The speech model download is announced** (#76). One Options+ card when the 142 MB one-time
+  download starts (the key says Model loading until it finishes; press again afterwards), one when
+  it is ready, one when it fails with the reason. Before, the first voice press on a fresh install
+  started a multi-minute download with a log line as the only notice, and a failed download
+  silently restarted on the next press.
+- **Go to Project matches names that contain carrier words, and says when it matched nothing**
+  (#77, item 8). Carrier words ("go to", "open the … project") are now dropped whole-word off the
+  edges of the phrase only; folder names are never stripped. The old blind substring `Replace` ran
+  over both — "the" ate the middle of `theme`, "open" the front of `openai`, and "claude" was cut
+  out of every `claude-*` folder, so a project called `claude` could not be reached at all. Both
+  readings of the phrase are scored and the best wins, so "go to project claude code" reaches
+  `claude-code` over `vscode-ext`. No match now reads **No match** on the key, the log prints the
+  phrase as compared (QA read the raw phrase in the old line as proof nothing was stripped), and
+  the first miss per load posts an Options+ card naming the candidates' source and the
+  `project-roots` file, which until now was named only in that log line.
+
+### Fixed — macOS
 - **A settings.json write hands the file back the way it was found** (#72, retest finding B).
   The plugin parses the whole document and serialises it again, and the default writer made that
   visible: every quote, ampersand, apostrophe, angle bracket and non-ASCII character came back as
@@ -38,6 +77,10 @@ Answers to Logitech QA's retest of 2.2.1 on macOS (8 September; #71–#73).
 ### Changed
 - **The card button link works again** (#71, retest finding A; #68). The repository it points
   at is public again as of 9 September; nothing in the package changed.
+- **The Windows Terminal notice no longer claims Yes/No and voice "still work here"** (#61,
+  Windows retest item 16). QA caught it mid-way through a run in which neither did. It now says
+  they do not need Windows Terminal but do need a target session, and to pin a session slot if a
+  press is refused.
 
 ## [2.2.1] — 2026-09-04
 

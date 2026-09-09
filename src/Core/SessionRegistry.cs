@@ -442,8 +442,24 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return "ready";
             }
 
-            return activity.State == "done" ? "ready" : activity.State;
+            return NormaliseActivityWord(activity.State);
         }
+
+        /// <summary>
+        /// The state a session is in, from the word a hook wrote. Hooks write busy | waiting | done;
+        /// the grid speaks busy | waiting | ready. "permission" is the PermissionRequest hook's argv
+        /// verb — the bash hook translates it to "waiting" before writing, and the Windows exe did
+        /// not until the 2.2.1 Windows retest (item 2): with the raw word on disk, no session ever
+        /// counted as waiting there, so the pending approval was never read and Yes/No answered
+        /// nothing. The exe is fixed too; this makes the plugin right whichever hook wrote the file.
+        /// </summary>
+        internal static String NormaliseActivityWord(String word) =>
+            word switch
+            {
+                "done" => "ready",
+                "permission" => "waiting",
+                _ => word,
+            };
 
         // Fill in what (if anything) this session is waiting to be approved. Only meaningful while
         // the session is actually waiting: once it moves on, a leftover pending file must not keep a

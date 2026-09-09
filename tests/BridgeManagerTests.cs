@@ -95,7 +95,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("open indie app autopilot", "indieappautopilot")]
         [InlineData("switch to headroom", "headroom")]
         [InlineData("go to the vizhi project", "vizhi")]
-        public void NormalizeForMatch_strips_filler_words_and_punctuation(String spoken, String expected)
+        [InlineData("Go to Project Cloud Code.", "cloudcode")]
+        // Whole words off the edges only — the old substring Replace ate "the" out of "theme"
+        // and "open" out of "openai" (2.2.1 Windows retest, item 8).
+        [InlineData("open theme", "theme")]
+        [InlineData("go to openai", "openai")]
+        [InlineData("open the project", "opentheproject")]
+        public void NormalizeForMatch_strips_carrier_words_off_the_edges(String spoken, String expected)
         {
             Assert.Equal(expected, BridgeManager.NormalizeForMatch(spoken));
         }
@@ -103,16 +109,45 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Theory]
         [InlineData("go to the claude console project", "claude-console")]
         [InlineData("open claude console", "claude-console")]
-        public void Spoken_phrase_and_folder_name_normalize_alike(String spoken, String folder)
+        [InlineData("go to project claude", "claude")]
+        public void Spoken_phrase_and_folder_name_meet_exactly(String spoken, String folder)
         {
-            // "claude" is stripped as a command word ("launch claude in headroom"), which also
-            // strips it from a folder called claude-console. That's fine — and load-bearing:
-            // normalisation runs over BOTH sides, so the two still meet exactly.
+            // Folder names are never stripped — "claude" used to be cut out of every claude-*
+            // folder, and a project called exactly "claude" could not be reached at all.
             var spokenKey = BridgeManager.NormalizeForMatch(spoken);
-            var folderKey = BridgeManager.NormalizeForMatch(folder);
+            var folderKey = BridgeManager.SquashForMatch(folder);
 
             Assert.Equal(folderKey, spokenKey);
             Assert.Equal(1000, BridgeManager.MatchScore(spokenKey, folderKey));
+        }
+
+        [Fact]
+        public void MatchProject_prefers_the_full_name_over_a_carrier_stripped_reading()
+        {
+            // "claude code" said in full must reach claude-code, not the project whose name merely
+            // contains "code" — the as-spoken reading scores an exact 1000 and wins.
+            var candidates = new[] { "/w/vscode-ext", "/w/claude-code", "/w/claude-console" };
+
+            Assert.Equal("/w/claude-code", BridgeManager.MatchProject("go to project claude code", candidates));
+            Assert.Equal("/w/claude-console", BridgeManager.MatchProject("open claude console", candidates));
+            Assert.Equal("/w/claude-console", BridgeManager.MatchProject("launch claude in claude console", candidates));
+        }
+
+        [Fact]
+        public void MatchProject_reaches_a_project_named_like_a_carrier_word()
+        {
+            var candidates = new[] { "/w/claude", "/w/claude-console", "/w/open-source-kit" };
+
+            Assert.Equal("/w/claude", BridgeManager.MatchProject("go to project claude", candidates));
+            Assert.Equal("/w/open-source-kit", BridgeManager.MatchProject("open open source kit", candidates));
+        }
+
+        [Fact]
+        public void MatchProject_still_refuses_a_mishearing_that_matches_nothing()
+        {
+            // QA's dictation: whisper heard "Cloud" for "Claude". Four letters of overlap is below
+            // the fuzzy floor, and the key now says No match rather than nothing (item 8).
+            Assert.Null(BridgeManager.MatchProject("Go to Project Cloud Code.", new[] { "/w/claude-code" }));
         }
 
         [Fact]

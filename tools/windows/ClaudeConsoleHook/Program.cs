@@ -260,10 +260,18 @@ internal static class Program
         Directory.CreateDirectory(ActivityDir);
 
         var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        // The STATE the plugin reads is busy | waiting | done; "permission" is an argv verb, not a
+        // state. scripts/activity-hook.sh translates it ("STATE=waiting") before writing, and this
+        // exe did not — so on Windows a permission prompt landed as state "permission", which the
+        // plugin's pending-approval check (SessionRegistry.ApplyPendingApproval) and its routing
+        // fallback (BridgeManager.RoutingTty, "exactly one session waiting") never match. Every
+        // Yes/No press was "no pending approval on (no target)", and voice found no target either,
+        // while the pending payload sat correctly on disk (Logitech QA, 2.2.1 Windows retest item 2).
+        var word = state == "permission" ? "waiting" : state;
         // Built by hand, not JsonSerializer: reflection serialization is the one thing in this
         // exe that publish-trimming can break, and the payload is two fields. Escaping still
         // matters — state arrives via argv and lands in a file the plugin parses as JSON.
-        var payload = $"{{\"state\":\"{JsonEscape(state)}\",\"ts\":{ts}}}";
+        var payload = $"{{\"state\":\"{JsonEscape(word)}\",\"ts\":{ts}}}";
 
         if (key != null)
         {
