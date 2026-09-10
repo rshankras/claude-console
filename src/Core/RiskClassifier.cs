@@ -60,6 +60,23 @@ namespace Loupedeck.ClaudeConsolePlugin
             new Regex(@"\bgh\s+release\s+create\b", Opts),
             new Regex(@"\bterraform\s+(apply|destroy)\b", Opts),
             new Regex(@"\bkubectl\s+delete\b", Opts),
+
+            // --- Windows: PowerShell and cmd ------------------------------------------------
+            // On Windows, Claude Code proposes PowerShell, not sh — a delete arrives as
+            // `Remove-Item -Recurse -Force`, a shutdown as `Stop-Computer`. The Unix patterns
+            // above never see these, so a genuinely destructive Windows command read as routine
+            // (a real 2.2.1 finding: a recursive force-delete showed an amber Yes, not red).
+            // PowerShell accepts any unambiguous parameter prefix, so -Force is -Fo/-For/-Forc
+            // (never a lone -f — -Filter shares the F) and -Recurse is -R/-Rec/…; matched that way.
+            // The "lone generic flag is not enough" rule from the Unix side still holds.
+            new Regex(@"\b(Remove-Item|rmdir|rd|del|erase|ri)\b[^|;\r\n]*\s-(Recurse|Rec|R|Force|Fo|For|Forc)\b", Opts), // recursive/forced delete
+            new Regex(@"\b(rmdir|rd)\b[^|;\r\n]*\s/s\b", Opts),           // cmd recursive rmdir
+            new Regex(@"\b(del|erase)\b[^|;\r\n]*\s/s\b", Opts),          // cmd recursive delete
+            new Regex(@"\bFormat-Volume\b|\bClear-Disk\b", Opts),         // formats / wipes a volume or disk
+            new Regex(@"\bformat\s+[A-Za-z]:", Opts),                     // cmd `format C:` (not `dotnet format`)
+            new Regex(@"\b(Stop|Restart)-Computer\b", Opts),             // shutdown / reboot
+            new Regex(@"\bSet-ExecutionPolicy\b[^|;\r\n]*\b(Unrestricted|Bypass)\b", Opts), // disables script safety
+            new Regex(@"\b(iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b[^|;]*\|\s*(iex|Invoke-Expression)\b", Opts), // download-and-run
         };
 
         // A patch is not a command. Codex's apply_patch tool delivers its body in the SAME field
