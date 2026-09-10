@@ -8,8 +8,7 @@
 //
 // A separate short-lived process for the same two reasons as claude-console-inject: AttachConsole
 // mutates global state the plugin host must never touch, and this exe (alone of the three) needs
-// the Windows Desktop runtime for System.Windows.Automation — if that runtime is missing, only
-// focus degrades; typing and hooks are untouched.
+// the Windows Desktop Runtime for System.Windows.Automation, bundled inside this executable.
 //
 // Exit codes (the contract with WindowsPlatformBridge.FocusSession):
 //   0 tab selected and window raised

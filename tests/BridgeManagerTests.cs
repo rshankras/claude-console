@@ -150,6 +150,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Null(BridgeManager.MatchProject("Go to Project Cloud Code.", new[] { "/w/claude-code" }));
         }
 
+        [Theory]
+        [InlineData("go to open source kit")]
+        [InlineData("open the open source kit project")]
+        [InlineData("open source kit")]
+        public void MatchProject_preserves_carrier_words_inside_the_longest_complete_name(String spoken)
+        {
+            var shortName = Path.Combine("projects", "source-kit");
+            var fullName = Path.Combine("projects", "open-source-kit");
+            Assert.Equal(fullName, BridgeManager.MatchProject(spoken, new[] { shortName, fullName }));
+            Assert.Equal(fullName, BridgeManager.MatchProject(spoken, new[] { fullName, shortName }));
+        }
+
+        [Fact]
+        public void MatchProject_refuses_equally_good_folders()
+        {
+            var first = Path.Combine("work", "console");
+            var second = Path.Combine("personal", "console");
+            Assert.Null(BridgeManager.MatchProject("open console", new[] { first, second }));
+            Assert.Null(BridgeManager.MatchProject("open console", new[] { second, first }));
+        }
+
         [Fact]
         public void MatchScore_ranks_exact_over_prefix_over_substring()
         {

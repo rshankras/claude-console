@@ -41,9 +41,10 @@ if [ -s "$RUNTIME/plugin-home" ]; then
     if [ -z "$first" ]; then
       printf '%s' "$now" > "$missing"
     elif [ $((now - first)) -ge 60 ]; then
-      rm -f "$missing"
-      printf '%s\n' "$now" > "$RUNTIME/unwired-after-uninstall"
-      [ -f "$RUNTIME/scripts/uninstall.sh" ] && bash "$RUNTIME/scripts/uninstall.sh" --unwire >/dev/null 2>&1
+      if [ -f "$RUNTIME/scripts/uninstall.sh" ] && bash "$RUNTIME/scripts/uninstall.sh" --unwire >/dev/null 2>&1; then
+        rm -f "$missing"
+        printf '%s\n' "$now" > "$RUNTIME/unwired-after-uninstall"
+      fi
     fi
     exit 0
   fi

@@ -2616,11 +2616,11 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         internal static String MatchProject(String transcript, IEnumerable<String> candidates)
         {
-            // Two readings of the phrase: with the carrier words stripped ("go to the X project" → X)
-            // and exactly as spoken. The best score over both wins, so a project whose NAME contains
+            // Keep the possible carrier-stripped readings and the phrase exactly as spoken.
+            // The best score wins, so a project whose NAME contains
             // a carrier word — claude-console, open-source-kit — still matches exactly when said in
             // full, and "go to project claude" reaches a project called claude.
-            var keys = new[] { NormalizeForMatch(transcript), SquashForMatch(transcript) }
+            var keys = ProjectMatchKeys(transcript)
                 .Where(k => k.Length >= 2)
                 .Distinct()
                 .ToArray();
@@ -2631,6 +2631,8 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             String best = null;
             var bestScore = 0;
+            var bestExactLength = 0;
+            var ambiguous = false;
             foreach (var dir in candidates ?? Enumerable.Empty<String>())
             {
                 if (String.IsNullOrEmpty(dir))
@@ -2646,15 +2648,44 @@ namespace Loupedeck.ClaudeConsolePlugin
                     continue;
                 }
                 var score = keys.Max(k => MatchScore(k, f));
-                if (score > bestScore)
+                // A carrier can also be part of the name: both "source kit" and "open source
+                // kit" are plausible readings. Prefer the longest complete name, then refuse
+                // equally good candidates instead of depending on directory enumeration order.
+                var exactLength = score == 1000 ? f.Length : 0;
+                if (score > bestScore || (score == bestScore && exactLength > bestExactLength))
                 {
                     bestScore = score;
+                    bestExactLength = exactLength;
                     best = dir;
+                    ambiguous = false;
+                }
+                else if (score == bestScore && exactLength == bestExactLength &&
+                         !String.Equals(best, dir, OperatingSystem.IsWindows()
+                             ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                {
+                    ambiguous = true;
                 }
             }
 
             // Require a real match (exact / prefix / substring / strong overlap) to avoid mis-launches.
-            return bestScore >= 300 ? best : null;
+            return bestScore >= 300 && !ambiguous ? best : null;
+        }
+
+        // Keep every possible stopping point while removing carrier words. Greedily removing
+        // all of them loses names such as "open-source-kit" and "my-project"; preserving only
+        // the entire utterance cannot recover those names when preceded by "go to".
+        private static IEnumerable<String> ProjectMatchKeys(String spoken)
+        {
+            var words = WordsOf(spoken);
+            for (var start = 0; start < words.Count; start++)
+            {
+                for (var end = words.Count; end > start; end--)
+                {
+                    yield return String.Concat(words.Skip(start).Take(end - start));
+                    if (!TrailingCarrierWords.Contains(words[end - 1])) { break; }
+                }
+                if (!LeadingCarrierWords.Contains(words[start])) { break; }
+            }
         }
 
         // The words a person puts around a project name — "go to", "open the … project" — dropped

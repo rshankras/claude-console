@@ -14,6 +14,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     public class RiskClassifierTests
     {
         [Theory]
+        [InlineData("R")]
+        [InlineData("Re")]
+        [InlineData("Rec")]
+        [InlineData("Recu")]
+        [InlineData("Recur")]
+        [InlineData("Recurs")]
+        [InlineData("Recurse")]
+        [InlineData("Fo")]
+        [InlineData("For")]
+        [InlineData("Forc")]
+        [InlineData("Force")]
+        public void PowerShell_delete_parameter_prefixes_are_high_risk(String flag)
+        {
+            Assert.True(RiskClassifier.IsHighRisk($"Remove-Item -{flag} -LiteralPath C:\\work\\cache"));
+            Assert.True(RiskClassifier.IsHighRisk($"ri C:\\work\\cache -{flag.ToLowerInvariant()}"));
+            Assert.False(RiskClassifier.IsHighRisk($"Get-ChildItem -{flag} C:\\work\\cache"));
+        }
+
+        [Theory]
+        [InlineData("Remove-Item -Filter *.tmp C:\\work")]
+        [InlineData("Remove-Item -File C:\\work\\tmp.txt")]
+        [InlineData("Remove-Item -RecurseSomething C:\\work")]
+        public void Similar_parameter_names_do_not_trigger_delete_flags(String command)
+        {
+            Assert.False(RiskClassifier.IsHighRisk(command));
+        }
+
+        [Theory]
         // Privilege escalation
         [InlineData("sudo rm -rf /tmp/cache")]
         [InlineData("sudo -u postgres psql")]

@@ -6,8 +6,7 @@
 //
 // A separate short-lived process for the same reason as the other helpers: clipboard reads want
 // an STA thread and WinForms, neither of which belongs inside the Logi service. Same runtime
-// posture as claude-console-focus: framework-dependent on the Windows Desktop runtime, which
-// any machine running Logi Options+ already has.
+// posture as claude-console-focus: the executable bundles the Windows Desktop Runtime.
 //
 // Exit codes (the contract with WindowsPlatformBridge.CaptureScreenshotInteractive):
 //   0 image captured and written to the output path

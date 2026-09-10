@@ -26,13 +26,24 @@ DEST="$ROOT/bin/$PRODUCT/$CONFIG/bin"
 echo ">>> building Windows helpers ($CONFIG, $RID)"
 mkdir -p "$DEST"
 
-# Focus is the odd one out: it targets net8.0-windows and stays framework-dependent, because
-# WPF's UI Automation client cannot be trimmed. On a machine without the .NET Desktop runtime it
-# simply doesn't run and tab-focus degrades to raising the window — everything else is unaffected,
-# which is why it is a separate exe rather than a verb on inject.
+# Focus and Shot bundle the untrimmed Desktop Runtime and its native libraries inside their
+# executable. Options+ does not supply a globally discoverable Desktop Runtime on clean installs.
 for proj in ClaudeConsoleInject ClaudeConsoleHook ClaudeConsoleVoice ClaudeConsoleFocus ClaudeConsoleShot; do
   [ -d "$ROOT/tools/windows/$proj" ] || { echo ">>>   $proj (absent — skipped)"; continue; }
   echo ">>>   $proj"
+  case "$proj" in
+    ClaudeConsoleFocus|ClaudeConsoleShot)
+      # A framework-dependent single-file publish also emits just an exe, so the sidecar
+      # check below alone cannot catch a regression to requiring a global Desktop Runtime.
+      contained=$(dotnet msbuild "$ROOT/tools/windows/$proj/$proj.csproj" \
+        -p:Configuration="$CONFIG" -p:RuntimeIdentifier="$RID" \
+        -p:EnableWindowsTargeting=true -getProperty:SelfContained | tr -d '\r')
+      if [ "$contained" != "true" ]; then
+        echo "error: $proj must bundle its Desktop Runtime (SelfContained=true)." >&2
+        exit 1
+      fi
+      ;;
+  esac
   # Each csproj decides self-contained vs framework-dependent (see their comments); don't
   # override it here, or the trimming settings that keep these small get silently discarded.
   # EnableWindowsTargeting is what lets a net8.0-windows project (the focus helper) publish from
@@ -48,6 +59,11 @@ for proj in ClaudeConsoleInject ClaudeConsoleHook ClaudeConsoleVoice ClaudeConso
   found=$(find "$ROOT/tools/windows/$proj/publish-$RID" -maxdepth 1 -name "*.exe" | wc -l | tr -d ' ')
   if [ "$found" = "0" ]; then
     echo "error: $proj produced no .exe — the package would silently ship without it." >&2
+    exit 1
+  fi
+  # Staging only executables is safe only when all runtime dependencies are inside the bundle.
+  if find "$ROOT/tools/windows/$proj/publish-$RID" -type f \( -name '*.dll' -o -name '*.runtimeconfig.json' -o -name '*.deps.json' \) | grep -q .; then
+    echo "error: $proj left runtime dependencies outside its executable." >&2
     exit 1
   fi
   find "$ROOT/tools/windows/$proj/publish-$RID" -maxdepth 1 -name "*.exe" -exec cp {} "$DEST/" \;

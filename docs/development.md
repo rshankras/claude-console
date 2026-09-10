@@ -56,6 +56,24 @@ Runs the C# unit tests (xUnit — injection guard, IPC file permissions, stale-f
 
 ## Building & packaging
 
+The Windows screenshot and tab-focus helpers carry the untrimmed Desktop Runtime inside their
+single-file executables, including native dependencies. This follows .NET's
+[single-file deployment settings](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview).
+They must not depend on Options+' private runtime. The payload build checks `SelfContained` and
+rejects loose runtime dependencies that would be omitted by executable-only staging.
+
+On Windows, publish both helpers to separate `ClaudeConsoleFocus` and `ClaudeConsoleShot`
+directories, then verify startup using only each executable:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/windows/Test-StandaloneHelpers.ps1 -PublishRoot <publish-root>
+```
+
+The check redirects runtime lookup to an empty directory and inspects the host trace to confirm
+the bundled runtime was used. It does not open a capture overlay or change terminal focus.
+The concurrent cleanup regression tests run with `python3 tests/scripts/test-unwire-concurrency.py`
+on macOS or another POSIX environment, and are included in `tests/run-all.sh`.
+
 `tools/voice/build.sh` builds the voice helper + bundles a self‑contained `whisper-cli` (ad‑hoc signed for dev); `tools/voice/sign-and-notarize.sh` produces the Developer‑ID‑signed, notarized release build. The release package:
 
 ```bash

@@ -69,7 +69,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             // PowerShell accepts any unambiguous parameter prefix, so -Force is -Fo/-For/-Forc
             // (never a lone -f — -Filter shares the F) and -Recurse is -R/-Rec/…; matched that way.
             // The "lone generic flag is not enough" rule from the Unix side still holds.
-            new Regex(@"\b(Remove-Item|rmdir|rd|del|erase|ri)\b[^|;\r\n]*\s-(Recurse|Rec|R|Force|Fo|For|Forc)\b", Opts), // recursive/forced delete
+            new Regex(@"\b(Remove-Item|rmdir|rd|del|erase|ri)\b[^|;\r\n]*\s-(R|Re|Rec|Recu|Recur|Recurs|Recurse|Fo|For|Forc|Force)\b", Opts), // recursive/forced delete
             new Regex(@"\b(rmdir|rd)\b[^|;\r\n]*\s/s\b", Opts),           // cmd recursive rmdir
             new Regex(@"\b(del|erase)\b[^|;\r\n]*\s/s\b", Opts),          // cmd recursive delete
             new Regex(@"\bFormat-Volume\b|\bClear-Disk\b", Opts),         // formats / wipes a volume or disk

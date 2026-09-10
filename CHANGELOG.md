@@ -7,6 +7,19 @@ All notable changes to Claude Console are documented here. Format based on
 
 Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and Windows (#74–#80).
 
+### Retest review follow-up
+- Windows screenshot and tab-focus helpers now bundle their Desktop Runtime and native
+  dependencies, so they start on clean installations without a separate runtime download.
+  The executable-only staging step rejects publish output that leaves runtime dependencies out.
+- Go to Project preserves carrier words that belong to a project name: "go to open source kit"
+  prefers `open-source-kit` over `source-kit`. Equally good folders produce No match instead of
+  depending on discovery order.
+- Windows destructive-command warnings recognize every `-Recurse` and unambiguous `-Force`
+  abbreviation, including `-Recu` and `-Recurs`.
+- macOS cleanup serializes settings edits and recovery-data removal across processes, uses a
+  unique temporary file, and retains recovery data after errors or lock contention. Hooks only
+  record successful uninstall cleanup and retry failed attempts.
+
 ### Fixed — Windows (code change; not yet run on Windows hardware)
 - **Yes/No answer again** (#74, Windows retest item 2 — every press was discarded as "no pending
   approval on (no target)"). The Windows hook exe wrote the PermissionRequest hook's argv verb,
