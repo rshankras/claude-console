@@ -203,15 +203,17 @@ Fill in as each check runs. Nothing below has been executed yet.
 | Install + profile import | **PASS** | 2.2.1 loaded in 523 ms, 15 actions, 0 errors; profile import created the `windowsterminal` registration |
 | Enable sequence (two-step press) | **PASS** | first press armed ("nothing changed"), second within the window enabled, settings.json written with the `if exist` form |
 | 2 restart needed or not | **cost/status-line applies live, NO restart — the wording is too conservative** | see below |
-| A hook pile-up after reboot | pending | |
-| A cap of eight | pending | |
+| A cap of eight | **PASS** | 3 min after a cold boot, 12 hook copies launched: peak 8 alive, 4 refused ("9 copies … (cap 8) — not adding to the pile"), all exited in 2.2 s, no stragglers |
+| A hook pile-up after a real session | **PASS** | 180 s monitor after the cold boot, session run and tab closed: peak 1 concurrent hook, none older than 10 s, count returned to 0 — no accumulation |
+| A uninstall without stopping the service | **PASS** | uninstalled in Options+ without stopping LPS; service kept running (uptime unbroken), machine responsive, 0 hook processes survived |
 | A uninstall without stopping the service | pending | |
 | 16 Windows Terminal present | **PASS** | with terminals visible, New Tab opened a new tab on the keypad |
 | 16 Windows Terminal absent | **PASS** | with 0 visible WT windows (instrumented, 100% of 30 s), New Tab / Next Tab / Prev Tab each logged the refusal WARN and beeped; the card is posted once (`_warnedNoTerminal` guard) |
-| B leftover hook is a no-op | **wiring form confirmed** | settings.json carries `cmd.exe /d /c if exist "<path>" "<path>" <verb>` for all five hooks + status line |
-| B on-load migration | needs Options+ (settings.json edit blocked here) | |
+| B leftover hook is a no-op | **PASS** | after uninstall, settings.json still holds 6 refs pointing at the deleted exe; running the exact leftover Stop command with the exe gone → exit 0, no output. The `if exist` guard no-ops, so no "Stop hook error occurred" |
+| B on-load migration | owed (optional) | needs a reinstall + a hand-edited 2.2.0-form command; the settings.json edit is blocked for the QA session |
 | C pending cue on both keys | **PASS after a ~6 s delay — see #74** | both Yes and No showed amber and the bar read **Allow?**, but only after a delay: the cue arms when the state reads `waiting`, and the hook first writes `permission` (untranslated) until Claude Code's delayed Notification flips it |
 | C No press clears it | **PASS** | log: `AnswerCommand: rejected the pending prompt ... by key` / `no`; the cue and Allow bar cleared immediately, no next prompt needed (#60) |
+| #74 fix (branch build) | **VERIFIED FIXED** | ran both hooks with a PermissionRequest payload in an isolated IPC root: released writes `{"state":"permission"}` (keys discarded), branch `f7aad45` writes `{"state":"waiting"}` + pending payload (keys arm). Binary-level proof, not just code |
 | C destructive Yes turns red | **FAIL on Windows — F6** | a recursive force-delete showed amber, not red; Claude proposed `Remove-Item -Recurse -Force` (tool `PowerShell`) and the classifier has no PowerShell patterns. Capture + answer keys work; only the risk grading is blind |
 | D whisper bundle comparison | **PASS (skip branch)** | all 13 packaged files byte-identical in the runtime home, so `RuntimeTreeMatchesPackage` returns true and the plugin correctly skips reinstall; no whisper line in the load log confirms it |
 | D smoke marker survives | **PASS** | `TRANSCRIPTION_SMOKE_OK` is the only runtime-only file and the comparison walks package files only, so it is never touched |
