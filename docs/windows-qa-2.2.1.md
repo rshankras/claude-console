@@ -206,7 +206,6 @@ Fill in as each check runs. Nothing below has been executed yet.
 | A cap of eight | **PASS** | 3 min after a cold boot, 12 hook copies launched: peak 8 alive, 4 refused ("9 copies … (cap 8) — not adding to the pile"), all exited in 2.2 s, no stragglers |
 | A hook pile-up after a real session | **PASS** | 180 s monitor after the cold boot, session run and tab closed: peak 1 concurrent hook, none older than 10 s, count returned to 0 — no accumulation |
 | A uninstall without stopping the service | **PASS** | uninstalled in Options+ without stopping LPS; service kept running (uptime unbroken), machine responsive, 0 hook processes survived |
-| A uninstall without stopping the service | pending | |
 | 16 Windows Terminal present | **PASS** | with terminals visible, New Tab opened a new tab on the keypad |
 | 16 Windows Terminal absent | **PASS** | with 0 visible WT windows (instrumented, 100% of 30 s), New Tab / Next Tab / Prev Tab each logged the refusal WARN and beeped; the card is posted once (`_warnedNoTerminal` guard) |
 | B leftover hook is a no-op | **PASS** | after uninstall, settings.json still holds 6 refs pointing at the deleted exe; running the exact leftover Stop command with the exe gone → exit 0, no output. The `if exist` guard no-ops, so no "Stop hook error occurred" |
