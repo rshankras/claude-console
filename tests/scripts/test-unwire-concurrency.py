@@ -60,6 +60,55 @@ class UnwireConcurrencyTests(unittest.TestCase):
         self.assertFalse(self.chain.exists())
         self.assertEqual([], list(self.settings.parent.glob("settings.json.cc.*.tmp")))
 
+    def test_cleanup_preserves_foreign_source_layout_and_encoding(self):
+        for indent, nl, trailing, bom in [('    ', '\r\n', False, True), ('\t', '\n', True, False), ('  ', '\n', False, False)]:
+            with self.subTest(indent=repr(indent), newline=repr(nl), bom=bom):
+                foreign = '"permissions": { "allow": ["Read", "Glob"] }'
+                body = '{' + nl + indent + foreign + ',' + nl + indent + '"statusLine": {"command":"bash /x/statusline-handler.sh"}' + nl + '}' + (nl if trailing else '')
+                original = (b'\xef\xbb\xbf' if bom else b'') + body.encode('utf-8')
+                self.settings.write_bytes(original)
+                self.chain.write_text("echo original-status")
+                result = self.run_script('uninstall.sh', '--unwire')
+                self.assertEqual(0, result.returncode, result.stderr)
+                actual = self.settings.read_bytes()
+                self.assertEqual(bom, actual.startswith(b'\xef\xbb\xbf'))
+                decoded = actual.decode('utf-8-sig')
+                self.assertIn(indent + foreign + ',', decoded)
+                self.assertEqual(trailing, decoded.endswith(nl))
+                if nl == '\r\n': self.assertNotIn('\n', decoded.replace('\r\n', ''))
+                self.assertEqual('echo original-status', json.loads(actual)['statusLine']['command'])
+                self.assertEqual(original, (self.settings.parent / 'settings.json.claude-console.bak').read_bytes())
+
+    def test_cleanup_keeps_comments_inline_foreign_hooks_and_trailing_commas(self):
+        original = """{
+  // Leave this user comment alone.
+  "permissions": { "allow": ["Read", "Glob"] },
+  "hooks": { "Stop": [{ "hooks": [
+    {"command":"bash /x/activity-hook.sh done"}, /* comma , inside a comment */
+    { "command": "echo foreign", "timeout": 17 },
+  ] }] },
+}
+"""
+        self.settings.write_text(original)
+        result = self.run_script('uninstall.sh', '--unwire')
+        self.assertEqual(0, result.returncode, result.stderr)
+        actual = self.settings.read_text()
+        self.assertIn('// Leave this user comment alone.', actual)
+        self.assertIn('"permissions": { "allow": ["Read", "Glob"] }', actual)
+        self.assertIn('/* comma , inside a comment */', actual)
+        self.assertIn('{ "command": "echo foreign", "timeout": 17 }', actual)
+        self.assertNotIn('activity-hook.sh', actual)
+        self.assertEqual(0, self.run_script('uninstall.sh', '--unwire').returncode)
+        self.assertEqual(actual, self.settings.read_text())
+
+    def test_removing_a_group_and_editing_the_next_preserves_foreign_source(self):
+        foreign = '{ "command": "echo foreign", "timeout": 17 }'
+        self.settings.write_text('{"hooks":{"Stop":[{"hooks":[{"command":"bash /x/activity-hook.sh done"}]},{ "hooks": [{"command":"bash /x/activity-hook.sh done"}, ' + foreign + '] }]}}')
+        result = self.run_script('uninstall.sh', '--unwire')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(foreign, self.settings.read_text())
+        self.assertNotIn('activity-hook.sh', self.settings.read_text())
+
     def test_simultaneous_cleanups_keep_original_status_line_and_backup(self):
         with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
             results = list(pool.map(lambda _: self.run_script("uninstall.sh", "--unwire"), range(24)))

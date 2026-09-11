@@ -82,6 +82,48 @@ def finish():
         if os.path.exists(chain):
             os.unlink(chain)
 
+def json_source(text):
+    # Match the plugin reader: comments and trailing commas are accepted. Replace them with
+    # whitespace for parsing while keeping every offset aligned with the original source.
+    chars = list(text)
+    i = 0
+    while i < len(text):
+        if text[i] == '"':
+            i += 1
+            while i < len(text):
+                if text[i] == '\\': i += 2; continue
+                if text[i] == '"': i += 1; break
+                i += 1
+            continue
+        if text.startswith('//', i) or text.startswith('/*', i):
+            if text.startswith('//', i):
+                end = text.find('\n', i + 2)
+                if end < 0: end = len(text)
+            else:
+                end = text.find('*/', i + 2)
+                if end < 0: raise ValueError('unterminated settings comment')
+                end += 2
+            for j in range(i, end):
+                if chars[j] not in '\r\n': chars[j] = ' '
+            i = end
+        else: i += 1
+    clean = ''.join(chars)
+    i = 0
+    while i < len(clean):
+        if clean[i] == '"':
+            i += 1
+            while i < len(clean):
+                if clean[i] == '\\': i += 2; continue
+                if clean[i] == '"': i += 1; break
+                i += 1
+            continue
+        if clean[i] == ',':
+            j = i + 1
+            while j < len(clean) and clean[j].isspace(): j += 1
+            if j < len(clean) and clean[j] in '}]': chars[i] = ' '
+        i += 1
+    return ''.join(chars)
+
 MARKERS = ("statusline-handler.sh", "activity-hook.sh", "claude-console-hook")
 ours = lambda cmd: isinstance(cmd, str) and any(m in cmd.lower() for m in MARKERS)
 if not os.path.exists(settings):
@@ -89,11 +131,101 @@ if not os.path.exists(settings):
 try:
     with open(settings, "rb") as source:
         original = source.read()
-    root = json.loads(original)
+    root = json.loads(json_source(original.decode("utf-8-sig")))
 except Exception as e:
     print(f"  settings.json: not valid JSON ({e}) — left untouched"); sys.exit(1)
 if not isinstance(root, dict):
     print("  settings.json: not a JSON object — left untouched"); sys.exit(1)
+
+# Retain source slices for untouched values, including foreign hooks nested in our arrays.
+# The cleanup is intentionally self-contained: it must survive deletion of the plugin.
+text = original.decode("utf-8-sig")
+clean_text = json_source(text)
+decoder = json.JSONDecoder()
+def whitespace(pos):
+    while pos < len(text) and clean_text[pos].isspace(): pos += 1
+    return pos
+
+def parse(pos):
+    start = whitespace(pos)
+    value, end = decoder.raw_decode(clean_text, start)
+    children = []
+    if isinstance(value, (dict, list)):
+        pos = whitespace(start + 1)
+        while pos < end - 1:
+            member = pos
+            name = None
+            if isinstance(value, dict):
+                name, pos = decoder.raw_decode(clean_text, pos)
+                pos = whitespace(pos)
+                pos = whitespace(pos + 1)  # colon
+            child = parse(pos)
+            child['member'], child['name'] = member, name
+            children.append(child)
+            pos = whitespace(child['end'])
+            if clean_text[pos] == ',': pos = whitespace(pos + 1)
+            else: break
+    return dict(start=start, end=end, member=start, name=None, value=value, children=children)
+
+newline = "\r\n" if "\r\n" in text else "\n"
+indent = "  "
+for line in text.splitlines():
+    if line.strip() and line[:1].isspace():
+        indent = line[:len(line) - len(line.lstrip())]
+        break
+
+def fresh(value, depth):
+    return json.dumps(value, ensure_ascii=False, indent=indent).replace("\n", newline + indent * depth)
+
+def remove_comma(trivia):
+    clean = json_source(trivia)
+    at = clean.find(',')
+    return trivia[:at] + trivia[at+1:] if at >= 0 else trivia
+
+def render(node, value, depth=0):
+    old = node['value']
+    if old == value: return text[node['start']:node['end']]
+    if not ((isinstance(old, dict) and isinstance(value, dict)) or
+            (isinstance(old, list) and isinstance(value, list))):
+        return fresh(value, depth)
+    children = node['children']
+    if isinstance(value, dict):
+        by_name = {c['name']: c for c in children}
+        items = [(by_name.get(k), k, v) for k, v in value.items()]
+    else:
+        used = set()
+        items = []
+        for item in value:
+            child = next((c for c in children if id(c) not in used and c.get('identity') is item), None)
+            if child is None:
+                child = next((c for c in children if id(c) not in used and c['value'] == item), None)
+            if child is not None: used.add(id(child))
+            items.append((child, None, item))
+    pieces = []
+    for child, name, v in items:
+        if child is not None:
+            index = children.index(child)
+            previous = children[index-1]['end'] if index else node['start'] + 1
+            leading = text[previous:child['member']]
+            if index: leading = remove_comma(leading)
+            pieces.append(leading + text[child['member']:child['start']] + render(child, v, depth+1))
+        else:
+            leading = newline + indent * (depth+1) if '\n' in text[node['start']:node['end']] or not children else ' '
+            header = json.dumps(name, ensure_ascii=False) + ': ' if name is not None else ''
+            pieces.append(leading + header + fresh(v, depth+1))
+    previous = children[-1]['end'] if children else node['start'] + 1
+    suffix = text[previous:node['end']-1]
+    if not items: suffix = remove_comma(suffix)
+    if not children and items and not suffix.strip(): suffix = newline + indent * depth
+    return text[node['start']] + ','.join(pieces) + suffix + text[node['end']-1]
+
+def bind(node, value):
+    node['identity'] = value
+    for index, child in enumerate(node['children']):
+        bind(child, value[child['name']] if isinstance(value, dict) else value[index])
+
+syntax = parse(0)
+bind(syntax, root)
 
 removed = 0
 hooks = root.get("hooks")
@@ -132,10 +264,17 @@ what = f"{removed} claude-console hook(s)" + ("" if restored is None else
 if mode == "report":
     print(f"  settings.json: would remove {what}"); sys.exit(0)
 
+rewritten = text[:syntax['start']] + render(syntax, root) + text[syntax['end']:]
+# Validate the result before creating the temporary file or replacing user settings.
+if json.loads(json_source(rewritten)) != root:
+    raise RuntimeError("cleanup's source-preserving edit did not match the intended settings")
+encoded = rewritten.encode('utf-8')
+if original.startswith(b'\xef\xbb\xbf'): encoded = b'\xef\xbb\xbf' + encoded
+
 fd, tmp = tempfile.mkstemp(prefix="settings.json.cc.", suffix=".tmp", dir=os.path.dirname(settings))
 try:
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(root, f, indent=2, ensure_ascii=False); f.write("\n")
+    with os.fdopen(fd, "wb") as f:
+        f.write(encoded)
     with open(settings, "rb") as source:
         if source.read() != original:
             raise RuntimeError("settings.json changed during cleanup; retry later")

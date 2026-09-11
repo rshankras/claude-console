@@ -177,15 +177,16 @@ internal static class Program
                 // a nonce, select the one tab that repaints to the nonce, restore. That is
                 // selection by identity, not by name — seen needed on hardware 2026-08-20, where
                 // the first "sahan" tab won and the session lived in the second.
-                if (matches.Count > 1 && SelectByNonce(pid))
+                if (ClaudeConsoleFocus.TabSelection.TrySelect(matches.Count,
+                    () => SelectByNonce(pid), () => Select(matches[0].Window, matches[0].Tab)))
                 {
                     return ExitOk;
                 }
-
-                if (matches.Count > 0)
+                if (matches.Count > 1)
                 {
-                    Select(matches[0].Window, matches[0].Tab);
-                    return ExitOk;
+                    Console.Error.WriteLine("multiple tabs match; target identity could not be verified");
+                    Raise(matches[0].Window);
+                    return ExitRaisedOnly;
                 }
             }
 
@@ -262,8 +263,8 @@ internal static class Program
     /// SetConsoleTitle to the terminal as an OSC title sequence, so the tab label follows within
     /// a repaint. The restore is in a finally — a helper that leaves a nonce on a user's tab has
     /// turned a cosmetic miss into vandalism. False means the nonce never appeared (a terminal
-    /// that debounces titles, or an app that repaints its own immediately) — the caller falls
-    /// back to first-match, which was the old behavior.
+    /// that debounces titles, or an app that repaints its own immediately) — the caller reports
+    /// unresolved focus and must not select an arbitrary matching tab.
     /// </summary>
     private static Boolean SelectByNonce(Int32 pid)
     {

@@ -19,6 +19,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     {
         private readonly ListeningFace _face;
         private readonly FailureFace _fail;
+        private String StartupLabel => BridgeManager.Instance.Voice.StartupLabel(VoiceIntent.Project);
 
         public ProjectVoiceCommand()
             : base(displayName: "Go to Project", description: "Speak a project name — opens a new tab, cd's there, and launches claude", groupName: "Terminal")
@@ -59,11 +60,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            _face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Go to Project");
+            StartupLabel ?? (_face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Go to Project"));
 
         // Listening wins over a stale failure: a new press means a new attempt.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
-            _face.IsActive
+            StartupLabel != null
+                ? KeyImage.Render(imageSize, StartupLabel, KeyImage.Purple, "project")
+                : _face.IsActive
                 ? KeyImage.Render(imageSize, "Listening", KeyImage.Green, _face.Icon)
                 : _fail.IsActive
                     ? KeyImage.Render(imageSize, _fail.Text, KeyImage.Red, "project")

@@ -10,20 +10,9 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// How <c>~/.claude/settings.json</c> was laid out when it was read, so a rewrite hands it back
     /// the same way (#72).
     ///
-    /// The plugin parses the whole document and serialises it again — that is what lets it edit
-    /// only its own keys without a text patcher. With the default writer, that round trip was not
-    /// faithful: every <c>"</c>, <c>&amp;</c>, <c>'</c>, <c>&lt;</c>, <c>&gt;</c> and every
-    /// non-ASCII character came back as a <c>\uXXXX</c> escape, and the trailing newline was gone.
-    /// Valid JSON, functionally identical, and a whole-file diff for anyone who keeps their dotfiles
-    /// in git — applied to entries the plugin does not own, on every write, including the on-load
-    /// migration 2.2.1 added. Logitech QA counted sixteen <c>"</c> sequences after one Cost
-    /// press; the reproduction on this machine also turned an em dash in a user's own permission
-    /// description into <c>—</c>.
-    ///
-    /// The relaxed encoder leaves all of that literal (it only stops being "safe" inside HTML, and
-    /// this is a file on disk). Indentation, line ending, trailing newline and byte-order mark are
-    /// read from the file and written back as found; a file that does not exist yet gets Claude
-    /// Code's own shape — two spaces, LF, trailing newline.
+    /// SettingsText retains the source of unchanged values. This layout applies to NEW or
+    /// replaced values only: relaxed JSON escaping, the user's indentation and line endings,
+    /// and the original trailing newline and byte-order mark.
     /// </summary>
     internal readonly record struct SettingsLayout(
         Boolean TrailingNewline,

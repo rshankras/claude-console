@@ -5,6 +5,15 @@ All notable changes to Claude Console are documented here. Format based on
 
 ## [Unreleased]
 
+- Settings edits and macOS uninstall cleanup retain the original text of untouched values,
+  including inline foreign hooks, comments, spacing, line endings, and UTF-8 BOMs. Removing
+  plugin hooks no longer reformats the user's whole settings file.
+- Windows session focus refuses an ambiguous title when identity verification fails, instead
+  of selecting the first matching tab and reporting success.
+- Windows voice keys show **Starting** until the microphone is ready. A second press during
+  startup cancels and stops the helper before another capture can start. The recording face
+  appears only after the helper acknowledges microphone readiness.
+
 - The Model key now keeps the same brain icon for every model. Model-specific colors and their
   live-state repaint subscriptions were removed; pressing the key still opens the model picker.
 - Windows creates the plugin's runtime home (`~/.claude/claude-console/`) on load, as macOS

@@ -79,7 +79,7 @@ internal static class Program
 
         try
         {
-            var pcm = Record(stopFlag, maxSec);
+            var pcm = Record(stopFlag, maxSec, opts.GetValueOrDefault("--ready"));
             WriteWav(wavPath, pcm);
 
             String? failure = null;
@@ -129,7 +129,7 @@ internal static class Program
     // ---- capture -----------------------------------------------------------
 
     [SupportedOSPlatform("windows")]
-    private static Byte[] Record(String stopFlag, Int32 maxSec)
+    private static Byte[] Record(String stopFlag, Int32 maxSec, String? readyPath = null)
     {
         var fmt = new WAVEFORMATEX
         {
@@ -162,7 +162,10 @@ internal static class Program
                 PrepareAndAdd(handle, headers[i], buffers[i]);
             }
 
-            waveInStart(handle);
+            var started = waveInStart(handle);
+            if (started != 0) { throw new InvalidOperationException($"waveInStart failed: {started}"); }
+            // A process launch is not microphone readiness. Publish only after WinMM started.
+            if (readyPath != null) { WriteAtomic(readyPath, "ready"); }
 
             var deadline = DateTime.UtcNow.AddSeconds(maxSec);
             while (DateTime.UtcNow < deadline && !File.Exists(stopFlag))
