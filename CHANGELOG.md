@@ -5,6 +5,9 @@ All notable changes to Claude Console are documented here. Format based on
 
 ## [Unreleased]
 
+- The Model key now keeps the same brain icon for every model. Model-specific colors and their
+  live-state repaint subscriptions were removed; pressing the key still opens the model picker.
+
 Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and Windows (#74–#80).
 
 ### Retest review follow-up

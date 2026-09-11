@@ -13,13 +13,13 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 - **A key per session** — run Claude in several Terminal tabs and each gets its own key: the project name on a black face, and a bar along the bottom saying what it's doing — **Thinking**, **Waiting**, **Allow?**, **Complete**. Press one to focus that tab and point every other key at it; the pinned session's bar is highlighted.
 - **Answer permission prompts** — **Yes** confirms the request Claude is waiting on, **No** dismisses it, and neither guesses: with nothing to approve they beep and do nothing. **Up / Down / Return** walk any menu. [Details](#answering-claudes-questions).
 - **See what needs an answer** — both answer keys light **amber** when Claude wants permission; Yes turns **red** when approving would run a destructive command (`git push`, `rm -rf`, `sudo`…), while No stays amber. The session's own key reads **Allow?**. [Legend](#the-approval-badge).
-- **Live status** — Model, live cost and context usage read straight from Claude Code's status line (opt‑in: [the keys are the switch](#the-live-status-bridge)).
+- **Live status** — Cost, context usage and activity read from Claude Code's live-status bridge (opt‑in: [the keys are the switch](#the-live-status-bridge)).
 - **One‑press prompts** — Fix Bug, Write Tests, Explore, Explain, Refactor, Review, Optimize, Security, Document, Deploy. One‑word keys, **full structured prompts** underneath — all [customizable](#customizing-prompt-keys), including **draft** keys you edit before sending.
 - **Git, through Claude** — Commit, Diff, Push, Create PR, Status, Log.
 - **Screenshot into the conversation** — press, drag a region, and the image is handed to the *current* session with the cursor waiting for your question. [Details](#screenshot).
 - **Offline voice** — **Dictate** sends what you said straight away; **Voice Draft** leaves it in the input box so you can fix mis‑hearings first; **Go to Project** opens a project by its spoken name. [whisper.cpp](https://github.com/ggerganov/whisper.cpp) transcribes on your machine.
 - **Terminal & session nav** — activate Terminal, new tab, new Claude session, next/prev tab, plus **New Claude (Window)** and **Next/Prev Window** if you prefer windows.
-- **Model & modes** — **Model** opens the `/model` picker and shows the current model live; **Mode** cycles normal → auto‑accept edits → plan; plus Compact, Context, Clear, Exit, **Tab** (accept an autocomplete and run it).
+- **Model & modes** — **Model** opens the `/model` picker and keeps a consistent brain icon; **Mode** cycles normal → auto‑accept edits → plan; plus Compact, Context, Clear, Exit, **Tab** (accept an autocomplete and run it).
 - **Types where it should** — every key finds Claude's own Terminal tab and types there, so a press can't land in Slack or a browser because you glanced away. Can't find it? It beeps and types nothing.
 
 See [PRIVACY.md](PRIVACY.md) — everything runs on your own machine.
@@ -72,7 +72,7 @@ Install from the **Logi Marketplace** inside Options+, or download the latest `C
 2. **Put the keys on Terminal.** The plugin is *universal*: it binds to no application and ships no layout of its own, so nothing appears on the keypad until you give it keys. The quickest way is the ready-made layout — see [Import the ready-made layout](#import-the-ready-made-layout) just below (two clicks). Or build your own: in Options+ add **Terminal** as an application, then drag any **Claude Console** actions onto its profile.
 3. On first use, grant **Accessibility** to the Logi Plugin Service (so it can type into your terminal). For **voice**, press the Dictate key and grant **Microphone** when prompted — the helper and speech model install themselves on first use. The **Screenshot** key asks for **Screen Recording** the first time.
 
-> The live **Cost / Context / Activity** keys (and the Model key's readout) are **opt-in**: the plugin never edits your Claude Code settings on its own — they read **Set up** until you press one of them, and the press itself is the prompt. See [The live status bridge](#the-live-status-bridge).
+> The live **Cost / Context / Activity** keys are **opt-in**: the plugin never edits your Claude Code settings on its own — they read **Set up** until you press one of them, and the press itself is the prompt. See [The live status bridge](#the-live-status-bridge).
 
 ## Import the ready-made layout
 
