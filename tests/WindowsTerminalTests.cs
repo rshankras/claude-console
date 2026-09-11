@@ -212,6 +212,47 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }
         }
 
+        [Theory]
+        [InlineData(TerminalAction.NewTab)]
+        [InlineData(TerminalAction.NewClaudeTab)]
+        [InlineData(TerminalAction.NewClaudeWindow)]
+        public void A_tab_opened_without_a_project_starts_in_the_home_directory_not_the_services(TerminalAction action)
+        {
+            // #85: Windows Terminal's default profile leaves startingDirectory unset, so a tab
+            // opened through `wt new-tab` inherits the working directory of the process that ran
+            // wt — from LogiPluginService, C:\Program Files\Logi\LogiPluginService. New Claude
+            // started sessions there and the keypad named them "LogiPluginService" (2.2.2 device
+            // pass, slot 2). The home directory is what the terminal uses for a tab the user opens
+            // by hand.
+            var previous = WindowsTerminalCli.StartingDirectory;
+            try
+            {
+                WindowsTerminalCli.StartingDirectory = @"C:\Users\me";
+                var args = WindowsTerminalCli.ArgsFor(action);
+
+                var at = args.IndexOf("-d");
+                Assert.True(at > 0 && at + 1 < args.Count, "-d <directory> must be present");
+                Assert.Equal(@"C:\Users\me", args[at + 1]);
+                Assert.Equal("new-tab", args[at - 1]);   // an option of the new-tab subcommand, not of wt itself
+            }
+            finally
+            {
+                WindowsTerminalCli.StartingDirectory = previous;
+            }
+
+            // The default is the profile, never the service's own folder.
+            Assert.Equal(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), WindowsTerminalCli.StartingDirectory);
+        }
+
+        [Fact]
+        public void A_project_launch_keeps_the_projects_own_directory()
+        {
+            var args = WindowsTerminalCli.LaunchClaudeArgs(@"C:\dev\proj");
+
+            Assert.Equal(@"C:\dev\proj", args[args.IndexOf("-d") + 1]);
+            Assert.DoesNotContain(WindowsTerminalCli.StartingDirectory, args);
+        }
+
         [Fact]
         public void Next_and_previous_tab_differ()
         {

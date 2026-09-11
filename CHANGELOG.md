@@ -11,6 +11,12 @@ All notable changes to Claude Console are documented here. Format based on
   already did, so turning live status on with your own status line in place always records the
   chain file that restores it when you turn live status off. Found by running the C# suite on
   Windows, which is now green there as well as on macOS.
+- **Windows: New Claude, New Claude (Window) and New Tab start in your home folder** (#85).
+  Windows Terminal's default profile has no starting directory, so a tab the plugin opened
+  inherited the plugin service's own folder under Program Files; the keypad then named the
+  session "LogiPluginService". The plugin now passes your home directory, which is what the
+  terminal uses when you open a tab yourself. Go to Project was unaffected — it always named
+  the project's folder.
 - **Yes/No find the one session with a prompt up even when another session sits idle.** With
   nothing pinned, the answer keys fall back to the single session waiting on you. A session idle
   at its prompt for a minute counts as waiting too, so one prompt plus one idle session left the
