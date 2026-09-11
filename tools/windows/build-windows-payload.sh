@@ -26,20 +26,21 @@ DEST="$ROOT/bin/$PRODUCT/$CONFIG/bin"
 echo ">>> building Windows helpers ($CONFIG, $RID)"
 mkdir -p "$DEST"
 
-# Focus and Shot bundle the untrimmed Desktop Runtime and its native libraries inside their
-# executable. Options+ does not supply a globally discoverable Desktop Runtime on clean installs.
+# Every helper is a self-contained, trimmed console exe. Options+ does not supply a globally
+# discoverable .NET on clean installs, so a framework-dependent helper fails there (#83).
 for proj in ClaudeConsoleInject ClaudeConsoleHook ClaudeConsoleVoice ClaudeConsoleFocus ClaudeConsoleShot; do
   [ -d "$ROOT/tools/windows/$proj" ] || { echo ">>>   $proj (absent — skipped)"; continue; }
   echo ">>>   $proj"
   case "$proj" in
     ClaudeConsoleFocus|ClaudeConsoleShot)
-      # A framework-dependent single-file publish also emits just an exe, so the sidecar
-      # check below alone cannot catch a regression to requiring a global Desktop Runtime.
+      # These two shipped framework-dependent once (#83). A framework-dependent single-file
+      # publish also emits just an exe, so the sidecar check below alone cannot catch that
+      # regression; ask the project what it intends.
       contained=$(dotnet msbuild "$ROOT/tools/windows/$proj/$proj.csproj" \
         -p:Configuration="$CONFIG" -p:RuntimeIdentifier="$RID" \
         -p:EnableWindowsTargeting=true -getProperty:SelfContained | tr -d '\r')
       if [ "$contained" != "true" ]; then
-        echo "error: $proj must bundle its Desktop Runtime (SelfContained=true)." >&2
+        echo "error: $proj must bundle its runtime (SelfContained=true)." >&2
         exit 1
       fi
       ;;

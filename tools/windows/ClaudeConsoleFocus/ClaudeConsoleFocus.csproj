@@ -6,10 +6,11 @@
       session's console to read its title, and a human can run it by hand to debug a focus miss.
     -->
     <OutputType>Exe</OutputType>
-    <!-- The helper carries the Desktop Runtime, including native libraries: Options+ does not
-         install a globally discoverable runtime. WPF/WinForms must remain untrimmed. -->
+    <!-- net8.0-windows for the platform analyser, but NO UseWPF: UI Automation is driven through
+         its COM interface (UIAutomationCore.dll ships with Windows), not the WPF wrapper in the
+         Desktop Runtime. That wrapper made this exe either framework-dependent and broken on
+         clean machines (#83) or self-contained and 68 MB. -->
     <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
     <RollForward>LatestMajor</RollForward>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -17,13 +18,18 @@
     <RootNamespace>ClaudeConsoleFocus</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
 
-    <!-- Ships inside the plugin package, beside the plugin DLL. -->
+    <!-- Ships inside the plugin package, beside the plugin DLL. Self-contained and trimmed like
+         the inject and hook helpers: the Plugin Service carries a PRIVATE runtime, so no
+         machine-wide .NET can be assumed. Partial trimming keeps this assembly whole — the
+         hand-declared COM vtables must never lose a slot to the trimmer — and trims only the
+         framework, which is where the size is. -->
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <PublishTrimmed>false</PublishTrimmed>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <!-- Trimmed apps switch built-in COM interop off by default; UI Automation needs it on. -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
   </PropertyGroup>
 
 </Project>

@@ -56,11 +56,16 @@ Runs the C# unit tests (xUnit — injection guard, IPC file permissions, stale-f
 
 ## Building & packaging
 
-The Windows screenshot and tab-focus helpers carry the untrimmed Desktop Runtime inside their
-single-file executables, including native dependencies. This follows .NET's
+Every Windows helper is a self-contained, trimmed, single-file console exe of about 12 MB,
+following .NET's
 [single-file deployment settings](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview).
-They must not depend on Options+' private runtime. The payload build checks `SelfContained` and
-rejects loose runtime dependencies that would be omitted by executable-only staging.
+None may depend on Options+' private runtime or on a machine-wide .NET (#83). The screenshot and
+tab-focus helpers once needed the Desktop Runtime (WinForms for the clipboard, WPF for UI
+Automation), which made them either framework-dependent and broken on clean machines or 68 MB
+each; they now read the clipboard through Win32 and drive UI Automation through COM. The payload
+build checks `SelfContained` on those two and rejects loose runtime dependencies that would be
+omitted by executable-only staging; `tests/windows/Test-StandaloneHelpers.ps1` proves each
+published exe starts with every runtime lookup disabled.
 
 On Windows, publish both helpers to separate `ClaudeConsoleFocus` and `ClaudeConsoleShot`
 directories, then verify startup using only each executable:

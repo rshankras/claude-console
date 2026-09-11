@@ -15,9 +15,12 @@ All notable changes to Claude Console are documented here. Format based on
 Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and Windows (#74–#80).
 
 ### Retest review follow-up
-- Windows screenshot and tab-focus helpers now bundle their Desktop Runtime and native
-  dependencies, so they start on clean installations without a separate runtime download.
-  The executable-only staging step rejects publish output that leaves runtime dependencies out.
+- Windows screenshot and tab-focus helpers no longer need the .NET Desktop Runtime at all, so
+  they start on clean installations without a separate runtime download. The screenshot helper
+  reads the clipboard through Win32 and takes the snipping overlay's own PNG; the tab-focus
+  helper drives UI Automation through COM. Both are now self-contained and trimmed like the
+  other helpers, about 12 MB each instead of 68 MB. The executable-only staging step rejects
+  publish output that leaves runtime dependencies out.
 - Go to Project preserves carrier words that belong to a project name: "go to open source kit"
   prefers `open-source-kit` over `source-kit`. Equally good folders produce No match instead of
   depending on discovery order.

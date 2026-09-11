@@ -450,10 +450,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         //
         // 2. FocusSession — SOLVED, one level below wt: the tab's label IS the session's console
         //    title, readable via AttachConsole, and UI Automation can select the TabItem carrying
-        //    it. claude-console-focus.exe does exactly that (it alone needs the Windows Desktop
-        //    runtime, which is why it is a third exe and not an inject verb). When the helper is
-        //    missing or can't identify the tab, we degrade to raising the terminal window — the
-        //    pre-helper behavior.
+        //    it. claude-console-focus.exe does exactly that, driving UI Automation through COM so
+        //    it trims like the other helpers (it is a third exe rather than an inject verb because
+        //    a UIA walk belongs in a process that exits). When the helper is missing or can't
+        //    identify the tab, we degrade to raising the terminal window — the pre-helper behavior.
         // ------------------------------------------------------------------------------------------
 
         /// <summary>Runs a terminal command. Injectable so navigation is testable without Windows.</summary>
@@ -491,9 +491,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         public Boolean CaptureScreenshotInteractive(String outputPath)
         {
             // Windows' interactive capture (the ms-screenclip: overlay) delivers to the
-            // clipboard, not a file, and reading an image off the clipboard takes an STA thread
-            // plus WinForms — neither belongs in the service process. claude-console-shot.exe
-            // owns the whole dance: launch the overlay, wait for the snip, save the PNG.
+            // clipboard, not a file, and a two-minute wait on an overlay does not belong in the
+            // service process. claude-console-shot.exe owns the whole dance: launch the overlay,
+            // wait for the snip, read the clipboard through Win32, save the PNG.
             var helper = this.ShotHelperPath;
             if (helper == null || !File.Exists(helper))
             {

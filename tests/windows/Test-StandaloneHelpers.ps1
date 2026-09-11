@@ -39,7 +39,9 @@ try {
                 throw "$helper did not reach its usage path: $($stderr.Result)"
             }
             $hostTrace = [IO.File]::ReadAllText($trace)
-            if ($hostTrace -notmatch [regex]::Escape($extract)) { throw "$helper did not use its extracted bundle" }
+            # The host says which posture it ran under. (No assertion on the extract directory:
+            # a helper with no native libraries of its own never extracts anything, and that is
+            # the normal shape of these helpers now.)
             if ($hostTrace -notmatch 'Executing as a self-contained app' -or
                 $hostTrace -notmatch 'framework dependent=0') {
                 throw "$helper tried to resolve a shared runtime"
