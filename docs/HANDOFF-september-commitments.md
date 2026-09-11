@@ -144,9 +144,11 @@ stranded #40 palette edit, already superseded on `main`. `git checkout --` it.
 
 ## Traps that cost time here
 
-- **`pack-release.sh` rebuilds `tools/windows/*/publish-win-x64/*.exe`** and they are tracked, so
-  they show as modified after every pack. The committed copies are the ones verified on the Windows
-  laptop — discard the rebuilds unless you mean to replace them.
+- **`pack-release.sh` rebuilds `tools/windows/*/publish-win-x64/*.exe`.** They used to be tracked,
+  so every pack showed them as modified and the committed focus/shot copies quietly went stale at
+  the framework-dependent stubs (#83). They are ignored now; a published helper is proven by
+  `tests/windows/Test-StandaloneHelpers.ps1` and the hook exe by `WindowsHookContractTests`, not
+  by which copy is in git.
 - **A `.lp5` preview strip is not re-rendered on import.** Options+ draws it once, when a profile is
   created there. `tools/render-profile-preview.py` exists because of this; run it after
   `tools/sync-default-profiles.py` whenever the design or the first page changes.
