@@ -55,6 +55,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             }));
 
+        // What the PermissionRequest hook leaves beside a waiting session: the captured payload.
+        private void WritePending(String tty, String tool, String command) =>
+            File.WriteAllText(Path.Combine(_activityDir, "pending-" + tty + ".json"), JsonSerializer.Serialize(new
+            {
+                tool_name = tool,
+                tool_input = new { command },
+            }));
+
         // A bridge whose grid is rooted in this test's temp dir, populated from the given live TTYs.
         private BridgeManager BridgeWith(params String[] liveTtys)
         {
@@ -101,6 +109,42 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.ActiveTty = "ttys009";   // some other, non-Claude tab
 
             Assert.Equal("ttys002", bridge.RoutingTty());
+        }
+
+        [Fact]
+        public void A_pending_approval_outranks_a_session_idling_at_its_prompt()
+        {
+            // Both are "waiting": one has a permission menu up (the hook captured the payload), the
+            // other has sat idle at its prompt for a minute (the Notification hook, no payload —
+            // #51). Only the first is something Yes/No can answer. Counting both as "waiting" left
+            // the answer keys with "(no target)" whenever a second session idled — on Windows,
+            // where no frontmost tab breaks the tie, that was every second session (QA's Mode B).
+            WriteSession("ttys001", "alpha");
+            WriteSession("ttys002", "beta");
+            WriteActivity("ttys001", "waiting");
+            WriteActivity("ttys002", "waiting");
+            WritePending("ttys002", "Bash", "git status");
+            var bridge = BridgeWith("ttys001", "ttys002");
+
+            bridge.ActiveTty = null;   // Windows: no frontmost tab is ever known
+
+            Assert.Equal("ttys002", bridge.RoutingTty());
+        }
+
+        [Fact]
+        public void Does_not_guess_when_two_sessions_both_have_approvals_pending()
+        {
+            WriteSession("ttys001", "alpha");
+            WriteSession("ttys002", "beta");
+            WriteActivity("ttys001", "waiting");
+            WriteActivity("ttys002", "waiting");
+            WritePending("ttys001", "Bash", "git status");
+            WritePending("ttys002", "Bash", "npm test");
+            var bridge = BridgeWith("ttys001", "ttys002");
+
+            bridge.ActiveTty = null;
+
+            Assert.Null(bridge.RoutingTty());
         }
 
         [Fact]

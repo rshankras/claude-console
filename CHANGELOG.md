@@ -11,6 +11,12 @@ All notable changes to Claude Console are documented here. Format based on
   already did, so turning live status on with your own status line in place always records the
   chain file that restores it when you turn live status off. Found by running the C# suite on
   Windows, which is now green there as well as on macOS.
+- **Yes/No find the one session with a prompt up even when another session sits idle.** With
+  nothing pinned, the answer keys fall back to the single session waiting on you. A session idle
+  at its prompt for a minute counts as waiting too, so one prompt plus one idle session left the
+  keys with no target — on Windows, which has no frontmost tab to break the tie, that was any
+  second session (Logitech's "Mode B"). A pending approval now outranks an idle prompt; two
+  pending approvals still refuse to guess.
 - **Windows says "Turned on", not "Restart Claude", after live status is switched on** (#58).
   Running sessions pick the new hooks and status line up by themselves on Windows exactly as on
   macOS — measured on two days on sessions started hours earlier, including the approval hook. The

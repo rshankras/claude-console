@@ -759,7 +759,20 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return active;
             }
 
-            // 2. Exactly one session waiting on you — the obvious thing to answer.
+            // 2. Exactly one session with an approval pending — the obvious thing to answer. A
+            //    session idling at its prompt is "waiting" too (#51), and on Windows, where there
+            //    is no frontmost tab to fall back on, every session left alone for a minute is; so
+            //    counting those meant that with one prompt up and one session idle, Yes/No had
+            //    "(no target)" — QA's Mode B (2.2.1 retest item 2, a 17-press failure run), seen
+            //    again on the 2.2.2 device pass with three tabs open. A pending approval is the
+            //    thing the answer keys exist for; it outranks an idle prompt.
+            var pending = live.Where(s => !String.IsNullOrEmpty(s.PendingTool)).ToList();
+            if (pending.Count == 1)
+            {
+                return pending[0].SessionKey;
+            }
+
+            //    Failing that, exactly one session waiting at all.
             var waiting = live.Where(s => s.State == "waiting").ToList();
             if (waiting.Count == 1)
             {

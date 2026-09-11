@@ -156,6 +156,26 @@ Cost presses within 250 ms each sent `/cost` (rapid repeat of an injecting key �
 | 3 Yes/No on a permission prompt | PASS | `AnswerCommand: approved the pending prompt on pid-17740-… by key` (16:15:31) and `rejected the pending prompt on pid-17740-… by key` (16:15:50), both on the pinned session; `activity\pid-17740-….json` read `waiting` while the prompt was up. Owner: "it works fine". The red face for the destructive command is asserted by the owner's eye, not the log (the log carries no risk grade). |
 | 2b Cost long-press, owner's re-check | PASS, wording finding **F9** | Off and On both work. After On the key read **Restart Claude**, yet the owner switched sessions and back and the value was there with no restart. Pass 1's log already showed it: rewired 12:50:52 → `Live status: Enabled` 12:50:57 from a session started the previous evening, whose PermissionRequest hook then fired at 12:57:32. |
 
+| 4 Yes at an idle prompt | PASS | ten presses in five seconds, each `AnswerCommand: Yes with no pending approval on pid-16860-… — ignored`; nothing typed (the correct outcome: an idle prompt is not an approval, #51) |
+| 5 session keys, three tabs, two in one folder | PASS | 16:25:17–16:26:03: pins to `pid-21000 (gh-portable)`, `pid-17516 (gh-portable)` — the duplicate-title pair — and `pid-16860 (claude-console)`, eleven switches, no `couldn't identify the tab`, no focus-helper WARN. The slim COM focus helper, from the package, on a clean-runtime path. Owner to confirm the right tab came forward each time. |
+| 6 screenshot | PASS | `ScreenshotCommand: typed …\shot-20260911-162706.png into the conversation` (16:27:15); the file is a valid 777×442 PNG (signature 89504E47…) of the region drawn. The slim Win32-clipboard shot helper, from the package. |
+| 7 Model key | PASS (icon: owner's eye) | `/model` opened twice by the key (16:26:10, 16:26:28), navigated with Up/Down/Enter from the keypad; the model changed Fable → Sonnet → Fable (Claude Code's own confirmation lines). Icon constancy across the switch is the owner's call. |
+
+| 3b red Yes on a recursive delete, owner's re-check | not a classifier miss; routing finding **F10** | The prompt was in `pid-17516 (gh-portable)`, slot 3. Slot 1 (`claude-console`) had been pinned at 16:31:29, so every Yes press logged `no pending approval on pid-16860 … — ignored` and beeped: the keys were pointed at a session with nothing pending, and their badge was dark — honest. The captured payload's command (`… Remove-Item -Recurse -Force -Confirm:$false $t …`, a delete as the second statement of a script) grades **High** against the classifier's own patterns read from `RiskClassifier.cs`; it is now a pinned test case. |
+
+| 3c red Yes, controlled re-run 17:21 | **PASS** | The same delete proposed again in `pid-17516`; the closed tab's pin was released and the fallback chose the one waiting session. Owner saw the session key **Allow?**, Yes **red**, No **amber**; pressed Yes: `approved the pending prompt on pid-17516-… by key`, the delete ran and the session went `done` five seconds later. The captured payload grades High against the classifier's own patterns and is now a pinned test case. The 16:33 miss was the two identical `gh-portable` tab names and a pin on the wrong twin. |
+
+**F10 — an idle session blocked the "one prompt, nothing pinned" fallback.** With nothing
+pinned and no frontmost tab (Windows never has one), the answer keys route to "exactly one
+session waiting". A session idling at its prompt is "waiting" too (#51), and on Windows every
+session left alone for a minute is, so with one prompt up and one session idle the count was two
+and Yes/No had "(no target)" — QA's Mode B, the 17-press failure run in the ranked findings. A
+pending approval now outranks an idle prompt: exactly one session with a captured payload gets
+the keys; two do not (no guessing); then the old rule. Pinned in `SessionTargetingTests`. The
+owner's own case — pinned to the wrong session — is unchanged by design: a pin is an explicit
+target and the badge on Yes describes the session Yes will act on. Press the session key that
+reads **Allow?**, or press the pinned key again to unpin, and the prompt's session takes the keys.
+
 **F9 — "Restart Claude" was never true on Windows.** `WindowsPlatformBridge.SettingsApplyLive`
 had been `false` on the strength of QA's 2.2.0 report that nothing came alive until a restart —
 which was #74 (the hook wrote a word the plugin never read; no restart could have helped). With

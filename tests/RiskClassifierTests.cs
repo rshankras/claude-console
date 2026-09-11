@@ -81,6 +81,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         // Windows: PowerShell and cmd — the shell Claude Code proposes on Windows. Before these
         // patterns existed, every one of these graded as routine (2.2.1 Windows finding F6).
         [InlineData("Remove-Item -Recurse -Force -LiteralPath \"/tmp/qa-red-test\" -Confirm:$false")] // the captured payload
+        // Captured on the 2.2.2 device pass: the delete is the SECOND statement of a script, after
+        // a Join-Path assignment, and the command reads `Remove-Item -Recurse -Force -Confirm:$false $t`.
+        [InlineData("$t = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Folder'; Remove-Item -Recurse -Force -Confirm:$false $t; if (Test-Path $t) { \"Still exists\" } else { \"Deleted: $t\" }")]
         [InlineData("Remove-Item -Recurse -Force C:\\build")]
         [InlineData("Remove-Item -Fo -Rec .\\dist")]                 // abbreviated parameters
         [InlineData("ri -r -force node_modules")]                    // alias + shorthand
