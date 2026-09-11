@@ -157,13 +157,64 @@ Cost presses within 250 ms each sent `/cost` (rapid repeat of an injecting key �
 | 2b Cost long-press, owner's re-check | PASS, wording finding **F9** | Off and On both work. After On the key read **Restart Claude**, yet the owner switched sessions and back and the value was there with no restart. Pass 1's log already showed it: rewired 12:50:52 → `Live status: Enabled` 12:50:57 from a session started the previous evening, whose PermissionRequest hook then fired at 12:57:32. |
 
 | 4 Yes at an idle prompt | PASS | ten presses in five seconds, each `AnswerCommand: Yes with no pending approval on pid-16860-… — ignored`; nothing typed (the correct outcome: an idle prompt is not an approval, #51) |
-| 5 session keys, three tabs, two in one folder | PASS | 16:25:17–16:26:03: pins to `pid-21000 (gh-portable)`, `pid-17516 (gh-portable)` — the duplicate-title pair — and `pid-16860 (claude-console)`, eleven switches, no `couldn't identify the tab`, no focus-helper WARN. The slim COM focus helper, from the package, on a clean-runtime path. Owner to confirm the right tab came forward each time. |
+| 5 session keys, three tabs, two in one folder | PASS (owner: right tab each time), see F12 | 16:25:17–16:26:03: pins to `pid-21000 (gh-portable)`, `pid-17516 (gh-portable)` — the duplicate-title pair — and `pid-16860 (claude-console)`, eleven switches, no `couldn't identify the tab`, no focus-helper WARN. The slim COM focus helper, from the package, on a clean-runtime path. Later in the pass, once a session's title had moved on, the same key raised the window without picking the tab (F12). |
 | 6 screenshot | PASS | `ScreenshotCommand: typed …\shot-20260911-162706.png into the conversation` (16:27:15); the file is a valid 777×442 PNG (signature 89504E47…) of the region drawn. The slim Win32-clipboard shot helper, from the package. |
 | 7 Model key | PASS (icon: owner's eye) | `/model` opened twice by the key (16:26:10, 16:26:28), navigated with Up/Down/Enter from the keypad; the model changed Fable → Sonnet → Fable (Claude Code's own confirmation lines). Icon constancy across the switch is the owner's call. |
 
 | 3b red Yes on a recursive delete, owner's re-check | not a classifier miss; routing finding **F10** | The prompt was in `pid-17516 (gh-portable)`, slot 3. Slot 1 (`claude-console`) had been pinned at 16:31:29, so every Yes press logged `no pending approval on pid-16860 … — ignored` and beeped: the keys were pointed at a session with nothing pending, and their badge was dark — honest. The captured payload's command (`… Remove-Item -Recurse -Force -Confirm:$false $t …`, a delete as the second statement of a script) grades **High** against the classifier's own patterns read from `RiskClassifier.cs`; it is now a pinned test case. |
 
 | 3c red Yes, controlled re-run 17:21 | **PASS** | The same delete proposed again in `pid-17516`; the closed tab's pin was released and the fallback chose the one waiting session. Owner saw the session key **Allow?**, Yes **red**, No **amber**; pressed Yes: `approved the pending prompt on pid-17516-… by key`, the delete ran and the session went `done` five seconds later. The captured payload grades High against the classifier's own patterns and is now a pinned test case. The 16:33 miss was the two identical `gh-portable` tab names and a pin on the wrong twin. |
+
+| 8a dictation into the pinned session | PASS, with observation **F11** | 17:33:54 `starting capture for Send` → `recording=True` → 17:34:00 `transcript (25 chars): Once done, check the log.` — delivered into the pinned session (it arrived as the next message in the owner's conversation). The FIRST press, 17:33:41, launched the helper only at 17:33:47 (6 s), never showed `recording=True`, and ended `No speech — empty transcript (silence)`: the owner's words fell inside the helper's cold start. |
+
+| 8b dictation with no target | not stageable on Windows | With no frontmost-tab tracking the keys always point at a session (a pin, or the fallbacks), so "No target" cannot be reached by hand here. Pinned by `VoiceFailureTests` / `VoiceDeliveryTests`. |
+| 8c Voice pressed twice within two seconds | PASS | 17:49:26: `recording=True` → `recording=False` 106 ms later, one helper launch, then `No speech` for the empty capture — the second press stopped the capture rather than starting another. |
+| 9 Go to Project, a real name | PASS | "claude console" transcribed as "Cloud Console"; `NavigateToProjectByVoice: "Cloud Console" -> C:\Users\Ravi Shankar\claude-console (of 2 candidates)`; a tab opened there (owner). The mis-hearing was absorbed by the carrier-stripped fuzzy match (#77). |
+| 9b Go to Project, no such name | PASS | three phrases ("alert to Allah", "alert voila", "Hello to Allah") each logged `voice No match — … (compared as "alerttoallah") among 2 candidate(s) … project-roots` and beeped; the key showed **No match** (owner, on the fourth try while watching the key). The face holds 2.5 s and appears 2–3 s after the stop press, with the beep — easy to miss with eyes on the terminal; a longer hold is a fair follow-up. |
+
+| 10 no Windows Terminal window | covered, not re-run | Closing every terminal window switches the keypad away from the Terminal profile, taking the keys with it — the owner's objection, and the reason the 2.2.1 pass tested item 16 by HIDING the windows instead (`docs/windows-qa-2.2.1.md`, check 16, both branches PASS on 2026-09-10, same code path). The probe and the corrected wording (#61) are pinned by `WindowsTerminalTests` and `BridgeNoticeTests`. |
+| 12 idle redraws | not measurable here | Neither the plugin log nor the service logs record key redraws; QA's count came from their own instrumentation (#81). What the plugin log does show: zero lines across whole idle minutes (17:56–17:58), and the Model key's two live subscriptions are gone (1fc16aa). |
+
+### Final package
+
+Built from 4d0527c with every fix from the pass (F8 #87, F9, F10, #85): `ClaudeConsole_2.2.2.lplug4`,
+SHA-256 `5B3D61CC3E963BA13C49DC187E9A1A25D0AE8E0835EE77ADB550794B0C400DD6`, 31.92 MB, every package
+check green. Owner's remaining device confirmations on it: Cost Off → On reads **Turned on** (F9),
+and New Claude opens in the home folder (#85).
+
+### Verdict
+
+Every item Logitech ranked is either proven by automation, confirmed on the device, not
+applicable on Windows, or explicitly deferred as a P3 with an issue. The pass found three defects
+that no test or earlier run had seen (F8 #87, F9, F10) plus one root cause for an open P3 (#85);
+all four are fixed on the branch with tests. Two cosmetic findings are filed for later (F11 voice
+cold start, F12 #88 tab identification). The Windows half of the release gate is met; the
+macOS half runs separately on the Mac.
+
+**F12 — a session key raises the window but cannot pick the tab once a session's title has moved
+on.** Twice at 17:24 and 17:33 the focus helper logged `raised the window but couldn't identify
+the tab` for `pid-17516`. Measured: that session's console title was `✳ Create desktop folder`
+while every tab label was one of `✳ Unspecified topic`, `Explain … | claude-console`, `✳ Claude
+Code` — no tab carried it. Retitling that console to a nonce (the helper's identity trick,
+`SetConsoleTitle`) moved no tab label; nor did writing an OSC title sequence to the console's
+output; nor did either on THIS session's own tab (Windows Terminal 1.24.11911, Claude Code
+2.1.268, `"tui": "fullscreen"`). Tab labels on this machine hold a session's FIRST title and do
+not follow later changes, so the title match works for a fresh session and stops once Claude
+renames it, and the nonce path has been dead here throughout. Impact is cosmetic and honest: the
+window comes forward, the tab does not switch, the log says so at VERB. Typing is unaffected —
+the inject helper writes to the target's console input handle, not to the front tab. Same class
+as the old WPF helper's single miss in QA's ranked findings (item 6, 12:30:33). P3 for a later
+release: identify the tab by something other than its label (the pane's live title via the window
+name, or a WT session id), and downgrade "couldn't identify" from a miss to an expected mode.
+
+**F11 — the first voice capture after an install loses what is said during the helper's cold
+start.** Six seconds from press to `helper launched` on the first use of a freshly installed
+11.6 MB self-contained exe (single-file extraction plus the antivirus scan a new binary gets);
+the second press launched in 0.3 s. During those six seconds the key showed nothing — no
+`recording=True` — so the user spoke to a helper that was not yet listening, and the result was
+"No speech". The same class as #76 (no signal during a long first run) and #79 (`recording=False`
+logged twice with no `True`). Remedy for a later release: show a "Starting…" face until the helper
+reports it is recording, and warm the helper once at plugin load. P3; not blocking.
 
 **F10 — an idle session blocked the "one prompt, nothing pinned" fallback.** With nothing
 pinned and no frontmost tab (Windows never has one), the answer keys route to "exactly one
