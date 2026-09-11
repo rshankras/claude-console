@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
+    using System.Diagnostics;
     using System.IO;
 
     using Xunit;
@@ -26,8 +27,45 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         // Unix file modes don't exist on Windows, BY DESIGN in the code under test too:
         // PrivateFiles skips chmod there because %LOCALAPPDATA%\Temp is already per-user via
-        // ACLs. The symlink-refusal tests below have no such platform split and always run.
+        // ACLs. The symlink refusal has no such platform split — it runs everywhere — but Windows
+        // lets only administrators and Developer Mode CREATE a symlink, so the two link tests
+        // below plant what the account can and say so when it can plant nothing.
         private static Boolean HasUnixModes => !OperatingSystem.IsWindows();
+
+        // ERROR_PRIVILEGE_NOT_HELD (1314) as an HRESULT — SeCreateSymbolicLinkPrivilege missing.
+        private const Int32 PrivilegeNotHeld = unchecked((Int32)0x80070522);
+
+        private static Boolean TryCreateSymlink(String link, String target, Boolean directory)
+        {
+            try
+            {
+                if (directory) { Directory.CreateSymbolicLink(link, target); }
+                else { File.CreateSymbolicLink(link, target); }
+                return true;
+            }
+            catch (IOException ex) when (OperatingSystem.IsWindows() && ex.HResult == PrivilegeNotHeld)
+            {
+                return false;
+            }
+        }
+
+        // A directory junction is the redirect a plain Windows account CAN plant, no privilege
+        // needed; .NET reports it through LinkTarget like a symlink, so the refusal catches it too.
+        private static Boolean TryCreateJunction(String link, String target)
+        {
+            if (!OperatingSystem.IsWindows()) { return false; }
+            using var p = Process.Start(new ProcessStartInfo("cmd.exe", $"/d /c mklink /J \"{link}\" \"{target}\"")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            p.StandardOutput.ReadToEnd();
+            p.StandardError.ReadToEnd();
+            p.WaitForExit();
+            return p.ExitCode == 0 && Directory.Exists(link);
+        }
 
         [Fact]
         public void EnsurePrivateDirectory_creates_the_directory_owner_only()
@@ -75,7 +113,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var real = Path_("elsewhere");
             var link = Path_("linked-dir");
             Directory.CreateDirectory(real);
-            Directory.CreateSymbolicLink(link, real);
+            if (!TryCreateSymlink(link, real, directory: true) && !TryCreateJunction(link, real))
+            {
+                return;   // this account can plant no directory link at all — nothing to refuse
+            }
 
             var ex = Assert.Throws<IOException>(() => PrivateFiles.EnsurePrivateDirectory(link));
             Assert.Contains("symlinked", ex.Message);
@@ -100,7 +141,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var real = Path_("real.txt");
             var link = Path_("linked.txt");
             File.WriteAllText(real, "x");
-            File.CreateSymbolicLink(link, real);
+            if (!TryCreateSymlink(link, real, directory: false))
+            {
+                return;   // a plain Windows account cannot plant a file symlink — nothing to refuse
+            }
 
             var ex = Assert.Throws<IOException>(() => PrivateFiles.EnsurePrivateFile(link));
             Assert.Contains("symlinked", ex.Message);

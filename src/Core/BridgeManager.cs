@@ -1718,7 +1718,11 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (OperatingSystem.IsWindows())
             {
                 // The Windows shim is a compiled exe shipped in the plugin package — there is
-                // nothing to extract, and nothing to chmod.
+                // nothing to extract, and nothing to chmod. The runtime home is still ours to
+                // create: the Off marker, the status-line chain and the plugin-home note live in
+                // it on both platforms, Enable writes the chain there without creating it, and
+                // macOS only gets the directory as a side effect of extracting the scripts below.
+                Directory.CreateDirectory(ClaudeConsoleHome);
                 return;
             }
 

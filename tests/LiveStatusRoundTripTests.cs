@@ -30,6 +30,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             public Rig()
             {
                 this.Bridge = new BridgeManager(new PlatformSeamTests.FakePlatformBridge());
+                this.Bridge.HookExePath = this.Home.HookExe;   // the Windows wirer names the shim — see TempHome.HookExe
                 this.Bridge.Notify = (status, message, url, title) => { if (message != null) { this.Cards.Add((status, message)); } };   // a null message is the load-time clear, not a card
                 this.Bridge.OnLiveStatusChanged += s => this.States.Add(s);
             }
@@ -56,7 +57,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Equal("{\"model\":\"opus\"}", rig.Home.ReadSettings());
             Assert.False(File.Exists(rig.Home.Backup));
-            Assert.True(Directory.Exists(Path.Combine(rig.Home.RuntimeHome, "scripts")), "the scripts directory is the plugin's own; it is created on load");
+            // The runtime home is the plugin's own and a load creates it on both platforms — the
+            // Off marker and the status-line chain are written into it later. macOS also extracts
+            // its two bash handlers into scripts/; Windows ships one compiled shim in the package
+            // and extracts nothing (EnsureBridgeInstalled). Neither touches settings.json.
+            Assert.True(Directory.Exists(rig.Home.RuntimeHome), "the runtime home is created on load");
+            Assert.Equal(!OperatingSystem.IsWindows(), Directory.Exists(Path.Combine(rig.Home.RuntimeHome, "scripts")));
             Assert.Equal(LiveStatusState.NotEnabled, rig.Bridge.LiveStatus);
             Assert.Empty(rig.Cards);
         }
@@ -254,14 +260,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // Recreate the unguarded form written by 2.2.0, plus a user's hook beside ours. A
             // plugin update must make already-owned entries safe when their handler disappears,
             // but must not treat that migration as permission to add or rewrite anything else.
+            // 2.2.0 wrote `bash "<script>" [state]` on macOS and `"<exe>" statusline` /
+            // `"<exe>" activity <state>` on Windows; the migration must produce this platform's
+            // guarded form, so the expectation is built for the platform the test runs on.
+            var isWindows = OperatingSystem.IsWindows();
             var root = rig.Settings();
             var statusHandler = rig.Bridge.BridgeHandlerPath(null);
             var activityHandler = rig.Bridge.BridgeHandlerPath("busy");
-            root["statusLine"]["command"] = $"bash \"{statusHandler}\"";
+            root["statusLine"]["command"] = isWindows ? $"\"{statusHandler}\" statusline" : $"bash \"{statusHandler}\"";
             foreach (var spec in BridgeWiring.HookSpecs)
             {
                 var inner = root["hooks"][spec.Event][0]["hooks"].AsArray();
-                inner[0]["command"] = $"bash \"{activityHandler}\" {spec.State}";
+                inner[0]["command"] = isWindows ? $"\"{activityHandler}\" activity {spec.State}" : $"bash \"{activityHandler}\" {spec.State}";
             }
             root["hooks"]["Stop"][0]["hooks"].AsArray().Add(
                 new JsonObject { ["type"] = "command", ["command"] = "my-stop-handler" });
@@ -273,12 +283,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             var migrated = rig.Settings();
             Assert.Equal(
-                BridgeWiring.StatuslineCommand(false, statusHandler),
+                BridgeWiring.StatuslineCommand(isWindows, statusHandler),
                 migrated["statusLine"]["command"].GetValue<String>());
             foreach (var spec in BridgeWiring.HookSpecs)
             {
                 Assert.Equal(
-                    BridgeWiring.ActivityCommand(false, activityHandler, spec.State),
+                    BridgeWiring.ActivityCommand(isWindows, activityHandler, spec.State),
                     migrated["hooks"][spec.Event][0]["hooks"][0]["command"].GetValue<String>());
             }
             Assert.Equal("my-stop-handler", migrated["hooks"]["Stop"][0]["hooks"][1]["command"].GetValue<String>());
@@ -360,6 +370,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 BridgeManager.HomeOverride = home.Dir;
                 this.Bridge = new BridgeManager(new PlatformSeamTests.FakePlatformBridge());
+                this.Bridge.HookExePath = home.HookExe;
                 this.Bridge.Notify = (status, message, url, title) => { if (message != null) { this.Cards.Add((status, message)); } };   // a null message is the load-time clear, not a card
             }
 

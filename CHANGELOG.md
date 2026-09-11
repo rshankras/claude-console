@@ -7,6 +7,10 @@ All notable changes to Claude Console are documented here. Format based on
 
 - The Model key now keeps the same brain icon for every model. Model-specific colors and their
   live-state repaint subscriptions were removed; pressing the key still opens the model picker.
+- Windows creates the plugin's runtime home (`~/.claude/claude-console/`) on load, as macOS
+  already did, so turning live status on with your own status line in place always records the
+  chain file that restores it when you turn live status off. Found by running the C# suite on
+  Windows, which is now green there as well as on macOS.
 
 Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and Windows (#74–#80).
 

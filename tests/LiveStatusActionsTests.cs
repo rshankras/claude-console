@@ -53,6 +53,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             public Rig(Int32 armWindowMs = 10_000, String key = "Cost", Boolean applies = true)
             {
                 this.Bridge = new BridgeManager(new PlatformSeamTests.FakePlatformBridge());
+                this.Bridge.HookExePath = this.Home.HookExe;   // the Windows wirer names the shim — see TempHome.HookExe
                 this.Bridge.Notify = (status, message, url, title) => { if (message != null) { this.Cards.Add((status, message)); } };
                 this.Gate = new LiveStatusGate(this.Bridge, key, () => Interlocked.Increment(ref this.Repaints), armWindowMs, applies);
             }
