@@ -1,0 +1,22 @@
+{
+  "session_id": "3151050b-c228-4600-baae-5f702d550345",
+  "cwd": "C:\\Users\\x\\project",
+  "model": { "id": "claude-opus-5[1m]", "display_name": "Opus 5 (1M context)" },
+  "workspace": {
+    "current_dir": "C:\\Users\\x\\project",
+    "project_dir": "C:\\Users\\x\\project",
+    "added_dirs": [],
+    "repo": { "host": "github.com", "owner": "x", "name": "project" }
+  },
+  "version": "2.1.223",
+  "cost": { "total_cost_usd": 1.25, "total_duration_ms": 1380, "total_lines_added": 0 },
+  "context_window": {
+    "total_input_tokens": 353678,
+    "total_output_tokens": 0,
+    "context_window_size": 1000000,
+    "current_usage": null,
+    "used_percentage": 54,
+    "remaining_percentage": 46
+  },
+  "exceeds_200k_tokens": false
+}
