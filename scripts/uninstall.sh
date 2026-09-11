@@ -56,21 +56,44 @@ sz() { du -sh "$1" 2>/dev/null | awk '{print $1}'; }
 # Remove our wiring from settings.json. Same recognition rule as the plugin (BridgeWiring.IsOurs /
 # IsOurHook): a command naming statusline-handler.sh, activity-hook.sh or claude-console-hook is
 # ours; anything else is the user's and is not touched. Prints what it did (or would do, with
-# "report"). Exit 0 always — a missing or unparseable settings.json is "nothing to do", not an error.
+# "report"). Failed writes/parses retain recovery data and return nonzero for a later retry.
 unwire_settings() { # mode: report | apply
   python3 - "$1" "$SETTINGS" "$BACKUP" "$CHAIN" <<'PY'
-import json, os, shutil, sys
+import fcntl, json, os, shutil, sys, tempfile
 mode, settings, backup, chain = sys.argv[1:5]
+runtime = os.path.dirname(chain)
+# All cleanup entry points share this lock. Keep it outside the runtime tree: full cleanup
+# removes that tree, and deleting a lock file while another process holds it defeats flock.
+# Nonblocking acquisition keeps status-line hooks responsive; the next hook retries on failure.
+if mode == "apply":
+    os.makedirs(os.path.dirname(settings), exist_ok=True)
+    lock = open(os.path.join(os.path.dirname(settings), ".claude-console-unwire.lock"), "a")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("  cleanup already running; retry later", file=sys.stderr); sys.exit(75)
+
+def finish():
+    # Still under the lock, and only after the settings transaction succeeded.
+    if mode == "apply":
+        os.makedirs(runtime, exist_ok=True)
+        with open(os.path.join(runtime, "no-autowire"), "a"):
+            pass
+        if os.path.exists(chain):
+            os.unlink(chain)
+
 MARKERS = ("statusline-handler.sh", "activity-hook.sh", "claude-console-hook")
 ours = lambda cmd: isinstance(cmd, str) and any(m in cmd.lower() for m in MARKERS)
 if not os.path.exists(settings):
-    print("  settings.json: not present — nothing wired"); sys.exit(0)
+    print("  settings.json: not present — nothing wired"); finish(); sys.exit(0)
 try:
-    root = json.load(open(settings))
+    with open(settings, "rb") as source:
+        original = source.read()
+    root = json.loads(original)
 except Exception as e:
-    print(f"  settings.json: not valid JSON ({e}) — left untouched"); sys.exit(0)
+    print(f"  settings.json: not valid JSON ({e}) — left untouched"); sys.exit(1)
 if not isinstance(root, dict):
-    print("  settings.json: not a JSON object — left untouched"); sys.exit(0)
+    print("  settings.json: not a JSON object — left untouched"); sys.exit(1)
 
 removed = 0
 hooks = root.get("hooks")
@@ -102,18 +125,26 @@ if isinstance(sl, dict) and ours(sl.get("command")):
         del root["statusLine"]; restored = ""
 
 if not removed and restored is None:
-    print("  settings.json: carries none of our wiring"); sys.exit(0)
+    print("  settings.json: carries none of our wiring"); finish(); sys.exit(0)
 
 what = f"{removed} claude-console hook(s)" + ("" if restored is None else
        (f", statusLine restored to: {restored}" if restored else ", statusLine removed (nothing was chained)"))
 if mode == "report":
     print(f"  settings.json: would remove {what}"); sys.exit(0)
 
-shutil.copy2(settings, backup)
-tmp = settings + ".cc.tmp"
-with open(tmp, "w") as f:
-    json.dump(root, f, indent=2); f.write("\n")
-os.replace(tmp, settings)
+fd, tmp = tempfile.mkstemp(prefix="settings.json.cc.", suffix=".tmp", dir=os.path.dirname(settings))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(root, f, indent=2, ensure_ascii=False); f.write("\n")
+    with open(settings, "rb") as source:
+        if source.read() != original:
+            raise RuntimeError("settings.json changed during cleanup; retry later")
+    shutil.copy2(settings, backup)
+    os.replace(tmp, settings)
+finally:
+    if os.path.exists(tmp):
+        os.unlink(tmp)
+finish()
 print(f"  settings.json: removed {what}  (backup: {backup})")
 PY
 }
@@ -123,9 +154,7 @@ PY
 # on load, what stops the next load wiring it back).
 if [ "$UNWIRE_ONLY" -eq 1 ]; then
   echo "Claude Console — removing the live-status wiring from $SETTINGS"
-  unwire_settings apply
-  rm -f "$CHAIN"
-  mkdir -p "$RUNTIME" && : > "$OPT_OUT"
+  unwire_settings apply || exit $?
   echo "  Off marker set: $OPT_OUT  (press a live key to turn it back on)"
   echo "Takes effect on your next Claude Code session. The plugin and voice are untouched;"
   echo "the Cost / Context / Activity keys read Off."
@@ -163,7 +192,7 @@ fi
 
 # Unwire BEFORE the runtime home goes: the chain file that holds the user's original status line
 # lives inside it, and the scripts the hooks point at are about to be deleted.
-unwire_settings apply
+unwire_settings apply || exit $?
 [ -d "$RUNTIME" ] && rm -rf "$RUNTIME" && echo "removed $RUNTIME"
 rm -rf /tmp/claude-console /tmp/claude-console-* 2>/dev/null && echo "cleared /tmp/claude-console IPC files"
 tccutil reset Microphone "$HELPER_ID" >/dev/null 2>&1 && echo "reset Microphone permission for $HELPER_ID"

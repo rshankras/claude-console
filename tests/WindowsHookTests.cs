@@ -448,8 +448,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var src = ReadShimSource();
 
             Assert.Contains("SessionKeyTopmost(IsCodex)", src);
-            Assert.Contains("name.Equals(\"codex\", StringComparison.OrdinalIgnoreCase)", src);
+            // Through IsExe, like IsClaude: a codex renamed by an in-place update must still match.
+            Assert.Contains("IsExe(name, \"codex\")", src);
             Assert.Contains("@openai\\codex", src);
+        }
+
+        [Fact]
+        public void The_shim_recognises_a_claude_renamed_by_an_in_place_update()
+        {
+            // Claude Code's updater renames the RUNNING claude.exe to claude.exe.old.<epoch-ms>
+            // and .NET reports that as the process name. The 2026-09-11 finding: from the 06:58
+            // auto-update on, every hook in a day-old session climbed past its own Claude.
+            var src = ReadShimSource();
+
+            Assert.Contains("IsExe(name, \"claude\")", src);
+            Assert.Contains("processName.StartsWith(exe + \".exe.\", StringComparison.OrdinalIgnoreCase)", src);
         }
 
         private static String ReadShimSource()

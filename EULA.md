@@ -1,6 +1,6 @@
 # End User License Agreement
 
-_Claude Console · Vizhi for Codex — Last updated: 2026-08-21_
+_Claude Console · Vizhi for Codex — Last updated: 2026-09-09_
 
 > **Template notice:** This EULA is a starting point provided for convenience and is **not legal
 > advice**. Have it reviewed by qualified counsel before publishing to the Logitech Marketplace.
@@ -13,8 +13,14 @@ have installed.
 
 ## 1. License grant
 
-The Software is licensed, not sold. It is provided under the [MIT License](LICENSE), which permits
-use, copying, modification, and distribution subject to that license's terms.
+The Software is licensed, not sold. Subject to this Agreement, we grant you a personal,
+non-exclusive, non-transferable, revocable licence to install and use the Software, in the form
+we distribute it, on devices you own or control, for use with a Logitech MX Creative Keypad.
+
+All rights not expressly granted are reserved. Except to the extent applicable law expressly
+permits, you may not copy the Software other than for backup, modify it, reverse engineer,
+decompile or disassemble it, redistribute, sublicense, rent or lease it, or remove any
+proprietary notice from it. The Software's source code is not licensed under this Agreement.
 
 ## 2. Third-party components
 

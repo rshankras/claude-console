@@ -7,9 +7,11 @@
 // UI Automation, select it, and bring the window forward.
 //
 // A separate short-lived process for the same two reasons as claude-console-inject: AttachConsole
-// mutates global state the plugin host must never touch, and this exe (alone of the three) needs
-// the Windows Desktop runtime for System.Windows.Automation — if that runtime is missing, only
-// focus degrades; typing and hooks are untouched.
+// mutates global state the plugin host must never touch, and a UI Automation walk is a job for a
+// process that exits. UIA is driven through its COM interface (UIAutomationCore.dll ships with
+// Windows), not the WPF wrapper System.Windows.Automation: that wrapper lives in the Desktop
+// Runtime, which made this exe either framework-dependent and broken on clean machines (#83) or
+// self-contained and 68 MB. As a plain console helper it trims to the size of the others.
 //
 // Exit codes (the contract with WindowsPlatformBridge.FocusSession):
 //   0 tab selected and window raised
@@ -22,8 +24,8 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using System.Windows.Automation;
 
+[SupportedOSPlatform("windows")]
 internal static class Program
 {
     private const Int32 ExitOk = 0;
@@ -37,7 +39,6 @@ internal static class Program
     // the terminal's own docs suggest for window discovery.
     private const String TerminalWindowClass = "CASCADIA_HOSTING_WINDOW_CLASS";
 
-    [SupportedOSPlatform("windows")]
     private static Int32 Main(String[] args)
     {
         try
@@ -93,7 +94,6 @@ internal static class Program
         return opts;
     }
 
-    [SupportedOSPlatform("windows")]
     private static Boolean VerifyStartTime(Int32 pid, Int64 expectedTicks, out String why)
     {
         try
@@ -124,7 +124,6 @@ internal static class Program
     /// The session's console title — which is what Windows Terminal shows on its tab. Null when
     /// the console can't be attached (the error code says why).
     /// </summary>
-    [SupportedOSPlatform("windows")]
     private static (String? title, Int32 error) ConsoleTitleOf(Int32 pid)
     {
         FreeConsole();
@@ -153,7 +152,6 @@ internal static class Program
     /// matched and the busy one didn't. With no match after the retries the first terminal
     /// window is raised anyway — the right window with the wrong tab beats doing nothing.
     /// </summary>
-    [SupportedOSPlatform("windows")]
     private static Int32 FocusTab(Int32 pid, String? firstTitle)
     {
         const Int32 attempts = 4;
@@ -162,11 +160,8 @@ internal static class Program
         {
             var title = attempt == 0 ? firstTitle : ConsoleTitleOf(pid).title;
 
-            var windows = AutomationElement.RootElement.FindAll(
-                TreeScope.Children,
-                new PropertyCondition(AutomationElement.ClassNameProperty, TerminalWindowClass));
-
-            if (windows.Count == 0)
+            var windows = TerminalWindows();
+            if (windows.Length == 0)
             {
                 Console.Error.WriteLine("no Windows Terminal window found");
                 return ExitRaisedOnly;
@@ -201,7 +196,7 @@ internal static class Program
             else
             {
                 // Out of retries — not Windows Terminal, or the tab really isn't there.
-                Raise((AutomationElement)windows[0]);
+                Raise(windows.GetElement(0));
             }
         }
 
@@ -216,29 +211,29 @@ internal static class Program
     /// are long. Returning ALL matches is what lets the caller see a duplicate and switch to
     /// selection by identity instead of by name.
     /// </summary>
-    [SupportedOSPlatform("windows")]
-    private static List<(AutomationElement Window, AutomationElement Tab)> MatchingTabs(
-        AutomationElementCollection windows, String title)
+    private static List<(IUIAutomationElement Window, IUIAutomationElement Tab)> MatchingTabs(
+        IUIAutomationElementArray windows, String title)
     {
-        var exact = new List<(AutomationElement, AutomationElement)>();
-        var fuzzy = new List<(AutomationElement, AutomationElement)>();
+        var exact = new List<(IUIAutomationElement, IUIAutomationElement)>();
+        var fuzzy = new List<(IUIAutomationElement, IUIAutomationElement)>();
         var core = TitleCore(title);
 
-        foreach (AutomationElement window in windows)
+        for (var w = 0; w < windows.Length; w++)
         {
-            var tabs = window.FindAll(
-                TreeScope.Descendants,
-                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem));
+            var window = windows.GetElement(w);
+            var tabs = TabsOf(window);
 
-            foreach (AutomationElement tab in tabs)
+            for (var t = 0; t < tabs.Length; t++)
             {
-                if (String.Equals(tab.Current.Name, title, StringComparison.Ordinal))
+                var tab = tabs.GetElement(t);
+                var label = tab.CurrentName ?? String.Empty;
+                if (String.Equals(label, title, StringComparison.Ordinal))
                 {
                     exact.Add((window, tab));
                     continue;
                 }
 
-                var name = TitleCore(tab.Current.Name);
+                var name = TitleCore(label);
                 if (core.Length > 0 && name.Length > 0 &&
                     (String.Equals(name, core, StringComparison.Ordinal)
                      || core.StartsWith(name.TrimEnd('…'), StringComparison.Ordinal)
@@ -252,12 +247,11 @@ internal static class Program
         return exact.Count > 0 ? exact : fuzzy;
     }
 
-    [SupportedOSPlatform("windows")]
-    private static void Select(AutomationElement window, AutomationElement tab)
+    private static void Select(IUIAutomationElement window, IUIAutomationElement tab)
     {
-        if (tab.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var pattern))
+        if (tab.GetCurrentPattern(UIA_SelectionItemPatternId) is IUIAutomationSelectionItemPattern pattern)
         {
-            ((SelectionItemPattern)pattern).Select();
+            pattern.Select();
         }
         Raise(window);
     }
@@ -271,7 +265,6 @@ internal static class Program
     /// that debounces titles, or an app that repaints its own immediately) — the caller falls
     /// back to first-match, which was the old behavior.
     /// </summary>
-    [SupportedOSPlatform("windows")]
     private static Boolean SelectByNonce(Int32 pid)
     {
         FreeConsole();
@@ -297,19 +290,15 @@ internal static class Program
             {
                 Thread.Sleep(80);
 
-                var windows = AutomationElement.RootElement.FindAll(
-                    TreeScope.Children,
-                    new PropertyCondition(AutomationElement.ClassNameProperty, TerminalWindowClass));
-
-                foreach (AutomationElement window in windows)
+                var windows = TerminalWindows();
+                for (var w = 0; w < windows.Length; w++)
                 {
-                    var tabs = window.FindAll(
-                        TreeScope.Descendants,
-                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem));
-
-                    foreach (AutomationElement tab in tabs)
+                    var window = windows.GetElement(w);
+                    var tabs = TabsOf(window);
+                    for (var t = 0; t < tabs.Length; t++)
                     {
-                        if (String.Equals(tab.Current.Name, nonce, StringComparison.Ordinal))
+                        var tab = tabs.GetElement(t);
+                        if (String.Equals(tab.CurrentName, nonce, StringComparison.Ordinal))
                         {
                             Select(window, tab);
                             return true;
@@ -349,10 +338,9 @@ internal static class Program
         return title[i..];
     }
 
-    [SupportedOSPlatform("windows")]
-    private static void Raise(AutomationElement window)
+    private static void Raise(IUIAutomationElement window)
     {
-        var hwnd = new IntPtr(window.Current.NativeWindowHandle);
+        var hwnd = window.CurrentNativeWindowHandle;
         if (hwnd == IntPtr.Zero)
         {
             return;
@@ -370,6 +358,82 @@ internal static class Program
         {
             SwitchToThisWindow(hwnd, true);
         }
+    }
+
+    // ---- UI Automation, through COM ---------------------------------------
+    //
+    // Only the vtable slots this helper calls are declared; a `_VtblGapN_M` method reserves the
+    // M slots in between by count — the same device tlbimp uses, honoured by the runtime's
+    // built-in COM interop. The order is UIAutomationClient.h's and must never be "tidied".
+
+    private const Int32 TreeScopeChildren = 2;
+    private const Int32 TreeScopeDescendants = 4;
+    private const Int32 UIA_ControlTypePropertyId = 30003;
+    private const Int32 UIA_ClassNamePropertyId = 30012;
+    private const Int32 UIA_TabItemControlTypeId = 50019;
+    private const Int32 UIA_SelectionItemPatternId = 10010;
+
+    private static IUIAutomation? _uia;
+
+    private static IUIAutomation Uia => _uia ??= (IUIAutomation)new CUIAutomation();
+
+    /// <summary>Every top-level Windows Terminal window, by its stable window class.</summary>
+    private static IUIAutomationElementArray TerminalWindows() =>
+        Uia.GetRootElement().FindAll(
+            TreeScopeChildren,
+            Uia.CreatePropertyCondition(UIA_ClassNamePropertyId, TerminalWindowClass));
+
+    /// <summary>Every TabItem anywhere under a terminal window.</summary>
+    private static IUIAutomationElementArray TabsOf(IUIAutomationElement window) =>
+        window.FindAll(
+            TreeScopeDescendants,
+            Uia.CreatePropertyCondition(UIA_ControlTypePropertyId, UIA_TabItemControlTypeId));
+
+    [ComImport, Guid("ff48dba4-60ef-4201-aa87-54103eef594e")]
+    private class CUIAutomation
+    {
+    }
+
+    [ComImport, Guid("30cbe57d-d9d0-452a-ab13-7ac5ac4825ee"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IUIAutomation
+    {
+        void _VtblGap1_2();                                             // CompareElements, CompareRuntimeIds
+        IUIAutomationElement GetRootElement();
+        IUIAutomationElement ElementFromHandle(IntPtr hwnd);
+        void _VtblGap2_16();                                            // ElementFromPoint … CreateFalseCondition
+        IUIAutomationCondition CreatePropertyCondition(Int32 propertyId, [MarshalAs(UnmanagedType.Struct)] Object value);
+    }
+
+    [ComImport, Guid("d22108aa-8ac5-49a5-837b-37bbb3d7591e"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IUIAutomationElement
+    {
+        void _VtblGap1_3();                                             // SetFocus, GetRuntimeId, FindFirst
+        IUIAutomationElementArray FindAll(Int32 scope, IUIAutomationCondition condition);
+        void _VtblGap2_9();                                             // FindFirstBuildCache … GetCachedPatternAs
+        [return: MarshalAs(UnmanagedType.IUnknown)]
+        Object? GetCurrentPattern(Int32 patternId);
+        void _VtblGap3_6();                                             // GetCachedPattern … CurrentLocalizedControlType
+        String? CurrentName { [return: MarshalAs(UnmanagedType.BStr)] get; }
+        void _VtblGap4_12();                                            // CurrentAcceleratorKey … CurrentIsPassword
+        IntPtr CurrentNativeWindowHandle { get; }
+    }
+
+    [ComImport, Guid("14314595-b4bc-4055-95f2-58f2e42c9855"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IUIAutomationElementArray
+    {
+        Int32 Length { get; }
+        IUIAutomationElement GetElement(Int32 index);
+    }
+
+    [ComImport, Guid("352ffba8-0973-437c-a61f-f64cafd81df9"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IUIAutomationCondition
+    {
+    }
+
+    [ComImport, Guid("a8efa66a-0fda-421a-9194-38021f3578ea"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IUIAutomationSelectionItemPattern
+    {
+        void Select();
     }
 
     // ---- Win32 -------------------------------------------------------------

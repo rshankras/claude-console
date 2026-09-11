@@ -164,13 +164,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void The_model_key_repaints_only_when_the_model_name_changed()
+        public void The_model_picker_does_not_subscribe_to_live_state()
         {
             var model = Source("src", "Core", "Actions", "ModelCycleCommand.cs");
 
-            // The guard, not its exact wording: the key must compare before repainting. (It also
-            // repaints when coming back from "no data for this session" — #49.)
-            Assert.Contains("name != _displayName", model);
+            // Its icon is fixed, so session changes must not schedule redundant repaints.
+            Assert.DoesNotContain("OnStateChanged", model);
+            Assert.DoesNotContain("OnStateUnavailable", model);
         }
 
         /// <summary>

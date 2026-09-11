@@ -45,6 +45,12 @@ if ! bash "$REPO/tests/scripts/test-bridge-scripts.sh"; then
 fi
 
 echo
+echo "▶ concurrent uninstall cleanup"
+if ! python3 "$REPO/tests/scripts/test-unwire-concurrency.py"; then
+  STATUS=1
+fi
+
+echo
 echo "▶ codex hook tests"
 if ! bash "$REPO/tests/scripts/test-codex-hook.sh"; then
   STATUS=1

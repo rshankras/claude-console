@@ -16,8 +16,13 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// </summary>
     internal static class BridgeNotice
     {
-        /// <summary>Where "How to undo" points — the README section that explains the edit and the way back.</summary>
-        internal const String SupportUrl = "https://github.com/rshankras/claude-console#the-live-status-bridge";
+        /// <summary>
+        /// Where "How to undo" points — the product page's section that explains the edit and the
+        /// way back. On vizhi.dev, not the GitHub README: the repository went private on 2026-09-02
+        /// and every card button returned a 404 until it was reopened (#68, #71), and it will go
+        /// private again. These anchors are baked into shipped packages — treat them as frozen.
+        /// </summary>
+        internal const String SupportUrl = "https://vizhi.dev/claude-console/#live-status-bridge";
 
         internal const String SupportTitle = "What was changed, and how to undo it";
 
@@ -73,9 +78,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             "Cost, Context and Activity show live data. Your own entries are kept and the file is backed " +
             $"up first. (Pressing {keyName} again within {seconds} s also turns it on.)\n\n" +
             // Options+ cannot undo this edit when the plugin is uninstalled (#55): the moment of
-            // consent is the one place the user is guaranteed to read how to take it out again.
-            "To take it out later, hold a live key and choose Turn off — do that before uninstalling " +
-            "the plugin, because uninstalling does not.";
+            // consent is the one place the user is guaranteed to read how to take it out again. On
+            // macOS the hooks now notice the uninstall and take it out themselves (#73); Windows
+            // still needs the user to do it first.
+            "To take it out later, hold a live key and choose Turn off. Uninstalling the plugin does not " +
+            "remove it at once: on macOS the hooks notice within a minute and take it out themselves; " +
+            "on Windows turn it off before uninstalling.";
 
         /// <summary>The dialog a long press opens once live status is on: the mirror question.</summary>
         internal static String TurnOffDialog(String keyName, Int32 seconds) =>
@@ -94,8 +102,8 @@ namespace Loupedeck.ClaudeConsolePlugin
             "Claude Console could not edit ~/.claude/settings.json (it is a symlink, not valid JSON, or " +
             "kept changing). Nothing was written. Fix the file, then press the key again.";
 
-        /// <summary>Where the Windows-Terminal notice points — the README's Windows section.</summary>
-        internal const String WindowsTerminalUrl = "https://github.com/rshankras/claude-console#windows-notes";
+        /// <summary>Where the Windows-Terminal notice points — the FAQ's Windows section.</summary>
+        internal const String WindowsTerminalUrl = "https://vizhi.dev/faq/#windows";
 
         internal const String WindowsTerminalTitle = "How to set Windows Terminal";
 
@@ -109,8 +117,40 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// think the whole plugin is dead. <paramref name="detail"/> is the platform's reason.
         /// </summary>
         internal static String WindowsTerminalRequired(String detail) =>
+            // "Yes/No and voice still work here" was the old wording, and QA caught it mid-way through
+            // a run in which neither did (2.2.1 Windows retest, item 16): they do not need Windows
+            // Terminal, but they do need a target session, and a refused press says so on the key.
             "The navigation keys need an open Windows Terminal window, and it isn't the current terminal. " +
-            "Direct typing keys, Yes/No and voice still work here. Set Settings › System › For developers › " +
-            $"Terminal to Windows Terminal and start a new session. ({detail})";
+            "Direct typing keys, Yes/No and voice do not need it; if one is refused, pin a session slot. " +
+            $"Set Settings › System › For developers › Terminal to Windows Terminal and start a new session. ({detail})";
+
+        /// <summary>Where the voice notices point — the FAQ's voice section.</summary>
+        internal const String VoiceUrl = "https://vizhi.dev/faq/#voice";
+
+        internal const String VoiceTitle = "How voice works";
+
+        /// <summary>
+        /// Posted once when the speech model download starts. A first voice press used to say
+        /// "Model loading" for two seconds and nothing else, while 142 MB fetched in the background —
+        /// a silent multi-minute cliff on a slow connection (2.2.1 Windows retest, item 6).
+        /// </summary>
+        internal static String VoiceModelDownloading() =>
+            "Voice is downloading its speech model (142 MB, one time). Until it finishes, a voice key says " +
+            "Model loading — press it again afterwards. On a slow connection this can take several minutes.";
+
+        internal static String VoiceModelReady() =>
+            "The speech model is downloaded. Voice, Voice Draft and Go to Project are ready.";
+
+        internal static String VoiceModelDownloadFailed(String reason) =>
+            $"Voice could not download its speech model ({reason}). Check the connection, then press a voice " +
+            "key again to retry.";
+
+        /// <summary>
+        /// Posted once per load when Go to Project matches nothing. The only mention of the roots
+        /// file used to be a WARN line in the log (2.2.1 Windows retest, item 8).
+        /// </summary>
+        internal static String ProjectNoMatch(String heard, Int32 candidates, String source, String rootsFile) =>
+            $"Go to Project heard \"{heard}\" but found no project like it among {candidates} candidate(s) ({source}). " +
+            $"If your projects live elsewhere, list their parent folders one per line in {rootsFile} and try again.";
     }
 }

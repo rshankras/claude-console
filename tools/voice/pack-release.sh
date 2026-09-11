@@ -186,6 +186,15 @@ echo ">>> packing $OUT"
 rm -f "$OUT"
 logiplugintool pack "$BUILD_DIR" "$OUT"
 
+# --- verify the artifact -------------------------------------------------------------------------
+# Every check in verify-package.sh is a bug that shipped once (#24 #47 #62 #64 #68 #71 #83) or a
+# Marketplace rule. A package that fails is renamed so it cannot be uploaded by accident.
+if ! bash "$ROOT/tools/verify-package.sh" "$OUT"; then
+  mv -f "$OUT" "$OUT.rejected"
+  echo "error: the package failed verification — renamed to $OUT.rejected" >&2
+  exit 1
+fi
+
 echo
 echo "✅ $OUT"
 echo "   size: $(du -h "$OUT" | cut -f1)"

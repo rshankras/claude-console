@@ -13,13 +13,13 @@ Claude Console turns the MX Creative Keypad's nine LCD keys into a control surfa
 - **A key per session** — run Claude in several Terminal tabs and each gets its own key: the project name on a black face, and a bar along the bottom saying what it's doing — **Thinking**, **Waiting**, **Allow?**, **Complete**. Press one to focus that tab and point every other key at it; the pinned session's bar is highlighted.
 - **Answer permission prompts** — **Yes** confirms the request Claude is waiting on, **No** dismisses it, and neither guesses: with nothing to approve they beep and do nothing. **Up / Down / Return** walk any menu. [Details](#answering-claudes-questions).
 - **See what needs an answer** — both answer keys light **amber** when Claude wants permission; Yes turns **red** when approving would run a destructive command (`git push`, `rm -rf`, `sudo`…), while No stays amber. The session's own key reads **Allow?**. [Legend](#the-approval-badge).
-- **Live status** — Model, live cost and context usage read straight from Claude Code's status line (opt‑in: [the keys are the switch](#the-live-status-bridge)).
+- **Live status** — Cost, context usage and activity read from Claude Code's live-status bridge (opt‑in: [the keys are the switch](#the-live-status-bridge)).
 - **One‑press prompts** — Fix Bug, Write Tests, Explore, Explain, Refactor, Review, Optimize, Security, Document, Deploy. One‑word keys, **full structured prompts** underneath — all [customizable](#customizing-prompt-keys), including **draft** keys you edit before sending.
 - **Git, through Claude** — Commit, Diff, Push, Create PR, Status, Log.
 - **Screenshot into the conversation** — press, drag a region, and the image is handed to the *current* session with the cursor waiting for your question. [Details](#screenshot).
 - **Offline voice** — **Dictate** sends what you said straight away; **Voice Draft** leaves it in the input box so you can fix mis‑hearings first; **Go to Project** opens a project by its spoken name. [whisper.cpp](https://github.com/ggerganov/whisper.cpp) transcribes on your machine.
 - **Terminal & session nav** — activate Terminal, new tab, new Claude session, next/prev tab, plus **New Claude (Window)** and **Next/Prev Window** if you prefer windows.
-- **Model & modes** — **Model** opens the `/model` picker and shows the current model live; **Mode** cycles normal → auto‑accept edits → plan; plus Compact, Context, Clear, Exit, **Tab** (accept an autocomplete and run it).
+- **Model & modes** — **Model** opens the `/model` picker and keeps a consistent brain icon; **Mode** cycles normal → auto‑accept edits → plan; plus Compact, Context, Clear, Exit, **Tab** (accept an autocomplete and run it).
 - **Types where it should** — every key finds Claude's own Terminal tab and types there, so a press can't land in Slack or a browser because you glanced away. Can't find it? It beeps and types nothing.
 
 See [PRIVACY.md](PRIVACY.md) — everything runs on your own machine.
@@ -28,7 +28,7 @@ See [PRIVACY.md](PRIVACY.md) — everything runs on your own machine.
 
 **Both platforms**
 
-- **Logitech MX Creative Keypad** + **Logi Options+ 6.4 or newer** (installs the *Logi Plugin Service*). 1.4.0 onwards is built for the .NET 10 runtime that ships with Plugin Service 6.4 — on an older Options+ the plugin will not load, so let Options+ update itself first. (Staying on an older Options+? Use [1.3.4](https://github.com/rshankras/claude-console/releases).)
+- **Logitech MX Creative Keypad** + **Logi Options+ 6.4 or newer** (installs the *Logi Plugin Service*). 1.4.0 onwards is built for the .NET 10 runtime that ships with Plugin Service 6.4 — on an older Options+ the plugin will not load, so let Options+ update itself first. (Staying on an older Options+? The last build for it was 1.3.4 — ask via [Support](https://vizhi.dev/faq/).)
 - **[Claude Code](https://claude.com/claude-code)** CLI, installed **natively** (WSL sessions are not visible to the plugin — see [Windows notes](#windows-notes)).
 
 **macOS**
@@ -62,23 +62,23 @@ The Windows build reaches Claude a different way than macOS does, and a few diff
 
 **Elevated sessions cannot be controlled.** Options+ runs unelevated, and Windows blocks the console attach across integrity levels. Run Claude unelevated.
 
-**Before uninstalling on Windows, turn live status off** (hold a live key → *Turn off*). The cleanup script that does this on macOS is not installed on Windows yet ([#55](https://github.com/rshankras/claude-console/issues/55)), and an Options+ uninstall leaves the hooks in `~/.claude/settings.json`. Current wiring checks that the helper still exists, so a leftover is a silent no-op rather than an error, but it is still a leftover.
+**Before uninstalling on Windows, turn live status off** (hold a live key → *Turn off*). The cleanup script that does this on macOS is not installed on Windows yet (#55), and an Options+ uninstall leaves the hooks in `~/.claude/settings.json`. Current wiring checks that the helper still exists, so a leftover is a silent no-op rather than an error, but it is still a leftover.
 
 ## Install (released plugin)
 
-Download the latest `ClaudeConsole_<ver>.lplug4` from [**Releases**](https://github.com/rshankras/claude-console/releases), then:
+Install from the **Logi Marketplace** inside Options+, or download the latest `ClaudeConsole_<ver>.lplug4` from [vizhi.dev](https://vizhi.dev/claude-console/#install), then:
 
 1. **Double-click it** — Logi Options+ registers the plugin. (Or, with the Logi Plugin Tool: `logiplugintool install ./ClaudeConsole_<ver>.lplug4`.) If macOS blocks it, right-click → **Open**, or run `xattr -dr com.apple.quarantine ClaudeConsole_<ver>.lplug4`.
 2. **Put the keys on Terminal.** The plugin is *universal*: it binds to no application and ships no layout of its own, so nothing appears on the keypad until you give it keys. The quickest way is the ready-made layout — see [Import the ready-made layout](#import-the-ready-made-layout) just below (two clicks). Or build your own: in Options+ add **Terminal** as an application, then drag any **Claude Console** actions onto its profile.
 3. On first use, grant **Accessibility** to the Logi Plugin Service (so it can type into your terminal). For **voice**, press the Dictate key and grant **Microphone** when prompted — the helper and speech model install themselves on first use. The **Screenshot** key asks for **Screen Recording** the first time.
 
-> The live **Cost / Context / Activity** keys (and the Model key's readout) are **opt-in**: the plugin never edits your Claude Code settings on its own — they read **Set up** until you press one of them, and the press itself is the prompt. See [The live status bridge](#the-live-status-bridge).
+> The live **Cost / Context / Activity** keys are **opt-in**: the plugin never edits your Claude Code settings on its own — they read **Set up** until you press one of them, and the press itself is the prompt. See [The live status bridge](#the-live-status-bridge).
 
 ## Import the ready-made layout
 
 Rather than mapping nine keys by hand, import the ready-made profile to get the full layout instantly. **This is the normal setup, not a fallback** — since 2.2.0 the plugin is universal (no application binding, no packaged profile), so the layout is something you import, exactly once.
 
-1. Download **`ClaudeConsole-Keypad.lp5`** from [**Releases**](https://github.com/rshankras/claude-console/releases) (alongside the `.lplug4`), or take it from [`profiles/`](profiles/) in this repo. On Windows use **`ClaudeConsole-Windows.lp5`**.
+1. Download **`ClaudeConsole-Keypad.lp5`** from the [keypad layouts page](https://www.rshankar.com/keypad-profiles/), or take it from [`profiles/`](profiles/) in this repo. On Windows use **`ClaudeConsole-Windows.lp5`**.
 2. In **Logi Options+** → your **MX Creative Keypad**, open the profile menu (the `⋯` / profile dropdown) → **Import Profile** → pick the `.lp5`.
 3. It imports as a **Terminal** profile, five pages deep, so it activates whenever Terminal.app is frontmost. Rearrange or rebind any key afterward.
 
@@ -242,7 +242,7 @@ bash ~/.claude/claude-console/scripts/uninstall.sh --dry-run  # preview only
 
 It unwires the live status hooks surgically, removes `~/.claude/claude-console/` (voice helper, speech model, your `prompts.json`), the IPC files, the Microphone grant and any dev `.link`, and asks before deleting. What it touches, why the order matters, and the Windows caveat: [docs/uninstall.md](docs/uninstall.md).
 
-**Options+ cannot do any of that for you.** Its uninstall removes the plugin and nothing else, on macOS as on Windows: the hooks, the status line and `~/.claude/claude-console/` stay ([#55](https://github.com/rshankras/claude-console/issues/55)). If you would rather not run the script, hold a live key and choose **Turn off** *before* uninstalling. On both platforms current wiring checks that its script or exe exists before running it, so an entry left after the handler disappears is a silent no-op rather than a "hook error" on every turn. Existing owned commands are upgraded to this guarded form when this version first loads.
+**Options+ cannot do any of that for you.** Its uninstall removes the plugin and nothing else, on macOS as on Windows: the hooks, the status line and `~/.claude/claude-console/` stay (#55). On macOS the hooks notice on their own (#73): once the plugin's folder has been gone for over a minute, the next Claude Code event takes the plugin's entries out of `settings.json` surgically — same rolling backup as *Turn off*, your own entries untouched, the Off marker set — and leaves `~/.claude/claude-console/unwired-after-uninstall` to say so. `~/.claude/claude-console/` itself stays for the script above. If you would rather not wait, hold a live key and choose **Turn off** *before* uninstalling; on Windows that is still the only way, and the entries left behind are a silent no-op rather than a "hook error" on every turn because each one checks that its exe exists before running it.
 
 ## Developing
 
@@ -251,9 +251,11 @@ Build, test, package and release notes are in [docs/development.md](docs/develop
 ## Feedback
 
 Found a bug, missing a key you'd use daily, or running a terminal this doesn't support yet?
-[Open an issue](https://github.com/rshankras/claude-console/issues) — feature requests and
-"this confused me" reports are equally welcome, and issues double as the roadmap.
+See [Support on vizhi.dev](https://vizhi.dev/faq/) — feature requests and "this confused me"
+reports are equally welcome.
 
 ## License
 
-[MIT](LICENSE). Bundled third‑party components (whisper.cpp, the Whisper model) are MIT‑licensed. See [EULA.md](EULA.md).
+Proprietary — see the [EULA](https://vizhi.dev/eula/) ([EULA.md](EULA.md) in this repository) and
+the [privacy policy](https://vizhi.dev/privacy/). Bundled third‑party components (whisper.cpp, the
+Whisper model) are MIT‑licensed; their licence texts ship with the plugin.
