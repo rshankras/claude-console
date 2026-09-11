@@ -11,6 +11,16 @@ All notable changes to Claude Console are documented here. Format based on
   already did, so turning live status on with your own status line in place always records the
   chain file that restores it when you turn live status off. Found by running the C# suite on
   Windows, which is now green there as well as on macOS.
+- **Windows: a session survives a Claude Code auto-update.** Claude Code updates itself in place
+  while sessions run; Windows cannot overwrite a running program, so the updater renames it
+  (`claude.exe.old.<stamp>`) and the running session carries that name from then on. The hook
+  exe matched the name `claude` only, so from the update onward every hook in an already-running
+  session wrote only the shared fallback: Cost/Context showed the last writer's numbers, no
+  approval ever attached to the session, and Yes/No answered "no pending approval" on a session
+  the plugin had pinned and named. Found on 2026-09-11 on a session up since the evening before,
+  with the 06:58 auto-update as the cut-over. The hook and the plugin's discovery now apply one
+  rule for a renamed running image; `claude-console-hook selftest` prints the ancestry walk hop
+  by hop so this class of miss is visible in the field.
 
 Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and Windows (#74–#80).
 

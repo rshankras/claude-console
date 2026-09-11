@@ -5,6 +5,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System.Diagnostics;
     using System.IO;
     using System.Linq;
+    using System.Runtime.InteropServices;
     using System.Text.Json;
     using System.Threading;
     using System.Threading.Tasks;
@@ -40,6 +41,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         private readonly String _bin;      // the copy, the payload files, and hook-invoked.log
         private readonly String _hook;
         private readonly String _claude;   // the stand-in claude.exe
+        private readonly String _updated;  // the same stand-in as Claude Code's updater leaves a RUNNING one
         private readonly String _temp;     // the TEMP the hook is given
 
         private String Root => Path.Combine(_temp, "claude-console");
@@ -54,6 +56,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             _bin = Path.Combine(_dir, "bin");
             _hook = Path.Combine(_bin, _name + ".exe");
             _claude = Path.Combine(_dir, "claude", "claude.exe");
+            _updated = Path.Combine(_dir, "claude", "claude.exe.old.1789090133131");
             _temp = Path.Combine(_dir, "temp");
 
             if (exe.ExePath == null)
@@ -66,6 +69,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Directory.CreateDirectory(_temp);
             File.Copy(exe.ExePath, _hook);
             File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), _claude);
+            File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), _updated);
             File.Copy(Payload("Status.json"), Path.Combine(_bin, "status.json"));
             File.Copy(Payload("PermissionRequest.json"), Path.Combine(_bin, "permission.json"));
         }
@@ -105,6 +109,26 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("PowerShell", session.PendingTool);
             Assert.Equal(ExpectedCommand(), session.PendingCommand);
             Assert.Equal(ApprovalRisk.High, session.Risk);   // the QA case: a recursive force-delete must show red
+        }
+
+        [WindowsFact]
+        public void A_session_whose_claude_was_renamed_by_an_update_still_gets_its_own_key()
+        {
+            // Claude Code updates itself in place while sessions run. Windows cannot overwrite a
+            // running image, so the updater RENAMES it (claude.exe.old.<epoch-ms>) and drops the
+            // new claude.exe beside it; .NET then reports the renamed image as the process name.
+            // Found 2026-09-11: a session up since the previous evening lost every per-session
+            // write at the 06:58 auto-update — hooks climbed past their own Claude, Yes/No said
+            // "no pending approval" on a session the plugin had pinned, and the plugin's WMI-based
+            // discovery (creation-time name) never noticed.
+            using var claude = this.StartClaude(_updated);
+            Assert.Equal(0, claude.Run($@".\{_name}.exe statusline < status.json"));
+            Assert.Equal(0, claude.Run($@".\{_name}.exe activity permission < permission.json"));
+
+            var key = claude.Key;
+            Assert.True(File.Exists(Path.Combine(SessionsDir, key + ".json")), "the renamed Claude minted no per-session file");
+            Assert.Equal("waiting", ActivityWord(key));
+            Assert.Equal("PowerShell", this.ReadSession(key).PendingTool);
         }
 
         [WindowsFact]
@@ -176,9 +200,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [WindowsFact]
         public void Without_a_claude_ancestor_only_the_shared_fallback_is_written()
         {
-            // Launched from the test host there is no Claude up the chain: the key is null, the
-            // shared last-writer-wins file is all the plugin gets, and nothing else appears.
-            var run = this.LaunchDirect(stdin: "", holdStdin: false, "activity", "busy");
+            // With no Claude up the chain the key is null, the shared last-writer-wins file is all
+            // the plugin gets, and nothing else appears. "No Claude up the chain" has to be made
+            // true, not assumed: this suite is often run from INSIDE a Claude Code session, whose
+            // process sits above the test host — the hook found it the moment the renamed-image
+            // fix landed, and this test had only ever passed because of that bug. So the hook is
+            // launched with explorer.exe as its parent (PROC_THREAD_ATTRIBUTE_PARENT_PROCESS),
+            // an ancestry that has no Claude in it wherever the suite runs from.
+            var explorer = Process.GetProcessesByName("explorer").FirstOrDefault();
+            if (explorer == null)
+            {
+                throw new Xunit.Sdk.XunitException("no explorer.exe to reparent under — this test needs an interactive session");
+            }
+
+            var run = LaunchReparented(explorer.Id, _hook, "activity busy", _bin, _temp);
 
             Assert.Equal(0, run.ExitCode);
             Assert.Equal(new[] { "shared.json" }, Directory.GetFiles(ActivityDir).Select(Path.GetFileName).ToArray());
@@ -335,7 +370,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }
         }
 
-        private ClaudeStandIn StartClaude() => new ClaudeStandIn(_claude, _bin, _temp);
+        private ClaudeStandIn StartClaude(String exe = null) => new ClaudeStandIn(exe ?? _claude, _bin, _temp);
 
         private sealed record DirectRun(Int32 ExitCode, TimeSpan Elapsed);
 
@@ -390,6 +425,150 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Task.WaitAll(new Task[] { stdout, stderr }, 2000);
             return new DirectRun(p.ExitCode, clock.Elapsed);
         }
+
+        /// <summary>
+        /// Start <paramref name="exe"/> as a child of <paramref name="parentPid"/> rather than of
+        /// this process, so its ancestry is that process's. No pipes: with a foreign parent the
+        /// inheritable handles are the parent's, not ours, so stdin is simply not redirected —
+        /// the hook then reads nothing, which is what the verb under test expects.
+        /// </summary>
+        private static DirectRun LaunchReparented(Int32 parentPid, String exe, String args, String workDir, String temp)
+        {
+            var parent = OpenProcess(PROCESS_CREATE_PROCESS, false, parentPid);
+            if (parent == IntPtr.Zero)
+            {
+                throw new Xunit.Sdk.XunitException($"cannot open pid {parentPid} for reparenting: error {Marshal.GetLastWin32Error()}");
+            }
+
+            var attributeList = IntPtr.Zero;
+            var parentHandleCell = Marshal.AllocHGlobal(IntPtr.Size);
+            var environment = IntPtr.Zero;
+            try
+            {
+                var size = IntPtr.Zero;
+                InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
+                attributeList = Marshal.AllocHGlobal(size);
+                if (!InitializeProcThreadAttributeList(attributeList, 1, 0, ref size))
+                {
+                    throw new Xunit.Sdk.XunitException("InitializeProcThreadAttributeList failed: " + Marshal.GetLastWin32Error());
+                }
+                Marshal.WriteIntPtr(parentHandleCell, parent);
+                if (!UpdateProcThreadAttribute(attributeList, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, parentHandleCell, (IntPtr)IntPtr.Size, IntPtr.Zero, IntPtr.Zero))
+                {
+                    throw new Xunit.Sdk.XunitException("UpdateProcThreadAttribute failed: " + Marshal.GetLastWin32Error());
+                }
+
+                // The hook takes its IPC root from TEMP; hand it the private one in a fresh block.
+                var block = new System.Text.StringBuilder();
+                foreach (System.Collections.DictionaryEntry kv in Environment.GetEnvironmentVariables())
+                {
+                    var name = (String)kv.Key;
+                    if (name.Equals("TEMP", StringComparison.OrdinalIgnoreCase) || name.Equals("TMP", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+                    block.Append(name).Append('=').Append(kv.Value).Append('\0');
+                }
+                block.Append("TEMP=").Append(temp).Append('\0').Append("TMP=").Append(temp).Append('\0').Append('\0');
+                environment = Marshal.StringToHGlobalUni(block.ToString());
+
+                var startup = new STARTUPINFOEX();
+                startup.StartupInfo.cb = Marshal.SizeOf<STARTUPINFOEX>();
+                startup.lpAttributeList = attributeList;
+                var commandLine = new System.Text.StringBuilder($"\"{exe}\" {args}");
+
+                var clock = Stopwatch.StartNew();
+                if (!CreateProcessW(null, commandLine, IntPtr.Zero, IntPtr.Zero, false,
+                        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+                        environment, workDir, ref startup, out var info))
+                {
+                    throw new Xunit.Sdk.XunitException("CreateProcess (reparented) failed: " + Marshal.GetLastWin32Error());
+                }
+
+                try
+                {
+                    if (WaitForSingleObject(info.hProcess, 12_000) != 0)
+                    {
+                        TerminateProcess(info.hProcess, 1);
+                        throw new Xunit.Sdk.XunitException("the reparented hook did not exit within 12 s");
+                    }
+                    clock.Stop();
+                    GetExitCodeProcess(info.hProcess, out var exitCode);
+                    return new DirectRun((Int32)exitCode, clock.Elapsed);
+                }
+                finally
+                {
+                    CloseHandle(info.hThread);
+                    CloseHandle(info.hProcess);
+                }
+            }
+            finally
+            {
+                if (attributeList != IntPtr.Zero) { DeleteProcThreadAttributeList(attributeList); Marshal.FreeHGlobal(attributeList); }
+                Marshal.FreeHGlobal(parentHandleCell);
+                if (environment != IntPtr.Zero) { Marshal.FreeHGlobal(environment); }
+                CloseHandle(parent);
+            }
+        }
+
+        private const UInt32 PROCESS_CREATE_PROCESS = 0x0080;
+        private const UInt32 EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
+        private const UInt32 CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+        private const UInt32 CREATE_NO_WINDOW = 0x08000000;
+        private static readonly IntPtr PROC_THREAD_ATTRIBUTE_PARENT_PROCESS = (IntPtr)0x00020000;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct STARTUPINFO
+        {
+            public Int32 cb;
+            public String lpReserved;
+            public String lpDesktop;
+            public String lpTitle;
+            public Int32 dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+            public Int16 wShowWindow, cbReserved2;
+            public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct STARTUPINFOEX
+        {
+            public STARTUPINFO StartupInfo;
+            public IntPtr lpAttributeList;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PROCESS_INFORMATION
+        {
+            public IntPtr hProcess, hThread;
+            public Int32 dwProcessId, dwThreadId;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(UInt32 access, Boolean inherit, Int32 pid);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern Boolean InitializeProcThreadAttributeList(IntPtr list, Int32 count, Int32 flags, ref IntPtr size);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern Boolean UpdateProcThreadAttribute(IntPtr list, UInt32 flags, IntPtr attribute, IntPtr value, IntPtr size, IntPtr previous, IntPtr returnSize);
+
+        [DllImport("kernel32.dll")]
+        private static extern void DeleteProcThreadAttributeList(IntPtr list);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern Boolean CreateProcessW(String applicationName, System.Text.StringBuilder commandLine, IntPtr processAttributes, IntPtr threadAttributes, Boolean inheritHandles, UInt32 creationFlags, IntPtr environment, String currentDirectory, ref STARTUPINFOEX startupInfo, out PROCESS_INFORMATION processInformation);
+
+        [DllImport("kernel32.dll")]
+        private static extern UInt32 WaitForSingleObject(IntPtr handle, UInt32 milliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern Boolean GetExitCodeProcess(IntPtr process, out UInt32 exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern Boolean TerminateProcess(IntPtr process, UInt32 exitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern Boolean CloseHandle(IntPtr handle);
 
         private static Process StartDummy(String exe)
         {
