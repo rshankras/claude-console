@@ -288,7 +288,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.True(rig.Bridge.DisableLiveStatus()); // still Off
             Assert.Equal(1, rig.Repaints);
 
-            Assert.True(rig.Bridge.EnableLiveStatus());  // Off -> JustEnabled: "Restart Claude"
+            Assert.True(rig.Bridge.EnableLiveStatus());  // Off -> JustEnabled: "Turned on" (the fake applies live)
             Assert.Equal(2, rig.Repaints);
         }
 

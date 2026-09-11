@@ -45,9 +45,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         ///
         /// Verified true on macOS on 2026-09-02 (Claude Code 2.1.258): a session started with no
         /// hooks wrote its status line one second after Turn on, and its PermissionRequest hook
-        /// fired three minutes later, with no restart. Logitech QA reported the opposite on
-        /// Windows (retest item 2: nothing until Claude Code is restarted) and the cause is not
-        /// known, so Windows keeps the restart wording until a Windows log says otherwise.
+        /// fired three minutes later, with no restart. Verified true on Windows on 2026-09-10 and
+        /// 2026-09-11 (Claude Code 2.1.267/268): sessions started hours earlier reported within
+        /// 5–37 s of the write and their PermissionRequest hook fired minutes later, no restart.
+        /// Logitech QA's Windows report of "nothing until Claude Code is restarted" (retest item 2)
+        /// was #74 — the hook wrote a word the plugin never read — not a settings-reload difference.
+        /// Both platforms therefore say "Turned on"; the property stays on the seam because a
+        /// future platform (or agent) may well need the restart wording.
         /// </summary>
         Boolean SettingsApplyLive { get; }
 

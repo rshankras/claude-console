@@ -45,10 +45,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // backend's own statement of whether it has a working implementation, and Windows now does.
         public Boolean IsSupported => OperatingSystem.IsWindows();
 
-        // QA's 2.2.0 retest (item 2) saw Yes/No stay inert until Claude Code was restarted, and
-        // the cause is unexplained; the honest face there is still "Restart Claude". Flip this
-        // only on the strength of a Windows log — see IPlatformBridge.SettingsApplyLive (#58).
-        public Boolean SettingsApplyLive => false;
+        // Measured on Windows, twice, on sessions that were never restarted (#58):
+        //   2026-09-10 14:57:44 settings.json wired → 14:58:21 a session started at 14:39 reported
+        //     its status line (37 s, no restart between — docs/windows-qa-2.2.1.md);
+        //   2026-09-11 12:50:52 rewired after an Off → 12:50:57 "Live status: Enabled" from a
+        //     session started the previous evening, and its PermissionRequest hook fired at
+        //     12:57:32 (hook-invoked.log) — so the approval path applies live too, not only the
+        //     status line. The owner watched the Cost key go from the setup word to a value with
+        //     no restart (docs/windows-qa-2.2.2.md, pass 2).
+        // QA's 2.2.0 report that nothing came alive until a restart was #74 wearing this face: with
+        // the hook writing "permission" no press could ever land, restart or not.
+        public Boolean SettingsApplyLive => true;
 
         /// <summary>
         /// Enumerates the process table. Injectable so the discovery logic is testable on any OS —

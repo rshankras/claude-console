@@ -114,18 +114,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void The_platforms_disagree_on_purpose_and_each_says_why()
+        public void Each_platform_states_settings_apply_live_from_a_measurement_not_an_assumption()
         {
-            // macOS: measured 2026-09-02 (Claude Code 2.1.258) — running sessions pick the wiring up.
-            // Windows: QA's retest item 2 says they did not, cause unknown — the restart wording
-            // stays until a Windows log overturns it. Pinned at the source so a "tidy-up" cannot
-            // silently make both platforms claim the same thing.
+            // macOS: measured 2026-09-02 (Claude Code 2.1.258). Windows: measured 2026-09-10 and
+            // 2026-09-11 on sessions that were never restarted; until then it said false on the
+            // strength of QA's retest item 2, which turned out to be #74 wearing this face. Both
+            // now say true, and each must still cite its evidence beside the value: the property
+            // exists so a platform that genuinely needs a restart can say so, and "true" typed in
+            // without a date is exactly the tidy-up this test exists to refuse.
             var mac = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Core", "Platform", "MacPlatformBridge.cs"));
             var windows = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Core", "Platform", "WindowsPlatformBridge.cs"));
 
             Assert.Contains("public Boolean SettingsApplyLive => true;", mac);
-            Assert.Contains("public Boolean SettingsApplyLive => false;", windows);
-            Assert.Contains("#58", windows);
+            Assert.Contains("2026-09-02", mac.Substring(0, mac.IndexOf("SettingsApplyLive => true", StringComparison.Ordinal)));
+            Assert.Contains("public Boolean SettingsApplyLive => true;", windows);
+            var before = windows.Substring(0, windows.IndexOf("SettingsApplyLive => true", StringComparison.Ordinal));
+            Assert.Contains("2026-09-10", before);
+            Assert.Contains("2026-09-11", before);
+            Assert.Contains("#58", before);
         }
 
         [Fact]

@@ -11,6 +11,10 @@ All notable changes to Claude Console are documented here. Format based on
   already did, so turning live status on with your own status line in place always records the
   chain file that restores it when you turn live status off. Found by running the C# suite on
   Windows, which is now green there as well as on macOS.
+- **Windows says "Turned on", not "Restart Claude", after live status is switched on** (#58).
+  Running sessions pick the new hooks and status line up by themselves on Windows exactly as on
+  macOS — measured on two days on sessions started hours earlier, including the approval hook. The
+  restart wording had been kept on the strength of QA's 2.2.0 report, which was #74 in disguise.
 - **Windows: a session survives a Claude Code auto-update.** Claude Code updates itself in place
   while sessions run; Windows cannot overwrite a running program, so the updater renames it
   (`claude.exe.old.<stamp>`) and the running session carries that name from then on. The hook

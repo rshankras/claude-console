@@ -146,9 +146,22 @@ session-key press after the install logged `no Windows Terminal window found` fr
 helper and the next press two milliseconds later succeeded (one-off, watch in step 5); three
 Cost presses within 250 ms each sent `/cost` (rapid repeat of an injecting key — P3 candidate).
 
-### Pass 2 — package rebuilt with the F8 fix
+### Pass 2 — package 15968CB5 (71a9e4a, the F8 fix), 2026-09-11 16:14
 
-Steps 0–2 repeated on reinstall, then 3 onward.
+| Step | Result | Evidence |
+|---|---|---|
+| 0 uninstall with sessions open | PASS | no refusal; 0 hook processes |
+| 1 install | PASS | `version '2.2.2' loaded … in 569 ms`; installed hook hash = shipping hook hash (4E5A34C7…); no load warnings |
+| 2 live status found wired from the previous install | PASS | `Live status at load: Enabled`; both sessions' per-session files written again within a minute — including the day-old renamed session pid-16860 that F8 had orphaned |
+| 3 Yes/No on a permission prompt | PASS | `AnswerCommand: approved the pending prompt on pid-17740-… by key` (16:15:31) and `rejected the pending prompt on pid-17740-… by key` (16:15:50), both on the pinned session; `activity\pid-17740-….json` read `waiting` while the prompt was up. Owner: "it works fine". The red face for the destructive command is asserted by the owner's eye, not the log (the log carries no risk grade). |
+| 2b Cost long-press, owner's re-check | PASS, wording finding **F9** | Off and On both work. After On the key read **Restart Claude**, yet the owner switched sessions and back and the value was there with no restart. Pass 1's log already showed it: rewired 12:50:52 → `Live status: Enabled` 12:50:57 from a session started the previous evening, whose PermissionRequest hook then fired at 12:57:32. |
+
+**F9 — "Restart Claude" was never true on Windows.** `WindowsPlatformBridge.SettingsApplyLive`
+had been `false` on the strength of QA's 2.2.0 report that nothing came alive until a restart —
+which was #74 (the hook wrote a word the plugin never read; no restart could have helped). With
+two days of Windows logs showing sessions started hours earlier picking up the wiring in 5–37 s,
+including the approval hook, the flag is now `true` and the key reads **Turned on**, as on macOS.
+The property stays on the seam for a platform that genuinely needs the restart.
 
 ## E. GitHub
 
