@@ -16,6 +16,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class WindowsTerminalTests
     {
+        [Theory]
+        [InlineData(0, true)]
+        [InlineData(4, false)]
+        [InlineData(2, false)]
+        [InlineData(5, false)]
+        [InlineData(null, false)]
+        public void Only_verified_tab_focus_allows_the_slot_selection_to_commit(Int32? exitCode, Boolean expected)
+        {
+            var (bridge, _) = Rig();
+            bridge.FocusRunner = _ => exitCode;
+            Assert.Equal(expected, bridge.TryFocusSession(FocusKey));
+        }
+
         private static (WindowsPlatformBridge Bridge, List<List<String>> Runs) Rig()
         {
             var runs = new List<List<String>>();

@@ -19,6 +19,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     {
         private readonly ListeningFace _face;
         private readonly FailureFace _fail;
+        private String StartupLabel => BridgeManager.Instance.Voice.StartupLabel(VoiceIntent.Send);
 
         public VoiceCommand()
             : base(displayName: "Dictate", description: "Speak a prompt — press to start, press again to transcribe and send", groupName: "Universal")
@@ -59,11 +60,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            _face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Dictate");
+            StartupLabel ?? (_face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Dictate"));
 
         // Listening wins over a stale failure: a new press means a new attempt.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
-            _face.IsActive
+            StartupLabel != null
+                ? KeyImage.Render(imageSize, StartupLabel, KeyImage.Purple, "voice")
+                : _face.IsActive
                 ? KeyImage.Render(imageSize, "Listening", KeyImage.Green, _face.Icon)
                 : _fail.IsActive
                     ? KeyImage.Render(imageSize, _fail.Text, KeyImage.Red, "voice")

@@ -47,6 +47,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Written by the helper INSTEAD of a transcript when dictation failed outright. Its whole
         // purpose is to make a failure distinguishable from silence — see the poll loop below.
         private static String VoiceErrorFile => VoiceTranscriptFile + ".error";
+        private static String VoiceReadyFile => VoiceTranscriptFile + ".ready";
 
         /// <summary>
         /// Is the microphone running, and where is the result going? Owned here rather than by the
@@ -823,6 +824,17 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
+            // Keep routing and the persisted selection unchanged unless the requested tab
+            // was focused. In particular, raising a Windows Terminal window is insufficient.
+            if (!_platform.TryFocusSession(session.SessionKey))
+            {
+                PluginLog.Warning($"BridgeManager: slot {slot} focus unresolved; selection unchanged");
+                this.Notify?.Invoke(PluginStatus.Warning,
+                    $"Could not select session {slot}'s terminal tab. The previous selection is unchanged.",
+                    BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                return;
+            }
+
             // Pressing the slot that is ALREADY pinned releases it, and the keys go back to
             // following the frontmost tab. Until now a pin could only be MOVED, never dropped —
             // QA's actual complaint in #25 — and the only ways out were pinning a different session
@@ -832,7 +844,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 this.ClearPin();
                 _activeTty = session.SessionKey;
-                _platform.FocusSession(session.SessionKey);
                 PluginLog.Info($"BridgeManager: unpinned slot {slot} ({session.Project}) — keys follow the frontmost tab again");
                 return;
             }
@@ -840,7 +851,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             _pinnedTty = session.SessionKey;
             Grid.FocusedSession = session.SessionKey;   // survives a plugin reload, like the slot assignments
             _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
-            _platform.FocusSession(session.SessionKey);
             PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.SessionKey} ({session.Project})");
         }
 
@@ -998,7 +1008,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// Launch the recorder. Returns false when nothing was started, so the caller can clear the
         /// in-flight state rather than leaving the voice keys believing a capture is running (#28).
         /// </summary>
-        public Boolean StartVoiceCapture()
+        private Boolean StartVoiceCapture()
         {
             if (OperatingSystem.IsWindows())
             {
@@ -1077,6 +1087,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             TryDelete(VoiceTranscriptFile);
             TryDelete(VoiceErrorFile);
             TryDelete(VoiceStopFile);
+            TryDelete(VoiceReadyFile);
 
             // Each refusal goes through ReportVoiceFailure so the pressed key says why, as the
             // macOS path already did. Here they were a log line and a beep: on QA's machine the
@@ -1101,7 +1112,9 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return false;
             }
 
-            RunDetached(helper, new List<String>
+            if (Voice.Phase == VoicePhase.Cancelling) { return false; }
+            var psi = new ProcessStartInfo(helper) { UseShellExecute = false, CreateNoWindow = true };
+            foreach (var argument in new List<String>
             {
                 "--maxsec", "60",
                 "--out", VoiceWavFile,
@@ -1109,9 +1122,47 @@ namespace Loupedeck.ClaudeConsolePlugin
                 "--transcript", VoiceTranscriptFile,
                 "--model", VoiceModelFile,
                 "--whisper", WindowsWhisperCli,
-            });
-            PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
-            return true;
+                "--ready", VoiceReadyFile,
+            }) { psi.ArgumentList.Add(argument); }
+            using var process = Process.Start(psi);
+            if (process == null) { return false; }
+            var ready = false;
+            try
+            {
+                var deadline = DateTime.UtcNow.AddSeconds(30);
+                while (DateTime.UtcNow < deadline)
+                {
+                    if (Voice.Phase == VoicePhase.Cancelling) { return false; }
+                    if (File.Exists(VoiceErrorFile))
+                    {
+                        var error = File.ReadAllText(VoiceErrorFile);
+                        this.ReportVoiceFailure(Voice.Intent, VoiceFailure.FromSidecar(error), error);
+                        return false;
+                    }
+                    if (process.HasExited) { break; }
+                    if (File.Exists(VoiceReadyFile) && Voice.MarkReady(DateTime.UtcNow))
+                    {
+                        ready = true;
+                        PluginLog.Info("BridgeManager.StartVoiceCapture: microphone ready");
+                        return true;
+                    }
+                    Thread.Sleep(50);
+                }
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.NoResponse,
+                    "voice helper did not acknowledge microphone readiness within 30s");
+                return false;
+            }
+            finally
+            {
+                // Cancellation during cold startup cannot leave a recorder behind. Keep ownership
+                // until it has exited, before ToggleVoice lets another capture reuse these files.
+                if (!ready && !process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit();
+                }
+                TryDelete(VoiceReadyFile);
+            }
         }
 
         // ------------------------------------------------------------------------------------------
@@ -2064,16 +2115,17 @@ namespace Loupedeck.ClaudeConsolePlugin
             changed = false;
             for (var attempt = 0; attempt < 2; attempt++)
             {
-                var root = ReadSettingsForRewrite(out var fingerprint, out var layout);
+                var root = ReadSettingsForRewrite(out var fingerprint, out var layout, out var original);
                 if (root == null)
                 {
                     return false;
                 }
+                var render = SettingsText.Capture(original, root, layout);
                 if (!mutate(root))
                 {
                     return true;
                 }
-                if (WriteSettings(root, fingerprint, layout))
+                if (WriteSettings(root, fingerprint, layout, render(root)))
                 {
                     changed = true;
                     return true;
@@ -2109,12 +2161,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         // The fingerprint is of exactly the bytes that were parsed, so a write can prove nothing
         // slipped in between.
         private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint) =>
-            ReadSettingsForRewrite(out fingerprint, out _);
+            ReadSettingsForRewrite(out fingerprint, out _, out _);
 
         // The layout is read alongside the document so the write can hand the file back the way it
         // was found (#72): same indentation, same line ending, same trailing newline.
-        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint, out SettingsLayout layout)
+        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint, out SettingsLayout layout, out String original)
         {
+            original = null;
             fingerprint = null;
             layout = SettingsLayout.Default;
             if (new FileInfo(SettingsFile).LinkTarget != null)
@@ -2140,6 +2193,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return new JsonObject();
             }
             layout = SettingsLayout.Detect(bytes, text);
+            original = text;
 
             JsonNode parsed;
             try
@@ -2178,10 +2232,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         // quote, ampersand, apostrophe, angle bracket and non-ASCII character to \uXXXX and dropped
         // the trailing newline — valid JSON, but a whole-file diff for anyone who keeps ~/.claude in
         // git, applied to every entry in the file including the ones the plugin does not own.
-        private static Boolean WriteSettings(JsonObject root, Byte[] expected, SettingsLayout layout)
+        private static Boolean WriteSettings(JsonObject root, Byte[] expected, SettingsLayout layout, String json)
         {
             Directory.CreateDirectory(ClaudeDir);
-            var json = layout.Render(root);
+            var parsed = JsonNode.Parse(json, documentOptions: new JsonDocumentOptions
+            { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+            if (!JsonNode.DeepEquals(parsed, root))
+            { throw new InvalidOperationException("settings source edit disagrees with the intended values"); }
             var tmp = SettingsFile + ".cc." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
@@ -2404,17 +2461,32 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            var (action, routed) = Voice.Press(intent, DateTime.UtcNow);
+            var (action, routed) = Voice.Press(intent, DateTime.UtcNow, awaitReadiness: OperatingSystem.IsWindows());
             switch (action)
             {
                 case VoiceAction.Start:
                     PluginLog.Info($"BridgeManager.ToggleVoice: starting capture for {intent}");
-                    if (!this.StartVoiceCapture())
+                    if (OperatingSystem.IsWindows())
                     {
-                        // Missing helper, model still downloading, unsupported platform: nothing is
-                        // recording, so the state must not say otherwise or the keys lock up.
-                        Voice.Finish();
+                        // Return to the SDK immediately so Starting can paint during a cold launch.
+                        Task.Run(() =>
+                        {
+                            try
+                            {
+                                if (!this.StartVoiceCapture()) { Voice.Finish(); }
+                            }
+                            catch (Exception ex)
+                            {
+                                this.ReportVoiceFailure(intent, VoiceFailure.Failed, ex.Message);
+                                Voice.Finish();
+                            }
+                        });
                     }
+                    else if (!this.StartVoiceCapture()) { Voice.Finish(); }
+                    break;
+
+                case VoiceAction.Cancel:
+                    // The startup worker observes Cancelling and reaps its helper before Finish.
                     break;
 
                 case VoiceAction.Stop:

@@ -4,6 +4,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
     using Xunit;
 
+    public sealed class WindowsGitBashFactAttribute : FactAttribute
+    {
+        internal static String BashPath => System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Git", "bin", "bash.exe");
+        public WindowsGitBashFactAttribute()
+        {
+            if (!OperatingSystem.IsWindows() || !System.IO.File.Exists(BashPath))
+            { this.Skip = "requires Windows with Git Bash to exercise MSYS argument conversion"; }
+        }
+    }
+
     /// <summary>
     /// A fact only Windows can run — it launches a win-x64 executable. Elsewhere it is REPORTED
     /// as skipped, never passed silently: the suite's rule is that a platform difference shows in

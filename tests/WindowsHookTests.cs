@@ -18,6 +18,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class WindowsHookTests
     {
+        internal static String DecodeLauncher(String command) => System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(command.Split(' ').Last()));
         private const String Exe = @"C:\Users\me\AppData\Local\Logi\Plugins\ClaudeConsole\bin\claude-console-hook.exe";
 
         // ---------------------------------------------------------------------------------------
@@ -27,8 +28,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Windows_wires_the_shim_with_a_verb()
         {
-            Assert.Equal($"cmd.exe /d /c if exist \"{Exe}\" \"{Exe}\" statusline", BridgeWiring.StatuslineCommand(true, Exe));
-            Assert.Equal($"cmd.exe /d /c if exist \"{Exe}\" \"{Exe}\" activity busy", BridgeWiring.ActivityCommand(true, Exe, "busy"));
+            Assert.Contains("'statusline'", DecodeLauncher(BridgeWiring.StatuslineCommand(true, Exe)));
+            Assert.Contains("'activity' 'busy'", DecodeLauncher(BridgeWiring.ActivityCommand(true, Exe, "busy")));
         }
 
         [Fact]
@@ -39,8 +40,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var spacey = @"C:\Program Files\Logi\ClaudeConsole\claude-console-hook.exe";
 
             var command = BridgeWiring.StatuslineCommand(true, spacey);
-            Assert.Contains($"if exist \"{spacey}\"", command);
-            Assert.EndsWith($"\"{spacey}\" statusline", command);
+            Assert.Contains($"Test-Path -LiteralPath '{spacey}'", DecodeLauncher(command));
+            Assert.Contains($"& '{spacey}' 'statusline'", DecodeLauncher(command));
         }
 
         [Fact]
@@ -48,7 +49,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var quoted = "\"" + Exe + "\"";
 
-            Assert.Equal($"cmd.exe /d /c if exist {quoted} {quoted} statusline", BridgeWiring.StatuslineCommand(true, quoted));
+            Assert.Equal(BridgeWiring.StatuslineCommand(true, Exe), BridgeWiring.StatuslineCommand(true, quoted));
         }
 
         [Fact]
