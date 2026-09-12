@@ -7,6 +7,7 @@
       would make `selftest` unable to print, which is the one mode a human runs by hand.
     -->
     <OutputType>Exe</OutputType>
+    <StartupObject>InjectProgram</StartupObject>
     <TargetFramework>net8.0</TargetFramework>
     <RollForward>LatestMajor</RollForward>
     <ImplicitUsings>enable</ImplicitUsings>

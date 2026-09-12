@@ -27,7 +27,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
 [SupportedOSPlatform("windows")]
-internal static class Program
+internal static class ShotProgram
 {
     private const Int32 ExitOk = 0;
     private const Int32 ExitNoCapture = 1;
@@ -41,7 +41,7 @@ internal static class Program
     private static readonly String[] OverlayProcessNames =
         { "ScreenClippingHost", "SnippingTool", "PickerHost" };
 
-    private static Int32 Main(String[] args)
+    internal static Int32 Main(String[] args)
     {
         if (args.Length >= 2 && args[0] == "--clipboard")
         {

@@ -3,17 +3,22 @@ $ErrorActionPreference = 'Stop'
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('cc-helper-smoke-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 try {
-    foreach ($helper in @('focus', 'shot')) {
+    $toolkit = Join-Path $PublishRoot 'ClaudeConsoleTools\claude-console-tools.exe'
+    $shared = Test-Path -LiteralPath $toolkit
+    $verbs = if ($shared) { @('manifest', 'inject', 'focus', 'voice', 'shot') } else { @('focus', 'shot') }
+    foreach ($helper in $verbs) {
         $project = if ($helper -eq 'focus') { 'ClaudeConsoleFocus' } else { 'ClaudeConsoleShot' }
-        $source = Join-Path $PublishRoot "$project\claude-console-$helper.exe"
+        $source = if ($shared) { $toolkit } else { Join-Path $PublishRoot "$project\claude-console-$helper.exe" }
         $isolated = Join-Path $scratch $helper
         New-Item -ItemType Directory -Path $isolated | Out-Null
-        $exe = Join-Path $isolated "claude-console-$helper.exe"
+        $exeName = if ($shared) { "claude-console-tools.exe" } else { "claude-console-$helper.exe" }
+        $exe = Join-Path $isolated $exeName
         Copy-Item -LiteralPath $source -Destination $exe
         $trace = Join-Path $isolated 'host-trace.txt'
         $extract = Join-Path $isolated 'bundle'
         $info = New-Object Diagnostics.ProcessStartInfo
         $info.FileName = $exe
+        if ($shared) { $info.Arguments = $helper }
         $info.WorkingDirectory = $isolated
         $info.UseShellExecute = $false
         $info.CreateNoWindow = $true
@@ -35,8 +40,11 @@ try {
             $stderr = $process.StandardError.ReadToEndAsync()
             $stdout = $process.StandardOutput.ReadToEndAsync()
             if (-not $process.WaitForExit(30000)) { $process.Kill(); throw "$helper startup timed out" }
-            if ($process.ExitCode -ne 2 -or $stderr.Result -notmatch 'usage: claude-console-') {
-                throw "$helper did not reach its usage path: $($stderr.Result)"
+            $expected = switch ($helper) { 'manifest' { 0 } 'inject' { 3 } 'voice' { 1 } default { 2 } }
+            $output = $stderr.Result + $stdout.Result
+            $marker = if ($helper -eq 'manifest') { 'claude-console-tools/v1 inject focus voice shot' } else { "claude-console-$helper" }
+            if ($process.ExitCode -ne $expected -or $output -notmatch [regex]::Escape($marker)) {
+                throw "$helper dispatch/usage failed: exit $($process.ExitCode), $output"
             }
             $hostTrace = [IO.File]::ReadAllText($trace)
             # The host says which posture it ran under. (No assertion on the extract directory:

@@ -157,7 +157,7 @@ LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/ClaudeCon
 
 # --- build the Windows helpers into the same bin/ (cross-compiled from macOS) ---------------------
 # One .lplug4 serves both platforms: LoupedeckPackage.yaml points pluginFolderMac AND
-# pluginFolderWin at bin/, so these two exes ride along beside the plugin DLL and are simply
+# pluginFolderWin at bin/, so the hook and toolkit ride beside the plugin DLL and are simply
 # never launched on macOS.
 echo ">>> building Windows helper payload"
 bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64 "$PRODUCT"
@@ -198,6 +198,7 @@ fi
 echo
 echo "✅ $OUT"
 echo "   size: $(du -h "$OUT" | cut -f1)"
+python3 "$ROOT/tools/package-size.py" "$OUT"
 if [ "$SHIPS_VOICE" = "1" ]; then
   echo "   voice payload in package:"
   unzip -l "$OUT" | grep -iE "voice/.*(ClaudeVoiceHelper|whisper-cli)" | sed 's/^/     /'

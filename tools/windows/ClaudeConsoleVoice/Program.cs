@@ -27,7 +27,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 
-internal static class Program
+internal static class VoiceProgram
 {
     private const Int32 SampleRate = 16000;      // whisper's required input rate
     private const Int16 BitsPerSample = 16;
@@ -37,7 +37,7 @@ internal static class Program
     private const Int32 BufferBytes = SampleRate * (BitsPerSample / 8) * Channels * BufferMs / 1000;
     private const Int32 BufferCount = 8;
 
-    private static Int32 Main(String[] args)
+    internal static Int32 Main(String[] args)
     {
         if (!OperatingSystem.IsWindows())
         {

@@ -1093,7 +1093,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             // macOS path already did. Here they were a log line and a beep: on QA's machine the
             // first press started the 142 MB model download and the key said nothing at all
             // (2.2.1 Windows retest, item 6).
-            var helper = PluginPaths.PackagedFile("claude-console-voice.exe");
+            var helper = WindowsTools.PathFor("voice");
             if (helper == null)
             {
                 this.ReportVoiceFailure(Voice.Intent, VoiceFailure.NoHelper, "claude-console-voice.exe not found in the plugin package");
@@ -1114,7 +1114,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             if (Voice.Phase == VoicePhase.Cancelling) { return false; }
             var psi = new ProcessStartInfo(helper) { UseShellExecute = false, CreateNoWindow = true };
-            foreach (var argument in new List<String>
+            foreach (var argument in WindowsTools.Arguments(helper, "voice", new List<String>
             {
                 "--maxsec", "60",
                 "--out", VoiceWavFile,
@@ -1123,7 +1123,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 "--model", VoiceModelFile,
                 "--whisper", WindowsWhisperCli,
                 "--ready", VoiceReadyFile,
-            }) { psi.ArgumentList.Add(argument); }
+            })) { psi.ArgumentList.Add(argument); }
             using var process = Process.Start(psi);
             if (process == null) { return false; }
             var ready = false;

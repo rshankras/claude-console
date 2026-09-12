@@ -107,12 +107,23 @@ if product:
 
 # --- Windows helpers: present, self-contained, no sidecars (#83) --------------------------------
 helpers = direct("bin/claude-console-", ".exe")
-for required in ("bin/claude-console-hook.exe", "bin/claude-console-inject.exe"):
-    if not has(required):
-        err(f"{required} missing — live status and typing cannot work on Windows")
-for optional in ("bin/claude-console-voice.exe", "bin/claude-console-focus.exe", "bin/claude-console-shot.exe"):
-    if not has(optional):
-        warn(f"{optional} is not in the package")
+if not has("bin/claude-console-hook.exe"):
+    err("bin/claude-console-hook.exe missing — live status cannot work on Windows")
+toolkit = "bin/claude-console-tools.exe"
+standalone = ["bin/claude-console-" + t + ".exe" for t in ("inject", "voice", "focus", "shot")]
+if has(toolkit):
+    contract = "claude-console-tools/v1 inject focus voice shot"
+    payload = read(toolkit)
+    if contract.encode("utf-16-le") not in payload:
+        err("the toolkit has no supported command contract — rebuild the shared helper")
+    for n in standalone:
+        if has(n):
+            err(f"{n} duplicates the shared toolkit's runtime — remove stale staged helpers")
+else:
+    # Older release packages remain verifiable; all four functions must be represented.
+    for n in standalone:
+        if not has(n):
+            err(f"{n} missing and no shared toolkit is present")
 for n in helpers:
     size = names[n].file_size
     if size < 1_000_000:
