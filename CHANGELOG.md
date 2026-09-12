@@ -5,6 +5,11 @@ All notable changes to Claude Console are documented here. Format based on
 
 ## [Unreleased]
 
+- Known issue ([#88](https://github.com/rshankras/claude-console/issues/88), P3): Windows
+  session switching can fail for manually renamed Terminal tabs. Clear the custom tab name
+  to restore automatic titles. Failed focus leaves session routing unchanged.
+- Windows status and activity hooks use an encoded PowerShell launcher that survives Git Bash
+  argument conversion. Existing owned commands are upgraded while preserving unrelated settings.
 - Settings edits and macOS uninstall cleanup retain the original text of untouched values,
   including inline foreign hooks, comments, spacing, line endings, and UTF-8 BOMs. Removing
   plugin hooks no longer reformats the user's whole settings file.

@@ -48,8 +48,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             const String exe = @"C:\Users\me\.claude\claude-console\claude-console-hook.exe";
 
-            Assert.Equal($"cmd.exe /d /c if exist \"{exe}\" \"{exe}\" activity busy", BridgeWiring.ActivityCommand(true, exe, "busy"));
-            Assert.Equal($"cmd.exe /d /c if exist \"{exe}\" \"{exe}\" statusline", BridgeWiring.StatuslineCommand(true, exe));
+            Assert.Contains("Test-Path -LiteralPath", WindowsHookTests.DecodeLauncher(BridgeWiring.ActivityCommand(true, exe, "busy")));
+            Assert.Contains("Test-Path -LiteralPath", WindowsHookTests.DecodeLauncher(BridgeWiring.StatuslineCommand(true, exe)));
         }
 
         [Fact]

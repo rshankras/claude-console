@@ -85,6 +85,46 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }
         }
 
+        [WindowsFact]
+        public void Generated_launcher_preserves_unicode_payload_and_session_identity_through_powershell()
+        {
+            using var claude = this.StartClaude();
+            var specialDir = Path.Combine(_bin, "quoted ' & $ folder");
+            Directory.CreateDirectory(specialDir);
+            var specialHook = Path.Combine(specialDir, _name + ".exe");
+            File.Copy(_hook, specialHook);
+            var command = BridgeWiring.StatuslineCommand(true, specialHook);
+            var value = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Payload("Status.json")));
+            value["encoding_probe"] = "café ₹ 日本語";
+            var payload = value.ToJsonString(new JsonSerializerOptions
+            { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) + "\n";
+            File.WriteAllText(Path.Combine(_bin, "status.json"), payload, new System.Text.UTF8Encoding(false));
+            Assert.Equal(0, claude.Run(command + " < status.json", 30000));
+            var output = File.ReadAllText(Path.Combine(SessionsDir, claude.Key + ".json"));
+            Assert.Equal(payload.TrimEnd(), output.TrimEnd());
+            Assert.Equal(0, claude.Run(BridgeWiring.ActivityCommand(true, _hook, "permission") + " < permission.json", 30000));
+            Assert.Equal("waiting", ActivityWord(claude.Key));
+        }
+
+        [WindowsGitBashFact]
+        public void Generated_launcher_reaches_the_helper_through_git_bash_instead_of_executing_json_as_commands()
+        {
+            using var claude = this.StartClaude();
+            var command = BridgeWiring.StatuslineCommand(true, _hook);
+            Assert.Equal(0, claude.Run($"\"{WindowsGitBashFactAttribute.BashPath}\" -c \"{command} < status.json\"", 30000));
+            Assert.True(File.Exists(Path.Combine(SessionsDir, claude.Key + ".json")));
+            Assert.Equal(0, claude.Run($"\"{WindowsGitBashFactAttribute.BashPath}\" -c \"{BridgeWiring.ActivityCommand(true, _hook, "permission")} < permission.json\"", 30000));
+            Assert.Equal("waiting", ActivityWord(claude.Key));
+        }
+
+        [WindowsFact]
+        public void Generated_launcher_is_silent_when_the_package_was_uninstalled()
+        {
+            using var claude = this.StartClaude();
+            Assert.Equal(0, claude.Run(BridgeWiring.StatuslineCommand(true, Path.Combine(_bin, "missing.exe")) + " < status.json", 30000));
+            Assert.False(File.Exists(Path.Combine(SessionsDir, claude.Key + ".json")));
+        }
+
         // ---------------------------------------------------------------------------------------
         // #74 — the contract that broke
         // ---------------------------------------------------------------------------------------

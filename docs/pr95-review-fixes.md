@@ -35,3 +35,25 @@ Branch: `fix/pr95-review`, based on merged PR #95 (`621dd6a`). Updated Windows b
 - **Known limitation:** the original title mismatch's cause remains unconfirmed. The unmatched-title fallback did not resolve that original session. Successful switching after restart is not proof that the mismatch cannot recur.
 
 Final release-package verification, packaged macOS checks, and Windows ARM64 device validation remain outstanding. The updated Go to Project voice flow was not separately validated on the physical device.
+
+## Renamed tabs and Git Bash hooks follow-up
+
+- Manual tab renaming reproduced the navigation problem; clearing the custom names restored switching. An experimental candidate scan attempted to verify each selected tab through a console-title challenge. The renamed-tab retest below disproved its window-title assumption, and the experiment has been reverted.
+- The hook failure was reproduced with Git Bash: `cmd.exe /d /c` entered interactive cmd instead of invoking the helper, and cmd tried to execute the JSON input. An encoded PowerShell launcher avoids MSYS switch conversion, quotes literal paths, preserves Unicode input, and silently skips a missing helper. Existing plugin-owned wiring migrates through the source-preserving settings writer.
+- Windows strict suite: **1,037 passed, zero failed or skipped**. Standalone focus/screenshot helper smoke checks and live settings/IPC preservation checks passed. The macOS-only script suites were not run on Windows.
+- Integration coverage includes execution through Git Bash and PowerShell, Unicode payloads, special characters in paths, missing helper cleanup, identity verification, failed selection restoration, and automation exceptions.
+- Release plugin build passed with zero warnings/errors. Windows x64 focus publish passed with the existing COM trimming warning. Updated DLL and focus executable were copied into the local installation after backing up the prior binaries; reload was requested.
+- After reload, the live statusline and five activity commands migrated successfully. Fresh per-process status files contain the correct Stage, FAQ, and Presskit project paths; the installed hook invocation log confirms execution from each project.
+- Before the revert, 66 focus regression tests passed and the experimental helper passed nine direct switches with automatic tab names. These results did not validate renamed tabs and do not establish that the experiment fixed #88.
+
+### Renamed-tab retest: failed
+
+- User renamed Presskit's tab to `kk`. Keypad attempts at 11:52–11:53 repeatedly logged `slot 3 focus unresolved; selection unchanged`.
+- A direct diagnostic run against Presskit's verified PID/start time returned exit 4. While that candidate was selected, both its tab name and window name remained `kk` through every console-title challenge. The assumption that the window title bypasses a manual tab name is false in this configuration.
+- The visible cycling is the candidate scan; after failing identity verification it restores the original tab. The renamed-tab issue is **not fixed**. The nine successful direct switches above validated automatic titles only. Clearing the custom tab name remains the previously confirmed workaround; a complete fix needs an identity source independent of both displayed titles.
+
+### Disposition
+
+- Retain this as a known **P3** issue in [#88](https://github.com/rshankras/claude-console/issues/88), with clearing the custom tab name as the workaround.
+- Revert the experimental focus helper and its scan-specific tests to `c417fe5`. This removes visible candidate cycling. Keep the previously committed focus-failure routing guard and the independently verified Git Bash hook fix.
+- Post-revert validation: all 1,037 C# tests passed, standalone helper smoke checks passed, and live settings/IPC were preserved. The rebuilt x64 focus helper was installed and its hash verified. Direct checks returned exit 4 for renamed Presskit (the known limitation) and exit 0 for Stage with its automatic title. No plugin reinstall is needed; the hook-enabled DLL remains installed.
