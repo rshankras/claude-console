@@ -196,6 +196,9 @@ internal static class Program
             }
             else
             {
+                // A renamed or stale tab label can match nothing. Try the same identity
+                // challenge used for duplicate labels before declaring the target unresolved.
+                if (SelectByNonce(pid)) { return ExitOk; }
                 // Out of retries — not Windows Terminal, or the tab really isn't there.
                 Raise(windows.GetElement(0));
             }

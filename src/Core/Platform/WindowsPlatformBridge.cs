@@ -572,11 +572,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         private const Int32 FocusExitOk = 0;
         private const Int32 FocusExitRaisedOnly = 4;
 
-        public void FocusSession(String sessionKey)
+        public void FocusSession(String sessionKey) => this.TryFocusSession(sessionKey);
+
+        public Boolean TryFocusSession(String sessionKey)
         {
             if (!WindowsInjection.TryParseSessionKey(sessionKey, out _, out _))
             {
-                return;
+                return false;
             }
 
             var exe = this.FocusHelperPath;
@@ -589,12 +591,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 var code = runner(WindowsInjection.FocusArgs(sessionKey));
                 if (code == FocusExitOk)
                 {
-                    return;
+                    return true;
                 }
                 if (code == FocusExitRaisedOnly)
                 {
                     PluginLog.Verbose("WindowsPlatformBridge: focus helper raised the window but couldn't identify the tab");
-                    return;   // the helper already raised the window; wt would add nothing
+                    return false;   // raising a window does not identify the requested tab
                 }
                 PluginLog.Info($"WindowsPlatformBridge: focus helper exit {(code.HasValue ? code.ToString() : "null")} — raising the terminal window instead");
             }
@@ -602,6 +604,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             // Degraded mode: bring the terminal window forward without selecting the tab — the
             // behavior all of Phase 3 had before the focus helper existed.
             this.RunTerminal(WindowsTerminalCli.ArgsFor(TerminalAction.Activate), requiresExistingWindow: true);
+            return false;
         }
 
         public void Alert()

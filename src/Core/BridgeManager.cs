@@ -824,6 +824,17 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
+            // Keep routing and the persisted selection unchanged unless the requested tab
+            // was focused. In particular, raising a Windows Terminal window is insufficient.
+            if (!_platform.TryFocusSession(session.SessionKey))
+            {
+                PluginLog.Warning($"BridgeManager: slot {slot} focus unresolved; selection unchanged");
+                this.Notify?.Invoke(PluginStatus.Warning,
+                    $"Could not select session {slot}'s terminal tab. The previous selection is unchanged.",
+                    BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                return;
+            }
+
             // Pressing the slot that is ALREADY pinned releases it, and the keys go back to
             // following the frontmost tab. Until now a pin could only be MOVED, never dropped —
             // QA's actual complaint in #25 — and the only ways out were pinning a different session
@@ -833,7 +844,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 this.ClearPin();
                 _activeTty = session.SessionKey;
-                _platform.FocusSession(session.SessionKey);
                 PluginLog.Info($"BridgeManager: unpinned slot {slot} ({session.Project}) — keys follow the frontmost tab again");
                 return;
             }
@@ -841,7 +851,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             _pinnedTty = session.SessionKey;
             Grid.FocusedSession = session.SessionKey;   // survives a plugin reload, like the slot assignments
             _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
-            _platform.FocusSession(session.SessionKey);
             PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.SessionKey} ({session.Project})");
         }
 

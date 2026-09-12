@@ -1,6 +1,6 @@
 # Follow-up fixes for PR #95 review
 
-Branch: `fix/pr95-review`, based on merged PR #95 (`621dd6a`). These changes are local; no package has been installed or published.
+Branch: `fix/pr95-review`, based on merged PR #95 (`621dd6a`). Updated Windows binaries have been loaded for local device testing; no final release package has been verified or published.
 
 ## Changes
 
@@ -24,4 +24,14 @@ Branch: `fix/pr95-review`, based on merged PR #95 (`621dd6a`). These changes are
 3. On Windows, use two equal-title tabs with title propagation disabled: unresolved focus must not select an arbitrary tab. Unique-title and successful nonce selection should still work.
 4. On macOS, enable/disable and uninstall/reinstall through Options+ using settings containing foreign hooks and custom formatting. Verify the packaged script preserves the same content as the automated tests.
 
-No fresh Windows/device pass or final package verification is claimed by the cross-builds.
+## Windows device follow-up on 12 September 2026
+
+- Failed Windows tab focus now leaves the pin, active session, and persisted selection unchanged and reports a warning. Only focus-helper exit 0 permits the selection to change. Other supported backends retain their existing focus flow.
+- The focus helper also attempts nonce identity after unmatched-title retries, rather than only for duplicate titles.
+- Eight regression cases cover focus outcomes and preservation of routing and pins. The focused suite passed 102 tests. The full Windows run passed 1,033 tests with one hook-fixture timeout; all eight hook contract tests passed on retry. Standalone helper smoke checks and live settings/IPC preservation checks passed.
+- Release DLL and Windows x64 focus helper builds passed; the existing COM trimming warning remains.
+- Physical testing confirmed Dictate delivery, Voice Draft, voice startup cancellation/restart, and keypad startup/listening/cancellation labels. Logs showed no remaining voice helper after cancellation testing.
+- A live session's console title matched no visible tab, and its nonce did not propagate to a tab label. The new pin guard was verified against that failure. Restarting that session restored navigation; subsequent switching among all three sessions passed user observation and log checks, including after voice interactions.
+- **Known limitation:** the original title mismatch's cause remains unconfirmed. The unmatched-title fallback did not resolve that original session. Successful switching after restart is not proof that the mismatch cannot recur.
+
+Final release-package verification, packaged macOS checks, and Windows ARM64 device validation remain outstanding. The updated Go to Project voice flow was not separately validated on the physical device.

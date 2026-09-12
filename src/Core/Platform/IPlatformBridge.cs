@@ -98,6 +98,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Bring a specific session's tab to the front.</summary>
         void FocusSession(String sessionKey);
 
+        /// <summary>
+        /// Focus before committing a slot selection. Backends with a focus-result contract
+        /// override this to reject unresolved targets; legacy backends retain their focus flow.
+        /// </summary>
+        Boolean TryFocusSession(String sessionKey)
+        {
+            this.FocusSession(sessionKey);
+            return true;
+        }
+
         /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
         void Navigate(TerminalAction action);
 
