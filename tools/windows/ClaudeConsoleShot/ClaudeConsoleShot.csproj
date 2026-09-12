@@ -6,6 +6,7 @@
       hand to debug a capture that never lands.
     -->
     <OutputType>Exe</OutputType>
+    <StartupObject>ShotProgram</StartupObject>
     <!-- net8.0-windows for the platform analyser, but NO UseWindowsForms: the clipboard is read
          through Win32, and the PNG is the overlay's own or comes from GDI+ through the
          System.Drawing.Common package, so the Desktop Runtime is not needed. It once was (the

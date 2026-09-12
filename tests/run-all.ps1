@@ -53,16 +53,12 @@ Write-Host '> Windows helper smoke (each helper must start from its executable a
 $smoke = Join-Path $repo 'tests\windows\Test-StandaloneHelpers.ps1'
 $staged = Join-Path ([IO.Path]::GetTempPath()) ('cc-helpers-' + [Guid]::NewGuid().ToString('N'))
 $missing = @()
-foreach ($pair in @(@('ClaudeConsoleFocus', 'claude-console-focus.exe'), @('ClaudeConsoleShot', 'claude-console-shot.exe'))) {
-    $proj = $pair[0]; $exe = $pair[1]
-    if ($HelpersRoot) { $src = Join-Path $HelpersRoot "$proj\$exe" } else { $src = Join-Path $repo "tools\windows\$proj\publish-win-x64\$exe" }
-    if (Test-Path $src) {
-        New-Item -ItemType Directory -Force (Join-Path $staged $proj) | Out-Null
-        Copy-Item -LiteralPath $src -Destination (Join-Path $staged "$proj\$exe")
-    } else {
-        $missing += $src
-    }
-}
+$proj = 'ClaudeConsoleTools'; $exe = 'claude-console-tools.exe'
+if ($HelpersRoot) { $src = Join-Path $HelpersRoot "$proj\$exe" } else { $src = Join-Path $repo "tools\windows\$proj\publish-win-x64\$exe" }
+if (Test-Path $src) {
+    New-Item -ItemType Directory -Force (Join-Path $staged $proj) | Out-Null
+    Copy-Item -LiteralPath $src -Destination (Join-Path $staged "$proj\$exe")
+} else { $missing += $src }
 if ($missing.Count -eq 0) {
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $smoke -PublishRoot $staged
     if ($LASTEXITCODE -ne 0) { $status = 1 }
@@ -71,8 +67,7 @@ if ($missing.Count -eq 0) {
     Write-Host '  SKIP no published helpers to smoke-test. Missing:'
     foreach ($m in $missing) { Write-Host "       $m" }
     Write-Host '       Publish them (what tools/windows/build-windows-payload.sh does), then rerun:'
-    Write-Host '       dotnet publish tools\windows\ClaudeConsoleFocus -c Release -r win-x64 -p:PublishSingleFile=true -p:EnableWindowsTargeting=true -o tools\windows\ClaudeConsoleFocus\publish-win-x64'
-    Write-Host '       dotnet publish tools\windows\ClaudeConsoleShot  -c Release -r win-x64 -p:PublishSingleFile=true -p:EnableWindowsTargeting=true -o tools\windows\ClaudeConsoleShot\publish-win-x64'
+    Write-Host '       dotnet publish tools\windows\ClaudeConsoleTools -c Release -r win-x64 -o tools\windows\ClaudeConsoleTools\publish-win-x64'
     Write-Host '       or pass -HelpersRoot <dir> laid out as <Project>\<exe>.'
     if ($Strict) { Write-Host '  FAIL -Strict: the helper smoke must run on this machine'; $status = 1 }
 }

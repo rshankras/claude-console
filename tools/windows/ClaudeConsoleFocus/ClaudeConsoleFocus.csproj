@@ -6,6 +6,7 @@
       session's console to read its title, and a human can run it by hand to debug a focus miss.
     -->
     <OutputType>Exe</OutputType>
+    <StartupObject>FocusProgram</StartupObject>
     <!-- net8.0-windows for the platform analyser, but NO UseWPF: UI Automation is driven through
          its COM interface (UIAutomationCore.dll ships with Windows), not the WPF wrapper in the
          Desktop Runtime. That wrapper made this exe either framework-dependent and broken on

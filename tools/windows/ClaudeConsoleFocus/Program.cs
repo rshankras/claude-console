@@ -26,7 +26,7 @@ using System.Runtime.Versioning;
 using System.Text;
 
 [SupportedOSPlatform("windows")]
-internal static class Program
+internal static class FocusProgram
 {
     private const Int32 ExitOk = 0;
     private const Int32 ExitSessionMissing = 2;
@@ -39,7 +39,7 @@ internal static class Program
     // the terminal's own docs suggest for window discovery.
     private const String TerminalWindowClass = "CASCADIA_HOSTING_WINDOW_CLASS";
 
-    private static Int32 Main(String[] args)
+    internal static Int32 Main(String[] args)
     {
         try
         {

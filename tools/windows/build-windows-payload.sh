@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Publish the two Windows helper executables and stage them into the plugin package tree.
+# Publish the hook and shared interactive toolkit into the plugin package tree.
 #
 # Both cross-compile from macOS, so a single .lplug4 built here carries the payload for BOTH
 # platforms (pluginFolderMac + pluginFolderWin in LoupedeckPackage.yaml both point at bin/).
 #
-#   claude-console-inject.exe   types into one Claude session's console (Phase 2)
-#   claude-console-hook.exe     statusline + activity hooks (Phase 4)
-#   claude-console-focus.exe    selects the Windows Terminal tab for a session (Phase 3)
-#   claude-console-voice.exe    microphone capture + whisper transcription (Phase 5)
-#   claude-console-shot.exe     interactive region capture -> PNG (ms-screenclip: + clipboard)
+#   claude-console-hook.exe     statusline + activity hooks, with its own watchdog and cap
+#   claude-console-tools.exe    inject / focus / voice / shot, one new process per invocation
+#
+# The toolkit shares ONE runtime across four operations instead of shipping four copies.
+# The standalone projects are retained for diagnostics, but are not release payload.
 #
 # Usage: tools/windows/build-windows-payload.sh [Release|Debug] [win-x64|win-arm64] [product]
 set -euo pipefail
@@ -28,12 +28,12 @@ mkdir -p "$DEST"
 
 # Every helper is a self-contained, trimmed console exe. Options+ does not supply a globally
 # discoverable .NET on clean installs, so a framework-dependent helper fails there (#83).
-for proj in ClaudeConsoleInject ClaudeConsoleHook ClaudeConsoleVoice ClaudeConsoleFocus ClaudeConsoleShot; do
-  [ -d "$ROOT/tools/windows/$proj" ] || { echo ">>>   $proj (absent — skipped)"; continue; }
+for proj in ClaudeConsoleHook ClaudeConsoleTools; do
+  [ -d "$ROOT/tools/windows/$proj" ] || { echo "error: required project $proj is absent" >&2; exit 1; }
   echo ">>>   $proj"
   case "$proj" in
-    ClaudeConsoleFocus|ClaudeConsoleShot)
-      # These two shipped framework-dependent once (#83). A framework-dependent single-file
+    ClaudeConsoleTools)
+      # The focus/shot predecessors shipped framework-dependent once (#83). A single-file
       # publish also emits just an exe, so the sidecar check below alone cannot catch that
       # regression; ask the project what it intends.
       contained=$(dotnet msbuild "$ROOT/tools/windows/$proj/$proj.csproj" \
@@ -68,6 +68,12 @@ for proj in ClaudeConsoleInject ClaudeConsoleHook ClaudeConsoleVoice ClaudeConso
     exit 1
   fi
   find "$ROOT/tools/windows/$proj/publish-$RID" -maxdepth 1 -name "*.exe" -exec cp {} "$DEST/" \;
+done
+
+# A developer can stage over an older output tree. Remove only superseded generated helpers;
+# otherwise the zip still contains the redundant runtimes and the size saving disappears.
+for tool in inject focus voice shot; do
+  rm -f "$DEST/claude-console-$tool.exe"
 done
 
 echo ">>> staged into $DEST:"

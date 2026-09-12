@@ -5,6 +5,10 @@ All notable changes to Claude Console are documented here. Format based on
 
 ## [Unreleased]
 
+- Reduce package size by sharing one self-contained Windows runtime across typing, tab focus,
+  voice capture, and screenshots. The hook retains its separate executable and watchdog.
+  The speech model continues to download on first use.
+
 - Known issue ([#88](https://github.com/rshankras/claude-console/issues/88), P3): Windows
   session switching can fail for manually renamed Terminal tabs. Clear the custom tab name
   to restore automatic titles. Failed focus leaves session routing unchanged.

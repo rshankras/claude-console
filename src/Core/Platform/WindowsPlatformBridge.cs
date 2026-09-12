@@ -427,7 +427,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return null;
             }
 
-            return BoundedProcess.RunForExitCode(exe, args, 15000);
+            return BoundedProcess.RunForExitCode(exe, WindowsTools.Arguments(exe, "inject", args), 15000);
         }
 
         // Resolved LAZILY on every use, not cached at construction: the SDK hands us the plugin
@@ -438,7 +438,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Where the inject helper lives — beside the plugin DLL. See PluginPaths.</summary>
         internal String HelperPath
         {
-            get => _helperPath ?? PluginPaths.PackagedFile("claude-console-inject.exe");
+            get => _helperPath ?? WindowsTools.PathFor("inject");
             set => _helperPath = value;
         }
 
@@ -510,7 +510,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
             // The helper polices its own 120s deadline and exits fast on a dismissed overlay;
             // the bound here is the backstop, a little above the helper's own.
-            var exit = BoundedProcess.RunForExitCode(helper, new List<String> { outputPath }, 130000);
+            var exit = BoundedProcess.RunForExitCode(helper, WindowsTools.Arguments(helper, "shot", new[] { outputPath }), 130000);
 
             if (exit != 0 || !File.Exists(outputPath))
             {
@@ -526,7 +526,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Path to claude-console-shot.exe. Injectable for tests.</summary>
         internal String ShotHelperPath
         {
-            get => this._shotHelperPath ?? PluginPaths.PackagedFile("claude-console-shot.exe");
+            get => this._shotHelperPath ?? WindowsTools.PathFor("shot");
             set => this._shotHelperPath = value;
         }
 
@@ -562,7 +562,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Where the tab-focus helper lives — beside the plugin DLL. See PluginPaths.</summary>
         internal String FocusHelperPath
         {
-            get => _focusHelperPath ?? PluginPaths.PackagedFile("claude-console-focus.exe");
+            get => _focusHelperPath ?? WindowsTools.PathFor("focus");
             set => _focusHelperPath = value;
         }
 
@@ -583,7 +583,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
             var exe = this.FocusHelperPath;
             var runner = this.FocusRunner ?? (exe != null
-                ? args => BoundedProcess.RunForExitCode(exe, args, 10000)
+                ? args => BoundedProcess.RunForExitCode(exe, WindowsTools.Arguments(exe, "focus", args), 10000)
                 : (Func<List<String>, Int32?>)null);
 
             if (runner != null)
@@ -612,7 +612,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             var exe = this.HelperPath;
             if (exe != null)
             {
-                BoundedProcess.RunForExitCode(exe, new List<String> { "beep" }, 5000);
+                BoundedProcess.RunForExitCode(exe, WindowsTools.Arguments(exe, "inject", new[] { "beep" }), 5000);
             }
         }
 
