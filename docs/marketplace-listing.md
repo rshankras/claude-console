@@ -1,6 +1,6 @@
 # Marketplace Listing Copy
 
-The exact text entered in the Logitech Marketplace submission form ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)). **The 2.2.2 copy below is current** (prepared 2026-09-13; the package and these texts are in `~/Downloads/Claude Console/ClaudeConsole-2.2.2-install/`); the 2.2.1 and 2.2.0 release notes it replaced follow it, and the 2.0.x copy is kept at the bottom for reference. Process and packaging steps live in [SUBMISSION.md](../SUBMISSION.md).
+The exact text entered in the Logitech Marketplace submission form ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)). **The 2.2.2 copy below is current** (submitted 2026-09-13; the package and these texts as submitted are in `~/Downloads/Claude Console/ClaudeConsole-2.2.2-install/`); the 2.2.1 and 2.2.0 release notes it replaced follow it, and the 2.0.x copy is kept at the bottom for reference. Process and packaging steps live in [SUBMISSION.md](../SUBMISSION.md).
 
 ## Auto-filled fields (from `LoupedeckPackage.yaml`)
 
@@ -22,7 +22,13 @@ Every user-facing link — these fields, the three card buttons baked into the p
 
 ## Teaser card description — limit 120 characters
 
-Unchanged from 2.0.x — still accurate, 108 characters (`wc -m`, no trailing newline):
+2.2.2 as submitted, 97 characters. This is the wording the portal already held, and it differs from the 2.0.x teaser this doc used to record; it was kept unchanged, although it names Apple Terminal only:
+
+```
+Physical hardware controls for Claude Code in Apple Terminal on the MX Keypad or Creative Console
+```
+
+The teaser this doc recorded before (108 characters), which names both terminals:
 
 ```
 Physical hardware controls for Claude Code in Apple Terminal or Windows Terminal, on the MX Creative Keypad.
@@ -30,27 +36,27 @@ Physical hardware controls for Claude Code in Apple Terminal or Windows Terminal
 
 ## Detail page description — limit 500 characters
 
-Markdown supported: **bold**, *cursive*, `-` lists, `1.` lists, `[links](url)`, emojis. 2.2.0 rewrite: the Answer line now describes what the keys actually do since #21, and "Voice" is dictation rather than a key name. 2.2.2 (482 characters): the Live status line reads *cost, context & activity* instead of *model, cost & context*, because the Model key stopped being a live display (#86).
+Markdown supported: **bold**, *cursive*, `-` lists, `1.` lists, `[links](url)`, emojis. 2.2.0 rewrite: the Answer line now describes what the keys actually do since #21, and "Voice" is dictation rather than a key name. 2.2.2 (482 characters): the Live status line reads *cost, context & activity* instead of *model, cost & context*, because the Model key stopped being a live display (#86). The portal holds the list separators as plain ` - ` hyphens, not em dashes, so that is how it is recorded here:
 
 ```markdown
 **Physical hardware controls for Claude Code. Press a button. Ship code.**
 
-- **A key per session** — project & state on each; press to focus
-- **Answer prompts** — Yes approves, No rejects; amber when asked, red when risky
-- **Offline voice** — dictate a prompt or open a project by name
-- **Live status** — cost, context & activity keys, opt-in
-- **One-press prompts** — Fix Bug, Write Tests, Review
-- **Git** — commit, diff, push, PR
+- **A key per session** - project & state on each; press to focus
+- **Answer prompts** - Yes approves, No rejects; amber when asked, red when risky
+- **Offline voice** - dictate a prompt or open a project by name
+- **Live status** - cost, context & activity keys, opt-in
+- **One-press prompts** - Fix Bug, Write Tests, Review
+- **Git** - commit, diff, push, PR
 
 Works in Apple Terminal or Windows Terminal.
 ```
 
 ## Release notes — limit 1000 characters
 
-2.2.2 (prepared 2026-09-13), 980 characters. Leads with the Windows Yes / No fix (#74, Windows retest item 2); the first draft ran to 1,028 characters and was trimmed:
+2.2.2 (submitted 2026-09-13), 943 characters. Leads with the Windows Yes / No fix (#74, Windows retest item 2). The first draft ran to 1,028 characters and was trimmed to 980; the heading was then shortened to `**2.2.2**` in the form before submitting:
 
 ```markdown
-**2.2.2 — answers to the QA retest of 2.2.1.**
+**2.2.2**
 
 - **Windows: Yes / No answer again.** Every press had been refused.
 - **Yes / No find the session with a prompt up**, even while other sessions sit idle.
