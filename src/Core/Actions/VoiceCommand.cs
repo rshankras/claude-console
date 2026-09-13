@@ -19,6 +19,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     {
         private readonly ListeningFace _face;
         private readonly FailureFace _fail;
+        private Boolean _settingUp;
 
         public VoiceCommand()
             : base(displayName: "Dictate", description: "Speak a prompt — press to start, press again to transcribe and send", groupName: "Universal")
@@ -31,6 +32,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             BridgeManager.Instance.OnVoiceFailed += (intent, text) =>
             {
                 if (intent == VoiceIntent.Send) { _fail.Show(text); }
+            };
+
+            BridgeManager.Instance.OnVoiceSetupChanged += (intent, active) =>
+            {
+                if (intent != VoiceIntent.Send) { return; }
+                _settingUp = active;
+                this.ActionImageChanged();
             };
 
             // The engine owns "is the mic running, and for whom" (#28). This key only reflects it,
@@ -59,11 +67,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            _face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Dictate");
+            _settingUp ? "Setting up" : (_face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Dictate"));
 
         // Listening wins over a stale failure: a new press means a new attempt.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
-            _face.IsActive
+            _settingUp
+                ? KeyImage.Render(imageSize, "Setting up", KeyImage.Amber)
+                : _face.IsActive
                 ? KeyImage.Render(imageSize, "Listening", KeyImage.Green, _face.Icon)
                 : _fail.IsActive
                     ? KeyImage.Render(imageSize, _fail.Text, KeyImage.Red, "voice")

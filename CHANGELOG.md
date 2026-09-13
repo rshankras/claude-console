@@ -1,5 +1,15 @@
 # Changelog
 
+## Vizhi for Codex [1.6.1] — 2026-09-09
+
+### Changed
+- **Voice now shows `Setting up` during its first packaged-runtime check.** The check and any required
+  Whisper bundle copy run off the keypad thread; recording starts only after setup finishes, and
+  extra voice-key presses during setup are refused instead of stopping a recorder that is not ready.
+- **Screenshot now carries its own Windows runtime.** The capture helper no longer assumes that
+  Options+'s private .NET runtime is globally discoverable, so it can open the snipping overlay on
+  machines without a separate .NET Desktop installation.
+
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
