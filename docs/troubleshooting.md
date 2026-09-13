@@ -27,7 +27,7 @@ bash scripts/unfreeze-keys.sh          # lists what's frozen
 bash scripts/unfreeze-keys.sh --apply  # backs them up to your Desktop, then removes them
 ```
 
-Deliberate icon customizations on those keys are lost — that's the trade. **Avoid customizing the live keys** (the session slots, Yes/No, and the Model / Cost / Context / Activity displays); the static keys are safe to restyle.
+Deliberate icon customizations on those keys are lost — that's the trade. **Avoid customizing the live keys** (the session slots, Yes/No, and the Cost / Context / Activity displays); the static keys are safe to restyle.
 
 ## Windows: session/navigation keys beep, or Options+ says "Windows Terminal required"
 
