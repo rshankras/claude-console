@@ -3,8 +3,15 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [2.2.2] — 2026-09-13
 
+Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and Windows (#74–#80) —
+plus what three Windows device passes and the review of those fixes turned up on the way.
+Verified on the keypad on macOS (12 September) and Windows (10–12 September); run sheets in
+`docs/windows-qa-2.2.1.md` and `docs/windows-qa-2.2.2.md`. The package is 16.5 MiB, down from
+21.3 MiB.
+
+### From the device passes and the review (10–12 September)
 - Reduce package size by sharing one self-contained Windows runtime across typing, tab focus,
   voice capture, and screenshots. The hook retains its separate executable and watchdog.
   The speech model continues to download on first use.
@@ -56,8 +63,6 @@ All notable changes to Claude Console are documented here. Format based on
   rule for a renamed running image; `claude-console-hook selftest` prints the ancestry walk hop
   by hop so this class of miss is visible in the field.
 
-Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and Windows (#74–#80).
-
 ### Retest review follow-up
 - Windows screenshot and tab-focus helpers no longer need the .NET Desktop Runtime at all, so
   they start on clean installations without a separate runtime download. The screenshot helper
@@ -74,7 +79,7 @@ Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and 
   unique temporary file, and retains recovery data after errors or lock contention. Hooks only
   record successful uninstall cleanup and retry failed attempts.
 
-### Fixed — Windows (code change; not yet run on Windows hardware)
+### Fixed — Windows
 - **Yes/No answer again** (#74, Windows retest item 2 — every press was discarded as "no pending
   approval on (no target)"). The Windows hook exe wrote the PermissionRequest hook's argv verb,
   `permission`, as the session's state; the plugin only ever recognises `waiting`, which is the word
