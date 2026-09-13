@@ -203,7 +203,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         // The Options+ card that explains an inert Yes/No is posted once per load, not per press.
         private static Int32 _setupNoticePosted;
 
-        private static void AnswerApproval(BridgeManager bridge, Boolean approve)
+        internal static void AnswerApproval(BridgeManager bridge, Boolean approve)
         {
             var agentSetup = AgentBridgeNotice.FaceLabel(bridge.AgentBridgeState);
             if (agentSetup != null)

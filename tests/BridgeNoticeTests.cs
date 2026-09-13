@@ -103,19 +103,52 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.True(text.Length <= 260, $"{text.Length} chars — that is a paragraph, not a notice");
         }
 
+        // The three card buttons baked into every shipped package. They point at vizhi.dev, never
+        // at the GitHub repository: it went private on 2026-09-02 and every button was a 404 for a
+        // week (#68, #71), and it will be closed for good. These exact strings are an API — a
+        // renamed anchor breaks packages already installed — so a change here is deliberate and
+        // comes with a redirect on the site.
         [Fact]
-        public void The_support_link_is_public_and_the_local_manual_keeps_the_bridge_guidance()
+        public void The_card_links_point_at_frozen_vizhi_dev_anchors()
         {
-            Assert.Equal("https://www.rshankar.com/keypad-profiles/#live-status-bridge", BridgeNotice.SupportUrl);
-            Assert.DoesNotContain("claude-console", BridgeNotice.SupportUrl);
+            Assert.Equal("https://vizhi.dev/claude-console/#live-status-bridge", BridgeNotice.SupportUrl);
+            Assert.Equal("https://vizhi.dev/faq/#windows", BridgeNotice.WindowsTerminalUrl);
+            Assert.Equal("https://vizhi.dev/faq/#voice", BridgeNotice.VoiceUrl);
 
-            // ...and that anchor exists. A dead "how to undo" link is worse than none.
+            var product = File.ReadAllText(RepoFile("src", "Products", "ClaudeConsole", "package", "metadata", "LoupedeckPackage.yaml"));
+            Assert.DoesNotContain("github.com", product);
+            Assert.Contains("licenseUrl: https://vizhi.dev/eula/", product);
+            Assert.False(File.Exists(RepoFile("EULA.md").Replace("EULA.md", "LICENSE")), "the MIT LICENSE file is back — the source is closed, the EULA is the licence");
+        }
+
+        // The anchors above must exist on the site. Network, so opt-in: CC_CHECK_LINKS=1 runs it;
+        // otherwise it passes without looking. Run it before every release.
+        [Fact]
+        public void The_vizhi_dev_anchors_exist_when_asked_to_check()
+        {
+            if (Environment.GetEnvironmentVariable("CC_CHECK_LINKS") != "1")
+            {
+                return;
+            }
+
+            using var http = new System.Net.Http.HttpClient();
+            foreach (var url in new[] { BridgeNotice.SupportUrl, BridgeNotice.WindowsTerminalUrl, BridgeNotice.VoiceUrl })
+            {
+                var hash = url.IndexOf('#');
+                var page = http.GetStringAsync(url.Substring(0, hash)).GetAwaiter().GetResult();
+                Assert.Contains($"id=\"{url.Substring(hash + 1)}\"", page);
+            }
+        }
+
+        [Fact]
+        public void The_readme_still_answers_the_how_to_undo_button()
+        {
+            // The site is the target; the README section is its offline mirror and must keep
+            // saying what the card no longer carries — the backup's name and the undo command.
             var readme = File.ReadAllText(RepoFile("README.md"));
             var at = readme.IndexOf("## The live status bridge", StringComparison.Ordinal);
-            Assert.True(at >= 0, "the README section the button opens is missing");
+            Assert.True(at >= 0, "the README's live status section is missing");
 
-            // The card no longer carries the backup's name or the undo command, so the section it
-            // opens must — or the button leads somewhere that does not answer its own title.
             var section = readme.Substring(at);
             var next = section.IndexOf("\n## ", 1, StringComparison.Ordinal);
             section = next > 0 ? section.Substring(0, next) : section;
@@ -132,8 +165,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("open Windows Terminal window", text);
             Assert.Contains("Direct typing keys", text);
             Assert.Contains("no Windows Terminal window is running", text);
-            Assert.Equal("https://www.rshankar.com/keypad-profiles/#windows-terminal", BridgeNotice.WindowsTerminalUrl);
+            Assert.EndsWith("/faq/#windows", BridgeNotice.WindowsTerminalUrl);
 
+            // The README's Windows section is the offline mirror of the FAQ answer the button opens.
             var readme = File.ReadAllText(RepoFile("README.md"));
             Assert.Contains("## Windows notes", readme);
             Assert.Contains("Windows: session/navigation keys beep", readme);
@@ -223,13 +257,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void The_windows_notice_link_is_public_and_the_local_guidance_still_exists()
+        public void No_card_link_points_at_the_source_repository()
         {
-            Assert.Equal("https://www.rshankar.com/keypad-profiles/#windows-terminal", BridgeNotice.WindowsTerminalUrl);
-            Assert.DoesNotContain("claude-console", BridgeNotice.WindowsTerminalUrl);
+            // The repository is closing; a button that opens github.com is a future 404 (#68, #71).
+            foreach (var url in new[] { BridgeNotice.SupportUrl, BridgeNotice.WindowsTerminalUrl, BridgeNotice.VoiceUrl })
+            {
+                Assert.StartsWith("https://vizhi.dev/", url);
+                Assert.DoesNotContain("github.com", url);
+            }
 
-            var readme = File.ReadAllText(RepoFile("README.md"));
-            Assert.Contains("## Windows notes", readme);
+            var engine = File.ReadAllText(RepoFile("src", "Core", "BridgeNotice.cs"));
+            Assert.DoesNotContain("https://github.com/rshankras/claude-console", engine);
         }
 
         [Fact]

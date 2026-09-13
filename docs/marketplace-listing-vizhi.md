@@ -2,7 +2,7 @@
 
 Draft text for the Logitech Marketplace submission form
 ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)) for **Vizhi
-for Codex 1.6.0**. Same structure and field limits as Claude Console's
+for Codex 1.6.1**. Same structure and field limits as Claude Console's
 [marketplace-listing.md](marketplace-listing.md); process and packaging live in
 [SUBMISSION.md](../SUBMISSION.md).
 
@@ -20,14 +20,15 @@ Read out of the uploaded `.lplug4`; the form fills them itself. To change any, e
 | Name | Vizhi for Codex |
 | Author | S.Ravi Shankar |
 | Operating system | macOS, Windows (from `pluginFolderMac` + `pluginFolderWin`) |
-| Version | 1.6.0 |
-| Content licence | MIT — https://opensource.org/licenses/MIT |
-| Support | https://github.com/rshankras/claude-console/issues |
-| Homepage | https://github.com/rshankras/claude-console |
+| Version | 1.6.1 |
+| Content licence | Proprietary — https://vizhi.dev/eula/ (changed 2026-09-09 ahead of closing the source) |
+| Support | https://vizhi.dev/faq/ |
+| Homepage | https://vizhi.dev/vizhi-codex/ |
 | Copyright | Copyright © 2026 S.Ravi Shankar. All rights reserved. |
 
-> The repository is named `claude-console` because one engine builds both plugins; its front page
-> says so and links to this product's own README. If a reviewer asks, that is the answer.
+> All user-facing links point at vizhi.dev as of 2026-09-09: the source repository will be closed,
+> so nothing a user can reach may point at github.com (#68). One engine builds both plugins; the
+> product pages on vizhi.dev say so.
 
 ## Teaser card description — limit 120 characters
 

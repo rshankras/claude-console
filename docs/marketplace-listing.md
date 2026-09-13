@@ -1,6 +1,6 @@
 # Marketplace Listing Copy
 
-The exact text entered in the Logitech Marketplace submission form ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)). **The 2.2.0 copy below is current**; the 2.0.x copy it replaced is kept at the bottom for reference. Process and packaging steps live in [SUBMISSION.md](../SUBMISSION.md).
+The exact text entered in the Logitech Marketplace submission form ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)). **The 2.2.1 copy below is current** (submitted 2026-09-04); the 2.2.0 release notes it replaced follow it, and the 2.0.x copy is kept at the bottom for reference. Process and packaging steps live in [SUBMISSION.md](../SUBMISSION.md).
 
 ## Auto-filled fields (from `LoupedeckPackage.yaml`)
 
@@ -12,11 +12,13 @@ These are read out of the uploaded `.lplug4` — the form fills them itself. To 
 | Author | S.Ravi Shankar |
 | Operating system | macOS, Windows (from `pluginFolderMac` + `pluginFolderWin`) |
 | Capabilities | `HasNoApplication` — universal, binds no application (#23) |
-| Version | 2.2.0 |
-| Content licence | MIT — https://opensource.org/licenses/MIT |
-| Support | https://github.com/rshankras/claude-console/issues |
-| Homepage | https://github.com/rshankras/claude-console |
+| Version | 2.2.1 |
+| Content licence | Proprietary — https://vizhi.dev/eula/ (2.2.1 as submitted said MIT; changed 2026-09-09 ahead of closing the source — if the form's licence list has no "Proprietary" entry, pick the nearest and keep the EULA URL) |
+| Support | https://vizhi.dev/faq/ (2.2.1 as submitted: the keypad-profiles issue tracker, which the FAQ still links to) |
+| Homepage | https://vizhi.dev/claude-console/ (2.2.1 as submitted: the keypad-profiles site) |
 | Copyright | Copyright © 2026 S.Ravi Shankar. All rights reserved. |
+
+Every user-facing link — these fields, the three card buttons baked into the plugin DLL, the README download links — points at **vizhi.dev** as of 2026-09-09. The source repository will be closed, so nothing a user can reach may point at github.com/rshankras/claude-console (#68, #71: every card button was a 404 for a week when it went private). The vizhi.dev anchors the DLL uses (`claude-console/#live-status-bridge`, `faq/#windows`, `faq/#voice`) are baked into shipped packages: treat them as frozen, or add redirects before renaming.
 
 ## Teaser card description — limit 120 characters
 
@@ -44,6 +46,25 @@ Works in Apple Terminal or Windows Terminal.
 ```
 
 ## Release notes — limit 1000 characters
+
+2.2.1 (submitted 2026-09-04), 841 characters. Leads with the two answer-key changes a user notices first; the last line sends them to the homepage for the layouts because the GitHub release is private:
+
+```markdown
+**2.2.1 — answers to the QA retest of 2.2.0.**
+
+- **Yes / No say when they cannot work.** With live status off they read *Off*, and a press explains how to turn it on instead of beeping.
+- **A No press clears the pending cue** at once. Both answer keys now show it, and Yes turns red for a risky request.
+- **The bundled voice helper now replaces an older copy** on macOS.
+- **Leftover hooks stay silent.** If you uninstall without turning live status off, the entries left in your Claude Code settings no longer error on every turn.
+- **Windows:** hook processes end themselves after 8 seconds and are capped, so they can no longer pile up and block an uninstall.
+- No warnings on load; the shipped symbols carry no build paths.
+
+Keypad layouts are unchanged. Download them from the homepage link and import once onto your Terminal profile.
+```
+
+The PM offered (2026-09-04) to help with the description wording and asked for a setup FAQ on the listing; the copy above plus a draft FAQ went to her as `Claude-Console-Marketplace-copy-and-FAQ.docx`. The FAQ's home is the public profiles site, which is also where #68's card links should land.
+
+## Release notes — 2.2.0 (superseded)
 
 2.2.0 is the first release Marketplace users see as an *update*, so this is a real what's-changed rather than the 2.0.0 introduction. Leads with the two things that change their setup — the universal plugin (they must import the layout) and opt-in live status. 974 characters:
 

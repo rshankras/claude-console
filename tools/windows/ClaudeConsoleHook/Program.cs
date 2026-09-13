@@ -260,10 +260,18 @@ internal static class Program
         Directory.CreateDirectory(ActivityDir);
 
         var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        // The STATE the plugin reads is busy | waiting | done; "permission" is an argv verb, not a
+        // state. scripts/activity-hook.sh translates it ("STATE=waiting") before writing, and this
+        // exe did not — so on Windows a permission prompt landed as state "permission", which the
+        // plugin's pending-approval check (SessionRegistry.ApplyPendingApproval) and its routing
+        // fallback (BridgeManager.RoutingTty, "exactly one session waiting") never match. Every
+        // Yes/No press was "no pending approval on (no target)", and voice found no target either,
+        // while the pending payload sat correctly on disk (Logitech QA, 2.2.1 Windows retest item 2).
+        var word = state == "permission" ? "waiting" : state;
         // Built by hand, not JsonSerializer: reflection serialization is the one thing in this
         // exe that publish-trimming can break, and the payload is two fields. Escaping still
         // matters — state arrives via argv and lands in a file the plugin parses as JSON.
-        var payload = $"{{\"state\":\"{JsonEscape(state)}\",\"ts\":{ts}}}";
+        var payload = $"{{\"state\":\"{JsonEscape(word)}\",\"ts\":{ts}}}";
 
         if (key != null)
         {
@@ -415,6 +423,50 @@ internal static class Program
         Console.WriteLine($"  sessions     {SessionsDir}");
         Console.WriteLine($"  session key  {SessionKey() ?? "(no Claude process found in this process's ancestry)"}");
         Console.WriteLine();
+        // The walk itself, hop by hop: "(no Claude process found)" on its own says nothing about
+        // WHERE the climb stopped, and that is the whole question when the live keys show
+        // defaults — a parent lookup that fails, a process the matcher does not recognise, or a
+        // chain deeper than the cap.
+        Console.WriteLine("  ancestry (the climb SessionKey performs):");
+        if (OperatingSystem.IsWindows())
+        {
+            // What a by-name lookup sees, for contrast: it misses a Claude that was renamed by an
+            // in-place update, which the climb below must not.
+            try
+            {
+                var byName = Process.GetProcessesByName("claude").Select(p => p.Id).ToArray();
+                Console.WriteLine($"    Process.GetProcessesByName(\"claude\"): {(byName.Length == 0 ? "none" : String.Join(", ", byName))}");
+            }
+            catch { /* diagnostics only */ }
+
+            var pid = Environment.ProcessId;
+            for (var hop = 0; hop < 8; hop++)
+            {
+                String name;
+                Boolean isClaude;
+                try
+                {
+                    using var proc = Process.GetProcessById(pid);
+                    name = proc.ProcessName;
+                    isClaude = IsClaude(proc);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"    hop {hop}: pid {pid} — cannot open: {ex.GetType().Name}: {ex.Message}");
+                    break;
+                }
+
+                var viaKernel = ParentViaNtQuery(pid);
+                var parent = viaKernel > 0 ? viaKernel : ParentOf(pid);
+                Console.WriteLine($"    hop {hop}: pid {pid} {name}{(isClaude ? "  <- CLAUDE, key minted here" : "")}  parent {parent}{(viaKernel > 0 ? "" : " (kernel lookup failed; PowerShell fallback)")}");
+                if (isClaude || parent <= 0 || parent == pid)
+                {
+                    break;
+                }
+                pid = parent;
+            }
+        }
+        Console.WriteLine();
         Console.WriteLine("Run this from INSIDE a Claude Code session — the key above must match the");
         Console.WriteLine("one `claude-console-inject selftest` prints for that same session.");
         return 0;
@@ -522,14 +574,14 @@ internal static class Program
         }
 
         // The native installer: claude.exe. Unambiguous by name, and the cheap common case.
-        if (name.Equals("claude", StringComparison.OrdinalIgnoreCase))
+        if (IsExe(name, "claude"))
         {
             return true;
         }
 
         // An npm/bun install runs the CLI under an interpreter — only then do we pay for a
         // command-line lookup.
-        if (name is not ("node" or "bun" or "deno" or "npx"))
+        if (!(IsExe(name, "node") || IsExe(name, "bun") || IsExe(name, "deno") || IsExe(name, "npx")))
         {
             return false;
         }
@@ -541,6 +593,21 @@ internal static class Program
                 cmd.Contains(@"\claude", StringComparison.OrdinalIgnoreCase) ||
                 cmd.Contains("/claude", StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// Does a process name mean this executable? Normally "claude"; but Claude Code updates
+    /// itself IN PLACE while sessions are running, and Windows cannot overwrite a running
+    /// image, so the updater renames it — the running session's image becomes
+    /// claude.exe.old.1789090133131 and .NET reports THAT as its ProcessName (the ".exe"
+    /// strip only applies when .exe is the last extension). Found 2026-09-11 on a session that
+    /// had been up since the previous evening: from the 06:58 auto-update onward every hook
+    /// climbed straight past its own Claude, wrote only the shared fallback, and Yes/No answered
+    /// "no pending approval" for a session the plugin had pinned and named. WMI still reports the
+    /// creation-time name, which is why the plugin's own discovery never noticed.
+    /// </summary>
+    internal static Boolean IsExe(String processName, String exe) =>
+        processName.Equals(exe, StringComparison.OrdinalIgnoreCase) ||
+        processName.StartsWith(exe + ".exe.", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The codex twin of IsClaude — mirrors AgentProcessMatcher.CodexCli the way IsClaude mirrors
@@ -559,12 +626,12 @@ internal static class Program
             return false;
         }
 
-        if (name.Equals("codex", StringComparison.OrdinalIgnoreCase))
+        if (IsExe(name, "codex"))
         {
             return true;
         }
 
-        if (name is not ("node" or "bun" or "deno" or "npx"))
+        if (!(IsExe(name, "node") || IsExe(name, "bun") || IsExe(name, "deno") || IsExe(name, "npx")))
         {
             return false;
         }

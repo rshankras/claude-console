@@ -21,7 +21,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Directory.CreateDirectory(this.Dir);
             _previous = BridgeManager.HomeOverride;
             BridgeManager.HomeOverride = this.Dir;
+
+            this.HookExe = Path.Combine(this.Dir, "package", "claude-console-hook.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(this.HookExe));
+            File.WriteAllText(this.HookExe, String.Empty);
         }
+
+        /// <summary>
+        /// A stand-in for the packaged Windows hook shim. On Windows the wirer names the shim in
+        /// settings.json and refuses to wire while it is missing (BridgeManager.BridgeHandlerPath);
+        /// the real one sits beside the plugin DLL, found through a path only the SDK supplies, so
+        /// in a test it is nowhere. A rig hands this to BridgeManager.HookExePath so the same
+        /// wiring tests run on both platforms. macOS extracts bash scripts instead and ignores it.
+        /// </summary>
+        public String HookExe { get; }
 
         public String ClaudeDir => Path.Combine(this.Dir, ".claude");
         public String Settings => Path.Combine(this.ClaudeDir, "settings.json");

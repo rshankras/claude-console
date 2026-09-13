@@ -8,6 +8,7 @@
       library needs to ship.
     -->
     <OutputType>Exe</OutputType>
+    <StartupObject>VoiceProgram</StartupObject>
     <TargetFramework>net8.0</TargetFramework>
     <RollForward>LatestMajor</RollForward>
     <ImplicitUsings>enable</ImplicitUsings>

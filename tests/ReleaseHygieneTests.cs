@@ -104,8 +104,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var metadata = File.ReadAllText(Path.Combine(
                 RepoRoot(), "src", "Products", "VizhiCodex", "package", "metadata", "LoupedeckPackage.yaml"));
 
-            Assert.Contains("supportPageUrl: https://github.com/rshankras/keypad-profiles/issues", metadata);
-            Assert.Contains("homePageUrl: https://www.rshankar.com/keypad-profiles/", metadata);
+            Assert.Contains("supportPageUrl: https://vizhi.dev/faq/", metadata);
+            Assert.Contains("homePageUrl: https://vizhi.dev/vizhi-codex/", metadata);
             Assert.DoesNotContain("github.com/rshankras/claude-console", metadata);
         }
 

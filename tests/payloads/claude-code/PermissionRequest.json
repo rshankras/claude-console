@@ -1,0 +1,13 @@
+{
+  "session_id": "3151050b-c228-4600-baae-5f702d550345",
+  "transcript_path": "C:\\Users\\x\\.claude\\projects\\C--Users-x-project\\3151050b-c228-4600-baae-5f702d550345.jsonl",
+  "cwd": "C:\\Users\\x\\project",
+  "permission_mode": "default",
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "PowerShell",
+  "tool_input": {
+    "command": "Remove-Item -Recurse -Force -LiteralPath \"/tmp/qa-red-test\" -Confirm:$false",
+    "description": "Delete the QA scratch folder"
+  },
+  "tool_use_id": "toolu_01ABC"
+}

@@ -22,6 +22,8 @@ namespace Loupedeck.ClaudeConsolePlugin
     internal enum VoicePhase
     {
         Idle,
+        Starting,
+        Cancelling,
         Recording,
         Transcribing,
     }
@@ -34,6 +36,9 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         /// <summary>Something was running: stop it. The intent is the STARTING key's, not this one's.</summary>
         Stop,
+
+        /// <summary>Cancel startup; its worker retains ownership until the helper is stopped.</summary>
+        Cancel,
 
         /// <summary>A transcript is already in flight; refuse and alert rather than discard it.</summary>
         Refuse,
@@ -89,9 +94,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// the state accordingly. Returns the action to perform and, for a Stop, the intent the
         /// transcript must be routed to.
         /// </summary>
-        internal (VoiceAction Action, VoiceIntent Intent) Press(VoiceIntent pressed, DateTime now)
+        internal (VoiceAction Action, VoiceIntent Intent) Press(VoiceIntent pressed, DateTime now, Boolean awaitReadiness = false)
         {
-            var result = this.PressLocked(pressed, now);
+            var result = this.PressLocked(pressed, now, awaitReadiness);
             if (result.Changed)
             {
                 this.Changed?.Invoke();
@@ -99,19 +104,26 @@ namespace Loupedeck.ClaudeConsolePlugin
             return (result.Action, result.Intent);
         }
 
-        private (VoiceAction Action, VoiceIntent Intent, Boolean Changed) PressLocked(VoiceIntent pressed, DateTime now)
+        private (VoiceAction Action, VoiceIntent Intent, Boolean Changed) PressLocked(VoiceIntent pressed, DateTime now, Boolean awaitReadiness)
         {
             lock (this._lock)
             {
                 // A capture older than any capture can legitimately be means the helper died without
                 // writing anything. Treat it as over, so this press starts cleanly.
-                if (this._phase != VoicePhase.Idle && now - this._since > StaleAfter)
+                if (this._phase is VoicePhase.Recording or VoicePhase.Transcribing && now - this._since > StaleAfter)
                 {
                     this._phase = VoicePhase.Idle;
                 }
 
                 switch (this._phase)
                 {
+                    case VoicePhase.Starting:
+                        this._phase = VoicePhase.Cancelling;
+                        return (VoiceAction.Cancel, this._intent, true);
+
+                    case VoicePhase.Cancelling:
+                        return (VoiceAction.Refuse, this._intent, false);
+
                     case VoicePhase.Recording:
                         // ANY voice key stops the running capture, and the ORIGINAL intent survives.
                         this._phase = VoicePhase.Transcribing;
@@ -124,11 +136,38 @@ namespace Loupedeck.ClaudeConsolePlugin
                         return (VoiceAction.Refuse, this._intent, false);
 
                     default:
-                        this._phase = VoicePhase.Recording;
+                        this._phase = awaitReadiness ? VoicePhase.Starting : VoicePhase.Recording;
                         this._intent = pressed;
                         this._since = now;
                         return (VoiceAction.Start, pressed, true);
                 }
+            }
+        }
+
+        /// <summary>A late readiness acknowledgement cannot revive a cancelled start.</summary>
+        internal Boolean MarkReady(DateTime now)
+        {
+            lock (this._lock)
+            {
+                if (this._phase != VoicePhase.Starting) { return false; }
+                this._phase = VoicePhase.Recording;
+                this._since = now;
+            }
+            this.Changed?.Invoke();
+            return true;
+        }
+
+        internal String StartupLabel(VoiceIntent intent)
+        {
+            lock (this._lock)
+            {
+                if (this._intent != intent) { return null; }
+                return this._phase switch
+                {
+                    VoicePhase.Starting => "Starting",
+                    VoicePhase.Cancelling => "Cancelling",
+                    _ => null,
+                };
             }
         }
 

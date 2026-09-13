@@ -27,6 +27,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             public Rig(Func<Boolean?> answer, ManualResetEventSlim hold = null)
             {
                 this.Bridge = new BridgeManager(new PlatformSeamTests.FakePlatformBridge());
+                this.Bridge.HookExePath = this.Home.HookExe;   // the Windows wirer names the shim — see TempHome.HookExe
                 this.Bridge.Notify = (status, message, url, title) => { };
                 this.Bridge.Prompt = (title, text, yes, no, seconds, cancel) =>
                 {

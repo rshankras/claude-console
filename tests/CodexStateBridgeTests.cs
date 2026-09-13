@@ -207,6 +207,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(CodexBridgeStatus.AwaitingTrust, b.Status);
         }
 
+        [Theory]
+        [InlineData("rollout")]
+        [InlineData("rollout-code-mode")]
+        public void Fresh_fallback_approval_cannot_prove_hook_trust(String transport)
+        {
+            var bridge = New();
+            bridge.EnsureInstalled(Script);
+            Directory.CreateDirectory(_sessions);
+            var envelope = Path.Combine(_sessions, "pid-42.json");
+            File.WriteAllText(envelope, System.Text.Json.JsonSerializer.Serialize(new
+            {
+                schema = 1, transport, @event = "PermissionRequest",
+                payload = new { tool_name = "Bash", tool_input = new { command = "git push" } },
+            }));
+            File.SetLastWriteTimeUtc(envelope, DateTime.UtcNow.AddSeconds(2));
+            Assert.Equal(CodexBridgeStatus.AwaitingTrust, bridge.Status);
+            File.WriteAllText(envelope, "{\"schema\":1,\"transport\":\"hook\",\"event\":\"Stop\"}");
+            Assert.Equal(CodexBridgeStatus.Active, bridge.Status);
+            var timestamp = File.GetLastWriteTimeUtc(bridge.HooksFile);
+            Assert.False(bridge.EnsureInstalled(Script));
+            Assert.Equal(timestamp, File.GetLastWriteTimeUtc(bridge.HooksFile));
+            Assert.Equal(CodexBridgeStatus.Active, bridge.Status);
+        }
+
         [Fact]
         public void A_hooks_file_we_did_not_write_is_left_completely_alone()
         {

@@ -170,7 +170,7 @@ LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/ClaudeCon
 
 # --- build the Windows helpers into the same bin/ (cross-compiled from macOS) ---------------------
 # One .lplug4 serves both platforms: LoupedeckPackage.yaml points pluginFolderMac AND
-# pluginFolderWin at bin/, so these two exes ride along beside the plugin DLL and are simply
+# pluginFolderWin at bin/, so the hook and toolkit ride beside the plugin DLL and are simply
 # never launched on macOS.
 echo ">>> building Windows helper payload"
 bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64 "$PRODUCT"
@@ -199,6 +199,15 @@ echo ">>> packing $OUT"
 rm -f "$OUT"
 logiplugintool pack "$BUILD_DIR" "$OUT"
 
+# --- verify the artifact -------------------------------------------------------------------------
+# Every check in verify-package.sh is a bug that shipped once (#24 #47 #62 #64 #68 #71 #83) or a
+# Marketplace rule. A package that fails is renamed so it cannot be uploaded by accident.
+if ! bash "$ROOT/tools/verify-package.sh" "$OUT"; then
+  mv -f "$OUT" "$OUT.rejected"
+  echo "error: the package failed verification — renamed to $OUT.rejected" >&2
+  exit 1
+fi
+
 # Verify what users will actually install, not only the source copied into staging. A packer can
 # alter permissions, omit nested signature files, or substitute a stale bundle while the source
 # helper remains valid. Extract into a fresh directory and apply the same three release gates to
@@ -209,14 +218,20 @@ ditto -x -k "$OUT" "$VERIFY_DIR"
 PACKED_APP="$(find "$VERIFY_DIR" -type d -name ClaudeVoiceHelper.app -print -quit)"
 if [ -z "$PACKED_APP" ]; then
   echo "error: the package contains no ClaudeVoiceHelper.app." >&2
+  mv -f "$OUT" "$OUT.rejected"
   exit 1
 fi
 echo ">>> verifying the helper extracted from the final package"
-verify_macos_helper "$PACKED_APP"
+if ! verify_macos_helper "$PACKED_APP"; then
+  mv -f "$OUT" "$OUT.rejected"
+  echo "error: packaged helper failed verification — renamed to $OUT.rejected" >&2
+  exit 1
+fi
 
 echo
 echo "✅ $OUT"
 echo "   size: $(du -h "$OUT" | cut -f1)"
+python3 "$ROOT/tools/package-size.py" "$OUT"
 if [ "$SHIPS_VOICE" = "1" ]; then
   echo "   voice payload in package:"
   unzip -l "$OUT" | grep -iE "voice/.*(ClaudeVoiceHelper|whisper-cli)" | sed 's/^/     /'

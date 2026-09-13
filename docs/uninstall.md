@@ -19,14 +19,16 @@ It removes the plugin's `statusLine` + hook entries from `~/.claude/settings.jso
 
 If you only want the live-status wiring gone and the plugin kept: long-press a live key and choose *Turn off*, or run the script with `--unwire`.
 
+**If you skipped step 2, the hooks unwire themselves** (#73). The plugin records where it is installed in `~/.claude/claude-console/plugin-home` on every load; a hook that finds that place missing records nothing, and once it has been missing for over a minute across two runs it runs the same surgical unwire as `--unwire` (rolling backup, your entries untouched, Off marker set) and writes `~/.claude/claude-console/unwired-after-uninstall` with the time. One miss is ignored on purpose — an Options+ update replaces the folder for a few seconds, and a reloaded plugin clears the note. Nothing else is removed: the runtime home and the IPC files still need the script.
+
 Don't restore `settings.json.claude-console.bak` by hand to undo the plugin — it is a rolling backup of the state one change ago, useful if a write went wrong, not a pre-install snapshot.
 
 **Installs older than 2.2.0** registered their own application entry in Options+, and an uninstall left it behind still claiming Terminal.app — Claude Console stayed listed as if the uninstall had failed, and opening Terminal switched the keypad to a layout of dead keys. The script sweeps such orphans (only entries whose plugin is gone, never another vendor's); then restart the service so Options+ forgets it: `killall LogiPluginService`. Since 2.2.0 the plugin is universal and creates no entry, so there is nothing to sweep.
 
 ## Windows
 
-The cleanup script is a bash script and is **not installed on Windows** yet ([#55](https://github.com/rshankras/claude-console/issues/55)). An Options+ uninstall there leaves the five hooks and the `statusLine` in `~/.claude/settings.json`. Current commands check that `claude-console-hook.exe` still exists before invoking it, so a leftover after the helper is removed is a silent no-op; commands already owned by an older install are migrated to this form when the current version loads. The entries still remain, so **turn live status off first** for a clean uninstall — hold a live key → *Turn off* (or a second long press within 15 s) — then uninstall in Options+.
+The cleanup script is a bash script and is **not installed on Windows** yet (#55). An Options+ uninstall there leaves the five hooks and the `statusLine` in `~/.claude/settings.json`. Current commands check that `claude-console-hook.exe` still exists before invoking it, so a leftover after the helper is removed is a silent no-op; commands already owned by an older install are migrated to this form when the current version loads. The entries still remain, so **turn live status off first** for a clean uninstall — hold a live key → *Turn off* (or a second long press within 15 s) — then uninstall in Options+.
 
 ## Clean reinstall
 
-Do 1–2, then reinstall from [Releases](https://github.com/rshankras/claude-console/releases) and re‑import the profile.
+Do 1–2, then reinstall from the Logi Marketplace (or the package from [vizhi.dev](https://vizhi.dev/claude-console/#install)) and re‑import the profile.

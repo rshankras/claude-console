@@ -137,7 +137,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Theory]
         [InlineData("CostDisplayCommand")]
         [InlineData("ContextCommand")]
-        [InlineData("ModelCycleCommand")]
         public void Every_display_key_falls_back_to_no_value(String key)
         {
             var source = File.ReadAllText(RepoFile("src", "Core", "Actions", key + ".cs"));

@@ -18,6 +18,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class WindowsHookTests
     {
+        internal static String DecodeLauncher(String command) => System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(command.Split(' ').Last()));
         private const String Exe = @"C:\Users\me\AppData\Local\Logi\Plugins\ClaudeConsole\bin\claude-console-hook.exe";
 
         // ---------------------------------------------------------------------------------------
@@ -27,8 +28,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Windows_wires_the_shim_with_a_verb()
         {
-            Assert.Equal($"cmd.exe /d /c if exist \"{Exe}\" \"{Exe}\" statusline", BridgeWiring.StatuslineCommand(true, Exe));
-            Assert.Equal($"cmd.exe /d /c if exist \"{Exe}\" \"{Exe}\" activity busy", BridgeWiring.ActivityCommand(true, Exe, "busy"));
+            Assert.Contains("'statusline'", DecodeLauncher(BridgeWiring.StatuslineCommand(true, Exe)));
+            Assert.Contains("'activity' 'busy'", DecodeLauncher(BridgeWiring.ActivityCommand(true, Exe, "busy")));
         }
 
         [Fact]
@@ -39,8 +40,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var spacey = @"C:\Program Files\Logi\ClaudeConsole\claude-console-hook.exe";
 
             var command = BridgeWiring.StatuslineCommand(true, spacey);
-            Assert.Contains($"if exist \"{spacey}\"", command);
-            Assert.EndsWith($"\"{spacey}\" statusline", command);
+            Assert.Contains($"Test-Path -LiteralPath '{spacey}'", DecodeLauncher(command));
+            Assert.Contains($"& '{spacey}' 'statusline'", DecodeLauncher(command));
         }
 
         [Fact]
@@ -48,7 +49,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var quoted = "\"" + Exe + "\"";
 
-            Assert.Equal($"cmd.exe /d /c if exist {quoted} {quoted} statusline", BridgeWiring.StatuslineCommand(true, quoted));
+            Assert.Equal(BridgeWiring.StatuslineCommand(true, Exe), BridgeWiring.StatuslineCommand(true, quoted));
         }
 
         [Fact]
@@ -499,8 +500,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var src = ReadShimSource();
 
             Assert.Contains("SessionKeyTopmost(IsCodex)", src);
-            Assert.Contains("name.Equals(\"codex\", StringComparison.OrdinalIgnoreCase)", src);
+            // Through IsExe, like IsClaude: a codex renamed by an in-place update must still match.
+            Assert.Contains("IsExe(name, \"codex\")", src);
             Assert.Contains("@openai\\codex", src);
+        }
+
+        [Fact]
+        public void The_shim_recognises_a_claude_renamed_by_an_in_place_update()
+        {
+            // Claude Code's updater renames the RUNNING claude.exe to claude.exe.old.<epoch-ms>
+            // and .NET reports that as the process name. The 2026-09-11 finding: from the 06:58
+            // auto-update on, every hook in a day-old session climbed past its own Claude.
+            var src = ReadShimSource();
+
+            Assert.Contains("IsExe(name, \"claude\")", src);
+            Assert.Contains("processName.StartsWith(exe + \".exe.\", StringComparison.OrdinalIgnoreCase)", src);
         }
 
         private static String ReadShimSource()

@@ -112,7 +112,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // wiring, so the press must be explained BEFORE Decide() — which can only ever say NoOp
             // there — and the explanation must reach Options+, not just the log.
             var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Core", "Actions", "AnswerCommand.cs"));
-            var body = source.Substring(source.IndexOf("private static void AnswerApproval(", StringComparison.Ordinal));
+            var body = source.Substring(source.IndexOf("static void AnswerApproval(", StringComparison.Ordinal));
 
             var setup = body.IndexOf("LiveStatusFace.SetupWord(bridge.LiveStatusApplies, bridge.LiveStatus)", StringComparison.Ordinal);
             var decide = body.IndexOf("Decide(approve, hasPending", StringComparison.Ordinal);

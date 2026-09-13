@@ -45,10 +45,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // backend's own statement of whether it has a working implementation, and Windows now does.
         public Boolean IsSupported => OperatingSystem.IsWindows();
 
-        // QA's 2.2.0 retest (item 2) saw Yes/No stay inert until Claude Code was restarted, and
-        // the cause is unexplained; the honest face there is still "Restart Claude". Flip this
-        // only on the strength of a Windows log — see IPlatformBridge.SettingsApplyLive (#58).
-        public Boolean SettingsApplyLive => false;
+        // Measured on Windows, twice, on sessions that were never restarted (#58):
+        //   2026-09-10 14:57:44 settings.json wired → 14:58:21 a session started at 14:39 reported
+        //     its status line (37 s, no restart between — docs/windows-qa-2.2.1.md);
+        //   2026-09-11 12:50:52 rewired after an Off → 12:50:57 "Live status: Enabled" from a
+        //     session started the previous evening, and its PermissionRequest hook fired at
+        //     12:57:32 (hook-invoked.log) — so the approval path applies live too, not only the
+        //     status line. The owner watched the Cost key go from the setup word to a value with
+        //     no restart (docs/windows-qa-2.2.2.md, pass 2).
+        // QA's 2.2.0 report that nothing came alive until a restart was #74 wearing this face: with
+        // the hook writing "permission" no press could ever land, restart or not.
+        public Boolean SettingsApplyLive => true;
 
         /// <summary>
         /// Enumerates the process table. Injectable so the discovery logic is testable on any OS —
@@ -420,7 +427,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return null;
             }
 
-            return BoundedProcess.RunForExitCode(exe, args, 15000);
+            return BoundedProcess.RunForExitCode(exe, WindowsTools.Arguments(exe, "inject", args), 15000);
         }
 
         // Resolved LAZILY on every use, not cached at construction: the SDK hands us the plugin
@@ -431,7 +438,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Where the inject helper lives — beside the plugin DLL. See PluginPaths.</summary>
         internal String HelperPath
         {
-            get => _helperPath ?? PluginPaths.PackagedFile("claude-console-inject.exe");
+            get => _helperPath ?? WindowsTools.PathFor("inject");
             set => _helperPath = value;
         }
 
@@ -450,10 +457,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         //
         // 2. FocusSession — SOLVED, one level below wt: the tab's label IS the session's console
         //    title, readable via AttachConsole, and UI Automation can select the TabItem carrying
-        //    it. claude-console-focus.exe does exactly that (it alone needs the Windows Desktop
-        //    runtime, which is why it is a third exe and not an inject verb). When the helper is
-        //    missing or can't identify the tab, we degrade to raising the terminal window — the
-        //    pre-helper behavior.
+        //    it. claude-console-focus.exe does exactly that, driving UI Automation through COM so
+        //    it trims like the other helpers (it is a third exe rather than an inject verb because
+        //    a UIA walk belongs in a process that exits). When the helper is missing or can't
+        //    identify the tab, we degrade to raising the terminal window — the pre-helper behavior.
         // ------------------------------------------------------------------------------------------
 
         /// <summary>Runs a terminal command. Injectable so navigation is testable without Windows.</summary>
@@ -491,9 +498,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         public Boolean CaptureScreenshotInteractive(String outputPath)
         {
             // Windows' interactive capture (the ms-screenclip: overlay) delivers to the
-            // clipboard, not a file, and reading an image off the clipboard takes an STA thread
-            // plus WinForms — neither belongs in the service process. claude-console-shot.exe
-            // owns the whole dance: launch the overlay, wait for the snip, save the PNG.
+            // clipboard, not a file, and a two-minute wait on an overlay does not belong in the
+            // service process. claude-console-shot.exe owns the whole dance: launch the overlay,
+            // wait for the snip, read the clipboard through Win32, save the PNG.
             var helper = this.ShotHelperPath;
             if (helper == null || !File.Exists(helper))
             {
@@ -503,7 +510,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
             // The helper polices its own 120s deadline and exits fast on a dismissed overlay;
             // the bound here is the backstop, a little above the helper's own.
-            var exit = BoundedProcess.RunForExitCode(helper, new List<String> { outputPath }, 130000);
+            var exit = BoundedProcess.RunForExitCode(helper, WindowsTools.Arguments(helper, "shot", new[] { outputPath }), 130000);
 
             if (exit != 0 || !File.Exists(outputPath))
             {
@@ -519,7 +526,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Path to claude-console-shot.exe. Injectable for tests.</summary>
         internal String ShotHelperPath
         {
-            get => this._shotHelperPath ?? PluginPaths.PackagedFile("claude-console-shot.exe");
+            get => this._shotHelperPath ?? WindowsTools.PathFor("shot");
             set => this._shotHelperPath = value;
         }
 
@@ -555,7 +562,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Where the tab-focus helper lives — beside the plugin DLL. See PluginPaths.</summary>
         internal String FocusHelperPath
         {
-            get => _focusHelperPath ?? PluginPaths.PackagedFile("claude-console-focus.exe");
+            get => _focusHelperPath ?? WindowsTools.PathFor("focus");
             set => _focusHelperPath = value;
         }
 
@@ -565,16 +572,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         private const Int32 FocusExitOk = 0;
         private const Int32 FocusExitRaisedOnly = 4;
 
-        public void FocusSession(String sessionKey)
+        public void FocusSession(String sessionKey) => this.TryFocusSession(sessionKey);
+
+        public Boolean TryFocusSession(String sessionKey)
         {
             if (!WindowsInjection.TryParseSessionKey(sessionKey, out _, out _))
             {
-                return;
+                return false;
             }
 
             var exe = this.FocusHelperPath;
             var runner = this.FocusRunner ?? (exe != null
-                ? args => BoundedProcess.RunForExitCode(exe, args, 10000)
+                ? args => BoundedProcess.RunForExitCode(exe, WindowsTools.Arguments(exe, "focus", args), 10000)
                 : (Func<List<String>, Int32?>)null);
 
             if (runner != null)
@@ -582,12 +591,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 var code = runner(WindowsInjection.FocusArgs(sessionKey));
                 if (code == FocusExitOk)
                 {
-                    return;
+                    return true;
                 }
                 if (code == FocusExitRaisedOnly)
                 {
                     PluginLog.Verbose("WindowsPlatformBridge: focus helper raised the window but couldn't identify the tab");
-                    return;   // the helper already raised the window; wt would add nothing
+                    return false;   // raising a window does not identify the requested tab
                 }
                 PluginLog.Info($"WindowsPlatformBridge: focus helper exit {(code.HasValue ? code.ToString() : "null")} — raising the terminal window instead");
             }
@@ -595,6 +604,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             // Degraded mode: bring the terminal window forward without selecting the tab — the
             // behavior all of Phase 3 had before the focus helper existed.
             this.RunTerminal(WindowsTerminalCli.ArgsFor(TerminalAction.Activate), requiresExistingWindow: true);
+            return false;
         }
 
         public void Alert()
@@ -602,7 +612,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             var exe = this.HelperPath;
             if (exe != null)
             {
-                BoundedProcess.RunForExitCode(exe, new List<String> { "beep" }, 5000);
+                BoundedProcess.RunForExitCode(exe, WindowsTools.Arguments(exe, "inject", new[] { "beep" }), 5000);
             }
         }
 

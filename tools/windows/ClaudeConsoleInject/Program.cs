@@ -17,7 +17,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-internal static class Program
+internal static class InjectProgram
 {
     private const Int32 ExitOk = 0;
     private const Int32 ExitSessionMissing = 2;
@@ -26,7 +26,7 @@ internal static class Program
 
     private const Int32 ErrorAccessDenied = 5;
 
-    private static Int32 Main(String[] args)
+    internal static Int32 Main(String[] args)
     {
         if (!OperatingSystem.IsWindows())
         {

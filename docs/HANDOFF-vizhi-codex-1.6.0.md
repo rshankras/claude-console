@@ -1,5 +1,8 @@
 # Handoff — Vizhi Codex 1.6.0 on Windows
 
+**Integration update (13 September 2026):** see [Vizhi 1.6.1 integration](vizhi-1.6-integration.md)
+for the merged source, automated validation and remaining device gates. The record below is historical.
+
 **Last updated:** 2026-09-04
 **Branch:** `feat/vizhi-codex-1.6.0`
 **Remote:** `origin/feat/vizhi-codex-1.6.0`

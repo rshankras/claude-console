@@ -8,8 +8,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// Press once to start listening (you'll hear a "Tink"), say the project name
     /// (e.g. "indie app autopilot", "headroom", "asc metadata"), press again to stop.
     /// The bundled whisper helper transcribes locally, the plugin fuzzy-matches the phrase
-    /// against discovered or configured project folders, then opens a new terminal tab, cd's into
-    /// the match, and launches the active agent — one gesture, no typing.
+    /// against your project folders (scanned live under ~/Work/MyApps and ~/Work), then opens
+    /// a new Terminal tab, cd's into the match, and launches claude — one gesture, no typing.
     ///
     /// Reuses the same recorder as VoiceCommand; only the stop handler differs
     /// (BridgeManager.StopVoiceCaptureForProject → NavigateToProjectByVoice). It also reuses the
@@ -19,10 +19,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     {
         private readonly ListeningFace _face;
         private readonly FailureFace _fail;
-        private Boolean _settingUp;
+        private String StartupLabel => BridgeManager.Instance.Voice.StartupLabel(VoiceIntent.Project);
 
         public ProjectVoiceCommand()
-            : base(displayName: "Go to Project", description: $"Speak a project name — opens a new tab, cd's there, and launches {BridgeManager.Instance.Agent.DisplayName}", groupName: "Terminal")
+            : base(displayName: "Go to Project", description: "Speak a project name — opens a new tab, cd's there, and launches claude", groupName: "Terminal")
         {
             _face = new ListeningFace(() => this.ActionImageChanged());
             _fail = new FailureFace(() => this.ActionImageChanged());
@@ -32,13 +32,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             BridgeManager.Instance.OnVoiceFailed += (intent, text) =>
             {
                 if (intent == VoiceIntent.Project) { _fail.Show(text); }
-            };
-
-            BridgeManager.Instance.OnVoiceSetupChanged += (intent, active) =>
-            {
-                if (intent != VoiceIntent.Project) { return; }
-                _settingUp = active;
-                this.ActionImageChanged();
             };
 
             // The engine owns "is the mic running, and for whom" (#28). This key only reflects it,
@@ -67,12 +60,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            _settingUp ? "Setting up" : (_face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Go to Project"));
+            StartupLabel ?? (_face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Go to Project"));
 
         // Listening wins over a stale failure: a new press means a new attempt.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
-            _settingUp
-                ? KeyImage.Render(imageSize, "Setting up", KeyImage.Amber)
+            StartupLabel != null
+                ? KeyImage.Render(imageSize, StartupLabel, KeyImage.Purple, "project")
                 : _face.IsActive
                 ? KeyImage.Render(imageSize, "Listening", KeyImage.Green, _face.Icon)
                 : _fail.IsActive

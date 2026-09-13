@@ -13,6 +13,167 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.2.2] — 2026-09-13
+
+Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and Windows (#74–#80) —
+plus what three Windows device passes and the review of those fixes turned up on the way.
+Verified on the keypad on macOS (12 September) and Windows (10–12 September); run sheets in
+`docs/windows-qa-2.2.1.md` and `docs/windows-qa-2.2.2.md`. The package is 16.5 MiB, down from
+21.3 MiB.
+
+### From the device passes and the review (10–12 September)
+- Reduce package size by sharing one self-contained Windows runtime across typing, tab focus,
+  voice capture, and screenshots. The hook retains its separate executable and watchdog.
+  The speech model continues to download on first use.
+
+- Known issue ([#88](https://github.com/rshankras/claude-console/issues/88), P3): Windows
+  session switching can fail for manually renamed Terminal tabs. Clear the custom tab name
+  to restore automatic titles. Failed focus leaves session routing unchanged.
+- Windows status and activity hooks use an encoded PowerShell launcher that survives Git Bash
+  argument conversion. Existing owned commands are upgraded while preserving unrelated settings.
+- Settings edits and macOS uninstall cleanup retain the original text of untouched values,
+  including inline foreign hooks, comments, spacing, line endings, and UTF-8 BOMs. Removing
+  plugin hooks no longer reformats the user's whole settings file.
+- Windows session focus refuses an ambiguous title when identity verification fails, instead
+  of selecting the first matching tab and reporting success.
+- Windows voice keys show **Starting** until the microphone is ready. A second press during
+  startup cancels and stops the helper before another capture can start. The recording face
+  appears only after the helper acknowledges microphone readiness.
+
+- The Model key now keeps the same brain icon for every model. Model-specific colors and their
+  live-state repaint subscriptions were removed; pressing the key still opens the model picker.
+- Windows creates the plugin's runtime home (`~/.claude/claude-console/`) on load, as macOS
+  already did, so turning live status on with your own status line in place always records the
+  chain file that restores it when you turn live status off. Found by running the C# suite on
+  Windows, which is now green there as well as on macOS.
+- **Windows: New Claude, New Claude (Window) and New Tab start in your home folder** (#85).
+  Windows Terminal's default profile has no starting directory, so a tab the plugin opened
+  inherited the plugin service's own folder under Program Files; the keypad then named the
+  session "LogiPluginService". The plugin now passes your home directory, which is what the
+  terminal uses when you open a tab yourself. Go to Project was unaffected — it always named
+  the project's folder.
+- **Yes/No find the one session with a prompt up even when another session sits idle.** With
+  nothing pinned, the answer keys fall back to the single session waiting on you. A session idle
+  at its prompt for a minute counts as waiting too, so one prompt plus one idle session left the
+  keys with no target — on Windows, which has no frontmost tab to break the tie, that was any
+  second session (Logitech's "Mode B"). A pending approval now outranks an idle prompt; two
+  pending approvals still refuse to guess.
+- **Windows says "Turned on", not "Restart Claude", after live status is switched on** (#58).
+  Running sessions pick the new hooks and status line up by themselves on Windows exactly as on
+  macOS — measured on two days on sessions started hours earlier, including the approval hook. The
+  restart wording had been kept on the strength of QA's 2.2.0 report, which was #74 in disguise.
+- **Windows: a session survives a Claude Code auto-update.** Claude Code updates itself in place
+  while sessions run; Windows cannot overwrite a running program, so the updater renames it
+  (`claude.exe.old.<stamp>`) and the running session carries that name from then on. The hook
+  exe matched the name `claude` only, so from the update onward every hook in an already-running
+  session wrote only the shared fallback: Cost/Context showed the last writer's numbers, no
+  approval ever attached to the session, and Yes/No answered "no pending approval" on a session
+  the plugin had pinned and named. Found on 2026-09-11 on a session up since the evening before,
+  with the 06:58 auto-update as the cut-over. The hook and the plugin's discovery now apply one
+  rule for a renamed running image; `claude-console-hook selftest` prints the ancestry walk hop
+  by hop so this class of miss is visible in the field.
+
+### Retest review follow-up
+- Windows screenshot and tab-focus helpers no longer need the .NET Desktop Runtime at all, so
+  they start on clean installations without a separate runtime download. The screenshot helper
+  reads the clipboard through Win32 and takes the snipping overlay's own PNG; the tab-focus
+  helper drives UI Automation through COM. Both are now self-contained and trimmed like the
+  other helpers, about 12 MB each instead of 68 MB. The executable-only staging step rejects
+  publish output that leaves runtime dependencies out.
+- Go to Project preserves carrier words that belong to a project name: "go to open source kit"
+  prefers `open-source-kit` over `source-kit`. Equally good folders produce No match instead of
+  depending on discovery order.
+- Windows destructive-command warnings recognize every `-Recurse` and unambiguous `-Force`
+  abbreviation, including `-Recu` and `-Recurs`.
+- macOS cleanup serializes settings edits and recovery-data removal across processes, uses a
+  unique temporary file, and retains recovery data after errors or lock contention. Hooks only
+  record successful uninstall cleanup and retry failed attempts.
+
+### Fixed — Windows
+- **Yes/No answer again** (#74, Windows retest item 2 — every press was discarded as "no pending
+  approval on (no target)"). The Windows hook exe wrote the PermissionRequest hook's argv verb,
+  `permission`, as the session's state; the plugin only ever recognises `waiting`, which is the word
+  the bash hook translates to on macOS. So on Windows no session ever counted as waiting: the
+  pending payload sat correctly on disk beside it and was never read (a pinned session "yields no
+  pending approval"), and the routing fallback "exactly one session waiting" could never fire (an
+  un-pinned press found "no target"). Discovery, pinning and the status data all worked, which is
+  why it looked like a routing defect. The exe now translates like the bash hook and the plugin
+  normalises the word whichever hook wrote it; the slot key reads **Allow?** while a menu is up
+  instead of **Complete**. Nothing had asserted the word; `ActivityWordTests` does now.
+- **Voice refusals show their reason on the key** (#76, item 6). The three Windows refusals in
+  `StartVoiceCapture` — no helper exe, no `whisper-cli.exe`, speech model not ready — were a log
+  line and a beep; macOS already put **Model loading** on the key. They now go through the same
+  path: **No helper**, **No whisper**, **Model loading**.
+
+### Fixed
+- **A dictation that cannot be typed says so** (#75, item 6). The transcript path discarded the
+  platform's injection outcome, so a dictation with no target session — nothing pinned, no single
+  obvious session — was transcribed and dropped with a WARN line, indistinguishable on the device
+  from one that landed (QA: three delivered while pinned, four of five lost after un-pinning). The
+  pressed key now reads **No target**, or **Not typed** when the session was known but the
+  keystrokes did not land, and the log keeps the words. `VoiceDeliveryTests`.
+- **The speech model download is announced** (#76). One Options+ card when the 142 MB one-time
+  download starts (the key says Model loading until it finishes; press again afterwards), one when
+  it is ready, one when it fails with the reason. Before, the first voice press on a fresh install
+  started a multi-minute download with a log line as the only notice, and a failed download
+  silently restarted on the next press.
+- **Go to Project matches names that contain carrier words, and says when it matched nothing**
+  (#77, item 8). Carrier words ("go to", "open the … project") are now dropped whole-word off the
+  edges of the phrase only; folder names are never stripped. The old blind substring `Replace` ran
+  over both — "the" ate the middle of `theme`, "open" the front of `openai`, and "claude" was cut
+  out of every `claude-*` folder, so a project called `claude` could not be reached at all. Both
+  readings of the phrase are scored and the best wins, so "go to project claude code" reaches
+  `claude-code` over `vscode-ext`. No match now reads **No match** on the key, the log prints the
+  phrase as compared (QA read the raw phrase in the old line as proof nothing was stripped), and
+  the first miss per load posts an Options+ card naming the candidates' source and the
+  `project-roots` file, which until now was named only in that log line.
+
+### Fixed — macOS
+- **A settings.json write hands the file back the way it was found** (#72, retest finding B).
+  The plugin parses the whole document and serialises it again, and the default writer made that
+  visible: every quote, ampersand, apostrophe, angle bracket and non-ASCII character came back as
+  a `\uXXXX` escape and the trailing newline was gone — valid JSON, functionally identical, and a
+  whole-file diff for anyone who keeps `~/.claude` in git, applied to entries the plugin does not
+  own (on QA's machine, another plugin's ten hooks), on every write including the on-load
+  migration 2.2.1 added. Reproduced against the shipped 2.2.1: one write turned an em dash inside
+  the user's own permission description into `—`. The writer now uses the relaxed encoder,
+  and reads the indentation, line ending, trailing newline and byte-order mark off the file and
+  writes them back as found; a file that does not exist yet gets Claude Code's own shape. The
+  cleanup script's `--unwire` had the same defect for non-ASCII text and is fixed the same way.
+- **The hooks take themselves out after an Options+ uninstall** (#73, retest finding C; #55).
+  Options+ removes the plugin folder and nothing else — the SDK gives a plugin no uninstall
+  moment — so the five hooks and the status line kept running against a plugin that was gone,
+  recording every prompt and permission request with nothing left to read them, at three
+  status-line runs a second, and 2.2.1's guard only helped once the runtime folder was deleted
+  too. The hooks can see what the plugin cannot. On every load the plugin now records where it is
+  installed (the package folder under the service's Plugins directory, or the dev `.link`) in
+  `~/.claude/claude-console/plugin-home`; a hook that finds that place missing records nothing,
+  and once it has been missing for over a minute across two runs it runs the surgical unwire
+  itself (rolling backup, your own entries untouched, the Off marker set) and leaves an
+  `unwired-after-uninstall` breadcrumb. One miss is not enough on purpose: an Options+ update
+  replaces the folder for a few seconds, and the service restarts on its own — QA's suggested
+  unwire-on-Unload would have switched live status off on every one of those. The runtime home
+  (voice helper, speech model) is left for `uninstall.sh`, which the plugin still installs.
+  macOS only for now; the Windows shim keeps the 2.2.1 behaviour (#55).
+
+### Changed
+- **The card button link works again** (#71, retest finding A; #68). The repository it points
+  at is public again as of 9 September; nothing in the package changed.
+- **Every user-facing link points at vizhi.dev, and the licence is the EULA.** The three card
+  buttons baked into the plugin (how to undo the settings edit, the Windows Terminal rule, voice),
+  both packages' homepage, support and licence fields, and the README's download and support
+  links now open vizhi.dev — its product pages and FAQ carry the same content the README sections
+  did. Nothing a user can reach points at the source repository any more: it went private on
+  2 September and every card button was a 404 for a week (#68, #71), and it will be closed for
+  good. With that, the MIT licence file is gone and the packages declare the
+  [EULA](https://vizhi.dev/eula/) as their licence; whisper.cpp and the Whisper model stay MIT and
+  ship their licence texts. The vizhi.dev anchors the plugin uses are frozen — a rename needs a
+  redirect first — and `CC_CHECK_LINKS=1` makes the test suite fetch them.
+- **The Windows Terminal notice no longer claims Yes/No and voice "still work here"** (#61,
+  Windows retest item 16). QA caught it mid-way through a run in which neither did. It now says
+  they do not need Windows Terminal but do need a target session, and to pin a session slot if a
+  press is refused.
+
 ## [2.2.1] — 2026-09-04
 
 Answers to Logitech QA's retest of 2.2.0 (1 September).

@@ -62,10 +62,11 @@ macOS user account** (or on another Mac) before each release.
   does not exist). Press Cost once: it flashes *Press again*, a dialog opens mid-screen (*Not now* / *Turn on*)
   naming the exact change, and a card appears in Options+; click **Not now** — the file is still
   unchanged and the flash clears. Press Cost once more and click **Turn on** (or press Cost again
-  within 15 s): a notification and a card confirm the edit, the keys read **Restart Claude**, and
+  within 15 s): a notification and a card confirm the edit, the keys read **Turned on**, and
   `~/.claude/settings.json` now holds five hooks + a `statusLine` (backup at
   `~/.claude/settings.json.claude-console.bak`).
-  Start a fresh `claude` and confirm the Model / Cost / Context / Activity keys show live data.
+  In the session that was already running, confirm the Model / Cost / Context / Activity keys show
+  live data within a few seconds — no restart is needed on either platform since 2.2.2 (#58).
   Hold Cost (a long press) and click **Turn off**: the keys read **Off** and the file carries none
   of the plugin's entries.
 

@@ -37,6 +37,22 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal const String Failed = "Voice failed";
 
         /// <summary>
+        /// Transcribed fine, but there was no session to type into: nothing pinned and no single
+        /// obvious session. Pin a session slot. Before this, a dropped dictation and a delivered
+        /// one looked identical from the device (2.2.1 Windows retest, item 6).
+        /// </summary>
+        internal const String NoTarget = "No target";
+
+        /// <summary>The session was known but the keystrokes did not land (terminal gone, elevated). The log has the outcome.</summary>
+        internal const String NotTyped = "Not typed";
+
+        /// <summary>whisper-cli is not in the runtime home. Reinstall the package.</summary>
+        internal const String NoWhisper = "No whisper";
+
+        /// <summary>"Go to Project" heard a phrase that matched no known project. Check the log for the candidates.</summary>
+        internal const String NoMatch = "No match";
+
+        /// <summary>
         /// Map the helper's <c>.error</c> sidecar to the key's words. The sidecar carries a full
         /// sentence for the log; the key gets the two words that tell the user what to do.
         /// </summary>

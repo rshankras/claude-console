@@ -1,9 +1,9 @@
-# Vizhi for Codex 1.6.0 — preview notes
+# Vizhi for Codex 1.6.1 — preview notes
 
 *Preview build, pending Marketplace submission. It can be installed beside Claude Console 2.2.0;
 both products are universal and claim no terminal application.*
 
-*1.6.0 brings the shared Claude Console 2.2.0 QA work into the Codex product:*
+*1.6.1 brings the shared Claude Console 2.2.0 QA work into the Codex product:*
 
 - *Universal packaging lets Vizhi and Claude Console coexist; neither owns Terminal.*
 - *The Logitech 2026-08 key design, state palette and Yes/No tiles are shared. The active session
@@ -21,8 +21,8 @@ both products are universal and claim no terminal application.*
 A second keypad product from the Claude Console codebase: **Vizhi for Codex** gives OpenAI's
 Codex CLI the same physical control surface Claude Console gives Claude Code — live session
 keys, one-press prompts and git verbs, native `/review`, screenshot into the running
-conversation, and fully offline voice dictation. **Risk-graded approval lighting (amber/red)
-is macOS-only** — see Windows, below.
+conversation, and fully offline voice dictation. **Approval observation is implemented on both platforms; the integrated build still needs
+physical keypad validation** — see Windows, below.
 
 The point of the preview is as much the **architecture** as the product: one engine now builds
 a package per agent. `src/Core` is agent-neutral (platform bridges, session grid, file IPC,
@@ -53,39 +53,30 @@ Two design rules the product is built around:
 - **A press never lands in the wrong window.** Every typing key resolves Codex's own Terminal
   tab and types there atomically, or beeps and types nothing.
 
-## Verified on hardware (macOS, Apple Silicon)
+## Earlier hardware coverage (macOS, Apple Silicon)
+
+These observations predate the integration candidate; they are not a 1.6.1 release sign-off.
 
 Session discovery · hook state bridge · live busy/waiting/ready · project name · focus
 tracking and tab switching · risk-graded approvals (amber/red) · model + context display ·
 voice (submit and draft) · screenshot → current conversation · native `/review` · all prompt,
 git, and navigation keys.
 
-**Windows uses official hooks plus a recovery fallback (1.6.0).** Current Codex supports the
-Windows-specific `commandWindows` hook command and publishes `PermissionRequest`, so session
-state and risk-graded approval lighting work on Windows too. The plugin also reads Codex's rollout
-transcript as a fallback for project name, busy/done/ready, and best-effort context. Exact hook
-approval state always wins over a rollout heartbeat.
+**Windows uses hooks plus a rollout recovery fallback.** The Vizhi branch observed real
+lifecycle hook launches on Windows. For the tested Codex CLI 0.152.0 code-mode approval menus,
+`PermissionRequest` was not dispatched; Vizhi derives that waiting edge from the matching
+escalated call/output pair in the transcript. Hook approval state takes precedence over ordinary
+rollout heartbeats. These are observations from the branch tests, not a promise about every CLI
+version. Verify the Codex version used for the release candidate.
 
-Tab-switching on Windows
-selects by identity, even for identically-titled tabs (verified on hardware): unique titles
-match directly, and on a duplicate the switcher briefly retitles the target session's own
-console to a nonce, selects the one tab that repaints to it, and restores the title — the tab
-is found by which console it is, not what it says. One caveat: avoid Windows Terminal's
-"Rename tab", which detaches the label from the console title the switcher works through.
-Both platforms now use the full hook bridge, including approvals.
-
-Two Windows repairs worth knowing, both from the same hardware session: if codex ALSO fails its
-own shell commands with "the local command sandbox failed to start", copy
-`codex-windows-sandbox-setup.exe` and `codex-command-runner.exe` from the release's
-`codex-resources\` folder to beside `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe` —
-codex does not look where its own installer put them. And this plugin now grants codex's sandbox
-users access to its install and IPC directories automatically, so the day OpenAI fixes the hook
-runner, hooks light up with no plugin update needed.
+The integrated package needs a fresh physical pass for approval lighting, Yes/No, and multiple
+session switching. A failed tab focus leaves routing unchanged. Manually renamed Windows Terminal
+tabs remain a known limitation (#88); clear the custom name to restore automatic titles.
 
 ## Install
 
 1. Logi Options+ **6.4+**, MX Creative Keypad, [Codex CLI](https://developers.openai.com/codex/cli) installed natively.
-2. Double-click `VizhiCodex_1.6.0.lplug4` → install via Options+.
+2. Double-click `VizhiCodex_1.6.1.lplug4` → install via Options+.
 3. Import `VizhiCodex-Keypad.lp5` on macOS or `VizhiCodex-Windows.lp5` on Windows. The plugin is
    universal and intentionally installs no application or layout of its own.
 4. **Trust the hooks on macOS and Windows.** At your next Codex session start you'll see **"Hooks need
@@ -128,7 +119,7 @@ They do two separate things, and both are cross-platform:
 The two-seam design that makes this a product line rather than a fork — a platform bridge
 hiding the OS, an agent adapter hiding the CLI — is in
 [docs/multi-agent-architecture.md](https://github.com/rshankras/claude-console/blob/vizhi-codex/v1.4.4/docs/multi-agent-architecture.md).
-A third agent is an adapter plus a thin product folder; the engine, the 550-test suite, and
+A third agent is an adapter plus a thin product folder; the engine, the shared regression suite, and
 the packaging are shared. Also in the codebase: the risk classifier behind the approval keys,
 and the fully offline voice pipeline (Developer-ID signed, notarized helper + whisper.cpp —
 no network).

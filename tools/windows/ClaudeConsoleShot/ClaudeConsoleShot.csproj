@@ -6,16 +6,13 @@
       hand to debug a capture that never lands.
     -->
     <OutputType>Exe</OutputType>
-    <!--
-      net8.0-windows + UseWindowsForms, because Windows' interactive capture (the ms-screenclip:
-      overlay) delivers its result to the CLIPBOARD, not a file — and reading an image off the
-      clipboard takes an STA thread plus WinForms' Clipboard/Image, which must never run inside
-      the Logi service process. The helper ships self-contained because Options+ keeps its own
-      .NET runtime private; a framework-dependent apphost cannot discover it and exits before
-      opening the overlay.
-    -->
+    <StartupObject>ShotProgram</StartupObject>
+    <!-- net8.0-windows for the platform analyser, but NO UseWindowsForms: the clipboard is read
+         through Win32, and the PNG is the overlay's own or comes from GDI+ through the
+         System.Drawing.Common package, so the Desktop Runtime is not needed. It once was (the
+         WinForms Clipboard class), which made this exe either framework-dependent and broken on
+         clean machines (#83) or self-contained and 68 MB. -->
     <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
     <RollForward>LatestMajor</RollForward>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -23,11 +20,19 @@
     <RootNamespace>ClaudeConsoleShot</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
 
-    <!-- Ships inside the plugin package, beside the plugin DLL. -->
+    <!-- Ships inside the plugin package, beside the plugin DLL. Self-contained and trimmed like
+         the inject and hook helpers: the Plugin Service carries a PRIVATE runtime, so no
+         machine-wide .NET can be assumed. Partial trimming keeps this assembly and the drawing
+         package whole and trims only the framework, which is where the size is. -->
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <SelfContained>true</SelfContained>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+  </ItemGroup>
 
 </Project>

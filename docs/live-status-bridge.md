@@ -24,7 +24,9 @@ When you turn it on, the plugin merges exactly this — appending only hooks tha
 }
 ```
 
-(The plugin writes the absolute path rather than `$HOME`.) Each command checks that its handler still exists before running it: an Options+ uninstall removes the plugin but cannot remove this wiring, and without the guard a user who then deleted `~/.claude/claude-console/` saw "Stop hook error occurred" on every turn (#55). With it, a missing handler is a silent no-op. Windows uses the same entries with an explicit command-shell guard, for example `cmd.exe /d /c if exist "C:\…\claude-console-hook.exe" "C:\…\claude-console-hook.exe" activity busy`.
+(The plugin writes the absolute path rather than `$HOME`.) The rest of the file is handed back the way it was found — same indentation, line ending and trailing newline, quotes and non-ASCII text left literal (#72) — so the diff of a *Turn on* is the entries above and nothing else.
+
+Each command checks that its handler still exists before running it: an Options+ uninstall removes the plugin but cannot remove this wiring, and without the guard a user who then deleted `~/.claude/claude-console/` saw "Stop hook error occurred" on every turn (#55). With it, a missing handler is a silent no-op. The scripts also check that the plugin itself is still installed (#73): the plugin records its location in `~/.claude/claude-console/plugin-home` on every load, a hook that finds that place gone records nothing, and once it has been gone for over a minute across two runs the hook runs the surgical unwire itself and sets the Off marker — see [uninstall.md](uninstall.md). Windows uses the same entries with an explicit command-shell guard, for example `cmd.exe /d /c if exist "C:\…\claude-console-hook.exe" "C:\…\claude-console-hook.exe" activity busy`, and no liveness check yet.
 
 The status‑line handler captures session state for the plugin and prints no visible status line. Claude Code reads hooks and `statusLine` at session start, so the keys come alive on your **next** session.
 

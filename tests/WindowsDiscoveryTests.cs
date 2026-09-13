@@ -209,6 +209,29 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("pid-1234-", sessions.Single());
         }
 
+        [Theory]
+        [InlineData("claude.exe.old.1789090133131")]   // what Claude Code's in-place updater leaves a running session named
+        [InlineData("CLAUDE.EXE.old.1")]
+        public void A_claude_renamed_by_an_in_place_update_is_still_a_session(String name)
+        {
+            // 2026-09-11: a session up since the previous evening was renamed by the 06:58
+            // auto-update. WMI kept reporting the creation-time name so this scan never noticed,
+            // but the hook exe reads the live image name and stopped minting the session's key.
+            // Both sides now apply the same rule, pinned here and in WindowsHookContractTests.
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { Proc(1234, name, cmd: "claude --resume abc") }, AgentProcessMatcher.ClaudeCode);
+
+            Assert.Single(sessions);
+            Assert.Equal("claude.exe", WindowsProcessWatcher.RunningImageName(name).ToLowerInvariant());
+        }
+
+        [Fact]
+        public void An_ordinary_name_is_left_alone()
+        {
+            Assert.Equal("claude", WindowsProcessWatcher.RunningImageName("claude"));
+            Assert.Equal("claude.exe", WindowsProcessWatcher.RunningImageName("claude.exe"));
+            Assert.Equal("node.exe", WindowsProcessWatcher.RunningImageName("node.exe"));
+        }
+
         [Fact]
         public void A_process_with_no_readable_command_line_still_counts_when_named_claude()
         {

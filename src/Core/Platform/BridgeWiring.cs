@@ -115,14 +115,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// moment — #55), so a user who then deletes ~/.claude/claude-console/ was left with five
         /// hooks and a status line pointing at nothing: Claude Code raised "Stop hook error occurred"
         /// on every turn (reproduced 2026-09-03). With the guard, a missing script is a silent no-op
-        /// and the handler's own exit code still propagates when it is there. Windows names cmd.exe
-        /// explicitly so the guard has stable semantics instead of depending on Claude Code's
-        /// current command runner.
+        /// and the handler's own exit code still propagates when it is there. Windows uses an
+        /// encoded PowerShell launcher so Git Bash cannot rewrite its command switches or paths.
         /// </summary>
         /// <param name="handlerPath">bash script path (macOS) or hook exe path (Windows).</param>
         internal static String StatuslineCommand(Boolean isWindows, String handlerPath) =>
             isWindows
-                ? $"cmd.exe /d /c if exist {Quote(handlerPath)} {Quote(handlerPath)} statusline"
+                ? WindowsCommand(handlerPath, "statusline")
                 : $"[ ! -f {Quote(handlerPath)} ] || bash {Quote(handlerPath)}";
 
         /// <summary>
@@ -132,7 +131,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// </summary>
         internal static String ActivityCommand(Boolean isWindows, String handlerPath, String state) =>
             isWindows
-                ? $"cmd.exe /d /c if exist {Quote(handlerPath)} {Quote(handlerPath)} activity {state}"
+                ? WindowsCommand(handlerPath, "activity", state)
                 : $"[ ! -f {Quote(handlerPath)} ] || bash {Quote(handlerPath)} {state}";
 
         /// <summary>
@@ -202,7 +201,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         internal static Boolean IsOurs(String command) =>
             command != null &&
             (command.Contains(MacMarker, StringComparison.OrdinalIgnoreCase) ||
-             command.Contains(WindowsMarker, StringComparison.OrdinalIgnoreCase));
+             command.Contains(WindowsMarker, StringComparison.OrdinalIgnoreCase) || IsWindowsLauncher(command));
 
         /// <summary>
         /// Is this hook entry's command ours? The idempotence check for the activity hooks —
@@ -213,7 +212,38 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         internal static Boolean IsOurHook(String command) =>
             command != null &&
             (command.Contains(MacActivityMarker, StringComparison.OrdinalIgnoreCase) ||
-             command.Contains(WindowsMarker, StringComparison.OrdinalIgnoreCase));
+             command.Contains(WindowsMarker, StringComparison.OrdinalIgnoreCase) || IsWindowsLauncher(command));
+
+        // Git Bash rewrites cmd.exe /d and /c as paths, leaving cmd interactive and making
+        // it execute the JSON payload. EncodedCommand passes literal PowerShell source through
+        // Bash, PowerShell and cmd without another round of path or quote interpretation.
+        internal static String WindowsCommand(String handlerPath, params String[] arguments)
+        {
+            var path = handlerPath.Trim('"');
+            String Literal(String value) => "'" + value.Replace("'", "''") + "'";
+            var script = "# " + WindowsMarker + "\n" +
+                "$ProgressPreference = 'SilentlyContinue'; " +
+                "$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); " +
+                "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); " +
+                $"if (Test-Path -LiteralPath {Literal(path)} -PathType Leaf) {{ " +
+                "$read = [Console]::In.ReadToEndAsync(); if (-not $read.Wait(5000)) { exit 0 }; " +
+                $"$read.Result | & {Literal(path)} " +
+                String.Join(" ", arguments.Select(Literal)) + "; exit $LASTEXITCODE }";
+            return "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand " +
+                Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+        }
+
+        private static Boolean IsWindowsLauncher(String command)
+        {
+            const String prefix = "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ";
+            if (!command.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) { return false; }
+            try
+            {
+                var source = System.Text.Encoding.Unicode.GetString(Convert.FromBase64String(command[prefix.Length..]));
+                return source.StartsWith("# " + WindowsMarker + "\n", StringComparison.Ordinal);
+            }
+            catch (FormatException) { return false; }
+        }
 
         /// <summary>
         /// Take our wiring back OUT of a settings document, and nothing else (#31).

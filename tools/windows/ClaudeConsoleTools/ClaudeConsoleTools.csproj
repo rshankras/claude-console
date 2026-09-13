@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <StartupObject>ToolsProgram</StartupObject>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>claude-console-tools</AssemblyName>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- One runtime, four independent invocations. No recorder/UIA work runs inside the host
+         plugin or the frequently invoked hook. Standalone projects remain useful for diagnostics. -->
+    <Compile Include="..\ClaudeConsoleInject\Program.cs" Link="Inject.cs" />
+    <Compile Include="..\ClaudeConsoleFocus\Program.cs" Link="Focus.cs" />
+    <Compile Include="..\ClaudeConsoleFocus\TabSelection.cs" Link="TabSelection.cs" />
+    <Compile Include="..\ClaudeConsoleVoice\Program.cs" Link="Voice.cs" />
+    <Compile Include="..\ClaudeConsoleShot\Program.cs" Link="Shot.cs" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+  </ItemGroup>
+</Project>

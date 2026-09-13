@@ -8,6 +8,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.Net.Http;
     using System.Security.Cryptography;
     using System.Text;
+    using System.Text.Encodings.Web;
     using System.Text.Json;
     using System.Text.Json.Nodes;
     using System.Threading;
@@ -46,6 +47,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Written by the helper INSTEAD of a transcript when dictation failed outright. Its whole
         // purpose is to make a failure distinguishable from silence — see the poll loop below.
         private static String VoiceErrorFile => VoiceTranscriptFile + ".error";
+        private static String VoiceReadyFile => VoiceTranscriptFile + ".ready";
 
         /// <summary>
         /// Is the microphone running, and where is the result going? Owned here rather than by the
@@ -87,6 +89,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static readonly String[] RecoveryScripts = { "uninstall.sh" };
         private static String StatuslineChainFile => Path.Combine(ClaudeConsoleHome, "statusline-chain");
         private static String BridgeOptOutFile => Path.Combine(ClaudeConsoleHome, "no-autowire");
+        // Where the plugin is installed, written on every load for the hooks' liveness check (#73):
+        // an Options+ uninstall removes that place and nothing else, and the hooks — which outlive
+        // the plugin — take the wiring out themselves once it has been gone for over a minute.
+        private static String PluginHomeFile => Path.Combine(ClaudeConsoleHome, "plugin-home");
+        private static String PluginMissingSinceFile => Path.Combine(ClaudeConsoleHome, "plugin-missing-since");
 
         // Speech model — fetched on first use if absent (see EnsureVoiceModel). base.en ≈ 142 MB.
         private static String VoiceModelFile => Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
@@ -176,22 +183,6 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// already, so that is safe — and always AFTER the beep, so sound and face agree.
         /// </summary>
         internal event Action<VoiceIntent, String> OnVoiceFailed;
-
-        /// <summary>
-        /// The first packaged Windows voice launch verifies and, when needed, copies the bundled
-        /// whisper runtime. That work can take several seconds, so voice keys show an explicit
-        /// setup face until the recorder is actually ready.
-        /// </summary>
-        internal event Action<VoiceIntent, Boolean> OnVoiceSetupChanged;
-
-        private Int32 _windowsVoiceRuntimeChecked;
-        private Int32 _windowsVoiceSetupInProgress;
-
-        private void SetVoiceSetup(VoiceIntent intent, Boolean active)
-        {
-            try { OnVoiceSetupChanged?.Invoke(intent, active); }
-            catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: OnVoiceSetupChanged handler failed"); }
-        }
 
         // The single exit for a dictation that did not produce text: log the detail, beep, and put
         // the user-facing words on the key that was pressed. Before this, three of the four ways a
@@ -790,7 +781,20 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return active;
             }
 
-            // 2. Exactly one session waiting on you — the obvious thing to answer.
+            // 2. Exactly one session with an approval pending — the obvious thing to answer. A
+            //    session idling at its prompt is "waiting" too (#51), and on Windows, where there
+            //    is no frontmost tab to fall back on, every session left alone for a minute is; so
+            //    counting those meant that with one prompt up and one session idle, Yes/No had
+            //    "(no target)" — QA's Mode B (2.2.1 retest item 2, a 17-press failure run), seen
+            //    again on the 2.2.2 device pass with three tabs open. A pending approval is the
+            //    thing the answer keys exist for; it outranks an idle prompt.
+            var pending = live.Where(s => !String.IsNullOrEmpty(s.PendingTool)).ToList();
+            if (pending.Count == 1)
+            {
+                return pending[0].SessionKey;
+            }
+
+            //    Failing that, exactly one session waiting at all.
             var waiting = live.Where(s => s.State == "waiting").ToList();
             if (waiting.Count == 1)
             {
@@ -841,6 +845,17 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
+            // Keep routing and the persisted selection unchanged unless the requested tab
+            // was focused. In particular, raising a Windows Terminal window is insufficient.
+            if (!_platform.TryFocusSession(session.SessionKey))
+            {
+                PluginLog.Warning($"BridgeManager: slot {slot} focus unresolved; selection unchanged");
+                this.Notify?.Invoke(PluginStatus.Warning,
+                    $"Could not select session {slot}'s terminal tab. The previous selection is unchanged.",
+                    BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
+                return;
+            }
+
             // Pressing the slot that is ALREADY pinned releases it, and the keys go back to
             // following the frontmost tab. Until now a pin could only be MOVED, never dropped —
             // QA's actual complaint in #25 — and the only ways out were pinning a different session
@@ -850,7 +865,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 this.ClearPin();
                 _activeTty = session.SessionKey;
-                _platform.FocusSession(session.SessionKey);
                 PluginLog.Info($"BridgeManager: unpinned slot {slot} ({session.Project}) — keys follow the frontmost tab again");
                 return;
             }
@@ -858,7 +872,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             _pinnedTty = session.SessionKey;
             Grid.FocusedSession = session.SessionKey;   // survives a plugin reload, like the slot assignments
             _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
-            _platform.FocusSession(session.SessionKey);
             PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.SessionKey} ({session.Project})");
         }
 
@@ -1023,7 +1036,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// Launch the recorder. Returns false when nothing was started, so the caller can clear the
         /// in-flight state rather than leaving the voice keys believing a capture is running (#28).
         /// </summary>
-        public Boolean StartVoiceCapture()
+        private Boolean StartVoiceCapture()
         {
             if (OperatingSystem.IsWindows())
             {
@@ -1096,82 +1109,40 @@ namespace Loupedeck.ClaudeConsolePlugin
         // helper has no embedded fallback, so recording without it would always type nothing.
         private Boolean StartVoiceCaptureWindows()
         {
-            // Package verification hashes every bundled runtime file and a first install copies the
-            // whole tree. Keep that work off the SDK key thread: otherwise the key appears dead and
-            // users start speaking before the recorder exists. Voice remains in its Recording phase
-            // while setup runs; ToggleVoice rejects another press until this worker either launches
-            // the helper or returns the state to Idle.
-            if (Volatile.Read(ref _windowsVoiceRuntimeChecked) == 0)
-            {
-                if (Interlocked.CompareExchange(ref _windowsVoiceSetupInProgress, 1, 0) != 0)
-                {
-                    return true;
-                }
-
-                var intent = Voice.Intent;
-                this.SetVoiceSetup(intent, true);
-                new Thread(() =>
-                {
-                    var started = false;
-                    try
-                    {
-                        this.EnsureVoiceRuntimeInstalledWindows();
-                        if (File.Exists(WindowsWhisperCli))
-                        {
-                            Volatile.Write(ref _windowsVoiceRuntimeChecked, 1);
-                        }
-                        started = this.StartVoiceCaptureWindowsReady();
-                    }
-                    catch (Exception ex)
-                    {
-                        PluginLog.Warning(ex, "BridgeManager.StartVoiceCapture: Windows voice setup failed");
-                    }
-                    finally
-                    {
-                        Interlocked.Exchange(ref _windowsVoiceSetupInProgress, 0);
-                        this.SetVoiceSetup(intent, false);
-                        if (!started)
-                        {
-                            Voice.Finish();
-                        }
-                    }
-                }) { IsBackground = true, Name = "claude-voice-setup" }.Start();
-                return true;
-            }
-
-            return this.StartVoiceCaptureWindowsReady();
-        }
-
-        private Boolean StartVoiceCaptureWindowsReady()
-        {
+            EnsureVoiceRuntimeInstalled();
 
             EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
             TryDelete(VoiceErrorFile);
             TryDelete(VoiceStopFile);
+            TryDelete(VoiceReadyFile);
 
-            var helper = PluginPaths.PackagedFile("claude-console-voice.exe");
+            // Each refusal goes through ReportVoiceFailure so the pressed key says why, as the
+            // macOS path already did. Here they were a log line and a beep: on QA's machine the
+            // first press started the 142 MB model download and the key said nothing at all
+            // (2.2.1 Windows retest, item 6).
+            var helper = WindowsTools.PathFor("voice");
             if (helper == null)
             {
-                PluginLog.Warning("BridgeManager.StartVoiceCapture: claude-console-voice.exe not found in the plugin package");
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.NoHelper, "claude-console-voice.exe not found in the plugin package");
                 return false;
             }
 
             if (!File.Exists(WindowsWhisperCli))
             {
-                PluginLog.Warning($"BridgeManager.StartVoiceCapture: whisper-cli.exe missing at {WhisperBinDir} — voice needs the whisper bundle installed");
-                _platform.Alert();
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.NoWhisper, $"whisper-cli.exe missing at {WhisperBinDir} — voice needs the whisper bundle installed");
                 return false;
             }
 
             if (!EnsureVoiceModel())
             {
-                PluginLog.Info("BridgeManager.StartVoiceCapture: speech model not ready (downloading) — try again shortly");
-                _platform.Alert();
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.ModelLoading, "speech model not ready (downloading) — try again shortly");
                 return false;
             }
 
-            RunDetached(helper, new List<String>
+            if (Voice.Phase == VoicePhase.Cancelling) { return false; }
+            var psi = new ProcessStartInfo(helper) { UseShellExecute = false, CreateNoWindow = true };
+            foreach (var argument in WindowsTools.Arguments(helper, "voice", new List<String>
             {
                 "--maxsec", "60",
                 "--out", VoiceWavFile,
@@ -1179,9 +1150,47 @@ namespace Loupedeck.ClaudeConsolePlugin
                 "--transcript", VoiceTranscriptFile,
                 "--model", VoiceModelFile,
                 "--whisper", WindowsWhisperCli,
-            });
-            PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
-            return true;
+                "--ready", VoiceReadyFile,
+            })) { psi.ArgumentList.Add(argument); }
+            using var process = Process.Start(psi);
+            if (process == null) { return false; }
+            var ready = false;
+            try
+            {
+                var deadline = DateTime.UtcNow.AddSeconds(30);
+                while (DateTime.UtcNow < deadline)
+                {
+                    if (Voice.Phase == VoicePhase.Cancelling) { return false; }
+                    if (File.Exists(VoiceErrorFile))
+                    {
+                        var error = File.ReadAllText(VoiceErrorFile);
+                        this.ReportVoiceFailure(Voice.Intent, VoiceFailure.FromSidecar(error), error);
+                        return false;
+                    }
+                    if (process.HasExited) { break; }
+                    if (File.Exists(VoiceReadyFile) && Voice.MarkReady(DateTime.UtcNow))
+                    {
+                        ready = true;
+                        PluginLog.Info("BridgeManager.StartVoiceCapture: microphone ready");
+                        return true;
+                    }
+                    Thread.Sleep(50);
+                }
+                this.ReportVoiceFailure(Voice.Intent, VoiceFailure.NoResponse,
+                    "voice helper did not acknowledge microphone readiness within 30s");
+                return false;
+            }
+            finally
+            {
+                // Cancellation during cold startup cannot leave a recorder behind. Keep ownership
+                // until it has exited, before ToggleVoice lets another capture reuse these files.
+                if (!ready && !process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit();
+                }
+                TryDelete(VoiceReadyFile);
+            }
         }
 
         // ------------------------------------------------------------------------------------------
@@ -1542,6 +1551,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // Before anything conditional, on purpose — see RecoveryScripts.
                 EnsureRecoveryScriptsInstalled();
                 EnsureBridgeInstalled();
+                RecordPluginHome();
 
                 if (File.Exists(BridgeOptOutFile))
                 {
@@ -1800,7 +1810,11 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (OperatingSystem.IsWindows())
             {
                 // The Windows shim is a compiled exe shipped in the plugin package — there is
-                // nothing to extract, and nothing to chmod.
+                // nothing to extract, and nothing to chmod. The runtime home is still ours to
+                // create: the Off marker, the status-line chain and the plugin-home note live in
+                // it on both platforms, Enable writes the chain there without creating it, and
+                // macOS only gets the directory as a side effect of extracting the scripts below.
+                Directory.CreateDirectory(ClaudeConsoleHome);
                 return;
             }
 
@@ -1829,6 +1843,105 @@ namespace Loupedeck.ClaudeConsolePlugin
                 ExtractEmbeddedScript("ClaudeConsole." + name, Path.Combine(ScriptsDir, name));
             }
         }
+
+        // Tell the hooks where the plugin lives (#73). The SDK gives a plugin no uninstall moment:
+        // Options+ deletes the package folder and the hooks in settings.json carry on, recording
+        // every prompt and permission request with nothing left to read them. The hooks can see
+        // what the plugin cannot — that its folder is gone — so on every load the plugin writes its
+        // installed location here and clears any "missing since" note a hook left while the
+        // service was restarting or Options+ was replacing the folder during an update. Unload()
+        // is the wrong place to unwire: it runs on every service restart and update as well.
+        private static void RecordPluginHome()
+        {
+            var home = InstalledPluginHome(PluginPaths.PluginAssemblyFilePath, PluginPaths.PluginsRoot);
+            if (home == null)
+            {
+                PluginLog.Warning("Live status: plugin path unknown — the hooks cannot tell an uninstall apart");
+                return;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(ClaudeConsoleHome);
+                if (!File.Exists(PluginHomeFile) || File.ReadAllText(PluginHomeFile) != home)
+                {
+                    File.WriteAllText(PluginHomeFile, home);
+                }
+                TryDelete(PluginMissingSinceFile);
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "Live status: couldn't record the plugin's location for the hooks");
+            }
+        }
+
+        /// <summary>
+        /// The thing whose disappearance means "uninstalled": for a package, the plugin's own folder
+        /// directly under the service's Plugins root (what Options+ deletes); for a dev build, the
+        /// <c>.link</c> file in that root pointing at the build output (a build output outlives
+        /// many links); otherwise the directory holding the DLL. Null when the SDK has not said
+        /// where the plugin is.
+        /// </summary>
+        internal static String InstalledPluginHome(String assemblyPath, String pluginsRoot)
+        {
+            if (String.IsNullOrEmpty(assemblyPath))
+            {
+                return null;
+            }
+
+            String dir;
+            try
+            {
+                dir = Path.GetDirectoryName(Path.GetFullPath(assemblyPath));
+            }
+            catch
+            {
+                return null;
+            }
+            if (String.IsNullOrEmpty(dir))
+            {
+                return null;
+            }
+
+            if (!String.IsNullOrEmpty(pluginsRoot))
+            {
+                var root = TrimSeparators(Path.GetFullPath(pluginsRoot));
+                for (var cursor = dir; !String.IsNullOrEmpty(cursor); cursor = Path.GetDirectoryName(cursor))
+                {
+                    var parent = Path.GetDirectoryName(cursor);
+                    if (parent != null && String.Equals(TrimSeparators(parent), root, StringComparison.Ordinal))
+                    {
+                        return cursor;
+                    }
+                }
+
+                try
+                {
+                    if (Directory.Exists(root))
+                    {
+                        foreach (var link in Directory.GetFiles(root, "*.link"))
+                        {
+                            // The csproj writes the output path with `echo`, trailing separator and all.
+                            var target = File.ReadAllText(link).Trim().TrimEnd('\\', '/', ' ');
+                            if (target.Length > 0 &&
+                                dir.StartsWith(TrimSeparators(Path.GetFullPath(target)), StringComparison.Ordinal))
+                            {
+                                return link;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "Live status: couldn't look for a dev link in the Plugins root");
+                }
+            }
+
+            return dir;
+        }
+
+        private static String TrimSeparators(String path) =>
+            path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
         /// <summary>
         /// The handler Claude Code should invoke: the bash script on macOS, the packaged shim on
@@ -2030,16 +2143,17 @@ namespace Loupedeck.ClaudeConsolePlugin
             changed = false;
             for (var attempt = 0; attempt < 2; attempt++)
             {
-                var root = ReadSettingsForRewrite(out var fingerprint);
+                var root = ReadSettingsForRewrite(out var fingerprint, out var layout, out var original);
                 if (root == null)
                 {
                     return false;
                 }
+                var render = SettingsText.Capture(original, root, layout);
                 if (!mutate(root))
                 {
                     return true;
                 }
-                if (WriteSettings(root, fingerprint))
+                if (WriteSettings(root, fingerprint, layout, render(root)))
                 {
                     changed = true;
                     return true;
@@ -2074,9 +2188,16 @@ namespace Loupedeck.ClaudeConsolePlugin
         // A missing or empty file is an empty object — wiring a fresh install is the common case.
         // The fingerprint is of exactly the bytes that were parsed, so a write can prove nothing
         // slipped in between.
-        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint)
+        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint) =>
+            ReadSettingsForRewrite(out fingerprint, out _, out _);
+
+        // The layout is read alongside the document so the write can hand the file back the way it
+        // was found (#72): same indentation, same line ending, same trailing newline.
+        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint, out SettingsLayout layout, out String original)
         {
+            original = null;
             fingerprint = null;
+            layout = SettingsLayout.Default;
             if (new FileInfo(SettingsFile).LinkTarget != null)
             {
                 PluginLog.Warning("Live status: settings.json is a symlink — leaving it untouched");
@@ -2099,6 +2220,8 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 return new JsonObject();
             }
+            layout = SettingsLayout.Detect(bytes, text);
+            original = text;
 
             JsonNode parsed;
             try
@@ -2132,14 +2255,22 @@ namespace Loupedeck.ClaudeConsolePlugin
         // on the first load, and never again: on QA's machine it was a month stale, so "restore the
         // backup" would have rolled back every unrelated change the user had made since. A backup
         // that is always the state one write ago is the only kind worth telling people about.
-        private static Boolean WriteSettings(JsonObject root, Byte[] expected)
+        //
+        // The bytes are laid out the way the file was found (#72). The default writer escaped every
+        // quote, ampersand, apostrophe, angle bracket and non-ASCII character to \uXXXX and dropped
+        // the trailing newline — valid JSON, but a whole-file diff for anyone who keeps ~/.claude in
+        // git, applied to every entry in the file including the ones the plugin does not own.
+        private static Boolean WriteSettings(JsonObject root, Byte[] expected, SettingsLayout layout, String json)
         {
             Directory.CreateDirectory(ClaudeDir);
-            var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            var parsed = JsonNode.Parse(json, documentOptions: new JsonDocumentOptions
+            { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+            if (!JsonNode.DeepEquals(parsed, root))
+            { throw new InvalidOperationException("settings source edit disagrees with the intended values"); }
             var tmp = SettingsFile + ".cc." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
-                File.WriteAllText(tmp, json);
+                File.WriteAllText(tmp, json, layout.Encoding);
 
                 if (!SameBytes(Fingerprint(SettingsFile), expected))
                 {
@@ -2236,6 +2367,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (Interlocked.CompareExchange(ref _modelDownloading, 1, 0) == 0)
             {
                 new Thread(DownloadVoiceModel) { IsBackground = true, Name = "claude-voice-model-download" }.Start();
+                // Say so where the user will see it. The key says Model loading for two seconds,
+                // but 142 MB on a slow connection is a multi-minute cliff, and the only other notice
+                // was a log line (2.2.1 Windows retest, item 6).
+                this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelDownloading(), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
             }
             return false;
         }
@@ -2264,17 +2399,22 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     PluginLog.Warning($"BridgeManager: model checksum mismatch (got {sha}) — discarding download");
                     TryDelete(partFile);
+                    this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelDownloadFailed("checksum mismatch"), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
                     return;
                 }
 
                 TryDelete(VoiceModelFile);
                 File.Move(partFile, VoiceModelFile);
                 PluginLog.Info("BridgeManager: whisper model ready");
+                this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelReady(), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
             }
             catch (Exception ex)
             {
+                // A failed download used to be a log line only, and the next press silently started
+                // the 142 MB over again.
                 PluginLog.Warning(ex, "BridgeManager: whisper model download failed");
                 TryDelete(partFile);
+                this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelDownloadFailed(ex.Message), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
             }
             finally
             {
@@ -2302,7 +2442,31 @@ namespace Loupedeck.ClaudeConsolePlugin
         // user to correct before sending — the Voice Draft key. Whisper mishears often enough that
         // "fix it, then press Return yourself" deserves a first-class path.
         public void StopVoiceCapture(Boolean submit = true) =>
-            StopVoiceCaptureThen(text => InjectText(text, pressEnter: submit));
+            StopVoiceCaptureThen(text => this.DeliverDictation(text, submit));
+
+        // Type a transcript into the routed session, and SAY SO when it cannot be typed. The
+        // injection's outcome used to be discarded here, so a dictation with no target session —
+        // nothing pinned and no single obvious session; Windows has no frontmost query — was
+        // transcribed and then dropped with a WARN line, indistinguishable on the device from one
+        // that landed (2.2.1 Windows retest, item 6). The key now says No target / Not typed like
+        // every other voice failure, and the log keeps the words so nothing dictated is lost.
+        internal void DeliverDictation(String text, Boolean submit)
+        {
+            var intent = submit ? VoiceIntent.Send : VoiceIntent.Draft;
+            var target = RoutingTty();
+            if (target == null)
+            {
+                this.ReportVoiceFailure(intent, VoiceFailure.NoTarget,
+                    $"no session to type into — pin a session slot, or leave one session running. Dropped: \"{text}\"");
+                return;
+            }
+
+            var outcome = _platform.InjectText(target, text, submit);
+            if (outcome != InjectionOutcome.Ok)
+            {
+                this.ReportVoiceFailure(intent, VoiceFailure.NotTyped, $"{outcome} for {target}. Dropped: \"{text}\"");
+            }
+        }
 
         // Stop voice capture and use the transcript to OPEN a project (new tab + cd + claude).
         public void StopVoiceCaptureForProject() => StopVoiceCaptureThen(NavigateToProjectByVoice);
@@ -2325,24 +2489,32 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            if (OperatingSystem.IsWindows() && Volatile.Read(ref _windowsVoiceSetupInProgress) != 0)
-            {
-                PluginLog.Info($"BridgeManager.ToggleVoice: ignoring {intent} press while voice is setting up");
-                _platform.Alert();
-                return;
-            }
-
-            var (action, routed) = Voice.Press(intent, DateTime.UtcNow);
+            var (action, routed) = Voice.Press(intent, DateTime.UtcNow, awaitReadiness: OperatingSystem.IsWindows());
             switch (action)
             {
                 case VoiceAction.Start:
                     PluginLog.Info($"BridgeManager.ToggleVoice: starting capture for {intent}");
-                    if (!this.StartVoiceCapture())
+                    if (OperatingSystem.IsWindows())
                     {
-                        // Missing helper, model still downloading, unsupported platform: nothing is
-                        // recording, so the state must not say otherwise or the keys lock up.
-                        Voice.Finish();
+                        // Return to the SDK immediately so Starting can paint during a cold launch.
+                        Task.Run(() =>
+                        {
+                            try
+                            {
+                                if (!this.StartVoiceCapture()) { Voice.Finish(); }
+                            }
+                            catch (Exception ex)
+                            {
+                                this.ReportVoiceFailure(intent, VoiceFailure.Failed, ex.Message);
+                                Voice.Finish();
+                            }
+                        });
                     }
+                    else if (!this.StartVoiceCapture()) { Voice.Finish(); }
+                    break;
+
+                case VoiceAction.Cancel:
+                    // The startup worker observes Cancelling and reaps its helper before Finish.
                     break;
 
                 case VoiceAction.Stop:
@@ -2524,6 +2696,9 @@ namespace Loupedeck.ClaudeConsolePlugin
                 .ToList();
 
         // Match a spoken phrase to a project folder, then open it (new Terminal tab + cd + claude).
+        // The roots-file hint is posted once per load: the first miss teaches, the rest would nag.
+        private Boolean _projectRootsHintShown;
+
         private void NavigateToProjectByVoice(String transcript)
         {
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -2533,13 +2708,23 @@ namespace Loupedeck.ClaudeConsolePlugin
             var match = MatchProject(transcript, candidates.Paths);
             if (match == null)
             {
-                // Say what was searched. The whole of #26 reached us as "it does nothing" — a line
-                // naming the candidate count and where they came from would have diagnosed itself.
-                PluginLog.Warning(
-                    $"NavigateToProjectByVoice: no project matched \"{transcript}\" among "
+                // Say what was searched, and what it was compared AS. The whole of #26 reached us as
+                // "it does nothing"; the 2.2.1 Windows retest (item 8) then read the raw phrase in this
+                // line as proof that the carrier words were never stripped. The key says No match like
+                // every other voice failure, and the first miss per load posts the roots-file hint in
+                // Options+ — until now the only place that file was named was this log line.
+                var rootsFile = ProjectDiscovery.DefaultRootsFile(home);
+                this.ReportVoiceFailure(VoiceIntent.Project, VoiceFailure.NoMatch,
+                    $"no project matched \"{transcript}\" (compared as \"{NormalizeForMatch(transcript)}\") among "
                     + $"{candidates.Paths.Count} candidate(s) — {candidates.Source}. If your projects "
-                    + $"live elsewhere, list their roots in {ProjectDiscovery.DefaultRootsFile(home)}");
-                _platform.Alert(); // audible "didn't catch a project" feedback
+                    + $"live elsewhere, list their roots in {rootsFile}");
+                if (!_projectRootsHintShown)
+                {
+                    _projectRootsHintShown = true;
+                    this.Notify?.Invoke(PluginStatus.Warning,
+                        BridgeNotice.ProjectNoMatch(transcript, candidates.Paths.Count, candidates.Source, rootsFile),
+                        BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
+                }
                 return;
             }
             PluginLog.Info($"NavigateToProjectByVoice: \"{transcript}\" -> {match} (of {candidates.Paths.Count} candidates)");
@@ -2548,14 +2733,23 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         internal static String MatchProject(String transcript, IEnumerable<String> candidates)
         {
-            var t = NormalizeForMatch(transcript);
-            if (t.Length < 2)
+            // Keep the possible carrier-stripped readings and the phrase exactly as spoken.
+            // The best score wins, so a project whose NAME contains
+            // a carrier word — claude-console, open-source-kit — still matches exactly when said in
+            // full, and "go to project claude" reaches a project called claude.
+            var keys = ProjectMatchKeys(transcript)
+                .Where(k => k.Length >= 2)
+                .Distinct()
+                .ToArray();
+            if (keys.Length == 0)
             {
                 return null;
             }
 
             String best = null;
             var bestScore = 0;
+            var bestExactLength = 0;
+            var ambiguous = false;
             foreach (var dir in candidates ?? Enumerable.Empty<String>())
             {
                 if (String.IsNullOrEmpty(dir))
@@ -2565,32 +2759,113 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 // Match on the folder NAME, so a trailing separator can't reduce it to nothing.
                 var name = Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                var f = NormalizeForMatch(name);
+                var f = SquashForMatch(name);
                 if (f.Length == 0)
                 {
                     continue;
                 }
-                var score = MatchScore(t, f);
-                if (score > bestScore)
+                var score = keys.Max(k => MatchScore(k, f));
+                // A carrier can also be part of the name: both "source kit" and "open source
+                // kit" are plausible readings. Prefer the longest complete name, then refuse
+                // equally good candidates instead of depending on directory enumeration order.
+                var exactLength = score == 1000 ? f.Length : 0;
+                if (score > bestScore || (score == bestScore && exactLength > bestExactLength))
                 {
                     bestScore = score;
+                    bestExactLength = exactLength;
                     best = dir;
+                    ambiguous = false;
+                }
+                else if (score == bestScore && exactLength == bestExactLength &&
+                         !String.Equals(best, dir, OperatingSystem.IsWindows()
+                             ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                {
+                    ambiguous = true;
                 }
             }
 
             // Require a real match (exact / prefix / substring / strong overlap) to avoid mis-launches.
-            return bestScore >= 300 ? best : null;
+            return bestScore >= 300 && !ambiguous ? best : null;
         }
 
-        // Lowercase, drop common filler/command words ("open the X project"), keep letters+digits only.
-        internal static String NormalizeForMatch(String s)
+        // Keep every possible stopping point while removing carrier words. Greedily removing
+        // all of them loses names such as "open-source-kit" and "my-project"; preserving only
+        // the entire utterance cannot recover those names when preceded by "go to".
+        private static IEnumerable<String> ProjectMatchKeys(String spoken)
         {
-            s = (s ?? "").ToLowerInvariant();
-            foreach (var w in new[] { "go to", "switch to", "open", "launch", "the", "project", "folder", "claude" })
+            var words = WordsOf(spoken);
+            for (var start = 0; start < words.Count; start++)
             {
-                s = s.Replace(w, " ");
+                for (var end = words.Count; end > start; end--)
+                {
+                    yield return String.Concat(words.Skip(start).Take(end - start));
+                    if (!TrailingCarrierWords.Contains(words[end - 1])) { break; }
+                }
+                if (!LeadingCarrierWords.Contains(words[start])) { break; }
             }
-            return new String(s.Where(Char.IsLetterOrDigit).ToArray());
+        }
+
+        // The words a person puts around a project name — "go to", "open the … project" — dropped
+        // from the EDGES of the phrase, whole words only. The old version ran a blind substring
+        // Replace for each word over the phrase AND the folder name: "the" ate the middle of
+        // "theme", "open" the front of "openai", and "claude" was cut out of every folder called
+        // claude-* (2.2.1 Windows retest, item 8). Folder names are never stripped now (SquashForMatch).
+        private static readonly HashSet<String> LeadingCarrierWords = new(StringComparer.Ordinal)
+        {
+            "go", "to", "switch", "open", "launch", "the", "a", "my", "please", "project", "folder",
+        };
+
+        private static readonly HashSet<String> TrailingCarrierWords = new(StringComparer.Ordinal)
+        {
+            "project", "folder", "please",
+        };
+
+        /// <summary>The spoken phrase as a match key: carrier words off the edges, then letters and digits only.</summary>
+        internal static String NormalizeForMatch(String spoken)
+        {
+            var words = WordsOf(spoken);
+            var start = 0;
+            while (start < words.Count && LeadingCarrierWords.Contains(words[start]))
+            {
+                start++;
+            }
+            var end = words.Count;
+            while (end > start && TrailingCarrierWords.Contains(words[end - 1]))
+            {
+                end--;
+            }
+
+            // Nothing but carrier words ("open the project"): keep the phrase whole — a project may
+            // be called exactly that, and an empty key matches nothing anyway.
+            return start >= end
+                ? String.Concat(words)
+                : String.Concat(words.Skip(start).Take(end - start));
+        }
+
+        /// <summary>A folder name, or a phrase as spoken, as lowercase letters and digits only. Nothing stripped.</summary>
+        internal static String SquashForMatch(String s) => String.Concat(WordsOf(s));
+
+        private static List<String> WordsOf(String s)
+        {
+            var words = new List<String>();
+            var current = new StringBuilder();
+            foreach (var c in (s ?? "").ToLowerInvariant())
+            {
+                if (Char.IsLetterOrDigit(c))
+                {
+                    current.Append(c);
+                }
+                else if (current.Length > 0)
+                {
+                    words.Add(current.ToString());
+                    current.Clear();
+                }
+            }
+            if (current.Length > 0)
+            {
+                words.Add(current.ToString());
+            }
+            return words;
         }
 
         internal static Int32 MatchScore(String t, String f)

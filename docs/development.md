@@ -56,6 +56,29 @@ Runs the C# unit tests (xUnit — injection guard, IPC file permissions, stale-f
 
 ## Building & packaging
 
+Every Windows helper is a self-contained, trimmed, single-file console exe of about 12 MB,
+following .NET's
+[single-file deployment settings](https://learn.microsoft.com/en-us/dotnet/core/deploying/single-file/overview).
+None may depend on Options+' private runtime or on a machine-wide .NET (#83). The screenshot and
+tab-focus helpers once needed the Desktop Runtime (WinForms for the clipboard, WPF for UI
+Automation), which made them either framework-dependent and broken on clean machines or 68 MB
+each; they now read the clipboard through Win32 and drive UI Automation through COM. The payload
+build checks `SelfContained` on those two and rejects loose runtime dependencies that would be
+omitted by executable-only staging; `tests/windows/Test-StandaloneHelpers.ps1` proves each
+published exe starts with every runtime lookup disabled.
+
+On Windows, publish both helpers to separate `ClaudeConsoleFocus` and `ClaudeConsoleShot`
+directories, then verify startup using only each executable:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/windows/Test-StandaloneHelpers.ps1 -PublishRoot <publish-root>
+```
+
+The check redirects runtime lookup to an empty directory and inspects the host trace to confirm
+the bundled runtime was used. It does not open a capture overlay or change terminal focus.
+The concurrent cleanup regression tests run with `python3 tests/scripts/test-unwire-concurrency.py`
+on macOS or another POSIX environment, and are included in `tests/run-all.sh`.
+
 `tools/voice/build.sh` builds the voice helper + bundles a self‑contained `whisper-cli` (ad‑hoc signed for dev); `tools/voice/sign-and-notarize.sh` produces the Developer‑ID‑signed, notarized release build. The release package:
 
 ```bash
