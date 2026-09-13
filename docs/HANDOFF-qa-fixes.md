@@ -401,7 +401,7 @@ icons and the profile placements are GONE; `make-codex-profile.py` is back to it
 `BridgeManager.Prompt` now carries the button labels. Caught on the way: on Vizhi for Codex the live
 keys would have read *Set up* forever (no settings file to consent to) — the gate is inert unless
 `Capabilities.SettingsFileWiring`.
-**Still owed on the device:** the long-press → *Turn off* path; `Restart Claude` on 60/90 px keys; a #27
+**Still owed on the device:** the long-press → *Turn off* path; the *Turned on* face on 60/90 px keys (it read `Restart Claude` until 2.2.2, #58); a #27
 repaint check; the clean-room pass on a fresh account with a packed 2.2.0.
 
 ## #23: universal plugin — what changed, what it removed, what is unverified
