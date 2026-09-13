@@ -104,10 +104,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void The_support_link_points_at_the_bridge_section_of_the_readme()
+        public void The_support_link_is_public_and_the_local_manual_keeps_the_bridge_guidance()
         {
-            Assert.StartsWith("https://github.com/rshankras/claude-console#", BridgeNotice.SupportUrl);
-            Assert.EndsWith("the-live-status-bridge", BridgeNotice.SupportUrl);
+            Assert.Equal("https://www.rshankar.com/keypad-profiles/#live-status-bridge", BridgeNotice.SupportUrl);
+            Assert.DoesNotContain("claude-console", BridgeNotice.SupportUrl);
 
             // ...and that anchor exists. A dead "how to undo" link is worse than none.
             var readme = File.ReadAllText(RepoFile("README.md"));
@@ -132,7 +132,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("open Windows Terminal window", text);
             Assert.Contains("Direct typing keys", text);
             Assert.Contains("no Windows Terminal window is running", text);
-            Assert.EndsWith("#windows-notes", BridgeNotice.WindowsTerminalUrl);
+            Assert.Equal("https://www.rshankar.com/keypad-profiles/#windows-terminal", BridgeNotice.WindowsTerminalUrl);
 
             var readme = File.ReadAllText(RepoFile("README.md"));
             Assert.Contains("## Windows notes", readme);
@@ -223,10 +223,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void The_windows_notice_link_points_at_a_readme_section_that_exists()
+        public void The_windows_notice_link_is_public_and_the_local_guidance_still_exists()
         {
-            Assert.StartsWith("https://github.com/rshankras/claude-console#", BridgeNotice.WindowsTerminalUrl);
-            Assert.EndsWith("windows-notes", BridgeNotice.WindowsTerminalUrl);
+            Assert.Equal("https://www.rshankar.com/keypad-profiles/#windows-terminal", BridgeNotice.WindowsTerminalUrl);
+            Assert.DoesNotContain("claude-console", BridgeNotice.WindowsTerminalUrl);
 
             var readme = File.ReadAllText(RepoFile("README.md"));
             Assert.Contains("## Windows notes", readme);

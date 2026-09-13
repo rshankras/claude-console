@@ -64,9 +64,13 @@ fi
 
 # --- 4) verify ------------------------------------------------------------------------------------
 echo ">>> verifying helper signature + Gatekeeper assessment"
+# These are release gates, not diagnostic decoration. `codesign -d` only prints metadata and
+# spctl/stapler were previously tolerated with `|| true`, so a rejected helper could still produce
+# the script's green success line (#66).
+codesign --verify --deep --strict --verbose=4 "$APP"
+spctl --assess --type execute --verbose=4 "$APP"
+xcrun stapler validate "$APP"
 codesign -dvvv "$APP" 2>&1 | grep -E "Authority|TeamIdentifier|Identifier=|Runtime|flags" || true
-spctl -a -vvv -t exec "$APP" 2>&1 || true
-xcrun stapler validate "$APP" 2>&1 || true
 if [ -d "$WBIN" ]; then
   echo ">>> verifying whisper-cli signature"
   codesign -dvvv "$WBIN/whisper-cli" 2>&1 | grep -E "Authority|TeamIdentifier|Runtime" || true

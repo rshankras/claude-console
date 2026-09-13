@@ -184,8 +184,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                     // has run it. Trust state itself is Codex's business and not ours to read.
                     // Windows also has rollout-derived state. Only an envelope explicitly written
                     // by the hook proves the hook was trusted and executed.
+                    // An event from an older hook version does not prove the CURRENT script is
+                    // trusted. EnsureInstalled may replace the launcher while deliberately leaving
+                    // the stable hooks command alone; Codex can then require trust again while an
+                    // old envelope is still on disk. Only an event at or after the newest bridge
+                    // component proves this installation has actually run (#69).
+                    var launcher = OperatingSystem.IsWindows() ? this.HookExe : this.HookScript;
+                    var installedAt = new[] { this.HooksFile, launcher }
+                        .Where(File.Exists)
+                        .Select(File.GetLastWriteTimeUtc)
+                        .DefaultIfEmpty(DateTime.MinValue)
+                        .Max();
                     var seen = Directory.Exists(this._sessionsDir)
-                        && Directory.EnumerateFiles(this._sessionsDir, "*.json").Any(IsHookEnvelope);
+                        && Directory.EnumerateFiles(this._sessionsDir, "*.json").Any(path =>
+                            IsHookEnvelope(path) && File.GetLastWriteTimeUtc(path) >= installedAt);
 
                     return seen ? CodexBridgeStatus.Active : CodexBridgeStatus.AwaitingTrust;
                 }

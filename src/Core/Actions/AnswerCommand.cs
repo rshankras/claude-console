@@ -56,6 +56,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 this.ActionImageChanged(Yes);
                 this.ActionImageChanged(No);
             };
+            BridgeManager.Instance.OnAgentBridgeStatusChanged += _ =>
+            {
+                this.ActionImageChanged(Yes);
+                this.ActionImageChanged(No);
+            };
 
             this.AddParameter(Yes, "Yes", "Answer")
                 .SetDescription(canObserveApprovals
@@ -200,6 +205,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         private static void AnswerApproval(BridgeManager bridge, Boolean approve)
         {
+            var agentSetup = AgentBridgeNotice.FaceLabel(bridge.AgentBridgeState);
+            if (agentSetup != null)
+            {
+                bridge.Alert();
+                if (Interlocked.Exchange(ref _setupNoticePosted, 1) == 0)
+                {
+                    bridge.Notify?.Invoke(
+                        PluginStatus.Warning,
+                        AgentBridgeNotice.Message(bridge.AgentBridgeState),
+                        AgentBridgeNotice.PublicHelpUrl,
+                        AgentBridgeNotice.Title(bridge.AgentBridgeState));
+                }
+                PluginLog.Info($"AnswerCommand: {(approve ? "Yes" : "No")} pressed while the agent bridge reads '{agentSetup}' — no approval was sent");
+                return;
+            }
+
             // Yes/No see a prompt only through the PermissionRequest hook, which is part of the
             // opt-in wiring. With it absent this press cannot do anything — and a bare beep left
             // the owner pressing Yes four times at a real prompt (#58). Say why, once, where the
@@ -336,6 +357,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // you can see an answer is wanted, and whether to look first, before pressing anything.
             if (actionParameter == Yes || actionParameter == No)
             {
+                var agentSetup = AgentBridgeNotice.FaceLabel(BridgeManager.Instance.AgentBridgeState);
+                if (agentSetup != null)
+                {
+                    return KeyImage.RenderDecisionTile(imageSize, agentSetup, KeyImage.Gray, approve: actionParameter == Yes, risk: ApprovalRisk.None);
+                }
+
                 // Not wired: a grey tile keeps the check / cross, so the key is still recognisably
                 // Yes or No, and the word says what to do about it. No badge — nothing can be
                 // pending that the plugin could see (#58).

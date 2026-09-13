@@ -174,6 +174,26 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void An_event_from_before_the_current_launcher_does_not_falsely_prove_trust()
+        {
+            var b = this.New();
+            b.EnsureInstalled(Script);
+
+            Directory.CreateDirectory(this._sessions);
+            var envelope = Path.Combine(this._sessions, "ttys003.json");
+            File.WriteAllText(envelope, "{\"schema\":1,\"transport\":\"hook\",\"event\":\"SessionStart\"}");
+            File.SetLastWriteTimeUtc(envelope, DateTime.UtcNow.AddMinutes(-5));
+
+            // A changed launcher is a changed trusted program even though its stable command in
+            // hooks.json remains identical. Until that launcher fires, the old envelope is stale.
+            Assert.True(b.EnsureInstalled(Script + "\n# updated"));
+            Assert.Equal(CodexBridgeStatus.AwaitingTrust, b.Status);
+
+            File.WriteAllText(envelope, "{\"schema\":1,\"transport\":\"hook\",\"event\":\"Stop\"}");
+            Assert.Equal(CodexBridgeStatus.Active, b.Status);
+        }
+
+        [Fact]
         public void Rollout_state_does_not_falsely_prove_hook_trust()
         {
             var b = this.New();

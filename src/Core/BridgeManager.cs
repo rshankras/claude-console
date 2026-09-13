@@ -225,6 +225,27 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal Boolean LiveStatusApplies => this.Agent?.Capabilities.SettingsFileWiring ?? false;
 
         /// <summary>
+        /// Status of an agent-owned bridge that is not controlled by the live-status switch. Codex
+        /// uses this for hook trust; Claude leaves it Ready and continues to use LiveStatus.
+        /// </summary>
+        internal AgentBridgeStatus AgentBridgeState => _agentBridgeStatus;
+
+        private AgentBridgeStatus _agentBridgeStatus = AgentBridgeStatus.Ready;
+
+        internal event Action<AgentBridgeStatus> OnAgentBridgeStatusChanged;
+
+        internal void SetAgentBridgeStatus(AgentBridgeStatus status)
+        {
+            if (_agentBridgeStatus == status)
+            {
+                return;
+            }
+
+            _agentBridgeStatus = status;
+            OnAgentBridgeStatusChanged?.Invoke(status);
+        }
+
+        /// <summary>
         /// Which agent the keys are driving. Actions read this to ask for the agent's own word for
         /// a verb, and to decide whether a key should exist at all — a Cost key on an agent that
         /// reports no cost hides rather than rendering a zero.

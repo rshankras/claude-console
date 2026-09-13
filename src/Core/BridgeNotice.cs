@@ -17,7 +17,10 @@ namespace Loupedeck.ClaudeConsolePlugin
     internal static class BridgeNotice
     {
         /// <summary>Where "How to undo" points — the README section that explains the edit and the way back.</summary>
-        internal const String SupportUrl = "https://github.com/rshankras/claude-console#the-live-status-bridge";
+        // Options+ exposes this URL to every installed user, so it must not point at the private
+        // engineering repository (#68). The card itself contains the immediate instruction; the
+        // public product page is the stable home for support and release guidance.
+        internal const String SupportUrl = "https://www.rshankar.com/keypad-profiles/#live-status-bridge";
 
         internal const String SupportTitle = "What was changed, and how to undo it";
 
@@ -95,7 +98,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             "kept changing). Nothing was written. Fix the file, then press the key again.";
 
         /// <summary>Where the Windows-Terminal notice points — the README's Windows section.</summary>
-        internal const String WindowsTerminalUrl = "https://github.com/rshankras/claude-console#windows-notes";
+        internal const String WindowsTerminalUrl = "https://www.rshankar.com/keypad-profiles/#windows-terminal";
 
         internal const String WindowsTerminalTitle = "How to set Windows Terminal";
 

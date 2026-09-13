@@ -47,6 +47,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             _bridge.Grid.OnGridChanged += this.OnGridChanged;
             _bridge.OnLiveStatusChanged += _ => this.OnGridChanged();   // the setup word comes and goes with the wiring (#58)
+            _bridge.OnAgentBridgeStatusChanged += _ => this.OnGridChanged();
         }
 
         private void OnGridChanged()
@@ -96,7 +97,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // product identity — approved orange for Claude, the supplied #81A8ED for Codex.
             var selectedColor = SelectedBarColor(_bridge.Agent.Id);
             var barColor = active ? selectedColor : KeyImage.Gray;
-            var setupWord = LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
+            var setupWord = AgentBridgeNotice.FaceLabel(_bridge.AgentBridgeState)
+                ?? LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
             return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord), barColor, darkText: false);
         }
 

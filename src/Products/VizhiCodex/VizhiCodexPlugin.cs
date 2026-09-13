@@ -25,28 +25,51 @@ namespace Loupedeck.ClaudeConsolePlugin
         public override Boolean HasNoApplication => true;
 
         private readonly CodexCliAdapter _agent = new CodexCliAdapter();
+        private CodexBridgeStatus? _reportedBridgeStatus;
 
         public VizhiCodexPlugin()
         {
-            PluginLog.Init(this.Log);
+            PluginLog.Init(this.Log, "Vizhi for Codex");
             PluginResources.Init(this.Assembly);
             KeyImage.UseIdentityIconFolder("icons_codex");
 
             // Before any action is constructed — see the ordering note above.
             IpcPaths.UseProduct(this._agent.ProductSlug);
             BridgeManager.Instance.Agent = this._agent;
+            BridgeManager.Instance.Notify = (status, message, url, title) =>
+            {
+                try
+                {
+                    if (message == null)
+                    {
+                        this.OnPluginStatusChanged(status, String.Empty);
+                    }
+                    else
+                    {
+                        this.OnPluginStatusChanged(status, message, url, title);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "VizhiCodexPlugin: could not post the plugin status");
+                }
+            };
         }
 
         public override void Load()
         {
             BridgeManager.Instance.PluginAssemblyFilePath = this.AssemblyFilePath;
 
-            BridgeManager.Instance.StartPolling();
+            BridgeManager.Instance.Grid.OnGridChanged += this.OnGridChanged;
 
             // Codex reports nothing until its hooks are installed AND trusted. Installing is ours;
             // trusting is the user's, in /hooks, and cannot be automated — so log which of the two
             // is outstanding rather than leaving a keypad that just looks broken.
             this.WireStateBridge();
+            // Start only after WireStateBridge has established the initial UI state. The timer's
+            // first callback is immediate; starting it earlier can race installation and flash a
+            // false "Setup failed" card before EnsureInstalled has run (#69).
+            BridgeManager.Instance.StartPolling();
 
             // No application registration to write, heal, or sweep: a universal plugin
             // (HasNoApplication), same decision and same reasoning as ClaudeConsolePlugin (#23).
@@ -108,38 +131,79 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // The launcher is embedded at build time; missing means a broken package, and the
                 // plugin would otherwise run happily and silently never report a session.
                 PluginLog.Info("VizhiCodexPlugin: codex-hook.sh is not embedded — state bridge cannot install");
+                this.ReportBridgeProblem(AgentBridgeStatus.InstallFailed);
                 return;
             }
 
             var bridge = this._agent.StateBridge;
             bridge.EnsureInstalled(script);
 
-            switch (bridge.Status)
+            this.RefreshStateBridgeStatus();
+        }
+
+        private void OnGridChanged()
+        {
+            // The first trusted hook event creates or changes a grid session. Recheck then so the
+            // setup face and warning clear without a plugin reload (#69).
+            if (_reportedBridgeStatus != CodexBridgeStatus.Active)
+            {
+                this.RefreshStateBridgeStatus();
+            }
+        }
+
+        private void RefreshStateBridgeStatus()
+        {
+            var bridge = this._agent.StateBridge;
+            var status = bridge.Status;
+            if (_reportedBridgeStatus == status)
+            {
+                return;
+            }
+
+            _reportedBridgeStatus = status;
+
+            switch (status)
             {
                 case CodexBridgeStatus.AwaitingTrust:
+                    this.ReportBridgeProblem(AgentBridgeStatus.AwaitingTrust);
                     PluginLog.Info(
                         "VizhiCodexPlugin: hooks installed but no event has arrived — run /hooks in Codex and " +
                         "trust the entry, then start a new session. (Never --dangerously-bypass-hook-trust.)");
                     break;
 
                 case CodexBridgeStatus.ForeignHooksFile:
+                    this.ReportBridgeProblem(AgentBridgeStatus.ForeignConfiguration);
                     PluginLog.Info(
                         $"VizhiCodexPlugin: {bridge.HooksFile} was not written by us and will not be touched — " +
                         "merge the hooks by hand to get live keys");
                     break;
 
                 case CodexBridgeStatus.Active:
+                    BridgeManager.Instance.SetAgentBridgeStatus(AgentBridgeStatus.Ready);
+                    BridgeManager.Instance.Notify?.Invoke(Loupedeck.PluginStatus.Normal, null, null, null);
                     PluginLog.Info("VizhiCodexPlugin: state bridge active");
                     break;
 
                 default:
+                    this.ReportBridgeProblem(AgentBridgeStatus.InstallFailed);
                     PluginLog.Info("VizhiCodexPlugin: state bridge is not installed");
                     break;
             }
         }
 
+        private void ReportBridgeProblem(AgentBridgeStatus status)
+        {
+            BridgeManager.Instance.SetAgentBridgeStatus(status);
+            BridgeManager.Instance.Notify?.Invoke(
+                Loupedeck.PluginStatus.Warning,
+                AgentBridgeNotice.Message(status),
+                AgentBridgeNotice.PublicHelpUrl,
+                AgentBridgeNotice.Title(status));
+        }
+
         public override void Unload()
         {
+            BridgeManager.Instance.Grid.OnGridChanged -= this.OnGridChanged;
             BridgeManager.Instance.StopPolling();
             PluginLog.Info("VizhiCodexPlugin: Unloaded");
         }
