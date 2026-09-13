@@ -1,6 +1,6 @@
 # Marketplace Listing Copy
 
-The exact text entered in the Logitech Marketplace submission form ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)). **The 2.2.1 copy below is current** (submitted 2026-09-04); the 2.2.0 release notes it replaced follow it, and the 2.0.x copy is kept at the bottom for reference. Process and packaging steps live in [SUBMISSION.md](../SUBMISSION.md).
+The exact text entered in the Logitech Marketplace submission form ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)). **The 2.2.2 copy below is current** (prepared 2026-09-13; the package and these texts are in `~/Downloads/Claude Console/ClaudeConsole-2.2.2-install/`); the 2.2.1 and 2.2.0 release notes it replaced follow it, and the 2.0.x copy is kept at the bottom for reference. Process and packaging steps live in [SUBMISSION.md](../SUBMISSION.md).
 
 ## Auto-filled fields (from `LoupedeckPackage.yaml`)
 
@@ -12,17 +12,17 @@ These are read out of the uploaded `.lplug4` — the form fills them itself. To 
 | Author | S.Ravi Shankar |
 | Operating system | macOS, Windows (from `pluginFolderMac` + `pluginFolderWin`) |
 | Capabilities | `HasNoApplication` — universal, binds no application (#23) |
-| Version | 2.2.1 |
-| Content licence | Proprietary — https://vizhi.dev/eula/ (2.2.1 as submitted said MIT; changed 2026-09-09 ahead of closing the source — if the form's licence list has no "Proprietary" entry, pick the nearest and keep the EULA URL) |
-| Support | https://vizhi.dev/faq/ (2.2.1 as submitted: the keypad-profiles issue tracker, which the FAQ still links to) |
-| Homepage | https://vizhi.dev/claude-console/ (2.2.1 as submitted: the keypad-profiles site) |
+| Version | 2.2.2 |
+| Content licence | Proprietary — https://vizhi.dev/eula/ (first submitted this way in 2.2.2; 2.2.1 as submitted said MIT — if the form's licence list has no "Proprietary" entry, pick the nearest and keep the EULA URL) |
+| Support | https://vizhi.dev/faq/ (from 2.2.2; 2.2.1 as submitted: the keypad-profiles issue tracker, which the FAQ still links to) |
+| Homepage | https://vizhi.dev/claude-console/ (from 2.2.2; 2.2.1 as submitted: the keypad-profiles site) |
 | Copyright | Copyright © 2026 S.Ravi Shankar. All rights reserved. |
 
 Every user-facing link — these fields, the three card buttons baked into the plugin DLL, the README download links — points at **vizhi.dev** as of 2026-09-09. The source repository will be closed, so nothing a user can reach may point at github.com/rshankras/claude-console (#68, #71: every card button was a 404 for a week when it went private). The vizhi.dev anchors the DLL uses (`claude-console/#live-status-bridge`, `faq/#windows`, `faq/#voice`) are baked into shipped packages: treat them as frozen, or add redirects before renaming.
 
 ## Teaser card description — limit 120 characters
 
-Unchanged from 2.0.x — still accurate, still 109 characters:
+Unchanged from 2.0.x — still accurate, 108 characters (`wc -m`, no trailing newline):
 
 ```
 Physical hardware controls for Claude Code in Apple Terminal or Windows Terminal, on the MX Creative Keypad.
@@ -30,7 +30,7 @@ Physical hardware controls for Claude Code in Apple Terminal or Windows Terminal
 
 ## Detail page description — limit 500 characters
 
-Markdown supported: **bold**, *cursive*, `-` lists, `1.` lists, `[links](url)`, emojis. 2.2.0 rewrite (480 characters): the Answer line now describes what the keys actually do since #21, and "Voice" is dictation rather than a key name.
+Markdown supported: **bold**, *cursive*, `-` lists, `1.` lists, `[links](url)`, emojis. 2.2.0 rewrite: the Answer line now describes what the keys actually do since #21, and "Voice" is dictation rather than a key name. 2.2.2 (482 characters): the Live status line reads *cost, context & activity* instead of *model, cost & context*, because the Model key stopped being a live display (#86).
 
 ```markdown
 **Physical hardware controls for Claude Code. Press a button. Ship code.**
@@ -38,7 +38,7 @@ Markdown supported: **bold**, *cursive*, `-` lists, `1.` lists, `[links](url)`, 
 - **A key per session** — project & state on each; press to focus
 - **Answer prompts** — Yes approves, No rejects; amber when asked, red when risky
 - **Offline voice** — dictate a prompt or open a project by name
-- **Live status** — model, cost & context keys, opt-in
+- **Live status** — cost, context & activity keys, opt-in
 - **One-press prompts** — Fix Bug, Write Tests, Review
 - **Git** — commit, diff, push, PR
 
@@ -46,6 +46,25 @@ Works in Apple Terminal or Windows Terminal.
 ```
 
 ## Release notes — limit 1000 characters
+
+2.2.2 (prepared 2026-09-13), 980 characters. Leads with the Windows Yes / No fix (#74, Windows retest item 2); the first draft ran to 1,028 characters and was trimmed:
+
+```markdown
+**2.2.2 — answers to the QA retest of 2.2.1.**
+
+- **Windows: Yes / No answer again.** Every press had been refused.
+- **Yes / No find the session with a prompt up**, even while other sessions sit idle.
+- **Windows: live status turns on without a restart**, as on macOS, and keeps working after Claude Code updates itself.
+- **Voice says when it could not type** (*No target*, *Not typed*), announces the speech model download, and shows *Starting* on Windows until the mic is ready.
+- **Go to Project** reaches names containing "the", "open" or "claude", and says *No match*.
+- **The Model key opens the model picker** with one icon for every model.
+- **Settings edits leave the rest of your settings file exactly as it was.** On macOS the hooks remove themselves after an uninstall.
+- **Windows:** New Tab and New Claude open in your home folder, no separate .NET runtime is needed, and the package is smaller.
+
+Keypad layouts are unchanged. Download them from the homepage link.
+```
+
+## Release notes — 2.2.1 (superseded)
 
 2.2.1 (submitted 2026-09-04), 841 characters. Leads with the two answer-key changes a user notices first; the last line sends them to the homepage for the layouts because the GitHub release is private:
 
