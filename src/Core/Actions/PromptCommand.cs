@@ -18,9 +18,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// </summary>
     public class PromptCommand : PluginDynamicCommand
     {
-        private static readonly String ConfigFile = Path.Combine(
+        private static String ConfigFile => ProductPromptConfig.Resolve(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "claude-console", "prompts.json");
+            BridgeManager.Instance.Agent.ProductSlug,
+            message =>
+            {
+                PluginLog.Warning(message);
+                BridgeManager.Instance.Notify?.Invoke(PluginStatus.Warning, message, BridgeNotice.SupportUrl, "Prompt settings");
+            });
 
         // Written to be worth a dedicated key: each prompt scopes itself to something concrete
         // (the uncommitted diff, the code under discussion — or it asks), names a method, and says
@@ -93,6 +98,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         // Internal + path-injected so the tests can drive it against a temp file.
         internal static IEnumerable<PromptDef> LoadPrompts(String configFile)
         {
+            if (configFile == null) { return Defaults; }
             try
             {
                 if (File.Exists(configFile))
@@ -100,12 +106,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     var json = File.ReadAllText(configFile);
                     var list = JsonSerializer.Deserialize<List<PromptDef>>(json,
                         new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    if (list != null && list.Count > 0)
+                    if (list != null)
                     {
                         if (IsUneditedLegacySeed(list))
                         {
                             PluginLog.Info("PromptCommand: prompts.json is an unedited generated seed — upgrading it to the current defaults");
-                            WriteStarter(configFile);
+                            WriteStarter(configFile, overwrite: true);
                             return Defaults;
                         }
                         return list;
@@ -114,6 +120,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 else
                 {
                     WriteStarter(configFile);
+                    if (File.Exists(configFile)) { return LoadPrompts(configFile); }
                 }
             }
             catch (Exception ex)
@@ -149,13 +156,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         // First run (or legacy upgrade): drop the defaults into the config dir as an editable file.
-        private static void WriteStarter(String configFile)
+        private static void WriteStarter(String configFile, Boolean overwrite = false)
         {
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(configFile));
                 var json = JsonSerializer.Serialize(Defaults, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(configFile, json);
+                ProductPromptConfig.Publish(configFile, json, overwrite);
                 PluginLog.Info($"PromptCommand: wrote starter prompts.json to {configFile}");
             }
             catch (Exception ex)

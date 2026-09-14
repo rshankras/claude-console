@@ -4,7 +4,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.Text.Json.Serialization;
 
     /// <summary>
-    /// One user-customizable prompt key, loaded from ~/.claude/claude-console/prompts.json.
+    /// One user-customizable prompt key, loaded from the active product’s prompts.json.
     /// <c>Icon</c> is an embedded icon basename (e.g. "fix_bug", "review", "deploy"); its baked
     /// colour is the key's colour. An unknown icon falls back to centred text.
     /// </summary>
