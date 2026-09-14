@@ -25,7 +25,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             : base(displayName: "Voice Draft", description: "Speak a prompt, then fix it before sending — types the transcript without submitting; press Return when it reads right", groupName: "Universal")
         {
             _face = new ListeningFace(() => this.ActionImageChanged());
-            _fail = new FailureFace(() => this.ActionImageChanged());
+            _fail = new FailureFace(() => this.ActionImageChanged(), holdMs: VoiceFailure.HoldMs);
 
             // A dictation that failed says so on the key that was pressed, for a moment (#18). Only
             // this key's own captures: a failure routed to another key is that key's to show.
@@ -55,6 +55,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         {
             // One door for every voice key. Whether this press starts, stops, or is refused — and
             // where a stopped capture's transcript is routed — is the engine's call, not this key's.
+            _fail.Clear();
             BridgeManager.Instance.ToggleVoice(VoiceIntent.Draft);
             PluginLog.Info($"VoiceDraftCommand: recording={_face.IsActive}");
         }

@@ -18,6 +18,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// </summary>
     internal static class VoiceFailure
     {
+        internal const Int32 HoldMs = 8000;
         /// <summary>The helper was refused the microphone. Grant it in System Settings.</summary>
         internal const String MicDenied = "Mic denied";
 

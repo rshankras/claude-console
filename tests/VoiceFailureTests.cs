@@ -16,6 +16,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class VoiceFailureTests
     {
+        [Fact]
+        public void VoiceFailuresHaveAReadableHoldAndRetryClearsImmediately()
+        {
+            Assert.Equal(8000, VoiceFailure.HoldMs);
+            using var face = new FailureFace(() => { }, VoiceFailure.HoldMs);
+            face.Show(VoiceFailure.NoSpeech);
+            Assert.True(face.IsActive);
+            face.Clear();
+            Assert.False(face.IsActive);
+            Assert.Null(face.Text);
+        }
+
         // ---------------------------------------------------------------------------------------
         // The words on the key are chosen by what the user should DO
         // ---------------------------------------------------------------------------------------
