@@ -216,13 +216,13 @@ def build_profile(src: str, dst: str, guid: str) -> None:
     update_preview(preview, profile)
     files["metadata/ProfilePreview.json"] = json.dumps(preview, indent=2).encode("utf-8")
 
+    # Package and dependency metadata must identify the same product/profile as ProfileInfo.
     files["metadata/LoupedeckPackage.yaml"] = (
-        files["metadata/LoupedeckPackage.yaml"]
-        .decode("utf-8")
-        .replace("Claude Console", DISPLAY)
-        .replace("ClaudeConsole", PLUGIN)
-        .encode("utf-8")
-    )
+        f"type: Profile5\nname: {guid}\ndisplayName: {DISPLAY}\nversion: 2.0.0.0\n"
+    ).encode("utf-8")
+    files["metadata/AdvancedInfo.json"] = json.dumps(
+        {"additionalPluginNames": [PLUGIN]}, indent=2
+    ).encode("utf-8")
 
     with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
         for item in items:
