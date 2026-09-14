@@ -56,6 +56,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         // for the hourglass — and they must not disagree about the same session again.
         private readonly Dictionary<String, Int64> _interrupts = new Dictionary<String, Int64>(StringComparer.Ordinal);
 
+        // Directory hints from live process discovery; authoritative hook paths win.
+        internal IReadOnlyDictionary<String, String> DiscoveredProjectDirs { get; set; }
+
         // Test seam for the five-second post-Escape quiet window. Production always uses wall time.
         internal Func<Int64> NowUnix { get; set; } = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         // A Yes/No press may resolve a permission menu without Codex emitting a following hook
@@ -152,7 +155,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             var pendingPath = this.PendingFor(tty);
-            var hasSeparatePendingFile = File.Exists(pendingPath);
             var answeredVersion = this.ApprovalSourceVersion(tty);
             TryDelete(pendingPath);
 
@@ -164,7 +166,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     return false;
                 }
 
-                if (hasSeparatePendingFile)
+                if (!session.ApprovalInSessionState)
                 {
                     _acknowledgedApprovals.Remove(tty);
                 }
@@ -178,7 +180,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // Claude's separate activity file still owns its state; changing it here would
                 // cause a false ready->waiting repaint on the next poll. Codex's approval event is
                 // the state source itself, so suppress its stale waiting state with the payload.
-                if (!hasSeparatePendingFile && session.State == "waiting")
+                if (session.ApprovalInSessionState && session.State == "waiting")
                 {
                     session.State = "ready";
                 }
@@ -289,6 +291,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                         ReapFiles(dead);
                     }
 
+                    // Provisional sessions have no disk file to reap above. Forget their names
+                    // too, otherwise a recycled tty inherits the previous process's project.
+                    foreach (var dead in _lastKnownProject.Keys.Where(t => !liveTtys.Contains(t)).ToList())
+                    {
+                        _lastKnownProject.Remove(dead);
+                    }
+
                     // A live tab with no state file yet still deserves a key immediately.
                     foreach (var tty in liveTtys.Where(t => !next.ContainsKey(t)))
                     {
@@ -310,6 +319,13 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 foreach (var s in next.Values)
                 {
+                    if (String.IsNullOrWhiteSpace(s.ProjectDir)
+                        && DiscoveredProjectDirs != null
+                        && DiscoveredProjectDirs.TryGetValue(s.SessionKey, out var directory))
+                    {
+                        s.ProjectDir = directory;
+                        s.Project = ProjectName(directory);
+                    }
                     if (!String.IsNullOrWhiteSpace(s.Project))
                     {
                         _lastKnownProject[s.SessionKey] = s.Project;
@@ -439,6 +455,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 if (state.ReportsApproval)
                 {
+                    session.ApprovalInSessionState = true;
                     session.PendingTool = state.PendingTool;
                     session.PendingCommand = state.PendingCommand;
                     session.Risk = state.Risk;
@@ -446,6 +463,18 @@ namespace Loupedeck.ClaudeConsolePlugin
                 else
                 {
                     this.ApplyPendingApproval(session);
+                }
+
+                // A fork/resume can end a conversation while the same CLI process stays alive.
+                // Never retain its context or id as if it described the next conversation. The
+                // liveness pass below removes exited processes; a live one remains provisional
+                // until its next authoritative hook, with its known project label intact.
+                if (this.Agent.Id == "codex-cli" && state.Activity == "dead")
+                {
+                    session.SessionId = null;
+                    session.TranscriptPath = null;
+                    session.CtxPercent = null;
+                    session.IsProvisional = true;
                 }
 
                 this.ApplyApprovalAcknowledgement(session);

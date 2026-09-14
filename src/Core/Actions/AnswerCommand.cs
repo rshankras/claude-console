@@ -17,10 +17,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// Up/Down/Enter drive Claude Code's numbered selection menus (permission prompts,
     /// AskUserQuestion, plan-mode confirmation): arrow to an option, then Enter. Yes/No answer a
     /// permission prompt the plugin can SEE, and beep instead of guessing when an approval signal
-    /// should exist but does not (see AnswerApproval / Decide below — #21). Windows Codex cannot
-    /// observe approval prompts because its hook runner creates no process there, so that one
-    /// declared capability gap uses the safest possible manual fallback: Yes sends Return and No
-    /// sends Escape, never a typed word. All are key codes sent to the focused terminal.
+    /// should exist but does not. Current Claude and Codex adapters both report approvals;
+    /// capability-driven fallback is reserved for other transports without observation.
     /// </summary>
     public class AnswerCommand : PluginDynamicCommand
     {
@@ -44,6 +42,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             // Repaint Yes/No when the targeted session starts or stops waiting, so the badge is live.
             BridgeManager.Instance.Grid.OnGridChanged += () =>
+            {
+                this.ActionImageChanged(Yes);
+                this.ActionImageChanged(No);
+            };
+
+            // A pin or frontmost-tab change can change the badge without changing any session.
+            BridgeManager.Instance.OnTargetChanged += () =>
             {
                 this.ActionImageChanged(Yes);
                 this.ActionImageChanged(No);
@@ -283,7 +288,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         // the rejection path fires no hook, and left the Yes dot and the "Allow?" bar lit until the
         // session's next prompt (#60). A keystroke that did not land leaves the badge, which is
         // still the truth, and says so.
-        private static void Answered(BridgeManager bridge, String target, InjectionOutcome outcome, String verb)
+        internal static void Answered(BridgeManager bridge, String target, InjectionOutcome outcome, String verb)
         {
             if (outcome == InjectionOutcome.Ok)
             {

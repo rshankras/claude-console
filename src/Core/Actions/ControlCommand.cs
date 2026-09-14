@@ -67,8 +67,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             this.AddVerbParameter(agent, AgentVerb.Compact, Compact, "Compact", "shrink the context window");
             this.AddVerbParameter(agent, AgentVerb.Clear, Clear, "Clear", "reset the conversation");
             this.AddVerbParameter(agent, AgentVerb.Exit, Exit, "Exit", $"quit the {agent.DisplayName} session");
-            this.AddVerbParameter(agent, AgentVerb.Plan, Plan, "Plan", "switch the current chat to plan mode");
-            this.AddVerbParameter(agent, AgentVerb.Agent, Agent, "Agent", "inspect or switch subagent threads");
+            this.AddVerbParameter(agent, AgentVerb.Plan, Plan, "Plan", "toggle Plan mode (Shift+Tab in Codex; uses your CLI keymap)");
+            this.AddVerbParameter(agent, AgentVerb.Agent, Agent, "Agent", "open agents; when using codex agents in another tab, tap the pinned session again to release targeting");
             this.AddVerbParameter(agent, AgentVerb.Fork, Fork, "Fork", "branch the current chat into a new chat");
             this.AddVerbParameter(agent, AgentVerb.Skills, Skills, "Skills", "browse and use installed skills");
             this.AddVerbParameter(agent, AgentVerb.SessionStatus, SessionStatus, "Session Status", "show session configuration and usage");
@@ -85,7 +85,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return;
             }
 
-            this.AddParameter(id, label, "Core").SetDescription($"Run {command} to {what}");
+            this.AddParameter(id, label, "Core").SetDescription(
+                verb == AgentVerb.Plan && agent.Id == "codex-cli" ? what : $"Run {command} to {what}");
         }
 
         protected override void RunCommand(String actionParameter)
@@ -121,7 +122,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     SendVerb(bridge, AgentVerb.Exit);
                     break;
                 case Plan:
-                    SendVerb(bridge, AgentVerb.Plan);
+                    TogglePlan(bridge);
                     break;
                 case Agent:
                     SendVerb(bridge, AgentVerb.Agent);
@@ -141,6 +142,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             }
 
             PluginLog.Info($"ControlCommand: {actionParameter}");
+        }
+
+        internal static void TogglePlan(BridgeManager bridge)
+        {
+            // Let the CLI own mode state, including changes made outside the keypad.
+            if (bridge.Agent.Id == "codex-cli") { bridge.InjectKey(KeyStroke.ShiftTab); }
+            else { SendVerb(bridge, AgentVerb.Plan); }
         }
 
         // Review keeps a separate resource basename so it can evolve independently without

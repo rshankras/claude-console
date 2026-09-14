@@ -264,7 +264,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                     // applying commandWindows. Make the required command native on Windows too,
                     // so either path reaches the same helper instead of trying /bin/sh.
                     ["command"] = this.HookCommand(e, windows),
-                    ["timeout"] = 5,
+                    ["timeout"] = e == "SessionEnd" ? 3 : 5,
                 };
                 if (windows)
                 {

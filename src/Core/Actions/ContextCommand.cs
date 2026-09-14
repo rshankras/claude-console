@@ -24,8 +24,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         private Boolean ShowsRemaining => _bridge.Agent.Id == "codex-cli";
 
+        internal static String DescriptionFor(String agentId) => agentId == "codex-cli"
+            ? "Live context-window capacity; press for details, hold to compact in Codex"
+            : "Live context-window usage; press for /context (press to turn live status on, hold to turn it off)";
+
         public ContextCommand()
-            : base(displayName: "Context", description: "Live context-window capacity; press for details, hold to compact in Codex", groupName: "Core")
+            : base(displayName: "Context", description: DescriptionFor(BridgeManager.Instance.Agent.Id), groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
             // Until live status is set up the key says so instead of a value; the first press arms it and

@@ -69,10 +69,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         /// <summary>How much attention the pending approval deserves. See RiskClassifier.</summary>
         public ApprovalRisk Risk { get; set; } = ApprovalRisk.None;
 
+        // Transport fact: do not infer this from whether a pending file happens to exist now.
+        internal Boolean ApprovalInSessionState { get; set; }
+
         /// <summary>
         /// Fields that change what the key LOOKS like. Compared to decide whether to repaint, so a
         /// heartbeat-only update (UpdatedAt moving) doesn't churn the LCD every poll.
         /// </summary>
-        public String VisualKey => $"{this.SessionKey}|{this.Project}|{this.State}|{this.CtxPercent}|{this.Risk}";
+        public String VisualKey => $"{this.SessionKey}|{this.Project}|{this.State}|{this.CtxPercent}|{this.Risk}|{this.IsProvisional}";
     }
 }

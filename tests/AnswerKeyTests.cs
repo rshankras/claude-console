@@ -129,7 +129,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // clears the payload itself — but only on a keystroke the platform reports as landed.
             // A badge left over a failed injection is still true; a badge cleared over one is a lie.
             var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Core", "Actions", "AnswerCommand.cs"));
-            var body = source.Substring(source.IndexOf("private static void Answered(", StringComparison.Ordinal));
+            var body = source.Substring(source.IndexOf("internal static void Answered(", StringComparison.Ordinal));
 
             var landed = body.IndexOf("outcome == InjectionOutcome.Ok", StringComparison.Ordinal);
             var clear = body.IndexOf("bridge.Grid.ClearPendingApproval(target)", StringComparison.Ordinal);

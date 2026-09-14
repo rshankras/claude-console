@@ -15,6 +15,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     internal sealed class MacPlatformBridge : IPlatformBridge
     {
         public String Name => "macOS";
+        private readonly Dictionary<String, String> _sessionDirectories = new();
+        public IReadOnlyDictionary<String, String> SessionDirectories => _sessionDirectories;
+        internal Func<Int32, String> ProcessDirectoryReader { get; set; } = MacProcessDirectory.Read;
 
         public Boolean IsSupported => OperatingSystem.IsMacOS();
 
@@ -140,6 +143,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
 
             var found = AgentProcessWatcher.Discover(output, this._matcher, this.DrivableOwner);
+            _sessionDirectories.Clear();
+            // Codex may omit SessionStart until its first prompt. Ask the live process for cwd;
+            // no directory scan, extra ps, or external command is needed.
+            if (_cliCommand == "codex")
+            {
+                foreach (var row in AgentProcessWatcher.Parse(output, _matcher))
+                {
+                    if (found.Ttys.Contains(row.Tty) && Int32.TryParse(row.Pid, out var pid))
+                    {
+                        var directory = ProcessDirectoryReader(pid);
+                        if (!String.IsNullOrWhiteSpace(directory)) { _sessionDirectories[row.Tty] = directory; }
+                    }
+                }
+            }
+
 
             // Say WHY a session is missing from the keys — once per session, not per poll (#27).
             // Before #29 an iTerm2 or cmux session took a slot, the press pinned a TTY the keys could

@@ -99,7 +99,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             var barColor = active ? selectedColor : KeyImage.Gray;
             var setupWord = AgentBridgeNotice.FaceLabel(_bridge.AgentBridgeState)
                 ?? LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
-            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord), barColor, darkText: false);
+            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord, _bridge.Agent.Id), barColor, darkText: false);
         }
 
         internal static BitmapColor SelectedBarColor(String agentId) =>
@@ -108,7 +108,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         // Colour communicates routing; this word communicates session state. Keeping those two
         // signals independent means an inactive session can still say "Allow?" without looking active.
         // setupWord is the bar's live-status word ("Set up" / "Status off") while the wiring is absent, else null.
-        internal static String StateWord(GridSession session, String setupWord)
+        internal static String StateWord(GridSession session, String setupWord, String agentId = null)
         {
             // With the wiring off, nothing can write a session's state or its pending payload, so
             // whatever the registry holds is frozen at best — the owner read "Complete" under a
@@ -123,6 +123,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             {
                 return "Allow?";
             }
+
+            if (agentId == "codex-cli" && session.IsProvisional) { return "Ready"; }
 
             switch (session.State)
             {

@@ -71,12 +71,12 @@ VIZHI_FIRST_PAGE = [
     ("SessionSlotCommand___1", "Session 1", "session", ("Session 1", CODEX_BLUE)),
     ("SessionSlotCommand___2", "Session 2", "session", ("Session 2", GRAY)),
     ("SessionSlotCommand___3", "Session 3", "session", ("Session 3", GRAY)),
-    ("ScreenshotCommand", "Screenshot", "icon", ("screenshot", 0.70, CODEX_ICONS)),
-    ("VoiceCommand", "Dictate", "icon", ("voice", 0.82, CODEX_ICONS)),
-    ("VoiceDraftCommand", "Draft", "icon", ("voice_draft", 0.78, CODEX_ICONS)),
     ("ControlCommand___esc", "Esc", "icon", ("esc", 0.70, CODEX_ICONS)),
     ("AnswerCommand___no", "No", "tile", (RED, "deny", "No")),
     ("AnswerCommand___yes", "Yes", "tile", (GREEN, "allow", "Yes")),
+    ("ScreenshotCommand", "Screenshot", "icon", ("screenshot", 0.70, CODEX_ICONS)),
+    ("VoiceCommand", "Dictate", "icon", ("voice", 0.82, CODEX_ICONS)),
+    ("VoiceDraftCommand", "Draft", "icon", ("voice_draft", 0.78, CODEX_ICONS)),
 ]
 
 PROFILE_PAGES = [

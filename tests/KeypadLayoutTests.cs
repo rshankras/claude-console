@@ -27,15 +27,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         private static readonly String[] VizhiFirstPage =
         {
             "SessionSlotCommand___1", "SessionSlotCommand___2", "SessionSlotCommand___3",
-            "ScreenshotCommand", "VoiceCommand", "VoiceDraftCommand",
             "ControlCommand___esc", "AnswerCommand___no", "AnswerCommand___yes",
+            "ScreenshotCommand", "VoiceCommand", "VoiceDraftCommand",
         };
 
         private static readonly String[] VizhiCodexPage =
         {
             "ModelCycleCommand", "ControlCommand___plan_native", "ControlCommand___skills",
-            "ControlCommand___agent", "ControlCommand___fork", "ControlCommand___resume",
             "ControlCommand___review", "ContextCommand", "ControlCommand___compact",
+            "AnswerCommand___up", "AnswerCommand___enter", "AnswerCommand___down",
         };
 
         private static readonly String[] VizhiPromptPage =
@@ -49,7 +49,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             "ProjectVoiceCommand", "NavCommand___new_tab", "NavCommand___new_claude",
             "NavCommand___prev_tab", "NavCommand___next_tab", "ControlCommand___exit",
-            "AnswerCommand___up", "AnswerCommand___enter", "AnswerCommand___down",
+            "ControlCommand___agent", "ControlCommand___fork", "ControlCommand___resume",
         };
 
         private static readonly String[] VizhiGitPage =

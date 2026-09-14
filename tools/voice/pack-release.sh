@@ -52,7 +52,8 @@ verify_macos_helper() {
 # Which products ship offline voice. Both do: voice is agent-neutral — it records, transcribes and
 # injects into the focused session without asking which agent runs there. The payload installs to a
 # runtime home shared by every product (~/.claude/claude-console) under one bundle id, so a user with
-# both packages gets one notarized helper, one Microphone grant and one 141 MB model download.
+# both packages reuses one model download. Executable runtime copies are product-specific;
+# verify microphone consent after moving a helper to its product runtime location.
 case "$PRODUCT" in
   ClaudeConsole|VizhiCodex) SHIPS_VOICE=1 ;;
   *)

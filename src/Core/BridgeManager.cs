@@ -70,9 +70,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Runtime home shared with the voice helper: ~/.claude/claude-console/
         private static String ClaudeDir => Path.Combine(UserHome, ".claude");
         private static String ClaudeConsoleHome => Path.Combine(ClaudeDir, "claude-console");
-        private static String VoiceHelperApp => Path.Combine(ClaudeConsoleHome, "ClaudeVoiceHelper.app");
+        internal static String VoiceRuntimeHome(String home, String product) => product == "codex-console"
+            ? Path.Combine(home, ".codex", "vizhi-runtime")
+            : Path.Combine(home, ".claude", "claude-console");
+        private static String RuntimeHome => VoiceRuntimeHome(UserHome, IpcPaths.ProductSlug);
+        private static String VoiceHelperApp => Path.Combine(RuntimeHome, "ClaudeVoiceHelper.app");
         // Self-contained whisper-cli produced by tools/voice/bundle-whisper.sh (no Homebrew needed).
-        private static String WhisperBinDir => Path.Combine(ClaudeConsoleHome, "whisper-bin");
+        private static String WhisperBinDir => Path.Combine(RuntimeHome, "whisper-bin");
         private static String BundledWhisperCli => Path.Combine(WhisperBinDir, "whisper-cli");
 
         // Live-status bridge — the scripts the plugin installs and the settings.json it edits on the
@@ -213,7 +217,17 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Test seam: lets the unit tests stand in a known target tab instead of shelling out to
         // osascript to discover the frontmost one. Assigning ActiveTty is exactly what the
         // frontmost-tab probe does, so it is also how the tests simulate a poll.
-        internal String ActiveTty { get => _activeTty; set => _activeTty = value; }
+        internal String ActiveTty
+        {
+            get => _activeTty;
+            set
+            {
+                if (_activeTty == value) { return; }
+                _activeTty = value;
+                OnTargetChanged?.Invoke();
+            }
+        }
+        internal event Action OnTargetChanged;
 
         /// <summary>The active OS backend. Internal so tests can substitute a fake.</summary>
         internal IPlatformBridge Platform => _platform;
@@ -438,7 +452,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     var tty = _platform.QueryFrontmostSession();
                     if (!String.IsNullOrEmpty(tty))
                     {
-                        _activeTty = tty;
+                        ActiveTty = tty;
                     }
                 }
 
@@ -450,6 +464,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var liveTtys = _pollTick % 4 == 2 || _quietPolls >= QuietPollsBeforeSlow
                     ? _platform.DiscoverSessions()
                     : null;
+                if (liveTtys != null && this.Agent.Id == "codex-cli")
+                {
+                    Grid.DiscoveredProjectDirs = _platform.SessionDirectories;
+                }
                 Grid.Refresh(liveTtys);
 
                 // Where the agent cannot push state to us, pull it. Only Windows/Codex sets this
@@ -863,8 +881,8 @@ namespace Loupedeck.ClaudeConsolePlugin
             // tab is focused either way, so the gesture still reads as "take me to this session".
             if (_pinnedTty == session.SessionKey)
             {
-                this.ClearPin();
                 _activeTty = session.SessionKey;
+                this.ClearPin();
                 PluginLog.Info($"BridgeManager: unpinned slot {slot} ({session.Project}) — keys follow the frontmost tab again");
                 return;
             }
@@ -872,6 +890,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             _pinnedTty = session.SessionKey;
             Grid.FocusedSession = session.SessionKey;   // survives a plugin reload, like the slot assignments
             _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
+            OnTargetChanged?.Invoke();
             PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.SessionKey} ({session.Project})");
         }
 
@@ -887,6 +906,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             PluginLog.Info($"BridgeManager: released the pin on {_pinnedTty} — keys follow the frontmost tab again");
             _pinnedTty = null;
             Grid.FocusedSession = null;
+            OnTargetChanged?.Invoke();
         }
 
         /// <summary>
@@ -1235,7 +1255,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (Directory.Exists(pkgHelper) && !RuntimeTreeMatchesPackage(pkgHelper, VoiceHelperApp))
                 {
                     PluginLog.Info($"BridgeManager: installing voice helper from package -> {VoiceHelperApp}");
-                    Directory.CreateDirectory(ClaudeConsoleHome);
+                    Directory.CreateDirectory(RuntimeHome);
                     // Never ditto INTO an existing helper bundle — macOS refuses it (#59, below).
                     if (InstallBundleByReplacement(pkgHelper, VoiceHelperApp))
                     {

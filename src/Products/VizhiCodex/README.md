@@ -33,10 +33,10 @@ same title.
 
 | Page | Keys |
 |---|---|
-| 1 — Sessions & interaction | Codex sessions ×3 · **Screenshot** · **Voice** · **Voice Draft** · Esc · No · Yes |
-| 2 — Codex controls | Model · Plan · Skills · Agent · Fork · Resume · Review · **Context gauge** · Compact |
+| 1 — Sessions & interaction | Codex sessions ×3 · Esc · No · Yes · **Screenshot** · **Dictate** · **Draft** |
+| 2 — Codex controls | Model · Plan · Skills · Review · **Context gauge** · Compact · Up · Enter · Down |
 | 3 — Prompts | Explore · Explain · Document · Optimize · Refactor · Fix Bug · Code Audit · Write Tests · Security |
-| 4 — Terminal | Voice "Go to Project" · New Tab · New Codex · Prev/Next Tab · Exit · Up · Enter · Down |
+| 4 — Terminal | Voice "Go to Project" · New Tab · New Codex · Prev/Next Tab · Exit · Agent · Fork · Resume |
 | 5 — Git | Git Status · Diff · Log · Commit · Push · Create PR |
 
 Highlights that are Codex-specific:
@@ -49,7 +49,10 @@ Highlights that are Codex-specific:
   review *prompt* into the current conversation.)
 - **Codex power controls.** Plan, Agent, Fork, Skills, and Resume open Codex's own TUI
   workflows. The keypad does not imitate their menus; it opens the native picker and leaves the
-  terminal arrows and Enter available on the following page.
+  menu arrows and Enter available on page 2. Plan sends the native Shift+Tab toggle rather than
+  repeatedly entering /plan; a customized CLI keymap may require restoring that shortcut.
+  When the Agent workflow opens `codex agents` in a separate tab, tap the pinned session again
+  to release targeting, then focus that tab before using the keypad arrows.
 - **Context at a glance.** The gauge shows remaining capacity, turns amber below 25% and red below
   10%. Press for Codex `/status`; hold to run `/compact`.
 - **Approvals you can read from across the room.** Yes/No and the session key light amber when
@@ -66,7 +69,7 @@ The keypad never shows a value the agent did not report:
 - **No Cost key** — Codex bills a subscription and reports no spend; a `$0.00` would be
   indistinguishable from a free session.
 - **No autocomplete Tab / generic Mode-cycle keys** — Codex has no equivalent interaction; its
-  supported native `/plan` workflow has a dedicated Plan key instead.
+  native Plan toggle has a dedicated key instead.
 - **Context %** is read best-effort from Codex's session transcript, a format OpenAI documents
   as unstable — when it surprises us the key shows nothing rather than a stale number.
 
@@ -112,3 +115,20 @@ architecture — the platform seam, the agent seam, and why each product ships s
 
 Everything on-device; nothing leaves the machine — [PRIVACY.md](../../../PRIVACY.md).
 MIT — [LICENSE](../../../LICENSE).
+
+## Compatibility notes for the acceptance fixes
+
+On macOS, provisional session keys use the live Codex process directory before the first hook.
+They say **Ready**, not Complete. After a conversation ends during Fork/Resume, old context and
+session identity are cleared until a new hook arrives; the project remains visible.
+
+Vizhi installs executable speech components under `~/.codex/vizhi-runtime/`; Claude Console keeps
+its existing runtime location. The large model remains shared under
+`~/.claude/claude-console/whisper/`. Alternating products cannot replace each other's helper.
+First microphone permission at the new helper location still requires device verification.
+
+Project discovery remains shared. A nonempty `~/.claude/claude-console/project-roots` overrides
+automatic search; clear its entries to restore automatic discovery, or add project parent folders.
+No personal project path is built into the plugin. No-match feedback now remains on the key for
+8 seconds. Prompt configuration also remains shared; Code Audit is a Vizhi display label and no
+longer rewrites Claude's Review label in an unedited configuration file.

@@ -79,18 +79,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void Unedited_previous_rich_seed_gets_the_unambiguous_code_audit_label()
+        public void Codex_label_does_not_migrate_the_shared_Claude_prompt_file()
         {
-            PromptCommand.LoadPrompts(_file).ToList();
-            var previous = JsonSerializer.Deserialize<List<PromptDef>>(File.ReadAllText(_file));
-            previous.Single(p => p.Id == "review").Label = "Review";
-            this.Write(previous);
-
-            var loaded = PromptCommand.LoadPrompts(_file).ToList();
-
-            Assert.Equal("Code Audit", loaded.Single(p => p.Id == "review").Label);
-            var onDisk = JsonSerializer.Deserialize<List<PromptDef>>(File.ReadAllText(_file));
-            Assert.Equal("Code Audit", onDisk.Single(p => p.Id == "review").Label);
+            var original = PromptCommand.LoadPrompts(_file).ToList();
+            var before = File.ReadAllText(_file);
+            var review = original.Single(p => p.Id == "review");
+            Assert.Equal("Review", PromptCommand.ProductLabel(review, "claude-code"));
+            Assert.Equal("Code Audit", PromptCommand.ProductLabel(review, "codex-cli"));
+            Assert.Equal("Review", PromptCommand.LoadPrompts(_file).Single(p => p.Id == "review").Label);
+            Assert.Equal(before, File.ReadAllText(_file));
+            review.Label = "My review";
+            Assert.Equal("My review", PromptCommand.ProductLabel(review, "codex-cli"));
         }
 
         [Theory]
