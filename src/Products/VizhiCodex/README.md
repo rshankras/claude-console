@@ -98,6 +98,14 @@ The keypad never shows a value the agent did not report:
    On Windows, allow microphone access for desktop apps when using voice; text injection and
    screenshots need no additional permission prompt.
 
+## Updating profiles and prompts
+
+For an existing customized keypad, follow [the export, backup and explicit update workflow](../../../docs/profile-updates.md).
+A plugin upgrade does not rearrange an imported profile. Vizhi prompt settings now live at
+`~/.codex/vizhi/prompts.json`; the first load copies a valid Claude prompt list if present, then
+future edits are independent. An existing Vizhi file always wins. Invalid migration sources
+stay untouched and are retried on reload after correction.
+
 ## Building from source
 
 ```bash

@@ -2,7 +2,8 @@
 
 Scope: GitHub issues #89, #88, #90, #37, and #34, plus validation reconciliation for fixes
 already present. Issue #94 (test-architecture refactor) is explicitly excluded. Focused tests
-using the existing suite are still required. This document is a plan, not implementation or sign-off.
+using the existing suite are still required. The original plan is retained below. Implementation and validation are recorded in
+[vizhi-backlog-results-2026-09-14.md](vizhi-backlog-results-2026-09-14.md); remaining device gates are explicit.
 
 The acceptance-fixes preview and its separate profiles remain a fixed device-test baseline.
 Before starting this follow-up, checkpoint the existing changes in their own commit and create a
@@ -154,4 +155,4 @@ results locally first.
 8. Update the issue matrix and release notes. Merge/release only when required criteria pass or
    limitations are explicitly deferred. #94 remains excluded throughout.
 
-No code for these follow-up issues was implemented while writing this plan.
+Implementation started after plan approval. See the linked result record for commits, candidate identity and remaining checks.
