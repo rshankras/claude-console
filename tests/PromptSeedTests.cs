@@ -78,6 +78,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.DoesNotContain(onDisk, p => p.Prompt == "Explain how this code works");
         }
 
+        [Fact]
+        public void Unedited_previous_rich_seed_gets_the_unambiguous_code_audit_label()
+        {
+            PromptCommand.LoadPrompts(_file).ToList();
+            var previous = JsonSerializer.Deserialize<List<PromptDef>>(File.ReadAllText(_file));
+            previous.Single(p => p.Id == "review").Label = "Review";
+            this.Write(previous);
+
+            var loaded = PromptCommand.LoadPrompts(_file).ToList();
+
+            Assert.Equal("Code Audit", loaded.Single(p => p.Id == "review").Label);
+            var onDisk = JsonSerializer.Deserialize<List<PromptDef>>(File.ReadAllText(_file));
+            Assert.Equal("Code Audit", onDisk.Single(p => p.Id == "review").Label);
+        }
+
         [Theory]
         [InlineData("prompt")]   // reworded one prompt
         [InlineData("label")]    // relabelled one key

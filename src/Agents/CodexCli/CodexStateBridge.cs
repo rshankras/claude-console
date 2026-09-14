@@ -84,12 +84,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         public String HooksFile => Path.Combine(this._codexHome, "hooks.json");
 
         /// <summary>
-        /// Whether this platform's codex runs hooks at all. False on Windows, where the hook
-        /// runner creates no process (docs/spike-windows-codex-hooks.md) and the rollout bridge
-        /// carries state instead. Settable so BOTH branches are testable from either OS — the
-        /// production path is identical, only the platform's answer is injected.
+        /// Whether hooks should be installed. Settable so the no-install failure path remains
+        /// testable; current Codex supports command hooks on Windows through commandWindows.
         /// </summary>
-        internal Boolean InstallsHooks { get; set; } = !OperatingSystem.IsWindows();
+        internal Boolean InstallsHooks { get; set; } = true;
 
         /// <summary>
         /// Where the launcher lives. Under Codex's own directory, mirroring how Claude Console keeps
@@ -121,7 +119,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         internal String HookCommand(String eventName, Boolean windows) =>
             windows
-                ? $"\"{this.HookExe}\" codex {eventName}"
+                // Codex runs commandWindows through PowerShell. A quoted path by itself is only a
+                // string expression there, so the following `codex` token produces a parser error
+                // and exit code 1 before the helper starts. The call operator makes the quoted
+                // path executable; single-quote escaping keeps ordinary Windows profile names
+                // (including apostrophes or dollar signs) literal.
+                ? $"& '{this.HookExe.Replace("'", "''")}' codex {eventName}"
                 : $"/bin/sh '{this.HookScript}' {eventName}";
 
         /// <summary>
@@ -133,15 +136,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         {
             try
             {
-                // Windows installs NO hooks. Codex's hook runner there creates no process at all
-                // (hardware-proven; docs/spike-windows-codex-hooks.md), so writing hooks.json
-                // would only buy the user a /hooks trust prompt for keys that can never light.
-                // CodexRolloutBridge carries state on that platform instead.
                 if (!this.InstallsHooks)
                 {
-                    PluginLog.Info(
-                        "CodexStateBridge: Windows — hooks not installed (codex's hook runner spawns nothing " +
-                        "there); state comes from the rollout bridge");
+                    PluginLog.Info("CodexStateBridge: hook installation disabled");
                     return false;
                 }
 
@@ -185,8 +182,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
                     // The only honest evidence that Codex is actually running our hook is that it
                     // has run it. Trust state itself is Codex's business and not ours to read.
+                    // Windows also has rollout-derived state. Only an envelope explicitly written
+                    // by the hook proves the hook was trusted and executed.
+                    // An event from an older hook version does not prove the CURRENT script is
+                    // trusted. EnsureInstalled may replace the launcher while deliberately leaving
+                    // the stable hooks command alone; Codex can then require trust again while an
+                    // old envelope is still on disk. Only an event at or after the newest bridge
+                    // component proves this installation has actually run (#69).
+                    var launcher = OperatingSystem.IsWindows() ? this.HookExe : this.HookScript;
+                    var installedAt = new[] { this.HooksFile, launcher }
+                        .Where(File.Exists)
+                        .Select(File.GetLastWriteTimeUtc)
+                        .DefaultIfEmpty(DateTime.MinValue)
+                        .Max();
                     var seen = Directory.Exists(this._sessionsDir)
-                        && Directory.EnumerateFiles(this._sessionsDir, "*.json").Any();
+                        && Directory.EnumerateFiles(this._sessionsDir, "*.json").Any(path =>
+                            IsHookEnvelope(path) && File.GetLastWriteTimeUtc(path) >= installedAt);
 
                     return seen ? CodexBridgeStatus.Active : CodexBridgeStatus.AwaitingTrust;
                 }
@@ -239,23 +250,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         }
 
         /// <summary>The hooks document, built once so the install and the tests cannot disagree.</summary>
-        internal String BuildHooksJson()
+        internal String BuildHooksJson() => this.BuildHooksJson(OperatingSystem.IsWindows());
+
+        internal String BuildHooksJson(Boolean windows)
         {
             var events = new JsonObject();
             foreach (var e in Events)
             {
+                var handler = new JsonObject
+                {
+                    ["type"] = "command",
+                    // Some Windows Codex builds validate/launch the required command before
+                    // applying commandWindows. Make the required command native on Windows too,
+                    // so either path reaches the same helper instead of trying /bin/sh.
+                    ["command"] = this.HookCommand(e, windows),
+                    ["timeout"] = 5,
+                };
+                if (windows)
+                {
+                    // Official Codex Windows override. It intentionally matches command here:
+                    // command is the compatibility path; commandWindows is the documented path.
+                    handler["commandWindows"] = this.HookCommand(e, windows: true);
+                }
+
                 events[e] = new JsonArray(
                     new JsonObject
                     {
                         ["matcher"] = "*",
-                        ["hooks"] = new JsonArray(
-                            new JsonObject
-                            {
-                                ["type"] = "command",
-                                // Quoted so a space in the home directory can't split it.
-                                ["command"] = this.HookCommand(e),
-                                ["timeout"] = 5,
-                            }),
+                        ["hooks"] = new JsonArray(handler),
                     });
             }
 
@@ -266,6 +288,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             };
 
             return doc.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n";
+        }
+
+        private static Boolean IsHookEnvelope(String path)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                return doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("transport", out var transport)
+                    && transport.ValueKind == JsonValueKind.String
+                    && String.Equals(transport.GetString(), "hook", StringComparison.Ordinal);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private Boolean WriteHooksFile()

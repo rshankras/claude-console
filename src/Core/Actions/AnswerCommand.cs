@@ -8,17 +8,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// <summary>
     /// Answer keys (group "Answer") — for responding when Claude Code prompts a question.
     /// One auto-discovered command, one SDK action per response via AddParameter.
-    ///   Yes    → Return, ONLY on a captured permission prompt (confirms the highlighted option)
-    ///   No     → Escape, ONLY on a captured permission prompt (dismisses it; the tool never runs)
+    ///   Yes    → Return on a captured permission prompt (confirms the highlighted option)
+    ///   No     → Escape on a captured permission prompt (dismisses it; the tool never runs)
     ///   Up     → Up-arrow keystroke    (move the selection up in a menu)
     ///   Down   → Down-arrow keystroke  (move the selection down in a menu)
     ///   Enter  → Return keystroke      (confirm the highlighted menu option / submit)
     ///
     /// Up/Down/Enter drive Claude Code's numbered selection menus (permission prompts,
     /// AskUserQuestion, plan-mode confirmation): arrow to an option, then Enter. Yes/No answer a
-    /// permission prompt the plugin can SEE, and beep instead of guessing when there is none (see
-    /// AnswerApproval / Decide below — #21). All sent as key codes to the focused terminal, the
-    /// same path the prompt keys use; needs Accessibility (already required by the plugin).
+    /// permission prompt the plugin can SEE, and beep instead of guessing when an approval signal
+    /// should exist but does not (see AnswerApproval / Decide below — #21). Windows Codex cannot
+    /// observe approval prompts because its hook runner creates no process there, so that one
+    /// declared capability gap uses the safest possible manual fallback: Yes sends Return and No
+    /// sends Escape, never a typed word. All are key codes sent to the focused terminal.
     /// </summary>
     public class AnswerCommand : PluginDynamicCommand
     {
@@ -31,11 +33,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public AnswerCommand()
             : base()
         {
+            var agentName = BridgeManager.Instance.Agent.DisplayName;
             // Yes/No are full coloured live faces in the supplied design. Widget rendering
             // bypasses Options+' inset icon layer without freezing the action into a static .ict.
             // This flag applies to the whole dynamic command, so Up/Down/Enter also render their
             // own complete faces below.
             this.SetWidget(true);
+
+            var canObserveApprovals = BridgeManager.Instance.Agent?.Capabilities.ApprovalSignal ?? true;
 
             // Repaint Yes/No when the targeted session starts or stops waiting, so the badge is live.
             BridgeManager.Instance.Grid.OnGridChanged += () =>
@@ -51,15 +56,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 this.ActionImageChanged(Yes);
                 this.ActionImageChanged(No);
             };
+            BridgeManager.Instance.OnAgentBridgeStatusChanged += _ =>
+            {
+                this.ActionImageChanged(Yes);
+                this.ActionImageChanged(No);
+            };
 
             this.AddParameter(Yes, "Yes", "Answer")
-                .SetDescription("Approve the permission prompt Claude is waiting on (confirms the highlighted option); beeps if there is nothing to approve");
+                .SetDescription(canObserveApprovals
+                    ? $"Approve the permission prompt {agentName} is waiting on (confirms the highlighted option); beeps if there is nothing to approve"
+                    : $"Confirm the visible {agentName} prompt with Return; approval lighting is unavailable on this platform");
             this.AddParameter(No, "No", "Answer")
-                .SetDescription("Reject the permission prompt Claude is waiting on (dismisses it, the tool does not run); beeps if there is nothing to reject");
+                .SetDescription(canObserveApprovals
+                    ? $"Reject the permission prompt {agentName} is waiting on (dismisses it, the tool does not run); beeps if there is nothing to reject"
+                    : $"Dismiss the visible {agentName} prompt with Escape; approval lighting is unavailable on this platform");
             this.AddParameter(Up, "Arrow Up", "Answer")
-                .SetDescription("Move the selection up in a Claude Code menu (Up arrow)");
+                .SetDescription($"Move the selection up in a {agentName} menu (Up arrow)");
             this.AddParameter(Down, "Arrow Down", "Answer")
-                .SetDescription("Move the selection down in a Claude Code menu (Down arrow)");
+                .SetDescription($"Move the selection down in a {agentName} menu (Down arrow)");
             this.AddParameter(Enter, "Return", "Answer")
                 .SetDescription("Confirm the highlighted menu option / submit (Return)");
         }
@@ -138,6 +152,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             /// <summary>An approval is captured: dismiss it with Escape, so the tool does not run.</summary>
             MenuReject,
 
+            /// <summary>
+            /// This agent/transport cannot report approvals: honour the user's visible-prompt Yes
+            /// press with Return, without pretending an approval was observed.
+            /// </summary>
+            UnobservedConfirm,
+
+            /// <summary>
+            /// This agent/transport cannot report approvals: Escape is the fail-safe No because it
+            /// cannot confirm the highlighted affirmative option.
+            /// </summary>
+            UnobservedReject,
+
             /// <summary>Nothing we can confirm is a menu: beep and do nothing, rather than guess.</summary>
             NoOp,
         }
@@ -148,7 +174,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         /// carries a captured PermissionRequest payload — the SAME signal the amber badge is drawn
         /// from (SessionRegistry.ApplyPendingApproval), so the key and its badge cannot disagree.
         /// </summary>
-        internal static AnswerVia Decide(Boolean approve, Boolean hasPendingApproval)
+        internal static AnswerVia Decide(Boolean approve, Boolean hasPendingApproval, Boolean canObserveApprovals = true)
         {
             // The captured payload is the only thing that tells a permission MENU from anything
             // else. It is set only while a tool is genuinely blocked on approval, and — now the
@@ -156,19 +182,45 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // time the menu is up. No payload means we cannot confirm a menu, so we refuse to guess:
             // typing a word is #21, and a bare Return/Escape at an idle prompt is the retest
             // regression. Both are unsafe; doing nothing is not.
-            if (!hasPendingApproval)
+            if (hasPendingApproval)
             {
-                return AnswerVia.NoOp;
+                return approve ? AnswerVia.MenuConfirm : AnswerVia.MenuReject;
             }
 
-            return approve ? AnswerVia.MenuConfirm : AnswerVia.MenuReject;
+            // A transport that cannot observe PermissionRequest cannot distinguish an approval
+            // from an idle prompt. A manual key press while the user can see the prompt is still
+            // meaningful: Return confirms the highlighted option and Escape safely rejects it.
+            // Current Codex hooks report approvals on both platforms, so this remains only as the
+            // capability-driven fallback for agents or older transports without that signal.
+            if (!canObserveApprovals)
+            {
+                return approve ? AnswerVia.UnobservedConfirm : AnswerVia.UnobservedReject;
+            }
+
+            return AnswerVia.NoOp;
         }
 
         // The Options+ card that explains an inert Yes/No is posted once per load, not per press.
         private static Int32 _setupNoticePosted;
 
-        private static void AnswerApproval(BridgeManager bridge, Boolean approve)
+        internal static void AnswerApproval(BridgeManager bridge, Boolean approve)
         {
+            var agentSetup = AgentBridgeNotice.FaceLabel(bridge.AgentBridgeState);
+            if (agentSetup != null)
+            {
+                bridge.Alert();
+                if (Interlocked.Exchange(ref _setupNoticePosted, 1) == 0)
+                {
+                    bridge.Notify?.Invoke(
+                        PluginStatus.Warning,
+                        AgentBridgeNotice.Message(bridge.AgentBridgeState),
+                        AgentBridgeNotice.PublicHelpUrl,
+                        AgentBridgeNotice.Title(bridge.AgentBridgeState));
+                }
+                PluginLog.Info($"AnswerCommand: {(approve ? "Yes" : "No")} pressed while the agent bridge reads '{agentSetup}' — no approval was sent");
+                return;
+            }
+
             // Yes/No see a prompt only through the PermissionRequest hook, which is part of the
             // opt-in wiring. With it absent this press cannot do anything — and a bare beep left
             // the owner pressing Yes four times at a real prompt (#58). Say why, once, where the
@@ -196,14 +248,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 hasPending = !String.IsNullOrEmpty(session.PendingTool);
             }
 
-            switch (Decide(approve, hasPending))
+            var canObserve = bridge.Agent?.Capabilities.ApprovalSignal ?? true;
+            switch (Decide(approve, hasPending, canObserve))
             {
                 case AnswerVia.MenuConfirm:
-                    Answered(bridge, target, bridge.InjectKey(KeyStroke.Return), "approved");
+                    Answered(bridge, target, bridge.InjectKeyTo(target, KeyStroke.Return), "approved");
                     break;
 
                 case AnswerVia.MenuReject:
-                    Answered(bridge, target, bridge.InjectKey(KeyStroke.Escape), "rejected");
+                    Answered(bridge, target, bridge.InjectKeyTo(target, KeyStroke.Escape), "rejected");
+                    break;
+
+                case AnswerVia.UnobservedConfirm:
+                    bridge.InjectKeyTo(target, KeyStroke.Return);
+                    PluginLog.Info($"AnswerCommand: sent Yes by Return to {target} without approval observation (agent transport does not report approvals)");
+                    break;
+
+                case AnswerVia.UnobservedReject:
+                    bridge.InjectKeyTo(target, KeyStroke.Escape);
+                    PluginLog.Info($"AnswerCommand: sent No by Escape to {target} without approval observation (agent transport does not report approvals)");
                     break;
 
                 default:
@@ -294,6 +357,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // you can see an answer is wanted, and whether to look first, before pressing anything.
             if (actionParameter == Yes || actionParameter == No)
             {
+                var agentSetup = AgentBridgeNotice.FaceLabel(BridgeManager.Instance.AgentBridgeState);
+                if (agentSetup != null)
+                {
+                    return KeyImage.RenderDecisionTile(imageSize, agentSetup, KeyImage.Gray, approve: actionParameter == Yes, risk: ApprovalRisk.None);
+                }
+
                 // Not wired: a grey tile keeps the check / cross, so the key is still recognisably
                 // Yes or No, and the word says what to do about it. No badge — nothing can be
                 // pending that the plugin could see (#58).

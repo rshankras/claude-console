@@ -34,7 +34,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             new PromptDef { Id = "explore",     Label = "Explore",     Icon = "explore",     Prompt = "Give me a guided tour of this codebase: what it does, the architecture and key modules with file paths, how data flows through one typical operation, and anything that would surprise a new contributor. Finish with the five files most worth reading first, and why." },
             new PromptDef { Id = "explain",     Label = "Explain",     Icon = "explain",     Prompt = "Explain how the code we're looking at works — or ask me which file or function, if nothing is in context. Start with a one-paragraph summary, then walk the flow step by step, calling out non-obvious decisions, invariants, and gotchas a reader would miss." },
             new PromptDef { Id = "refactor",    Label = "Refactor",    Icon = "refactor",    Prompt = "Refactor the code under discussion for clarity without changing behavior: clearer names, smaller functions, less nesting, no duplication. Keep the public API stable, keep comments that explain why, and run the tests afterward to prove nothing broke." },
-            new PromptDef { Id = "review",      Label = "Review",       Icon = "review",      Prompt = "Review the current changes — the uncommitted diff if there is one, otherwise the last commit — like a careful senior engineer: correctness, edge cases, error handling, concurrency, security. Give file:line, severity, and a concrete failure scenario for each finding; skip style nits. If it's clean, say so." },
+            new PromptDef { Id = "review",      Label = "Code Audit",   Icon = "review",      Prompt = "Review the current changes — the uncommitted diff if there is one, otherwise the last commit — like a careful senior engineer: correctness, edge cases, error handling, concurrency, security. Give file:line, severity, and a concrete failure scenario for each finding; skip style nits. If it's clean, say so." },
             new PromptDef { Id = "optimize",    Label = "Optimize",    Icon = "optimize",    Prompt = "Find what is actually slow before optimizing: measure or trace the hot path in the code under discussion and state your evidence. Then optimize only the top bottleneck, keep behavior identical, and say what improvement you expect and how to verify it." },
             new PromptDef { Id = "security",    Label = "Security",     Icon = "security",    Prompt = "Audit the current changes — or the module in context — for security issues: unvalidated input at trust boundaries, injection, path traversal, secrets in code or logs, unsafe temp files and permissions. Rate each finding by exploitability with the concrete attack; skip purely theoretical ones." },
             new PromptDef { Id = "document",    Label = "Document",     Icon = "document",    Prompt = "Document the code under discussion: doc comments on public APIs that explain purpose, constraints, and the why — not restating signatures — plus a usage example where one helps. Match the project's existing documentation style, and update the README if user-facing behavior changed." },
@@ -63,6 +63,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public PromptCommand()
             : base()
         {
+            var agentName = BridgeManager.Instance.Agent.DisplayName;
             foreach (var p in LoadPrompts(ConfigFile))
             {
                 if (String.IsNullOrEmpty(p.Id))
@@ -74,7 +75,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 if (!String.IsNullOrWhiteSpace(p.Prompt))
                 {
                     param.SetDescription(p.Submits
-                        ? "Types this prompt into Claude Code: " + p.Prompt
+                        ? $"Types this prompt into {agentName}: " + p.Prompt
                         : "Types this prompt for you to edit before sending (press Return to send): " + p.Prompt);
                 }
             }
@@ -96,9 +97,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                         new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                     if (list != null && list.Count > 0)
                     {
-                        if (IsUneditedLegacySeed(list))
+                        if (IsUneditedLegacySeed(list) || IsUneditedPreviousSeed(list))
                         {
-                            PluginLog.Info("PromptCommand: prompts.json is the unedited pre-1.7 seed — upgrading it to the current defaults");
+                            PluginLog.Info("PromptCommand: prompts.json is an unedited generated seed — upgrading it to the current defaults");
                             WriteStarter(configFile);
                             return Defaults;
                         }
@@ -135,6 +136,33 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     !String.Equals(a.Icon, b.Icon, StringComparison.Ordinal) ||
                     !String.Equals(a.Prompt, b.Prompt, StringComparison.Ordinal) ||
                     a.Submit != null)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // The immediately previous rich default set differs only in the review key's label. Treat
+        // that exact file as generated so existing installs gain "Code Audit"; any other edit still
+        // makes the file user-owned and preserves it byte-for-byte.
+        internal static Boolean IsUneditedPreviousSeed(List<PromptDef> list)
+        {
+            if (list.Count != Defaults.Length)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < list.Count; i++)
+            {
+                var actual = list[i];
+                var current = Defaults[i];
+                var previousLabel = current.Id == "review" ? "Review" : current.Label;
+                if (!String.Equals(actual.Id, current.Id, StringComparison.Ordinal) ||
+                    !String.Equals(actual.Label, previousLabel, StringComparison.Ordinal) ||
+                    !String.Equals(actual.Icon, current.Icon, StringComparison.Ordinal) ||
+                    !String.Equals(actual.Prompt, current.Prompt, StringComparison.Ordinal) ||
+                    actual.Submit != current.Submit)
                 {
                     return false;
                 }

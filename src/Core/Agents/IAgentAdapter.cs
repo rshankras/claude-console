@@ -101,5 +101,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         /// <summary>Resume the most recent previous session.</summary>
         ResumeLast,
+
+        /// <summary>Enter the agent's planning workflow.</summary>
+        Plan,
+
+        /// <summary>Inspect or switch the active subagent thread.</summary>
+        Agent,
+
+        /// <summary>Branch the current conversation into a new session.</summary>
+        Fork,
+
+        /// <summary>Browse the agent's installed skills.</summary>
+        Skills,
+
+        /// <summary>Show the current session configuration and usage.</summary>
+        SessionStatus,
     }
 }

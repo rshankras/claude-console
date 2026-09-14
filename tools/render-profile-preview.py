@@ -9,9 +9,10 @@ the picker advertised the old design while the keypad rendered the new one.
 
 This script draws the nine thumbnails from the same sources the plugin renders from — the
 embedded icon PNGs in src/Core/Resources/icons, the state palette, the session face and the
-Yes/No tile geometry in KeyImage.cs — and writes them into both downloadable profiles, keeping
-every other zip member byte for byte. Run it after tools/sync-default-profiles.py (which owns
-the bindings and the preview ORDER) whenever the design or the first page changes:
+Yes/No tile geometry in KeyImage.cs — and writes them into all four downloadable profiles, keeping
+every other zip member byte for byte. Run it after tools/sync-default-profiles.py and
+tools/make-codex-profile.py (which own the bindings and preview order) whenever the design or the
+first page changes:
 
     python3 tools/render-profile-preview.py            # from the repository root
     python3 tools/render-profile-preview.py --sheet out.png   # also write a contact sheet
@@ -33,11 +34,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ICONS = os.path.join(ROOT, "src", "Core", "Resources", "icons")
-PROFILES = [
-    os.path.join(ROOT, "profiles", "ClaudeConsole-Keypad.lp5"),
-    os.path.join(ROOT, "profiles", "ClaudeConsole-Windows.lp5"),
-]
-
+CODEX_ICONS = os.path.join(ROOT, "src", "Products", "VizhiCodex", "Resources", "icons_codex")
 # Geometry measured from the Options+-rendered strip: a 116x116 canvas, black, with the key
 # tile as a 75x75 square at x=20, y=0 and the label centred below it.
 CANVAS = 116
@@ -52,10 +49,11 @@ LABEL = (165, 165, 165, 255)      # the strip's own label grey, sampled from the
 GREEN = (0x4F, 0xA9, 0x75, 255)   # Allow
 RED = (0xDA, 0x3D, 0x29, 255)     # Deny
 GRAY = (0x5A, 0x5A, 0x60, 255)    # quiet session bar
+CODEX_BLUE = (0x81, 0xA8, 0xED, 255)  # selected Vizhi session / Codex identity
 
 # (actionName suffix, strip label, renderer, argument) in first-page order — the order
 # tools/sync-default-profiles.py writes; the renderers below mirror KeyImage's three faces.
-FIRST_PAGE = [
+CLAUDE_FIRST_PAGE = [
     ("SessionSlotCommand___1", "Session 1", "session", "Session 1"),
     ("SessionSlotCommand___2", "Session 2", "session", "Session 2"),
     ("SessionSlotCommand___3", "Session 3", "session", "Session 3"),
@@ -65,6 +63,27 @@ FIRST_PAGE = [
     ("ControlCommand___esc", "Esc", "icon", ("esc", 0.70)),
     ("ControlCommand___tab", "Tab", "icon", ("tab", 0.70)),
     ("VoiceCommand", "Dictate", "icon", ("voice", 0.82)),
+]
+
+VIZHI_FIRST_PAGE = [
+    # A static profile preview cannot know the live route, so show one representative selected
+    # session. On hardware this blue follows whichever Codex session the user actually selects.
+    ("SessionSlotCommand___1", "Session 1", "session", ("Session 1", CODEX_BLUE)),
+    ("SessionSlotCommand___2", "Session 2", "session", ("Session 2", GRAY)),
+    ("SessionSlotCommand___3", "Session 3", "session", ("Session 3", GRAY)),
+    ("ScreenshotCommand", "Screenshot", "icon", ("screenshot", 0.70, CODEX_ICONS)),
+    ("VoiceCommand", "Dictate", "icon", ("voice", 0.82, CODEX_ICONS)),
+    ("VoiceDraftCommand", "Draft", "icon", ("voice_draft", 0.78, CODEX_ICONS)),
+    ("ControlCommand___esc", "Esc", "icon", ("esc", 0.70, CODEX_ICONS)),
+    ("AnswerCommand___no", "No", "tile", (RED, "deny", "No")),
+    ("AnswerCommand___yes", "Yes", "tile", (GREEN, "allow", "Yes")),
+]
+
+PROFILE_PAGES = [
+    (os.path.join(ROOT, "profiles", "ClaudeConsole-Keypad.lp5"), CLAUDE_FIRST_PAGE),
+    (os.path.join(ROOT, "profiles", "ClaudeConsole-Windows.lp5"), CLAUDE_FIRST_PAGE),
+    (os.path.join(ROOT, "profiles", "VizhiCodex-Keypad.lp5"), VIZHI_FIRST_PAGE),
+    (os.path.join(ROOT, "profiles", "VizhiCodex-Windows.lp5"), VIZHI_FIRST_PAGE),
 ]
 
 
@@ -89,8 +108,8 @@ def centred_text(draw: ImageDraw.ImageDraw, text: str, cx: float, cy: float, siz
     draw.text((cx - (right - left) / 2 - left, cy - (bottom - top) / 2 - top), text, font=f, fill=fill)
 
 
-def icon(name: str, px: int) -> Image.Image:
-    return Image.open(os.path.join(ICONS, name + ".png")).convert("RGBA").resize((px, px), Image.LANCZOS)
+def icon(name: str, px: int, directory: str = ICONS) -> Image.Image:
+    return Image.open(os.path.join(directory, name + ".png")).convert("RGBA").resize((px, px), Image.LANCZOS)
 
 
 def tile_canvas() -> tuple[Image.Image, ImageDraw.ImageDraw]:
@@ -100,11 +119,11 @@ def tile_canvas() -> tuple[Image.Image, ImageDraw.ImageDraw]:
 
 def render_icon(label: str, arg) -> Image.Image:
     """KeyImage.Render: black face, the copper glyph large and centred, no in-tile label."""
-    name, share = arg
+    name, share, *directory = arg
     im, draw = tile_canvas()
     draw.rectangle((TILE_X, TILE_Y, TILE_X + TILE - 1, TILE_Y + TILE - 1), fill=BLACK, outline=EDGE)
     px = int(TILE * share)
-    glyph = icon(name, px)
+    glyph = icon(name, px, directory[0] if directory else ICONS)
     im.alpha_composite(glyph, (TILE_X + (TILE - px) // 2, TILE_Y + (TILE - px) // 2))
     centred_text(draw, label, CANVAS / 2, LABEL_Y + 6, 13, LABEL)
     return im
@@ -124,14 +143,18 @@ def render_tile(label: str, arg) -> Image.Image:
     return im
 
 
-def render_session(label: str, name: str) -> Image.Image:
+def render_session(label: str, arg) -> Image.Image:
     """KeyImage.RenderSessionSlot: the name centred in the top 75%, a state bar flush along the
-    bottom 25%. The strip shows the idle word on the quiet grey — no session is pinned in a preview."""
+    bottom 25%. Session specs may provide a selected-bar colour; otherwise the bar is quiet grey."""
+    if isinstance(arg, tuple):
+        name, bar_colour = arg
+    else:
+        name, bar_colour = arg, GRAY
     im, draw = tile_canvas()
     draw.rectangle((TILE_X, TILE_Y, TILE_X + TILE - 1, TILE_Y + TILE - 1), fill=BLACK, outline=EDGE)
     title_h = int(TILE * 0.75)
     centred_text(draw, name, TILE_X + TILE / 2, TILE_Y + title_h / 2, 12, WHITE)
-    draw.rectangle((TILE_X, TILE_Y + title_h, TILE_X + TILE - 1, TILE_Y + TILE - 1), fill=GRAY)
+    draw.rectangle((TILE_X, TILE_Y + title_h, TILE_X + TILE - 1, TILE_Y + TILE - 1), fill=bar_colour)
     centred_text(draw, "Complete", TILE_X + TILE / 2, TILE_Y + title_h + (TILE - title_h) / 2, 10, WHITE)
     centred_text(draw, label, CANVAS / 2, LABEL_Y + 6, 13, LABEL)
     return im
@@ -175,11 +198,12 @@ def main() -> None:
     if "--sheet" in sys.argv:
         sheet_path = sys.argv[sys.argv.index("--sheet") + 1]
 
-    thumbnails = []
-    for action, label, kind, arg in FIRST_PAGE:
-        thumbnails.append((action, label, RENDERERS[kind](label, arg)))
-
-    for path in PROFILES:
+    sheets = []
+    for path, page_spec in PROFILE_PAGES:
+        thumbnails = [
+            (action, label, RENDERERS[kind](label, arg))
+            for action, label, kind, arg in page_spec
+        ]
         preview = read_preview(path)
         by_action = {
             item["actionName"].split("Actions.", 1)[-1]: item for item in preview["buttonPages"]
@@ -193,9 +217,11 @@ def main() -> None:
             entry["displayName"] = label
         write_preview(path, preview)
         print(f"rendered {len(thumbnails)} thumbnails into {os.path.relpath(path, ROOT)}")
+        if not sheets:
+            sheets = [im for _, _, im in thumbnails]
 
     if sheet_path:
-        ims = [im for _, _, im in thumbnails]
+        ims = sheets
         sheet = Image.new("RGBA", (sum(i.width for i in ims) + 8 * len(ims), CANVAS), (30, 30, 30, 255))
         x = 0
         for im in ims:

@@ -1,5 +1,9 @@
 # Spike: why does codex on Windows never spawn our hooks?
 
+> Historical investigation against Codex 0.148. Current Codex documentation now explicitly
+> supports `commandWindows`; the 1.6.0 follow-up enables official Windows hooks and keeps the
+> rollout transport as fallback rather than treating this older failure as permanent.
+
 Time-box: **90 minutes**. Run on the Windows machine, in a Claude Code session opened on this
 repo (`feat/multi-agent`). Everything below is self-contained; the full saga lives in
 [HANDOFF-multi-agent.md](HANDOFF-multi-agent.md) ("Windows codex hooks").

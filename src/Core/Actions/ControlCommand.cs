@@ -6,8 +6,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     using Loupedeck.ClaudeConsolePlugin.Platform;
 
     /// <summary>
-    /// Session control keys (group "Core"): Esc, Mode, Tab, Compact, Clear, Exit. One auto-discovered
-    /// command, one SDK action per control via AddParameter.
+    /// Session control keys (group "Core"). One auto-discovered command exposes the shared
+    /// keystrokes plus whichever native workflows the active agent actually supports.
     ///   Esc     → Escape keystroke — interrupts/stops Claude, exits a mode, dismisses a menu.
     ///             Sent as a real key (code 53), NOT typed text and NOT followed by Enter.
     ///   Mode    → Shift+Tab keystroke — cycles Claude Code's input modes
@@ -33,6 +33,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private const String Compact = "compact";
         private const String Clear = "clear";
         private const String Exit = "exit";
+        private const String Plan = "plan_native";
+        private const String Agent = "agent";
+        private const String Fork = "fork";
+        private const String Skills = "skills";
+        private const String SessionStatus = "session_status";
+        private const String Resume = "resume";
 
         public ControlCommand()
             : base()
@@ -61,6 +67,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             this.AddVerbParameter(agent, AgentVerb.Compact, Compact, "Compact", "shrink the context window");
             this.AddVerbParameter(agent, AgentVerb.Clear, Clear, "Clear", "reset the conversation");
             this.AddVerbParameter(agent, AgentVerb.Exit, Exit, "Exit", $"quit the {agent.DisplayName} session");
+            this.AddVerbParameter(agent, AgentVerb.Plan, Plan, "Plan", "switch the current chat to plan mode");
+            this.AddVerbParameter(agent, AgentVerb.Agent, Agent, "Agent", "inspect or switch subagent threads");
+            this.AddVerbParameter(agent, AgentVerb.Fork, Fork, "Fork", "branch the current chat into a new chat");
+            this.AddVerbParameter(agent, AgentVerb.Skills, Skills, "Skills", "browse and use installed skills");
+            this.AddVerbParameter(agent, AgentVerb.SessionStatus, SessionStatus, "Session Status", "show session configuration and usage");
+            this.AddVerbParameter(agent, AgentVerb.ResumeLast, Resume, "Resume", "open the saved-chat picker");
         }
 
         // One key per verb the agent actually has a word for. The description names the real
@@ -108,20 +120,40 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 case Exit:
                     SendVerb(bridge, AgentVerb.Exit);
                     break;
+                case Plan:
+                    SendVerb(bridge, AgentVerb.Plan);
+                    break;
+                case Agent:
+                    SendVerb(bridge, AgentVerb.Agent);
+                    break;
+                case Fork:
+                    SendVerb(bridge, AgentVerb.Fork);
+                    break;
+                case Skills:
+                    SendVerb(bridge, AgentVerb.Skills);
+                    break;
+                case SessionStatus:
+                    SendVerb(bridge, AgentVerb.SessionStatus);
+                    break;
+                case Resume:
+                    SendVerb(bridge, AgentVerb.ResumeLast);
+                    break;
             }
 
             PluginLog.Info($"ControlCommand: {actionParameter}");
         }
 
         // Review keeps a separate resource basename so it can evolve independently without
-        // breaking existing bindings; both variants now use the approved copper eye glyph. Clear
-        // deliberately uses the designer's outlined Delete rather than the removed filled legacy.
+        // breaking existing bindings; it uses the approved eye glyph in each product's identity
+        // colour. Clear deliberately uses the outlined Delete rather than the removed filled legacy.
         private static String IconFor(String actionParameter) =>
             actionParameter switch
             {
                 Review => "review_core",
                 // Use the designer's lighter outlined Delete glyph.
                 Clear => "clear",
+                Plan => "plan",
+                SessionStatus => "status",
                 _ => actionParameter,
             };
 
@@ -150,6 +182,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 case Compact: return "Compact";
                 case Clear: return "Clear";
                 case Exit: return "Exit";
+                case Plan: return "Plan";
+                case Agent: return "Agent";
+                case Fork: return "Fork";
+                case Skills: return "Skills";
+                case SessionStatus: return "Session Status";
+                case Resume: return "Resume";
                 default: return actionParameter;
             }
         }
@@ -164,6 +202,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 case Mode: color = KeyImage.Purple; break;
                 case Review: color = KeyImage.Purple; break;   // the Core family's colour
                 case Clear: color = KeyImage.Purple; break;
+                case Plan:
+                case Agent:
+                case Fork:
+                case Skills:
+                case SessionStatus:
+                case Resume:
+                    color = KeyImage.Blue;
+                    break;
                 default: color = KeyImage.Slate; break; // Compact, Tab
             }
             return KeyImage.Render(imageSize, this.GetCommandDisplayName(actionParameter, imageSize), color, IconFor(actionParameter));

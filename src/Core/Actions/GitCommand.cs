@@ -17,17 +17,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             ("diff",      "Diff",      "Show me the current git diff"),
             ("push",      "Push",      "Push my commits to the remote"),
             ("create_pr", "Create PR", "Create a pull request for the current branch"),
-            ("status",    "Status",    "Show me the git status"),
+            ("status",    "Git Status", "Show me the git status"),
             ("log",       "Log",       "Show me the recent git commits"),
         };
 
         public GitCommand()
             : base()
         {
+            var agentName = BridgeManager.Instance.Agent.DisplayName;
             foreach (var c in Commands)
             {
                 this.AddParameter(c.Id, c.Name, "Git")
-                    .SetDescription("Sends Claude: " + c.Prompt);
+                    .SetDescription($"Sends {agentName}: {c.Prompt}");
             }
         }
 

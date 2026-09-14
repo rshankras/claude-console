@@ -48,6 +48,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         private SessionRegistry NewRegistry() => new SessionRegistry(_sessionsDir, _activityDir, _registryFile) { Agent = new Agents.ClaudeCodeAdapter() };
 
+        private SessionRegistry NewCodexRegistry() =>
+            new SessionRegistry(_sessionsDir, _activityDir, _registryFile) { Agent = new Agents.CodexCliAdapter() };
+
         private String StateFor(String tty) => Path.Combine(_sessionsDir, tty + ".json");
         private String ActivityFor(String tty) => Path.Combine(_activityDir, tty + ".json");
 
@@ -76,6 +79,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             File.WriteAllText(
                 this.ActivityFor(tty),
                 JsonSerializer.Serialize(new { state, ts = ts ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
+        }
+
+        private void WriteCodexSession(
+            String tty,
+            String activityEvent,
+            Int64 ts,
+            String transcriptPath,
+            Int64? transcriptActivityTs = null)
+        {
+            File.WriteAllText(
+                this.StateFor(tty),
+                JsonSerializer.Serialize(new
+                {
+                    schema = 1,
+                    agent = "codex-cli",
+                    @event = activityEvent,
+                    ts,
+                    payload = new
+                    {
+                        session_id = "sid-" + tty,
+                        cwd = "/Users/x/proj",
+                        transcript_path = transcriptPath,
+                        transcript_activity_ts = transcriptActivityTs,
+                    },
+                }));
         }
 
         private SessionRegistry RefreshedWith(params String[] liveTtys)
@@ -149,6 +177,41 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Answered_codex_approval_stays_cleared_until_a_new_event_arrives()
+        {
+            var path = this.StateFor("ttys002");
+            var approval = """
+                {"schema":1,"agent":"codex-cli","event":"PermissionRequest","ts":1,
+                 "payload":{"session_id":"sid","cwd":"/Users/x/project","tool_name":"Bash",
+                 "tool_input":{"command":"touch /Users/x/Desktop/test.txt"}}}
+                """;
+            File.WriteAllText(path, approval);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(-5));
+
+            var registry = this.NewCodexRegistry();
+            registry.Refresh(new HashSet<String> { "ttys002" });
+            Assert.Equal("Bash", registry.SlotSession(1).PendingTool);
+
+            Assert.True(registry.ClearPendingApproval("ttys002"));
+            Assert.Null(registry.SlotSession(1).PendingTool);
+            Assert.Equal(ApprovalRisk.None, registry.SlotSession(1).Risk);
+            Assert.Equal("ready", registry.SlotSession(1).State);
+
+            // The stale PermissionRequest is still the newest hook document. Polling it again must
+            // not resurrect Allow? or the Yes badge after the user has already answered it.
+            registry.Refresh(new HashSet<String> { "ttys002" });
+            Assert.Null(registry.SlotSession(1).PendingTool);
+            Assert.Equal("ready", registry.SlotSession(1).State);
+
+            // A later write is a genuinely new request, even if its command text is identical.
+            File.WriteAllText(path, approval.Replace("\"ts\":1", "\"ts\":2"));
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(5));
+            registry.Refresh(new HashSet<String> { "ttys002" });
+            Assert.Equal("Bash", registry.SlotSession(1).PendingTool);
+            Assert.Equal("waiting", registry.SlotSession(1).State);
+        }
+
+        [Fact]
         public void A_session_stuck_on_busy_settles_back_to_ready()
         {
             // The Stop hook can be missed if a session is killed. A key stuck on "Working" forever
@@ -183,6 +246,63 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             WriteActivity("ttys001", "busy", DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 600);
 
             Assert.Equal("busy", RefreshedWith("ttys001").SlotSession(1).State);
+        }
+
+        [Fact]
+        public void A_codex_turn_interrupted_from_the_keypad_clears_without_task_complete()
+        {
+            // Codex stores activity in the session envelope itself. Before this regression fix its
+            // non-null Activity bypassed ActivityStall, so task_started + Esc stayed busy forever
+            // when Codex emitted no task_complete/Stop event.
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            // Codex appends turn_aborted after Escape, so the transcript is newer than the keypress.
+            // That write confirms termination; it must not be mistaken for continued work.
+            var transcript = this.TranscriptAged(seconds: 1);
+            WriteCodexSession("ttys001", "UserPromptSubmit", now - 30, transcript);
+
+            var clock = now - 10;
+            var registry = this.NewCodexRegistry();
+            registry.NowUnix = () => clock;
+            registry.NoteInterrupt("ttys001");
+            clock = now;
+            registry.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));
+
+            Assert.Equal("ready", registry.SlotSession(1).State);
+        }
+
+        [Fact]
+        public void A_codex_turn_with_a_newer_activity_event_after_escape_remains_busy()
+        {
+            // Escape can dismiss a menu instead of stopping the turn. A newer lifecycle event is
+            // stronger evidence than transcript movement and proves Codex continued.
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var transcript = this.TranscriptAged(seconds: 1);
+            WriteCodexSession("ttys001", "PostToolUse", now - 1, transcript);
+
+            var clock = now - 10;
+            var registry = this.NewCodexRegistry();
+            registry.NowUnix = () => clock;
+            registry.NoteInterrupt("ttys001");
+            clock = now;
+            registry.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));
+
+            Assert.Equal("busy", registry.SlotSession(1).State);
+        }
+
+        [Fact]
+        public void Codex_rollout_observation_beats_a_frozen_windows_last_write_time()
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var transcript = this.TranscriptAged(seconds: 600);
+            WriteCodexSession(
+                "ttys001", "UserPromptSubmit", now - 600, transcript,
+                transcriptActivityTs: now - 1);
+
+            var registry = this.NewCodexRegistry();
+            registry.NowUnix = () => now;
+            registry.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));
+
+            Assert.Equal("busy", registry.SlotSession(1).State);
         }
 
         // A transcript file whose last write was `seconds` ago, in this test's own temp root.

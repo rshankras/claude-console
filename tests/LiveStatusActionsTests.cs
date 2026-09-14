@@ -35,7 +35,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 var source = File.ReadAllText(RepoFile("src", "Core", "Actions", file));
                 Assert.Contains("new LiveStatusGate(", source);
                 Assert.Contains("protected override Boolean ProcessButtonEvent2(", source);
-                Assert.Contains("_gate.HandleButton(buttonEvent.EventType, () => this.RunCommand(actionParameter))", source);
+                Assert.Contains("_gate.HandleButton(", source);
                 Assert.DoesNotContain("_gate.Press()", source);   // the gate decides; the key never asks twice
                 Assert.Contains("_gate.Label", source);
             }
@@ -202,6 +202,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(LiveStatusState.Enabled, rig.Bridge.LiveStatus);     // nothing removed yet
             var card = Assert.Single(rig.Cards);
             Assert.Equal(BridgeNotice.LongPressAgain("Cost", 10), card.Message);
+        }
+
+        [Fact]
+        public void An_agent_without_settings_wiring_can_give_a_live_key_its_own_long_press()
+        {
+            using var rig = new Rig(applies: false);
+            var longPresses = 0;
+
+            rig.Gate.HandleButton(DeviceButtonEventType.Press, () => rig.ShortPresses++, () => longPresses++);
+            rig.Gate.HandleButton(DeviceButtonEventType.LongPress, () => rig.ShortPresses++, () => longPresses++);
+            rig.Gate.HandleButton(DeviceButtonEventType.Release, () => rig.ShortPresses++, () => longPresses++);
+
+            Assert.Equal(1, longPresses);
+            Assert.Equal(0, rig.ShortPresses);
         }
 
         [Fact]

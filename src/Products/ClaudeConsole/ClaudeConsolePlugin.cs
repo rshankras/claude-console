@@ -28,7 +28,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         public ClaudeConsolePlugin()
         {
-            PluginLog.Init(this.Log);
+            PluginLog.Init(this.Log, "Claude Console");
             PluginResources.Init(this.Assembly);
 
             // Declared HERE, not in Load(): the SDK constructs every action in between, and an

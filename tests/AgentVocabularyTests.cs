@@ -49,14 +49,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         /// <summary>
-        /// Codex exposes no context figure, so it has no command to show one. The key must be
-        /// absent rather than typing something that errors.
+        /// Codex has no /context command, but /status is its native context/token breakdown.
+        /// The shared Context key therefore opens /status rather than typing an invalid command.
         /// </summary>
         [Fact]
-        public void A_verb_the_agent_lacks_yields_no_word()
+        public void Context_uses_each_agents_native_breakdown()
         {
-            Assert.Null(Codex.SlashCommand(AgentVerb.Context));
-            Assert.NotNull(Claude.SlashCommand(AgentVerb.Context));
+            Assert.Equal("/status", Codex.SlashCommand(AgentVerb.Context));
+            Assert.Equal("/context", Claude.SlashCommand(AgentVerb.Context));
         }
 
         /// <summary>
@@ -85,6 +85,26 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             Assert.Equal("/review", Codex.SlashCommand(AgentVerb.Review));
             Assert.Null(Claude.SlashCommand(AgentVerb.Review));
+        }
+
+        [Fact]
+        public void Codex_power_controls_use_native_slash_commands_only()
+        {
+            Assert.Equal("/plan", Codex.SlashCommand(AgentVerb.Plan));
+            Assert.Equal("/agent", Codex.SlashCommand(AgentVerb.Agent));
+            Assert.Equal("/fork", Codex.SlashCommand(AgentVerb.Fork));
+            Assert.Equal("/skills", Codex.SlashCommand(AgentVerb.Skills));
+            Assert.Equal("/status", Codex.SlashCommand(AgentVerb.SessionStatus));
+            Assert.Equal("/resume", Codex.SlashCommand(AgentVerb.ResumeLast));
+
+            foreach (var verb in new[]
+                     {
+                         AgentVerb.Plan, AgentVerb.Agent, AgentVerb.Fork, AgentVerb.Skills,
+                         AgentVerb.SessionStatus, AgentVerb.ResumeLast,
+                     })
+            {
+                Assert.Null(Claude.SlashCommand(verb));
+            }
         }
 
         [Fact]
@@ -169,7 +189,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Equal("codex-cli", manager.Agent.Id);
             Assert.Equal("/new", manager.Agent.SlashCommand(AgentVerb.Clear));
-            Assert.Null(manager.Agent.SlashCommand(AgentVerb.Context));
+            Assert.Equal("/status", manager.Agent.SlashCommand(AgentVerb.Context));
         }
     }
 }

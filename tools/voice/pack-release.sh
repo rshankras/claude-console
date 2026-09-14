@@ -33,6 +33,22 @@ WBIN="$HOME_DIR/whisper-bin"
 # where nobody had placed the bundle by hand.
 WIN_WBIN="${WINDOWS_WHISPER_DIR:-$HOME_DIR/whisper-bin-win}"
 
+verify_macos_helper() {
+  local helper="$1"
+  if ! codesign --verify --deep --strict --verbose=4 "$helper"; then
+    echo "error: $helper failed strict code-signature verification." >&2
+    return 1
+  fi
+  if ! spctl --assess --type execute --verbose=4 "$helper"; then
+    echo "error: Gatekeeper rejected $helper." >&2
+    return 1
+  fi
+  if ! xcrun stapler validate "$helper"; then
+    echo "error: $helper has no valid stapled notarization ticket." >&2
+    return 1
+  fi
+}
+
 # Which products ship offline voice. Both do: voice is agent-neutral — it records, transcribes and
 # injects into the focused session without asking which agent runs there. The payload installs to a
 # runtime home shared by every product (~/.claude/claude-console) under one bundle id, so a user with
@@ -59,10 +75,7 @@ if [ "$SHIPS_VOICE" = "1" ]; then
     echo "       WHISPER_SMOKE_MODEL) — an unverified bundle is how the voice regression shipped." >&2
     exit 1
   fi
-  if ! xcrun stapler validate "$APP" >/dev/null 2>&1; then
-    echo "error: $APP is not stapled/notarized — run tools/voice/sign-and-notarize.sh first." >&2
-    exit 1
-  fi
+  verify_macos_helper "$APP"
   # The Windows bundle needs the same proof, and it can only be produced on Windows: run
   # whisper-cli.exe against a real recording there, then write the marker beside it.
   [ -d "$WIN_WBIN" ] || {
@@ -192,6 +205,26 @@ logiplugintool pack "$BUILD_DIR" "$OUT"
 if ! bash "$ROOT/tools/verify-package.sh" "$OUT"; then
   mv -f "$OUT" "$OUT.rejected"
   echo "error: the package failed verification — renamed to $OUT.rejected" >&2
+  exit 1
+fi
+
+# Verify what users will actually install, not only the source copied into staging. A packer can
+# alter permissions, omit nested signature files, or substitute a stale bundle while the source
+# helper remains valid. Extract into a fresh directory and apply the same three release gates to
+# the packaged helper (#66).
+VERIFY_DIR="$(mktemp -d)"
+trap 'rm -rf "$VERIFY_DIR"' EXIT
+ditto -x -k "$OUT" "$VERIFY_DIR"
+PACKED_APP="$(find "$VERIFY_DIR" -type d -name ClaudeVoiceHelper.app -print -quit)"
+if [ -z "$PACKED_APP" ]; then
+  echo "error: the package contains no ClaudeVoiceHelper.app." >&2
+  mv -f "$OUT" "$OUT.rejected"
+  exit 1
+fi
+echo ">>> verifying the helper extracted from the final package"
+if ! verify_macos_helper "$PACKED_APP"; then
+  mv -f "$OUT" "$OUT.rejected"
+  echo "error: packaged helper failed verification — renamed to $OUT.rejected" >&2
   exit 1
 fi
 

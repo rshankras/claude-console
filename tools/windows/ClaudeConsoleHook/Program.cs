@@ -330,7 +330,7 @@ internal static class Program
             var body = payload.TrimStart().StartsWith('{') ? payload : "null";
             var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var envelope =
-                $"{{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"{JsonEscape(eventName)}\",\"ts\":{ts},\"payload\":{body}}}\n";
+                $"{{\"schema\":1,\"agent\":\"codex-cli\",\"transport\":\"hook\",\"event\":\"{JsonEscape(eventName)}\",\"ts\":{ts},\"payload\":{body}}}\n";
 
             // The shared file goes FIRST, before any process walking: codex enforces the hook
             // timeout by TERMINATING the process (exit code 1 — seen as "hook exited with code 1"

@@ -61,8 +61,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         ///
         /// Not zero, and the reason matters. Escape is not exclusively "interrupt" — it also exits a
         /// mode and dismisses a menu, and AnswerCommand sends it to REJECT a tool, after which the
-        /// turn carries on. So the transcript still has to agree: if it grew after the interrupt, the
-        /// agent kept working and this hint is discarded. The wait is what gives it time to say so.
+        /// turn carries on. For agents that go silent on interrupt, the transcript still has to agree:
+        /// if it grew after Escape, the agent kept working and this hint is discarded. Codex instead
+        /// appends `turn_aborted`; callers identify that semantic so the terminating write corroborates
+        /// Escape rather than delaying recovery. The wait gives either agent time to report its result.
         /// </summary>
         internal static readonly TimeSpan InterruptQuietFor = TimeSpan.FromSeconds(5);
 
@@ -72,33 +74,39 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// Pure, so the policy can be tested without a clock or a filesystem.
         /// <paramref name="transcriptMtimeUnix"/> is null when there is no transcript to consult.
         /// <paramref name="interruptedAtUnix"/> is when the plugin last sent Escape to this session,
-        /// or null if it never did.
+        /// or null if it never did. <paramref name="transcriptWritesOnInterrupt"/> distinguishes an
+        /// abort record (Codex) from continued work after Escape (Claude Code).
         /// </summary>
         internal static Boolean IsStalledBusy(
             String state,
             Int64 activityTsUnix,
             Int64? transcriptMtimeUnix,
             Int64 nowUnix,
-            Int64? interruptedAtUnix = null)
+            Int64? interruptedAtUnix = null,
+            Boolean transcriptWritesOnInterrupt = false)
         {
             if (!String.Equals(state, "busy", StringComparison.Ordinal))
             {
                 return false;
             }
 
-            // We pressed Escape, and nothing has been written since. Don't make the user watch an
-            // hourglass for a minute and a half over a turn we ended ourselves.
+            // We pressed Escape and no newer activity edge says the turn continued. Don't make the
+            // user watch an hourglass for a minute and a half over a turn we ended ourselves.
             //
-            // "Nothing since" is checked against BOTH files, and the activity file is the stronger
-            // of the two. UserPromptSubmit writes busy at T0 and our Escape lands at T1 >= T0, so a
+            // The activity timestamp is the stronger signal. UserPromptSubmit writes busy at T0 and
+            // our Escape lands at T1 >= T0, so a
             // hint OLDER than the busy write cannot be about this turn: it is left over from a
             // previous session on a recycled tty (macOS reuses ttys000... as tabs close and open),
             // and honouring it would clear a brand-new session the instant it went busy. The same
-            // test also catches an Escape that merely dismissed a menu or rejected a tool — the
-            // turn carries on, PostToolUse rewrites busy with a newer stamp, and the hint expires.
+            // test also catches an Escape that merely dismissed a menu or rejected a tool — the turn
+            // carries on, PostToolUse rewrites busy with a newer stamp, and the hint expires. For an
+            // agent that goes silent on interrupt, transcript movement is a second veto; for Codex,
+            // that movement is the abort record itself and is deliberately not a veto.
             if (interruptedAtUnix.HasValue
                 && interruptedAtUnix.Value >= activityTsUnix
-                && (!transcriptMtimeUnix.HasValue || transcriptMtimeUnix.Value <= interruptedAtUnix.Value)
+                && (transcriptWritesOnInterrupt
+                    || !transcriptMtimeUnix.HasValue
+                    || transcriptMtimeUnix.Value <= interruptedAtUnix.Value)
                 && nowUnix - interruptedAtUnix.Value > InterruptQuietFor.TotalSeconds)
             {
                 return true;
