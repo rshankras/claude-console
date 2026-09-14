@@ -19,6 +19,7 @@
     <!-- One runtime, four independent invocations. No recorder/UIA work runs inside the host
          plugin or the frequently invoked hook. Standalone projects remain useful for diagnostics. -->
     <Compile Include="..\ClaudeConsoleInject\Program.cs" Link="Inject.cs" />
+    <Compile Include="..\ClaudeConsoleInject\SessionInputLock.cs" Link="SessionInputLock.cs" />
     <Compile Include="..\ClaudeConsoleFocus\Program.cs" Link="Focus.cs" />
     <Compile Include="..\ClaudeConsoleFocus\TabSelection.cs" Link="TabSelection.cs" />
     <Compile Include="..\ClaudeConsoleVoice\Program.cs" Link="Voice.cs" />
