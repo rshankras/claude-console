@@ -57,6 +57,9 @@ if ! bash "$REPO/tests/scripts/test-codex-hook.sh"; then
 fi
 
 echo
+echo "▶ detached Codex hook routing"
+if ! python3 "$REPO/tests/scripts/test-codex-detached-hook.py"; then STATUS=1; fi
+
 echo "▶ profile update and cross-process input-lock tests"
 if ! python3 "$REPO/tests/scripts/test-profile-update.py"; then STATUS=1; fi
 if ! python3 "$REPO/tests/scripts/test-input-lock.py"; then STATUS=1; fi
