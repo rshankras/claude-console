@@ -88,6 +88,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Test seam: proves the cache is pruned rather than accumulating.</summary>
         internal Int32 CommandLineCacheCount => _cmdCache.Count;
 
+        internal Func<Int32, DateTime, String> DirectoryResolver { get; set; } = WindowsProcessDirectory.Read;
+        private readonly Dictionary<String, String> _sessionDirectories = new(StringComparer.Ordinal);
+        public IReadOnlyDictionary<String, String> SessionDirectories => _sessionDirectories;
+
         public HashSet<String> DiscoverSessions()
         {
             var enumerator = this.ProcessEnumerator ?? this.EnumerateProcesses;
@@ -129,7 +133,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 }
             }
 
-            return WindowsProcessWatcher.SessionsFrom(rows, this._matcher);
+            var sessions = WindowsProcessWatcher.SessionsFrom(rows, this._matcher);
+            foreach (var stale in _sessionDirectories.Keys.Where(k => !sessions.Contains(k)).ToArray())
+                _sessionDirectories.Remove(stale);
+            foreach (var row in rows)
+            {
+                var key = WindowsProcessWatcher.SessionKeyFor(row);
+                if (!sessions.Contains(key)) continue;
+                // Retry missing data and refresh CWD after /resume; only a few bounded reads
+                // per live CLI, with no subprocess, directory crawl or title inference.
+                String directory = null;
+                try { directory = DirectoryResolver?.Invoke(row.Pid, row.StartTime); }
+                catch { /* Access may change while the session is running; metadata is optional. */ }
+                if (!String.IsNullOrWhiteSpace(directory)) _sessionDirectories[key] = directory;
+            }
+            return sessions;
         }
 
         // Every candidate needs its command line (see NeedsCommandLine), so the cost matters: a
@@ -495,6 +513,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             this.RunTerminal(args, requiresExistingWindow: action != TerminalAction.NewClaudeWindow);
         }
 
+        private readonly Object _captureLock = new();
+        private System.Threading.EventWaitHandle _captureCancel;
+        internal Func<String, List<String>, Int32, Int32?> CaptureRunner { get; set; } = BoundedProcess.RunForExitCode;
+
+        public Boolean TryCancelScreenshot()
+        {
+            lock (_captureLock)
+            {
+                if (_captureCancel == null) return false;
+                _captureCancel.Set();
+                return true;
+            }
+        }
+
         public Boolean CaptureScreenshotInteractive(String outputPath)
         {
             // Windows' interactive capture (the ms-screenclip: overlay) delivers to the
@@ -510,15 +542,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
             // The helper polices its own 120s deadline and exits fast on a dismissed overlay;
             // the bound here is the backstop, a little above the helper's own.
-            var exit = BoundedProcess.RunForExitCode(helper, WindowsTools.Arguments(helper, "shot", new[] { outputPath }), 130000);
-
-            if (exit != 0 || !File.Exists(outputPath))
+            var eventName = @"Local\VizhiCapture-" + Guid.NewGuid().ToString("N");
+            using var cancel = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.ManualReset, eventName);
+            lock (_captureLock)
             {
-                PluginLog.Info($"WindowsPlatformBridge.CaptureScreenshotInteractive: no file (exit {exit?.ToString() ?? "null"}) — cancelled, or the capture overlay is unavailable");
-                return false;
+                if (_captureCancel != null) return false; // one outstanding picker per product
+                _captureCancel = cancel;
             }
-
-            return true;
+            try
+            {
+                var exit = CaptureRunner(helper,
+                    WindowsTools.Arguments(helper, "shot", new[] { outputPath, "--cancel-event", eventName }), 130000);
+                if (cancel.WaitOne(0) || exit != 0 || !File.Exists(outputPath))
+                {
+                    PluginLog.Info($"WindowsPlatformBridge.CaptureScreenshotInteractive: no capture (exit {exit?.ToString() ?? "null"})");
+                    return false;
+                }
+                return true;
+            }
+            finally
+            {
+                lock (_captureLock) _captureCancel = null;
+            }
         }
 
         private String _shotHelperPath;
@@ -595,7 +640,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 }
                 if (code == FocusExitRaisedOnly)
                 {
-                    PluginLog.Verbose("WindowsPlatformBridge: focus helper raised the window but couldn't identify the tab");
+                    PluginLog.Verbose("WindowsPlatformBridge: focus helper could not verify the selected tab");
                     return false;   // raising a window does not identify the requested tab
                 }
                 PluginLog.Info($"WindowsPlatformBridge: focus helper exit {(code.HasValue ? code.ToString() : "null")} — raising the terminal window instead");

@@ -1030,6 +1030,8 @@ namespace Loupedeck.ClaudeConsolePlugin
             return _platform.CaptureScreenshotInteractive(path) ? path : null;
         }
 
+        internal Boolean TryCancelScreenshot() => _platform.TryCancelScreenshot();
+
         /// <summary>Open a terminal and start the agent with extra CLI args (e.g. -i shot.png).</summary>
         public void LaunchAgentSession(params String[] extraArgs) => _platform.LaunchAgentSession(extraArgs);
 
@@ -1162,7 +1164,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             if (Voice.Phase == VoicePhase.Cancelling) { return false; }
             var psi = new ProcessStartInfo(helper) { UseShellExecute = false, CreateNoWindow = true };
-            foreach (var argument in WindowsTools.Arguments(helper, "voice", new List<String>
+            var voiceArguments = new List<String>
             {
                 "--maxsec", "60",
                 "--out", VoiceWavFile,
@@ -1171,7 +1173,20 @@ namespace Loupedeck.ClaudeConsolePlugin
                 "--model", VoiceModelFile,
                 "--whisper", WindowsWhisperCli,
                 "--ready", VoiceReadyFile,
-            })) { psi.ArgumentList.Add(argument); }
+            };
+            if (Voice.Intent == VoiceIntent.Project)
+            {
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                var candidates = ProjectDiscovery.Candidates(home, ProjectDiscovery.DefaultRootsFile(home), this.KnownProjectDirs());
+                var vocabulary = ProjectVocabulary.For(candidates.Paths);
+                if (vocabulary.Length > 0)
+                {
+                    voiceArguments.Add("--prompt");
+                    voiceArguments.Add(vocabulary);
+                    PluginLog.Info($"Project voice: supplying vocabulary from {candidates.Paths.Count} discovered projects");
+                }
+            }
+            foreach (var argument in WindowsTools.Arguments(helper, "voice", voiceArguments)) { psi.ArgumentList.Add(argument); }
             using var process = Process.Start(psi);
             if (process == null) { return false; }
             var ready = false;

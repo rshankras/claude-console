@@ -129,6 +129,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// </summary>
         Boolean CaptureScreenshotInteractive(String outputPath);
 
+        /// <summary>Cancel this product's active capture; true means Escape was consumed.</summary>
+        Boolean TryCancelScreenshot() => false;
+
         /// <summary>
         /// Open a terminal and start the agent CLI with <paramref name="extraArgs"/> appended —
         /// same idle-tab reuse as <see cref="LaunchClaudeInProject"/>, but no cd: for launches

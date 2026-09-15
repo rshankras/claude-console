@@ -235,6 +235,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             var name = RunningImageName(p.Name);
             if (CliNames(matcher).Contains(name, StringComparer.OrdinalIgnoreCase))
             {
+                // Codex App launches long-lived `codex sandbox ...` workers. They share the
+                // CLI image name but have no interactive session. Match the first argument
+                // exactly, never a word in a prompt, project path, or sandbox configuration.
+                var arguments = InterpreterArguments(cmd);
+                var closingQuote = arguments.StartsWith("\"", StringComparison.Ordinal) ? arguments.IndexOf('"', 1) : -1;
+                var firstArgument = closingQuote > 0
+                    ? arguments.Substring(1, closingQuote - 1)
+                    : arguments.Split(new[] { ' ', '\t', '\r', '\n' }, 2)[0];
+                if (matcher.NonSessionSubcommands.Contains(firstArgument, StringComparer.Ordinal))
+                {
+                    return false;
+                }
                 return true;
             }
 

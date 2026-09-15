@@ -266,6 +266,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         // ---------------------------------------------------------------------------------------
 
         [WindowsFact]
+        public void Codex_session_end_with_an_open_input_pipe_finishes_before_its_three_second_deadline()
+        {
+            // Warm the copied binary before timing; this isolates the helper from antivirus startup.
+            this.LaunchDirect("{}", false, "codex", "SessionStart");
+            var run = this.LaunchDirect(null, true, "codex", "SessionEnd");
+            Assert.Equal(0, run.ExitCode);
+            Assert.True(run.Elapsed < TimeSpan.FromSeconds(3), $"hook took {run.Elapsed.TotalSeconds:F2}s");
+            using var state = JsonDocument.Parse(File.ReadAllText(Path.Combine(_temp, "codex-console", "sessions", "shared.json")));
+            Assert.Equal("SessionEnd", state.RootElement.GetProperty("event").GetString());
+        }
+
+        [WindowsFact]
         public void A_stdin_that_never_closes_cannot_keep_the_hook_alive()
         {
             // The pile-up QA saw after a reboot: ~15 hooks stuck, machine frozen. A stdin that never

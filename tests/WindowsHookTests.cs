@@ -149,7 +149,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var source = ReadShimSource();
             var main = source.Substring(source.IndexOf("private static Int32 Main(", StringComparison.Ordinal));
 
-            var watchdog = main.IndexOf("StartWatchdog()", StringComparison.Ordinal);
+            var watchdog = main.IndexOf("StartWatchdog(", StringComparison.Ordinal);
             var breadcrumb = main.IndexOf("EntryBreadcrumb(args);", StringComparison.Ordinal);
             var dispatch = main.IndexOf("args[0] == \"statusline\"", StringComparison.Ordinal);
             Assert.True(watchdog >= 0, "Main no longer arms the watchdog");
@@ -162,7 +162,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("IsBackground = true", source);
             Assert.Contains("Environment.Exit(0)", source);
             Assert.Matches(@"WatchdogSeconds\s*=\s*\d+;", source);
-            var watchdogBody = source.Substring(source.IndexOf("private static Boolean StartWatchdog()", StringComparison.Ordinal));
+            var watchdogBody = source.Substring(source.IndexOf("private static Boolean StartWatchdog(", StringComparison.Ordinal));
             watchdogBody = watchdogBody.Substring(0, watchdogBody.IndexOf("private static", 10, StringComparison.Ordinal));
             Assert.DoesNotContain("Breadcrumb(", watchdogBody);
             Assert.Contains("return false;", watchdogBody);

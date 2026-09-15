@@ -95,6 +95,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             switch (actionParameter)
             {
                 case Esc:
+                    if (bridge.TryCancelScreenshot())
+                    {
+                        PluginLog.Info("ControlCommand: cancelled active screenshot");
+                        break;
+                    }
                     // Tell the grid before injecting: this is the ONE Escape that means "stop the
                     // turn", so the stall rule can trust it and clear the hourglass in seconds
                     // instead of waiting out the full transcript-quiet window (#30). Deliberately

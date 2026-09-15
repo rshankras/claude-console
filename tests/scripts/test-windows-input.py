@@ -32,10 +32,18 @@ with tempfile.TemporaryDirectory(prefix='vizhi-console-injection-') as tmp:
             deadline = time.monotonic() + 15
             while not ready.exists() or not ready.read_text():
                 if child.poll() is not None or time.monotonic() > deadline:
-                    raise AssertionError('isolated console did not become ready')
+                    error = Path(str(ready) + '.error')
+                    detail = error.read_text() if error.exists() else f'exit={child.poll()}'
+                    raise AssertionError(f'isolated console did not become ready: {detail}')
                 time.sleep(.05)
             ticks = ready.read_text()
             sessions.append((child, ticks, log))
+        # Reject a wrong generation while that PID is still alive, not only after exit.
+        for child, ticks, log in sessions:
+            rejected = subprocess.run([str(helper), 'inject', 'text', '--pid', str(child.pid),
+                '--start-ticks', str(int(ticks) + 1), '--submit', 'true', '--text', '/must-not-deliver'], timeout=15)
+            assert rejected.returncode == 2, rejected.returncode
+            assert not log.exists(), 'stale-generation input reached a live console'
         requests = []
         started = time.monotonic()
         for index, (child, ticks, log) in enumerate(sessions):
