@@ -149,7 +149,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var source = ReadShimSource();
             var main = source.Substring(source.IndexOf("private static Int32 Main(", StringComparison.Ordinal));
 
-            var watchdog = main.IndexOf("StartWatchdog()", StringComparison.Ordinal);
+            var watchdog = main.IndexOf("StartWatchdog(", StringComparison.Ordinal);
             var breadcrumb = main.IndexOf("EntryBreadcrumb(args);", StringComparison.Ordinal);
             var dispatch = main.IndexOf("args[0] == \"statusline\"", StringComparison.Ordinal);
             Assert.True(watchdog >= 0, "Main no longer arms the watchdog");
@@ -162,7 +162,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("IsBackground = true", source);
             Assert.Contains("Environment.Exit(0)", source);
             Assert.Matches(@"WatchdogSeconds\s*=\s*\d+;", source);
-            var watchdogBody = source.Substring(source.IndexOf("private static Boolean StartWatchdog()", StringComparison.Ordinal));
+            var watchdogBody = source.Substring(source.IndexOf("private static Boolean StartWatchdog(", StringComparison.Ordinal));
             watchdogBody = watchdogBody.Substring(0, watchdogBody.IndexOf("private static", 10, StringComparison.Ordinal));
             Assert.DoesNotContain("Breadcrumb(", watchdogBody);
             Assert.Contains("return false;", watchdogBody);
@@ -357,9 +357,60 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var bridge = new Agents.CodexStateBridge(codexHome: @"C:\Users\me\.codex") { HookExe = Exe };
 
-            Assert.Equal($"\"{Exe}\" codex SessionStart", bridge.HookCommand("SessionStart", windows: true));
+            Assert.Equal($"& '{Exe}' codex SessionStart", bridge.HookCommand("SessionStart", windows: true));
             Assert.Contains("/bin/sh '", bridge.HookCommand("SessionStart", windows: false));
             Assert.Contains("codex-hook.sh' SessionStart", bridge.HookCommand("SessionStart", windows: false));
+        }
+
+        /// <summary>
+        /// Codex executes commandWindows as PowerShell source. Without the call operator, a
+        /// quoted executable path is parsed as a string followed by an unexpected token: Codex
+        /// reports exit code 1 and the helper never reaches its first breadcrumb instruction.
+        /// Exercise the real shell boundary, not only the generated string.
+        /// </summary>
+        [Fact]
+        public void The_codex_hook_command_is_valid_powershell_source()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var bridge = new Agents.CodexStateBridge(codexHome: @"C:\Users\me\.codex")
+            {
+                HookExe = "Write-Output",
+            };
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add("-NoProfile");
+            psi.ArgumentList.Add("-NonInteractive");
+            psi.ArgumentList.Add("-Command");
+            psi.ArgumentList.Add(bridge.HookCommand("SessionStart", windows: true));
+
+            using var process = System.Diagnostics.Process.Start(psi);
+            var stdout = process.StandardOutput.ReadToEnd();
+            var stderr = process.StandardError.ReadToEnd();
+
+            Assert.True(process.WaitForExit(10_000), "PowerShell did not finish the hook command");
+            Assert.True(process.ExitCode == 0, $"PowerShell rejected the hook command: {stderr}");
+            Assert.Equal(new[] { "codex", "SessionStart" },
+                stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        [Fact]
+        public void The_codex_hook_command_quotes_powershell_literal_paths()
+        {
+            const String tricky = @"C:\Users\O'Brien\$hooks\claude-console-hook.exe";
+            var bridge = new Agents.CodexStateBridge(codexHome: @"C:\Users\me\.codex") { HookExe = tricky };
+
+            Assert.Equal("& 'C:\\Users\\O''Brien\\$hooks\\claude-console-hook.exe' codex Stop",
+                bridge.HookCommand("Stop", windows: true));
         }
 
         [Fact]
@@ -386,7 +437,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // Field-for-field the envelope scripts/codex-hook.sh writes and CodexStateReader parses.
             var src = ReadShimSource();
 
-            Assert.Contains("\\\"schema\\\":1,\\\"agent\\\":\\\"codex-cli\\\",\\\"event\\\":", src);
+            Assert.Contains("\\\"schema\\\":1,\\\"agent\\\":\\\"codex-cli\\\",\\\"transport\\\":\\\"hook\\\",\\\"event\\\":", src);
             Assert.Contains("\\\"ts\\\":{ts},\\\"payload\\\":{body}", src);
         }
 

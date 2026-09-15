@@ -38,12 +38,22 @@ internal static class FocusProgram
     // Windows Terminal's top-level window class — stable across releases; the same class name
     // the terminal's own docs suggest for window discovery.
     private const String TerminalWindowClass = "CASCADIA_HOSTING_WINDOW_CLASS";
+    private const Int32 PaneProbeBudgetMs = 5000;
+    private static String? _diagnosticPath;
+
+    private static void Trace(String message)
+    {
+        if (_diagnosticPath == null) return;
+        try { File.AppendAllText(_diagnosticPath, $"{DateTime.UtcNow:O} {message}\n"); }
+        catch { /* diagnostics must not change focus behavior */ }
+    }
 
     internal static Int32 Main(String[] args)
     {
         try
         {
             var opts = ParseOptions(args);
+            _diagnosticPath = opts.GetValueOrDefault("--diagnostics");
 
             if (!Int32.TryParse(opts.GetValueOrDefault("--pid"), NumberStyles.None, CultureInfo.InvariantCulture, out var pid))
             {
@@ -66,15 +76,34 @@ internal static class FocusProgram
             // Verify we can attach at all before the retry loop, so "elevated" is reported as
             // itself rather than as a focus miss.
             var (probe, attachError) = ConsoleTitleOf(pid);
+            Trace($"pid={pid} consoleTitle={probe} attachError={attachError}");
             if (probe == null && attachError == ErrorAccessDenied)
             {
                 return ExitSessionElevated;
             }
 
-            return FocusTab(pid, probe);
+            // A renamed-tab probe temporarily selects candidates. Serialize focus requests
+            // across both products so two helper processes cannot disturb each other's proof.
+            using var focusLock = new Mutex(false, @"Local\ClaudeConsole.TerminalFocus");
+            var acquired = false;
+            try
+            {
+                try { acquired = focusLock.WaitOne(1500); }
+                catch (AbandonedMutexException) { acquired = true; }
+                if (!acquired) return ExitRaisedOnly;
+                if (expectedTicks > 0 && !VerifyStartTime(pid, expectedTicks, out _)) return ExitSessionMissing;
+                // Diagnostic mode exercises the renamed-tab path even with ordinary labels.
+                if (opts.GetValueOrDefault("--probe-panes") == "true")
+                    return SelectByNonce(pid, probePanes: true) ? ExitOk : ExitRaisedOnly;
+                // Every successful route requires the same identity challenge. Going straight
+                // there avoids four title-only retries for every manually renamed tab.
+                return SelectByNonce(pid) ? ExitOk : ExitRaisedOnly;
+            }
+            finally { if (acquired) focusLock.ReleaseMutex(); }
         }
         catch (Exception ex)
         {
+            Trace($"focus exception: {ex}");
             Console.Error.WriteLine($"claude-console-focus: {ex.Message}");
             return ExitRaisedOnly;
         }
@@ -171,20 +200,16 @@ internal static class FocusProgram
             {
                 var matches = MatchingTabs(windows, title);
 
-                // Two tabs with the same label are indistinguishable BY LABEL — two sessions
-                // started in the same directory both title their console after it. But the label
-                // IS the target's console title, and we hold that console: briefly retitle it to
-                // a nonce, select the one tab that repaints to the nonce, restore. That is
-                // selection by identity, not by name — seen needed on hardware 2026-08-20, where
-                // the first "sahan" tab won and the session lived in the second.
-                if (ClaudeConsoleFocus.TabSelection.TrySelect(matches.Count,
-                    () => SelectByNonce(pid), () => Select(matches[0].Window, matches[0].Tab)))
+                // Labels suggest candidates, but duplicate titles and runtime renames make even
+                // a unique label insufficient proof. Verify the console with a nonce before
+                // committing a tab selection.
+                if (ClaudeConsoleFocus.TabSelection.TrySelect(matches.Count, () => SelectByNonce(pid)))
                 {
                     return ExitOk;
                 }
-                if (matches.Count > 1)
+                if (matches.Count > 0)
                 {
-                    Console.Error.WriteLine("multiple tabs match; target identity could not be verified");
+                    Console.Error.WriteLine("title matched but target identity could not be verified");
                     Raise(matches[0].Window);
                     return ExitRaisedOnly;
                 }
@@ -253,10 +278,9 @@ internal static class FocusProgram
 
     private static void Select(IUIAutomationElement window, IUIAutomationElement tab)
     {
-        if (tab.GetCurrentPattern(UIA_SelectionItemPatternId) is IUIAutomationSelectionItemPattern pattern)
-        {
-            pattern.Select();
-        }
+        var pattern = SelectionPattern(tab) ?? throw new InvalidOperationException("tab cannot be selected");
+        pattern.Select();
+        if (!pattern.CurrentIsSelected) throw new InvalidOperationException("tab selection was not confirmed");
         Raise(window);
     }
 
@@ -269,7 +293,7 @@ internal static class FocusProgram
     /// that debounces titles, or an app that repaints its own immediately) — the caller reports
     /// unresolved focus and must not select an arbitrary matching tab.
     /// </summary>
-    private static Boolean SelectByNonce(Int32 pid)
+    private static Boolean SelectByNonce(Int32 pid, Boolean probePanes = false)
     {
         FreeConsole();
         if (!AttachConsole((UInt32)pid))
@@ -278,11 +302,14 @@ internal static class FocusProgram
         }
 
         String? original = null;
+        using var stopRefresh = new ManualResetEventSlim(false);
+        Thread? refresher = null;
         try
         {
             var sb = new StringBuilder(1024);
             var len = GetConsoleTitleW(sb, (UInt32)sb.Capacity);
-            original = len > 0 ? sb.ToString(0, (Int32)len) : null;
+            // Even an empty original title must be restored after probing.
+            original = sb.ToString(0, (Int32)len);
 
             var nonce = "cc-" + Guid.NewGuid().ToString("N")[..12];
             if (!SetConsoleTitleW(nonce))
@@ -290,7 +317,15 @@ internal static class FocusProgram
                 return false;
             }
 
-            for (var i = 0; i < 8; i++)
+            Trace($"nonce={nonce} original={original} paneOnly={probePanes}");
+            // Busy CLIs repaint their console title several times a second. Keep the challenge
+            // alive while UIA observes it, instead of sleeping through the one usable frame.
+            refresher = new Thread(() =>
+            {
+                while (!stopRefresh.Wait(10)) SetConsoleTitleW(nonce);
+            }) { IsBackground = true };
+            refresher.Start();
+            for (var i = 0; !probePanes && i < 2; i++)
             {
                 Thread.Sleep(80);
 
@@ -311,10 +346,12 @@ internal static class FocusProgram
                 }
             }
 
-            return false;
+            return SelectRenamedTabByPane(nonce);
         }
         finally
         {
+            stopRefresh.Set();
+            refresher?.Join();
             if (original != null)
             {
                 try { SetConsoleTitleW(original); } catch { /* the app repaints its own soon */ }
@@ -322,6 +359,78 @@ internal static class FocusProgram
             FreeConsole();
         }
     }
+
+    /// <summary>
+    /// A runtime tab rename hides OSC title changes from the tab label, but TermControl's
+    /// UIA HelpText still exposes control.Title() (TermControlAutomationPeer.cpp). Only the
+    /// active tab's panes are in the UIA tree, so select candidates without raising windows,
+    /// require the exact unpredictable console nonce, and roll back every unverified window.
+    /// No terminal input, caption guessing, or saved tab-index mapping is involved.
+    /// </summary>
+    private static Boolean SelectRenamedTabByPane(String nonce)
+    {
+        var deadline = Stopwatch.StartNew();
+        var windows = TerminalWindows();
+        for (var w = 0; w < windows.Length && deadline.ElapsedMilliseconds < PaneProbeBudgetMs; w++)
+        {
+            var window = windows.GetElement(w);
+            var tabArray = TabsOf(window);
+            var tabs = Enumerable.Range(0, tabArray.Length).Select(tabArray.GetElement).ToArray();
+            Trace($"window={w} tabs={tabs.Length} elapsed={deadline.ElapsedMilliseconds}");
+            IUIAutomationElement? verifiedPane = null;
+            try
+            {
+                var selected = ClaudeConsoleFocus.TabSelection.TryProbe(tabs,
+                    tab => SelectionPattern(tab)?.CurrentIsSelected == true,
+                    tab => (SelectionPattern(tab) ?? throw new InvalidOperationException("tab cannot be selected")).Select(),
+                    tab =>
+                    {
+                        Trace($"candidate={tab.CurrentName} elapsed={deadline.ElapsedMilliseconds}");
+                        for (var retry = 0; retry < 3 && deadline.ElapsedMilliseconds < PaneProbeBudgetMs; retry++)
+                        {
+                            // The CLI may animate its title while candidate tabs are inspected.
+                            // Reapply the challenge only to the attached target console.
+                            if (!SetConsoleTitleW(nonce)) return false;
+                            Thread.Sleep(60);
+                            if (SelectionPattern(tab)?.CurrentIsSelected != true) return false;
+                            var panes = window.FindAll(TreeScopeDescendants,
+                                Uia.CreatePropertyCondition(UIA_ClassNamePropertyId, "TermControl"));
+                            var matches = new List<IUIAutomationElement>();
+                            for (var p = 0; p < panes.Length; p++)
+                            {
+                                var pane = panes.GetElement(p);
+                                Trace($"paneHelp={pane.CurrentHelpText} elapsed={deadline.ElapsedMilliseconds}");
+                                if (String.Equals(pane.CurrentHelpText, nonce, StringComparison.Ordinal)) matches.Add(pane);
+                            }
+                            if (matches.Count == 1)
+                            {
+                                verifiedPane = matches[0];
+                                verifiedPane.SetFocus(); // select the correct pane too, when split
+                                return true;
+                            }
+                        }
+                        return false;
+                    }, () => deadline.ElapsedMilliseconds < PaneProbeBudgetMs);
+                if (selected && verifiedPane != null)
+                {
+                    Trace("pane identity verified");
+                    Raise(window);
+                    return true;
+                }
+                Trace($"window probe unresolved elapsed={deadline.ElapsedMilliseconds}");
+            }
+            catch (Exception ex)
+            {
+                Trace($"pane exception: {ex}");
+                // TryProbe restores the original tab on any selection/probe failure.
+                Console.Error.WriteLine($"renamed-tab identity probe failed: {ex.Message}");
+            }
+        }
+        return false;
+    }
+
+    private static IUIAutomationSelectionItemPattern? SelectionPattern(IUIAutomationElement tab) =>
+        tab.GetCurrentPattern(UIA_SelectionItemPatternId) as IUIAutomationSelectionItemPattern;
 
     /// <summary>
     /// A title minus its animated status prefix: everything up to the first letter or digit is
@@ -411,14 +520,17 @@ internal static class FocusProgram
     [ComImport, Guid("d22108aa-8ac5-49a5-837b-37bbb3d7591e"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IUIAutomationElement
     {
-        void _VtblGap1_3();                                             // SetFocus, GetRuntimeId, FindFirst
+        void SetFocus();
+        void _VtblGap1_2();                                             // GetRuntimeId, FindFirst
         IUIAutomationElementArray FindAll(Int32 scope, IUIAutomationCondition condition);
         void _VtblGap2_9();                                             // FindFirstBuildCache … GetCachedPatternAs
         [return: MarshalAs(UnmanagedType.IUnknown)]
         Object? GetCurrentPattern(Int32 patternId);
         void _VtblGap3_6();                                             // GetCachedPattern … CurrentLocalizedControlType
         String? CurrentName { [return: MarshalAs(UnmanagedType.BStr)] get; }
-        void _VtblGap4_12();                                            // CurrentAcceleratorKey … CurrentIsPassword
+        void _VtblGap4_7();                                             // CurrentAcceleratorKey … CurrentClassName
+        String? CurrentHelpText { [return: MarshalAs(UnmanagedType.BStr)] get; }
+        void _VtblGap5_4();                                             // CurrentCulture … CurrentIsPassword
         IntPtr CurrentNativeWindowHandle { get; }
     }
 
@@ -438,6 +550,8 @@ internal static class FocusProgram
     private interface IUIAutomationSelectionItemPattern
     {
         void Select();
+        void _VtblGap1_2();                                             // AddToSelection, RemoveFromSelection
+        Boolean CurrentIsSelected { [return: MarshalAs(UnmanagedType.Bool)] get; }
     }
 
     // ---- Win32 -------------------------------------------------------------

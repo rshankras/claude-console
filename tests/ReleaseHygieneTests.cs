@@ -77,6 +77,38 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("$WIN_WBIN/TRANSCRIPTION_SMOKE_OK\" ] ||", pack);
         }
 
+        [Fact]
+        public void Mac_release_scripts_hard_fail_all_three_signature_gates_before_and_after_packaging()
+        {
+            var root = RepoRoot();
+            var sign = File.ReadAllText(Path.Combine(root, "tools", "voice", "sign-and-notarize.sh"));
+            var pack = File.ReadAllText(Path.Combine(root, "tools", "voice", "pack-release.sh"));
+
+            Assert.Contains("codesign --verify --deep --strict", sign);
+            Assert.Contains("spctl --assess --type execute", sign);
+            Assert.Contains("xcrun stapler validate \"$APP\"", sign);
+            Assert.DoesNotContain("spctl -a -vvv -t exec \"$APP\" 2>&1 || true", sign);
+            Assert.DoesNotContain("xcrun stapler validate \"$APP\" 2>&1 || true", sign);
+
+            Assert.Contains("verify_macos_helper \"$APP\"", pack);
+            Assert.Contains("ditto -x -k \"$OUT\" \"$VERIFY_DIR\"", pack);
+            Assert.Contains("verify_macos_helper \"$PACKED_APP\"", pack);
+            Assert.Contains("codesign --verify --deep --strict", pack);
+            Assert.Contains("spctl --assess --type execute", pack);
+            Assert.Contains("xcrun stapler validate", pack);
+        }
+
+        [Fact]
+        public void Vizhi_package_metadata_exposes_only_public_product_and_support_urls()
+        {
+            var metadata = File.ReadAllText(Path.Combine(
+                RepoRoot(), "src", "Products", "VizhiCodex", "package", "metadata", "LoupedeckPackage.yaml"));
+
+            Assert.Contains("supportPageUrl: https://vizhi.dev/faq/", metadata);
+            Assert.Contains("homePageUrl: https://vizhi.dev/vizhi-codex/", metadata);
+            Assert.DoesNotContain("github.com/rshankras/claude-console", metadata);
+        }
+
         private static String RepoRoot()
         {
             var dir = AppContext.BaseDirectory;

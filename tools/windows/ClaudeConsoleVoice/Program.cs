@@ -84,7 +84,7 @@ internal static class VoiceProgram
 
             String? failure = null;
             var transcript = pcm.Length > 0
-                ? Transcribe(opts.GetValueOrDefault("--whisper"), opts.GetValueOrDefault("--model"), wavPath, out failure)
+                ? Transcribe(opts.GetValueOrDefault("--whisper"), opts.GetValueOrDefault("--model"), wavPath, out failure, opts.GetValueOrDefault("--prompt"))
                 : "";
 
             // Order matters. The plugin polls for the sidecar BEFORE the transcript, so writing an
@@ -274,7 +274,7 @@ internal static class VoiceProgram
     /// "didn't catch that" forever (#24, the Windows half — the macOS helper had the same defect).
     /// </summary>
     [SupportedOSPlatform("windows")]
-    private static String Transcribe(String? whisperCli, String? model, String wavPath, out String? error)
+    private static String Transcribe(String? whisperCli, String? model, String wavPath, out String? error, String? vocabulary = null)
     {
         error = null;
         if (whisperCli == null || model == null || !File.Exists(whisperCli) || !File.Exists(model))
@@ -301,6 +301,11 @@ internal static class VoiceProgram
             psi.ArgumentList.Add(a);
         }
 
+        if (!String.IsNullOrWhiteSpace(vocabulary))
+        {
+            psi.ArgumentList.Add("--prompt");
+            psi.ArgumentList.Add(vocabulary.Length > 1000 ? vocabulary[..1000] : vocabulary);
+        }
         using var p = Process.Start(psi);
         if (p == null)
         {

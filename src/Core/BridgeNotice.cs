@@ -151,6 +151,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         internal static String ProjectNoMatch(String heard, Int32 candidates, String source, String rootsFile) =>
             $"Go to Project heard \"{heard}\" but found no project like it among {candidates} candidate(s) ({source}). " +
-            $"If your projects live elsewhere, list their parent folders one per line in {rootsFile} and try again.";
+            $"List project parent folders one per line in {rootsFile}. A nonempty list replaces automatic discovery; " +
+            "clear the list to search automatically, or add the missing parent folder and try again.";
     }
 }

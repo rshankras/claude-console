@@ -1,0 +1,23 @@
+{
+  "revision": "2026-09-14.1",
+  "product": "VizhiCodex",
+  "profiles": [
+    {
+      "file": "VizhiCodex-Keypad.lp5",
+      "layout_sha256": "952e1c15728fdc60e2b0466505c43c7f90be1d92462bfbbf01676c334e8583f1"
+    },
+    {
+      "file": "VizhiCodex-Windows.lp5",
+      "layout_sha256": "952e1c15728fdc60e2b0466505c43c7f90be1d92462bfbbf01676c334e8583f1"
+    }
+  ],
+  "changes": [
+    "Page 1: Esc / No / Yes above Screenshot / Dictate / Draft",
+    "Page 2: Model / Plan / Skills, Review / Context / Compact, Up / Enter / Down",
+    "Page 3: Explore / Explain / Document, Optimize / Refactor / FixBug, CodeAudit / WriteTests / Security",
+    "Page 4: Project / NewTab / NewCodex, Prev / Next / Exit, Agent / Fork / Resume",
+    "Page 5: Status / Diff / Log, Commit / Push / PR",
+    "Profile package identities and dependency metadata identify VizhiCodex consistently"
+  ],
+  "action_ids": "Existing action bindings remain stable. See differences.json from tools/profile-update.py for exact IDs and slots."
+}

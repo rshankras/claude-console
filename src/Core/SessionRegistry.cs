@@ -56,6 +56,17 @@ namespace Loupedeck.ClaudeConsolePlugin
         // for the hourglass — and they must not disagree about the same session again.
         private readonly Dictionary<String, Int64> _interrupts = new Dictionary<String, Int64>(StringComparer.Ordinal);
 
+        // Directory hints from live process discovery; authoritative hook paths win.
+        internal IReadOnlyDictionary<String, String> DiscoveredProjectDirs { get; set; }
+
+        // Test seam for the five-second post-Escape quiet window. Production always uses wall time.
+        internal Func<Int64> NowUnix { get; set; } = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        // A Yes/No press may resolve a permission menu without Codex emitting a following hook
+        // event. Remember the exact approval-source write we answered so the next 500ms refresh
+        // does not resurrect its stale badge. A later file write is a new event and is shown.
+        private readonly Dictionary<String, Int64> _acknowledgedApprovals =
+            new Dictionary<String, Int64>(StringComparer.Ordinal);
+
         private readonly Object _lock = new Object();
         private RegistryRecord _registry = new RegistryRecord();
         private Dictionary<String, GridSession> _sessions = new Dictionary<String, GridSession>(StringComparer.Ordinal);
@@ -109,7 +120,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             lock (_lock)
             {
-                _interrupts[tty] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                _interrupts[tty] = this.NowUnix();
             }
         }
 
@@ -131,9 +142,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// The keypad answered this session's permission prompt, so the captured payload no longer
         /// describes anything pending. An approval clears itself when the tool runs (PostToolUse
         /// fires within ~170 ms); a rejection fires no hook at all, so the Yes dot and the "Allow?"
-        /// bar stayed lit until the session's NEXT prompt (#60). Drops the file and the in-memory
-        /// fields together, so the next poll cannot resurrect it, and repaints. Returns whether
-        /// anything was pending to clear.
+        /// bar stayed lit until the session's NEXT prompt (#60). Claude stores the payload in a
+        /// separate pending file, which is removed. Codex stores it in the session event itself, so
+        /// that exact file version is acknowledged until Codex writes a new event. Returns whether
+        /// anything was pending to clear and repaints only when it was.
         /// </summary>
         internal Boolean ClearPendingApproval(String tty)
         {
@@ -142,18 +154,37 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return false;
             }
 
-            TryDelete(this.PendingFor(tty));
+            var pendingPath = this.PendingFor(tty);
+            var answeredVersion = this.ApprovalSourceVersion(tty);
+            TryDelete(pendingPath);
 
             Boolean cleared;
             lock (_lock)
             {
-                cleared = _sessions.TryGetValue(tty, out var session) && !String.IsNullOrEmpty(session.PendingTool);
-                if (cleared)
+                if (!_sessions.TryGetValue(tty, out var session) || String.IsNullOrEmpty(session.PendingTool))
                 {
-                    session.PendingTool = null;
-                    session.PendingCommand = null;
-                    session.Risk = ApprovalRisk.None;
+                    return false;
                 }
+
+                if (!session.ApprovalInSessionState)
+                {
+                    _acknowledgedApprovals.Remove(tty);
+                }
+                else
+                {
+                    _acknowledgedApprovals[tty] = answeredVersion;
+                }
+                session.PendingTool = null;
+                session.PendingCommand = null;
+                session.Risk = ApprovalRisk.None;
+                // Claude's separate activity file still owns its state; changing it here would
+                // cause a false ready->waiting repaint on the next poll. Codex's approval event is
+                // the state source itself, so suppress its stale waiting state with the payload.
+                if (session.ApprovalInSessionState && session.State == "waiting")
+                {
+                    session.State = "ready";
+                }
+                cleared = true;
             }
 
             if (cleared)
@@ -260,6 +291,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                         ReapFiles(dead);
                     }
 
+                    // Provisional sessions have no disk file to reap above. Forget their names
+                    // too, otherwise a recycled tty inherits the previous process's project.
+                    foreach (var dead in _lastKnownProject.Keys.Where(t => !liveTtys.Contains(t)).ToList())
+                    {
+                        _lastKnownProject.Remove(dead);
+                    }
+
                     // A live tab with no state file yet still deserves a key immediately.
                     foreach (var tty in liveTtys.Where(t => !next.ContainsKey(t)))
                     {
@@ -281,6 +319,13 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 foreach (var s in next.Values)
                 {
+                    if (String.IsNullOrWhiteSpace(s.ProjectDir)
+                        && DiscoveredProjectDirs != null
+                        && DiscoveredProjectDirs.TryGetValue(s.SessionKey, out var directory))
+                    {
+                        s.ProjectDir = directory;
+                        s.Project = ProjectName(directory);
+                    }
                     if (!String.IsNullOrWhiteSpace(s.Project))
                     {
                         _lastKnownProject[s.SessionKey] = s.Project;
@@ -384,6 +429,17 @@ namespace Loupedeck.ClaudeConsolePlugin
                     continue;
                 }
 
+                var updatedAt = LastWrite(file);
+                var activity = state.Activity == null
+                    ? ReadActivityState(tty, state.TranscriptPath)
+                    : NormalizeActivityState(
+                        tty,
+                        state.Activity,
+                        state.ActivityTs ?? new DateTimeOffset(updatedAt.ToUniversalTime()).ToUnixTimeSeconds(),
+                        state.TranscriptPath,
+                        state.TranscriptWritesOnInterrupt,
+                        state.TranscriptActivityTs);
+
                 var session = new GridSession
                 {
                     SessionKey = tty,
@@ -393,14 +449,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                     SessionName = state.SessionName,
                     CtxPercent = state.CtxPercent,
                     TranscriptPath = state.TranscriptPath,
-                    // An agent that reports activity in the same document wins; one that keeps it
-                    // in a separate activity file (Claude Code) leaves this null and we look there.
-                    State = state.Activity ?? ReadActivityState(tty, state.TranscriptPath),
-                    UpdatedAt = LastWrite(file),
+                    State = activity,
+                    UpdatedAt = updatedAt,
                 };
 
                 if (state.ReportsApproval)
                 {
+                    session.ApprovalInSessionState = true;
                     session.PendingTool = state.PendingTool;
                     session.PendingCommand = state.PendingCommand;
                     session.Risk = state.Risk;
@@ -409,6 +464,20 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     this.ApplyPendingApproval(session);
                 }
+
+                // A fork/resume can end a conversation while the same CLI process stays alive.
+                // Never retain its context or id as if it described the next conversation. The
+                // liveness pass below removes exited processes; a live one remains provisional
+                // until its next authoritative hook, with its known project label intact.
+                if (this.Agent.Id == "codex-cli" && state.Activity == "dead")
+                {
+                    session.SessionId = null;
+                    session.TranscriptPath = null;
+                    session.CtxPercent = null;
+                    session.IsProvisional = true;
+                }
+
+                this.ApplyApprovalAcknowledgement(session);
 
                 sessions[tty] = session;
             }
@@ -432,17 +501,32 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return "ready";
             }
 
+            return this.NormalizeActivityState(tty, activity.State, activity.Ts, transcriptPath);
+        }
+
+        // Activity may live beside the session (Claude Code) or inside it (Codex). Both paths must
+        // apply the same interrupted-turn rule; otherwise Codex's non-null Activity bypasses the
+        // exact recovery that clears Claude's stale hourglass (#30).
+        private String NormalizeActivityState(
+            String tty,
+            String activity,
+            Int64 activityTs,
+            String transcriptPath,
+            Boolean transcriptWritesOnInterrupt = false,
+            Int64? transcriptActivityTs = null)
+        {
             if (ActivityStall.IsStalledBusy(
-                    activity.State,
-                    activity.Ts,
-                    ActivityStall.TranscriptMtime(transcriptPath),
-                    DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                    this.InterruptedAt(tty)))
+                    activity,
+                    activityTs,
+                    transcriptActivityTs ?? ActivityStall.TranscriptMtime(transcriptPath),
+                    this.NowUnix(),
+                    this.InterruptedAt(tty),
+                    transcriptWritesOnInterrupt))
             {
                 return "ready";
             }
 
-            return NormaliseActivityWord(activity.State);
+            return NormaliseActivityWord(activity);
         }
 
         /// <summary>
@@ -489,6 +573,37 @@ namespace Loupedeck.ClaudeConsolePlugin
             session.PendingTool = pending.Value.Tool;
             session.PendingCommand = pending.Value.Command;
             session.Risk = RiskClassifier.Classify(pending.Value.Tool, pending.Value.Command);
+        }
+
+        private void ApplyApprovalAcknowledgement(GridSession session)
+        {
+            if (!_acknowledgedApprovals.TryGetValue(session.SessionKey, out var answeredVersion))
+            {
+                return;
+            }
+
+            if (this.ApprovalSourceVersion(session.SessionKey) != answeredVersion)
+            {
+                // The agent wrote something new. If it is another PermissionRequest, it deserves
+                // a fresh badge even when the tool and command text happen to be identical.
+                _acknowledgedApprovals.Remove(session.SessionKey);
+                return;
+            }
+
+            session.PendingTool = null;
+            session.PendingCommand = null;
+            session.Risk = ApprovalRisk.None;
+            if (session.State == "waiting")
+            {
+                session.State = "ready";
+            }
+        }
+
+        private Int64 ApprovalSourceVersion(String tty)
+        {
+            var pending = this.PendingFor(tty);
+            var source = File.Exists(pending) ? pending : this.StateFor(tty);
+            return LastWrite(source).Ticks;
         }
 
         /// <summary>
@@ -580,6 +695,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             // against the old occupant must not follow it (#30). ActivityStall also guards this by
             // timestamp — belt and braces, because the failure is a new session reading as idle.
             lock (_lock) { _interrupts.Remove(tty); }
+            lock (_lock) { _acknowledgedApprovals.Remove(tty); }
         }
 
         // Persist slot→tty so assignments survive a plugin reload (a rebuild shouldn't reshuffle your

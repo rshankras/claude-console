@@ -40,7 +40,8 @@ The product must stop promising what Windows can't deliver before the new transp
   message about `/hooks` trust). macOS path untouched. `VizhiCodexPlugin.WireStateBridge`
   branches to the rollout bridge instead.
 - Keys gated on `ApprovalSignal` disappear from the Windows experience honestly (the
-  amber/red approval lighting); Yes/No keys remain — they type answers regardless.
+  amber/red approval lighting); Yes/No keys remain — while the prompt is visible, Yes sends Return
+  and No sends Escape. Neither types a word or claims that an approval was observed.
 - Tests: capability matrix per OS; the wiring test asserts Windows never writes hooks.json.
 
 ### Phase 1 — `CodexRolloutBridge` (1 day)

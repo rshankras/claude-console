@@ -24,6 +24,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Versioning;
+using System.Runtime.InteropServices;
 
 internal static class Program
 {
@@ -34,11 +35,14 @@ internal static class Program
         // a blocked append to the shared log would therefore hang outside the very watchdog meant
         // to contain every hang. If a watchdog thread cannot be created, fail closed and leave: a
         // dropped status update is safe, an unbounded hook is not.
-        if (!StartWatchdog())
+        if (!StartWatchdog(args.Length > 0 && args[0] == "codex" ? 2 : WatchdogSeconds))
         {
             return 0;
         }
 
+        // The Codex limit is 2 s, below its shortest configured deadline (3 s for
+        // SessionEnd), with margin for shell/runtime startup. The timer begins at Main;
+        // a shell or runtime that stalls before Main remains outside this bound.
         // Now prove we were launched. Windows hardware reported hooks "exited with code 1"
         // while the exe's every internal path was already guarded — the remaining question is
         // whether codex ever spawns the process. This line is the answer: if hook-invoked.log
@@ -130,13 +134,13 @@ internal static class Program
     /// diagnostics can themselves block, which would defeat the only thread that guarantees
     /// termination. EntryBreadcrumb already records which verb started.
     /// </summary>
-    private static Boolean StartWatchdog()
+    private static Boolean StartWatchdog(Int32 seconds)
     {
         try
         {
             var t = new Thread(() =>
             {
-                Thread.Sleep(TimeSpan.FromSeconds(WatchdogSeconds));
+                Thread.Sleep(TimeSpan.FromSeconds(seconds));
                 Environment.Exit(0);
             })
             { IsBackground = true, Name = "claude-console-hook watchdog" };
@@ -330,7 +334,7 @@ internal static class Program
             var body = payload.TrimStart().StartsWith('{') ? payload : "null";
             var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var envelope =
-                $"{{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"{JsonEscape(eventName)}\",\"ts\":{ts},\"payload\":{body}}}\n";
+                $"{{\"schema\":1,\"agent\":\"codex-cli\",\"transport\":\"hook\",\"event\":\"{JsonEscape(eventName)}\",\"ts\":{ts},\"payload\":{body}}}\n";
 
             // The shared file goes FIRST, before any process walking: codex enforces the hook
             // timeout by TERMINATING the process (exit code 1 — seen as "hook exited with code 1"
@@ -509,7 +513,9 @@ internal static class Program
                     best = $"pid-{proc.Id}-{proc.StartTime.ToUniversalTime().Ticks}";
                 }
 
-                var parent = ParentOf(pid);
+                // Codex has a 3 s SessionEnd deadline. Never start PowerShell while
+                // climbing this chain; denied/exited ancestors end the lookup.
+                var parent = ParentViaNtQuery(pid);
                 if (parent <= 0 || parent == pid)
                 {
                     break;
@@ -636,7 +642,7 @@ internal static class Program
             return false;
         }
 
-        var cmd = CommandLineOf(proc.Id);
+        var cmd = WindowsHookProcessQuery.CommandLineViaNtQuery(proc.Id);
         return cmd != null &&
                (cmd.Contains(@"\@openai\codex", StringComparison.OrdinalIgnoreCase) ||
                 cmd.Contains("/@openai/codex", StringComparison.OrdinalIgnoreCase) ||
@@ -679,12 +685,14 @@ internal static class Program
     [SupportedOSPlatform("windows")]
     private static Int32 ParentViaNtQuery(Int32 pid)
     {
+        var handle = IntPtr.Zero;
         try
         {
-            using var proc = Process.GetProcessById(pid);
+            handle = OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+            if (handle == IntPtr.Zero) { return 0; }
             var info = new ProcessBasicInformation();
             var status = NtQueryInformationProcess(
-                proc.Handle, 0, ref info, System.Runtime.InteropServices.Marshal.SizeOf<ProcessBasicInformation>(), out _);
+                handle, 0, ref info, Marshal.SizeOf<ProcessBasicInformation>(), out _);
 
             return status == 0 ? (Int32)info.InheritedFromUniqueProcessId : 0;
         }
@@ -693,7 +701,17 @@ internal static class Program
             // Access denied or the process exited mid-walk — let the caller fall back.
             return 0;
         }
+        finally
+        {
+            if (handle != IntPtr.Zero) { CloseHandle(handle); }
+        }
     }
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr OpenProcess(UInt32 access, Boolean inherit, Int32 pid);
+
+    [DllImport("kernel32.dll")]
+    private static extern Boolean CloseHandle(IntPtr handle);
 
     [SupportedOSPlatform("windows")]
     private static String? CommandLineOf(Int32 pid) => Wmic($"CommandLine from Win32_Process where ProcessId={pid}");

@@ -77,15 +77,14 @@ public class ReviewRegressionTests
     }
 
     [Theory]
-    [InlineData(0, false, false, 0)]
-    [InlineData(1, false, true, 1)]
-    [InlineData(2, false, false, 0)]
-    [InlineData(2, true, true, 0)]
-    public void Ambiguous_focus_never_falls_back_to_the_first_tab(int count, bool identified, bool expected, int selections)
+    [InlineData(0, false, false)]
+    [InlineData(1, false, false)]
+    [InlineData(1, true, true)]
+    [InlineData(2, false, false)]
+    [InlineData(2, true, true)]
+    public void Focus_requires_console_identity_even_for_unique_labels(int count, bool identified, bool expected)
     {
-        var calls = 0;
-        Assert.Equal(expected, ClaudeConsoleFocus.TabSelection.TrySelect(count, () => identified, () => calls++));
-        Assert.Equal(selections, calls);
+        Assert.Equal(expected, ClaudeConsoleFocus.TabSelection.TrySelect(count, () => identified));
     }
 
     [Fact]

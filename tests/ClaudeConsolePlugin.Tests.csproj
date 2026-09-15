@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><Compile Remove="fixtures/**/*.cs" /></ItemGroup>
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -47,6 +48,8 @@
          SkipPluginLink dance existed to prevent. -->
     <Compile Include="..\src\Core\**\*.cs" />
     <Compile Include="..\tools\windows\ClaudeConsoleFocus\TabSelection.cs" />
+    <Compile Include="..\tools\windows\ClaudeConsoleInject\SessionInputLock.cs" />
+    <Compile Include="..\tools\windows\ClaudeConsoleHook\WindowsHookProcessQuery.cs" />
     <Compile Include="..\src\Agents\**\*.cs" />
     <!-- Each product's application binding. Not the Plugin classes — those need a live SDK host —
          but the binding is exactly what broke clean installs in 1.8.0-1.8.4 by naming a process
