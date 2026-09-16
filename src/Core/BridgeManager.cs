@@ -399,20 +399,53 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         // Once a multi-session Codex workflow needs a deliberate choice, losing or releasing
         // that choice must not silently arm another session, even if only one remains.
-        private Boolean _codexApprovalNeedsSelection;
+        //
+        // Volatile because the poll thread raises it and the keypad thread reads it while painting.
+        private volatile Boolean _codexApprovalNeedsSelection;
 
+        /// <summary>
+        /// Raised where the state actually changes — a second session observed by the poll, or a
+        /// session chosen by a key press — never from <see cref="ApprovalTty"/>, which the key faces
+        /// call on every repaint. A latch set while painting could be raised by a session the user
+        /// never saw, and it never clears, so the cause has to be a real event.
+        /// </summary>
+        internal void NoteCodexSelectionNeeded()
+        {
+            if (this.Agent.Id == "codex-cli") { _codexApprovalNeedsSelection = true; }
+        }
+
+        private Int32 _selectNoticePosted;
+
+        /// <summary>
+        /// True the first time it is asked in each spell of needing a selection. The beep answers
+        /// every press; this card explains it once, because the same sentence repeated per press
+        /// fills the Options+ message centre and reads as a new problem each time. Instance state,
+        /// not static: it describes this bridge's situation, and a later spell is a new question.
+        /// </summary>
+        internal Boolean ShouldExplainSelection() =>
+            Interlocked.Exchange(ref _selectNoticePosted, 1) == 0;
+
+        /// <summary>An answer found its target, so the next unanswered spell explains itself again.</summary>
+        internal void SelectionResolved() => Interlocked.Exchange(ref _selectNoticePosted, 0);
+
+        /// <summary>
+        /// Which session an approval would go to, or null when the user must choose first. A pure
+        /// query: it decides, it does not record. Codex only — every other agent answers wherever
+        /// the keys are already aimed.
+        /// </summary>
         internal String ApprovalTty()
         {
-            if (this.Agent.Id != "codex-cli") return this.RoutingTty();
+            if (this.Agent.Id != "codex-cli") { return this.RoutingTty(); }
 
+            if (this.IsSelectableSession(_pinnedTty)) { return _pinnedTty; }
+
+            if (_codexApprovalNeedsSelection) { return null; }
+
+            // Still safe without the latch: a second session that is live RIGHT NOW fails this
+            // count, so the latch only has to carry the case where one has since gone away.
             var live = Grid.LiveSessions();
-            if (live.Count > 1 || !String.IsNullOrEmpty(_pinnedTty))
-                _codexApprovalNeedsSelection = true;
-
-            if (this.IsSelectableSession(_pinnedTty)) return _pinnedTty;
-
-            return !_codexApprovalNeedsSelection && live.Count == 1
-                && this.IsSelectableSession(live[0].SessionKey) ? live[0].SessionKey : null;
+            return live.Count == 1 && this.IsSelectableSession(live[0].SessionKey)
+                ? live[0].SessionKey : null;
         }
 
         // ------------------------------------------------------------------------------------------
@@ -446,6 +479,11 @@ namespace Loupedeck.ClaudeConsolePlugin
             CleanupLegacyIpcFiles();
             Grid.LoadPersisted();   // keep slot assignments across a plugin reload
             _pinnedTty = Grid.FocusedSession;   // ...and the session you had selected
+
+            // A selection survived the reload, so the deliberate choice it represents survives too:
+            // if its session is gone, the keys must ask again rather than fall back to whatever is
+            // left. ApprovalTty used to infer this while painting; it is a load-time fact.
+            if (!String.IsNullOrEmpty(_pinnedTty)) { this.NoteCodexSelectionNeeded(); }
 
             // One-shot timer, re-armed at the END of each PollState (see its finally). This makes
             // polls NON-OVERLAPPING: the next poll can't start until the previous one finishes, so a
@@ -494,6 +532,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                     Grid.DiscoveredProjectDirs = _platform.SessionDirectories;
                 }
                 Grid.Refresh(liveTtys);
+
+                // A second Codex session means an approval can no longer be attributed on its own.
+                // Noted here, where the grid actually changes, rather than while painting a key.
+                if (Grid.LiveSessions().Count > 1) { this.NoteCodexSelectionNeeded(); }
 
                 // Where the agent cannot push state to us, pull it. Only Windows/Codex sets this
                 // (its hook runner spawns nothing there), and the bridge writes the very same IPC
@@ -915,7 +957,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             _pinnedTty = session.SessionKey;
-            if (this.Agent.Id == "codex-cli") _codexApprovalNeedsSelection = true;
+            this.NoteCodexSelectionNeeded();
             Grid.FocusedSession = session.SessionKey;   // survives a plugin reload, like the slot assignments
             _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
             OnTargetChanged?.Invoke();

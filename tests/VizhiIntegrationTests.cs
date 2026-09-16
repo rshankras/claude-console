@@ -122,6 +122,56 @@ public class VizhiIntegrationTests : IDisposable
         Assert.Equal("Bash", bridge.Grid.Sessions["pid-202-b"].PendingTool);
     }
 
+    // Asking which session an approval belongs to must not itself be what makes the answer
+    // "you must choose". The key faces call ApprovalTty on every repaint, and the latch it used to
+    // raise never clears — so a session the user never saw could have left them permanently unable
+    // to answer without selecting. The poll and the session keys record that fact; the query reads it.
+    [Fact]
+    public void Painting_the_answer_keys_cannot_latch_the_selection_requirement()
+    {
+        var (bridge, _) = Rig(selectPending: false);
+
+        // Two live sessions: ambiguous on its own merits, however many times it is asked.
+        for (var i = 0; i < 5; i++) { Assert.Null(bridge.ApprovalTty()); }
+
+        // One goes away. Nothing recorded a deliberate choice, so the survivor is unambiguous.
+        live.Remove("pid-202-b");
+        bridge.Grid.Refresh(live);
+        Assert.Equal("pid-101-a", bridge.ApprovalTty());
+
+        // Raised the way the poll and SelectSlot raise it, the latch still holds.
+        bridge.NoteCodexSelectionNeeded();
+        Assert.Null(bridge.ApprovalTty());
+    }
+
+    // The beep answers every press; the card explains it once. Repeating the same sentence per
+    // press filled the Options+ message centre and read as a new problem each time.
+    [Fact]
+    public void The_select_a_session_card_is_posted_once_per_episode()
+    {
+        var (bridge, platform) = Rig(selectPending: false);
+        var cards = 0;
+        bridge.Notify = (_, _, _, _) => cards++;
+
+        for (var i = 0; i < 4; i++) { AnswerCommand.AnswerApproval(bridge, true); }
+        Assert.Equal(1, cards);
+        Assert.Empty(platform.Keys);
+
+        // Choosing a session ends the episode and delivers the answer.
+        var slot = PendingSlot(bridge);
+        bridge.SelectSlot(slot);
+        AnswerCommand.AnswerApproval(bridge, true);
+        Assert.Equal(("pid-202-b", KeyStroke.Return), Assert.Single(platform.Keys));
+        Assert.Equal(1, cards);
+
+        // A later episode is a different question and explains itself again. Pressing the same
+        // session key releases the pin, which is how a user drops back to "which session?".
+        bridge.SelectSlot(slot);
+        Assert.Null(bridge.PinnedTty);
+        AnswerCommand.AnswerApproval(bridge, true);
+        Assert.Equal(2, cards);
+    }
+
     private void AddExtraSessions(BridgeManager bridge, int lastSlot)
     {
         Write("pid-202-b", "Stop");

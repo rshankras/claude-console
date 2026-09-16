@@ -247,14 +247,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             var decision = TargetState(bridge);
             if (decision.NeedsSelection)
             {
+                // The beep answers every press; the card explains it once. Posting it per press
+                // filled the Options+ message centre with the same sentence, and a repeated card
+                // reads as a new problem rather than the same unanswered one.
                 bridge.Alert();
-                bridge.Notify?.Invoke(PluginStatus.Warning,
-                    "Press the session key for the Codex session you mean, then Yes or No. " +
-                    "With more than one session running, the keypad will not guess which one an approval belongs to.",
-                    BridgeNotice.SupportUrl, "Select a Codex session");
+                if (bridge.ShouldExplainSelection())
+                {
+                    bridge.Notify?.Invoke(PluginStatus.Warning,
+                        "Press the session key for the Codex session you mean, then Yes or No. " +
+                        "With more than one session running, the keypad will not guess which one an approval belongs to.",
+                        BridgeNotice.SupportUrl, "Select a Codex session");
+                }
                 PluginLog.Info("AnswerCommand: select a Codex session first — no approval was sent");
                 return;
             }
+
+            // A target resolved, so this episode is over. The next one is a different question and
+            // has earned its own card — unlike the setup notice, which is about a one-time install.
+            bridge.SelectionResolved();
 
             var target = decision.Key;
 
