@@ -194,5 +194,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.True(codex.ImageAtLaunch);
             Assert.False(claude.ImageAtLaunch);
         }
+
+        /// <summary>
+        /// The Git key qualifies itself only where a session-status key exists to be confused
+        /// with. Asked as a capability rather than by agent name, so Claude Console keeps the
+        /// "Status" its profile and its QA pass were built on, and no engine code has to learn
+        /// whose keypad it is drawing.
+        /// </summary>
+        [Fact]
+        public void The_git_status_key_is_qualified_only_where_a_session_status_key_exists()
+        {
+            var claude = new ClaudeCodeAdapter();
+            var codex = new CodexCliAdapter();
+
+            Assert.Null(claude.SlashCommand(AgentVerb.SessionStatus));
+            Assert.NotNull(codex.SlashCommand(AgentVerb.SessionStatus));
+
+            Assert.Equal("Status", Actions.GitCommand.LabelFor("status", "Status", claude));
+            Assert.Equal("Git Status", Actions.GitCommand.LabelFor("status", "Status", codex));
+
+            // Every other Git key is named the same on both.
+            Assert.Equal("Commit", Actions.GitCommand.LabelFor("commit", "Commit", codex));
+        }
     }
 }

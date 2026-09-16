@@ -94,16 +94,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             var active = session.SessionKey == _bridge.RoutingTty();
             var name = String.IsNullOrWhiteSpace(session.Project) ? _bridge.Agent.DisplayName : session.Project;
             // Routing stays the cue: inactive sessions remain grey. Only the selected bar follows
-            // product identity — approved orange for Claude, the supplied #81A8ED for Codex.
-            var selectedColor = SelectedBarColor(_bridge.Agent.Id);
-            var barColor = active ? selectedColor : KeyImage.Gray;
+            // product identity, which the product declares — the engine does not know whose it is.
+            var barColor = active ? KeyImage.SessionBar : KeyImage.Gray;
             var setupWord = AgentBridgeNotice.FaceLabel(_bridge.AgentBridgeState)
                 ?? LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
             return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord, _bridge.Agent.Id), barColor, darkText: false);
         }
-
-        internal static BitmapColor SelectedBarColor(String agentId) =>
-            agentId == "codex-cli" ? KeyImage.Blue : KeyImage.SelectionOrange;
 
         // Colour communicates routing; this word communicates session state. Keeping those two
         // signals independent means an inactive session can still say "Allow?" without looking active.

@@ -46,8 +46,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // yellow, so reduce green/blue while preserving a brighter orange than Claude's coral.
         public static readonly BitmapColor SelectionOrange = new BitmapColor(0xE2, 0x8A, 0x32); // active session bar
         public static readonly BitmapColor Coral  = new BitmapColor(0xCC, 0x7C, 0x5E);   // Claude identity
-        // Exact Codex/ChatGPT blue from the supplied Codex keypad artwork and designer icon pack.
-        public static readonly BitmapColor Blue   = new BitmapColor(0x81, 0xA8, 0xED);
+        public static readonly BitmapColor Blue   = new BitmapColor(0x60, 0xA5, 0xFA);
         public static readonly BitmapColor Purple = new BitmapColor(0xA7, 0x8B, 0xFA);
         public static readonly BitmapColor Slate  = new BitmapColor(0x94, 0xA3, 0xB8);
         // A muted neutral grey for the session state-word bar's quiet states (Ready/Thinking/
@@ -63,7 +62,31 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static readonly BitmapColor White = new BitmapColor(0xFF, 0xFF, 0xFF);
 
         /// <summary>Corner-bracket colour marking the session key the typing keys are aimed at.</summary>
-        private static readonly BitmapColor Selection = Blue;
+        private static BitmapColor Selection = new BitmapColor(0x60, 0xA5, 0xFA);
+
+        private static BitmapColor _sessionBar = SelectionOrange;
+
+        /// <summary>
+        /// The bar behind the routed session's state word. Identity, not state: the word itself
+        /// still says what the session is doing, and an inactive session is grey on every product.
+        /// </summary>
+        internal static BitmapColor SessionBar => _sessionBar;
+
+        /// <summary>
+        /// Declare the product's two identity colours — the corner bracket and the routed-session
+        /// bar. Defaults are Claude Console's, so a product that never calls this keeps the faces
+        /// QA signed off. Called from the plugin CONSTRUCTOR beside UseIdentityIconFolder, before
+        /// the SDK builds any action. Each product compiles Core into its own assembly, so the
+        /// setting stays isolated when both plugins run side by side.
+        ///
+        /// The engine owns state colour (Amber/Red/Green and the grey quiet bar) and must never
+        /// learn an agent's name to pick one; identity belongs to whoever is shipping the keypad.
+        /// </summary>
+        internal static void UseIdentityColors(BitmapColor selection, BitmapColor sessionBar)
+        {
+            Selection = selection;
+            _sessionBar = sessionBar;
+        }
 
         // Approval badge: amber for a routine request, red when the command is destructive.
         // These two are the only palette entries that paint pixels today — Render ignores its

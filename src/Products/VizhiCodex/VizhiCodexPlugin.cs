@@ -27,11 +27,28 @@ namespace Loupedeck.ClaudeConsolePlugin
         private readonly CodexCliAdapter _agent = new CodexCliAdapter();
         private CodexBridgeStatus? _reportedBridgeStatus;
 
+        /// <summary>
+        /// Exact Codex/ChatGPT blue from the supplied Codex keypad artwork and designer icon pack.
+        /// It lives with the product, never in Core: the engine draws state, the product supplies
+        /// the identity it is drawn in.
+        /// </summary>
+        private static readonly BitmapColor CodexBlue = new BitmapColor(0x81, 0xA8, 0xED);
+
         public VizhiCodexPlugin()
         {
             PluginLog.Init(this.Log, "Vizhi for Codex");
             PluginResources.Init(this.Assembly);
+
+            // This product's identity, declared here rather than picked inside the engine: Core
+            // must stay neutral about whose keypad it is drawing. The exact Codex/ChatGPT blue
+            // from the supplied keypad artwork and designer icon pack, on both the corner bracket
+            // and the routed-session bar. State colour (Amber/Red/Green, the grey quiet bar) is
+            // the engine's and is deliberately NOT overridden.
             KeyImage.UseIdentityIconFolder("icons_codex");
+            KeyImage.UseIdentityColors(CodexBlue, CodexBlue);
+            // Codex surfaces longer setup and trust failures than Claude Code does, and the words
+            // are instructions ("Run /hooks"), so they are held long enough to read and act on.
+            VoiceFailure.UseHold(8000);
 
             // Before any action is constructed — see the ordering note above.
             IpcPaths.UseProduct(this._agent.ProductSlug);

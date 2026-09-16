@@ -18,7 +18,19 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// </summary>
     internal static class VoiceFailure
     {
-        internal const Int32 HoldMs = 8000;
+        /// <summary>
+        /// How long a failure word stays on the key. Product-declared, because it is a house style
+        /// rather than a fact about the agent: the default is the 2.5 s Claude Console shipped and
+        /// QA signed off, and a product that wants longer says so in its plugin constructor. A new
+        /// press clears the word on every product, so a longer hold is never a stuck key.
+        /// </summary>
+        internal static Int32 HoldMs { get; private set; } = 2500;
+
+        /// <summary>Declare this product's failure-word hold. Called from the plugin constructor.</summary>
+        internal static void UseHold(Int32 milliseconds) =>
+            HoldMs = milliseconds > 0 ? milliseconds : 2500;
+
+
         /// <summary>The helper was refused the microphone. Grant it in System Settings.</summary>
         internal const String MicDenied = "Mic denied";
 
