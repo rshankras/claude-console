@@ -3,7 +3,7 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
-## Vizhi for Codex [1.6.1] — 2026-09-09
+## Vizhi for Codex [1.6.1] — 2026-09-15
 
 ### Fixed
 - **A rollout lifecycle edge could discard a live approval.** The hook owns `PermissionRequest`
