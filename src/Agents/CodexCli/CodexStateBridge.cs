@@ -290,14 +290,33 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             return doc.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n";
         }
 
+        /// <summary>
+        /// Did the hook write this envelope, rather than the rollout fallback?
+        ///
+        /// The rollout bridge is the only writer that stamps a transport ("rollout",
+        /// "rollout-code-mode"), so ABSENCE of the field means the hook wrote it. Requiring an
+        /// explicit "hook" instead would have failed every envelope written before this field
+        /// existed: on update each user's own working hook would read as untrusted, and any
+        /// installation whose launcher rewrite failed would say "Run /hooks" forever while the
+        /// hook kept running. The launcher therefore does not carry the tag — keeping its bytes
+        /// stable is worth more than an explicit field we can infer here.
+        /// </summary>
         private static Boolean IsHookEnvelope(String path)
         {
             try
             {
                 using var doc = JsonDocument.Parse(File.ReadAllText(path));
-                return doc.RootElement.ValueKind == JsonValueKind.Object
-                    && doc.RootElement.TryGetProperty("transport", out var transport)
-                    && transport.ValueKind == JsonValueKind.String
+                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    return false;
+                }
+
+                if (!doc.RootElement.TryGetProperty("transport", out var transport))
+                {
+                    return true;
+                }
+
+                return transport.ValueKind == JsonValueKind.String
                     && String.Equals(transport.GetString(), "hook", StringComparison.Ordinal);
             }
             catch

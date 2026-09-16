@@ -173,6 +173,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(CodexBridgeStatus.Active, b.Status);
         }
 
+        /// <summary>
+        /// The launcher does not stamp a transport — the rollout fallback is the only writer that
+        /// does, so absence of the field means the hook wrote it. Demanding an explicit "hook"
+        /// would have failed every envelope written before that field existed: on update each
+        /// user's own working hook would read as untrusted, and an installation whose launcher
+        /// rewrite failed would say "Run /hooks" for good while the hook kept running.
+        /// </summary>
+        [Fact]
+        public void An_envelope_with_no_transport_field_is_the_hooks_and_proves_trust()
+        {
+            var b = this.New();
+            b.EnsureInstalled(Script);
+
+            Directory.CreateDirectory(this._sessions);
+            File.WriteAllText(
+                Path.Combine(this._sessions, "ttys003.json"),
+                "{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"SessionStart\",\"ts\":1,\"payload\":null}");
+
+            Assert.Equal(CodexBridgeStatus.Active, b.Status);
+        }
+
         [Fact]
         public void An_event_from_before_the_current_launcher_does_not_falsely_prove_trust()
         {

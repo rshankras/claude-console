@@ -32,7 +32,7 @@ public class VizhiIntegrationTests : IDisposable
 
     private void Write(string key, string kind) => File.WriteAllText(Path.Combine(root, "sessions", key + ".json"), JsonSerializer.Serialize(new
     {
-        schema = 1, agent = "codex-cli", transport = "hook", @event = kind,
+        schema = 1, agent = "codex-cli", @event = kind,
         ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
         payload = new { session_id = key, cwd = "/projects/" + key, tool_name = "Bash", tool_input = new { command = "git push" } },
     }));

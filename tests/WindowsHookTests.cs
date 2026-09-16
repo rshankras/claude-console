@@ -437,8 +437,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // Field-for-field the envelope scripts/codex-hook.sh writes and CodexStateReader parses.
             var src = ReadShimSource();
 
-            Assert.Contains("\\\"schema\\\":1,\\\"agent\\\":\\\"codex-cli\\\",\\\"transport\\\":\\\"hook\\\",\\\"event\\\":", src);
+            Assert.Contains("\\\"schema\\\":1,\\\"agent\\\":\\\"codex-cli\\\",\\\"event\\\":", src);
             Assert.Contains("\\\"ts\\\":{ts},\\\"payload\\\":{body}", src);
+
+            // No transport field: the rollout fallback is the only writer that stamps one, so the
+            // reader infers "hook" from its absence. Keeping it out holds the launcher's bytes
+            // stable and keeps envelopes written before the field was invented readable.
+            Assert.DoesNotContain("\\\"transport\\\"", src);
         }
 
         /// <summary>
