@@ -90,15 +90,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var path = RepoFile("profiles", file);
             var page = PressPage(path, 0);
             Assert.Equal(VizhiFirstPage, page.Select(ActionName).ToArray());
-            var extraSessions = (String[])VizhiFirstPage.Clone();
-            for (var i = 0; i < 3; i++) extraSessions[i] = $"SessionSlotCommand___{i + 4}";
-            Assert.Equal(extraSessions, PressPage(path, 1).Select(ActionName).ToArray());
-            Assert.Equal(VizhiCodexPage, PressPage(path, 2).Select(ActionName).ToArray());
-            Assert.Equal(VizhiPromptPage, PressPage(path, 3).Select(ActionName).ToArray());
-            Assert.Equal(VizhiTerminalPage, PressPage(path, 4).Select(ActionName).ToArray());
-            Assert.Equal(VizhiGitPage, PressPage(path, 5).Select(ActionName).ToArray());
-            Assert.Equal(6, PressPageCount(path));
-            Assert.Equal(6, PressPages(path).Select(p => (String)p["name"]).Distinct().Count());
+            Assert.Equal(VizhiCodexPage, PressPage(path, 1).Select(ActionName).ToArray());
+            Assert.Equal(VizhiPromptPage, PressPage(path, 2).Select(ActionName).ToArray());
+            Assert.Equal(VizhiTerminalPage, PressPage(path, 3).Select(ActionName).ToArray());
+            Assert.Equal(VizhiGitPage, PressPage(path, 4).Select(ActionName).ToArray());
+            Assert.Equal(5, PressPageCount(path));
+            Assert.Equal(5, PressPages(path).Select(p => (String)p["name"]).Distinct().Count());
 
             using var zip = ZipFile.OpenRead(path);
             var profile = ReadJsonEntry(zip, "ProfileInfo.json");

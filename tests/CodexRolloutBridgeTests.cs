@@ -549,6 +549,75 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(path, CodexStateReader.Parse(File.ReadAllText(Path.Combine(this._ipc, "presskit.json"))).TranscriptPath);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Production_retries_metadata_seen_before_the_first_record_is_complete(Boolean partial)
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("presskit-incomplete", Today);
+            var metadata = Metadata(start.AddSeconds(2), @"C:\demo\presskit");
+            File.WriteAllText(path, partial ? metadata.Substring(0, metadata.Length / 2) : "");
+            var bridge = new CodexRolloutBridge(this._root, this._ipc)
+            {
+                Now = () => Today, RequireSessionDirectories = true,
+                LiveSessions = new[] { ("presskit", start), ("stage", start.AddSeconds(2)) },
+                LiveSessionDirectories = new Dictionary<String, String>
+                {
+                    ["presskit"] = @"C:\demo\presskit", ["stage"] = @"C:\demo\stage",
+                },
+            };
+            Assert.Equal(0, bridge.Poll());
+            Assert.Null(bridge.KeyFor(path));
+            File.WriteAllText(path, metadata + "\n" + TaskComplete + "\n");
+            Assert.Equal(1, bridge.Poll());
+            Assert.False(File.Exists(Path.Combine(this._ipc, "stage.json")));
+            Assert.Equal(@"C:\demo\presskit", CodexStateReader.Parse(
+                File.ReadAllText(Path.Combine(this._ipc, "presskit.json"))).ProjectDir);
+        }
+
+        [Fact]
+        public void Production_waits_for_the_target_directory_and_replays_an_unchanged_finished_rollout()
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("unknown-directory", Today,
+                Metadata(start.AddSeconds(2), @"C:\demo\presskit"), TaskComplete);
+            var directories = new Dictionary<String, String>();
+            var bridge = new CodexRolloutBridge(this._root, this._ipc)
+            {
+                Now = () => Today, RequireSessionDirectories = true,
+                LiveSessions = new[] { ("presskit", start) }, LiveSessionDirectories = directories,
+            };
+            Assert.Equal(0, bridge.Poll());
+            Assert.Null(bridge.KeyFor(path));
+            Assert.False(File.Exists(Path.Combine(this._ipc, "presskit.json")));
+            directories["presskit"] = @"C:\demo\presskit";
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal(path, CodexStateReader.Parse(
+                File.ReadAllText(Path.Combine(this._ipc, "presskit.json"))).TranscriptPath);
+        }
+
+        [Fact]
+        public void Production_rejects_a_recent_transcript_from_before_the_process_started()
+        {
+            var start = DateTime.UtcNow;
+            var old = this.Rollout("older-stage", Today,
+                Metadata(start.AddSeconds(-30), @"C:\demo\stage"), TaskComplete);
+            var bridge = new CodexRolloutBridge(this._root, this._ipc)
+            {
+                Now = () => Today, RequireSessionDirectories = true,
+                LiveSessions = new[] { ("stage", start) },
+                LiveSessionDirectories = new Dictionary<String, String> { ["stage"] = @"C:\demo\stage" },
+            };
+            Assert.Null(bridge.KeyFor(old));
+            Assert.Equal(0, bridge.Poll());
+            var current = this.Rollout("current-stage", Today,
+                Metadata(start.AddSeconds(2), @"C:\demo\stage"), TaskComplete);
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal(current, CodexStateReader.Parse(
+                File.ReadAllText(Path.Combine(this._ipc, "stage.json"))).TranscriptPath);
+        }
+
         private static String Metadata(DateTime started, String cwd) => JsonSerializer.Serialize(new
         {
             type = "session_meta",

@@ -122,35 +122,105 @@ public class VizhiIntegrationTests : IDisposable
         Assert.Equal("Bash", bridge.Grid.Sessions["pid-202-b"].PendingTool);
     }
 
-    [Theory]
-    [InlineData(4, true)]
-    [InlineData(5, false)]
-    [InlineData(6, true)]
-    public void Extra_session_slots_require_selection_and_identify_the_approval_target(int slot, bool approve)
+    private void AddExtraSessions(BridgeManager bridge, int lastSlot)
     {
-        var (bridge, platform) = Rig(selectPending: false);
         Write("pid-202-b", "Stop");
-        for (var i = 3; i <= slot; i++)
+        for (var i = 3; i <= lastSlot; i++)
         {
             var key = "extra-" + i;
-            Write(key, i == slot ? "PermissionRequest" : "Stop");
+            Write(key, i == lastSlot ? "PermissionRequest" : "Stop");
             live.Add(key);
             bridge.Grid.Refresh(live);
         }
-        var pending = bridge.Grid.SlotSession(slot);
-        Assert.Equal("extra-" + slot, pending.SessionKey);
+    }
+
+    [Theory]
+    [InlineData(4, true)]
+    [InlineData(4, false)]
+    [InlineData(5, true)]
+    [InlineData(5, false)]
+    [InlineData(6, true)]
+    [InlineData(6, false)]
+    public void Hidden_sessions_cannot_be_selected_or_light_or_receive_an_answer(int slot, bool approve)
+    {
+        var (bridge, platform) = Rig(selectPending: false);
+        AddExtraSessions(bridge, slot);
+        Assert.Equal(3, bridge.SessionSlotCount);
+        Assert.Equal("extra-" + slot, bridge.Grid.SlotSession(slot).SessionKey);
+        bridge.SelectSlot(slot);
+        Assert.Null(bridge.PinnedTty);
+        Assert.Empty(platform.Focused);
+        var decision = AnswerCommand.TargetState(bridge);
+        Assert.True(decision.NeedsSelection);
+        Assert.Null(decision.Key);
+        Assert.False(decision.HasPending);
+        Assert.Equal(ApprovalRisk.None, decision.Risk);
         AnswerCommand.AnswerApproval(bridge, approve);
         Assert.Empty(platform.Keys);
-        Assert.True(AnswerCommand.TargetState(bridge).NeedsSelection);
+        Assert.Equal("Bash", bridge.Grid.SlotSession(slot).PendingTool);
+    }
 
+    [Theory]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    public void A_pin_from_the_old_six_slot_layout_cannot_arm_a_hidden_codex_session(int slot)
+    {
+        var (bridge, platform) = Rig(selectPending: false);
+        AddExtraSessions(bridge, slot);
+        // Establish the same pin the previous six-slot version could save. Claude still
+        // supports all six slots, so it can arrange this migration case without reflection.
+        bridge.Agent = new ClaudeCodeAdapter();
+        Assert.Equal(6, bridge.SessionSlotCount);
         bridge.SelectSlot(slot);
-        var decision = AnswerCommand.TargetState(bridge);
-        Assert.False(decision.NeedsSelection);
-        Assert.Equal(pending.SessionKey, decision.Key);
-        Assert.Equal($"{slot}: extra-{slot}", decision.Label);
-        Assert.Equal(ApprovalRisk.High, decision.Risk);
+        Assert.Equal("extra-" + slot, bridge.PinnedTty);
+        bridge.Agent = new CodexCliAdapter();
+        Assert.Null(AnswerCommand.TargetState(bridge).Key);
+        Assert.Equal(ApprovalRisk.None, AnswerCommand.TargetState(bridge).Risk);
+        AnswerCommand.AnswerApproval(bridge, true);
+        AnswerCommand.AnswerApproval(bridge, false);
+        Assert.Empty(platform.Keys);
+    }
+
+    [Theory]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    public void A_lone_session_in_a_hidden_slot_cannot_auto_arm_on_reload(int slot)
+    {
+        var (bridge, platform) = Rig(selectPending: false);
+        AddExtraSessions(bridge, slot);
+        var key = "extra-" + slot;
+        live.Clear();
+        live.Add(key);
+        bridge.Grid.Refresh(live);
+        var reloaded = new BridgeManager(platform) { Agent = new CodexCliAdapter(), Grid = bridge.Grid };
+        Assert.Single(reloaded.Grid.LiveSessions());
+        Assert.Equal(key, reloaded.Grid.SlotSession(slot).SessionKey);
+        Assert.Null(AnswerCommand.TargetState(reloaded).Key);
+        Assert.Equal(ApprovalRisk.None, AnswerCommand.TargetState(reloaded).Risk);
+        AnswerCommand.AnswerApproval(reloaded, true);
+        AnswerCommand.AnswerApproval(reloaded, false);
+        Assert.Empty(platform.Keys);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void With_five_sessions_answers_stay_on_the_selected_visible_slot(bool approve)
+    {
+        var (bridge, platform) = Rig(selectPending: false);
+        AddExtraSessions(bridge, 5);
+        bridge.SelectSlot(3);
+        Assert.Equal(ApprovalRisk.None, AnswerCommand.TargetState(bridge).Risk);
         AnswerCommand.AnswerApproval(bridge, approve);
-        Assert.Equal((pending.SessionKey, approve ? KeyStroke.Return : KeyStroke.Escape), Assert.Single(platform.Keys));
+        Assert.Empty(platform.Keys);
+        Write("extra-3", "PermissionRequest");
+        bridge.Grid.Refresh(live);
+        Assert.Equal("3: extra-3", AnswerCommand.TargetState(bridge).Label);
+        AnswerCommand.AnswerApproval(bridge, approve);
+        Assert.Equal(("extra-3", approve ? KeyStroke.Return : KeyStroke.Escape), Assert.Single(platform.Keys));
+        Assert.Equal("Bash", bridge.Grid.SlotSession(5).PendingTool);
     }
 
     [Fact]

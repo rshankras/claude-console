@@ -390,6 +390,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         // reaching through RoutingTty's fallbacks.
         internal String PinnedTty => _pinnedTty;
 
+        // Codex has one row of session keys. Discovery may track additional sessions, but
+        // those hidden sessions must not become selectable or arm an approval key.
+        internal Int32 SessionSlotCount => this.Agent.Id == "codex-cli" ? 3 : SessionRegistry.SlotCount;
+
+        private Boolean IsSelectableSession(String key) => !String.IsNullOrEmpty(key)
+            && Enumerable.Range(1, this.SessionSlotCount).Any(slot => Grid.SlotSession(slot)?.SessionKey == key);
+
         // Once a multi-session Codex workflow needs a deliberate choice, losing or releasing
         // that choice must not silently arm another session, even if only one remains.
         private Boolean _codexApprovalNeedsSelection;
@@ -402,10 +409,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (live.Count > 1 || !String.IsNullOrEmpty(_pinnedTty))
                 _codexApprovalNeedsSelection = true;
 
-            if (!String.IsNullOrEmpty(_pinnedTty)
-                && live.Any(s => s.SessionKey == _pinnedTty)) return _pinnedTty;
+            if (this.IsSelectableSession(_pinnedTty)) return _pinnedTty;
 
-            return !_codexApprovalNeedsSelection && live.Count == 1 ? live[0].SessionKey : null;
+            return !_codexApprovalNeedsSelection && live.Count == 1
+                && this.IsSelectableSession(live[0].SessionKey) ? live[0].SessionKey : null;
         }
 
         // ------------------------------------------------------------------------------------------
@@ -875,6 +882,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         public void SelectSlot(Int32 slot)
         {
+            if (slot < 1 || slot > this.SessionSlotCount) return;
+
             var session = Grid.SlotSession(slot);
             if (session == null)
             {

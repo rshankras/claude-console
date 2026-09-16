@@ -338,7 +338,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             String label = null;
             if (bridge.Agent.Id == "codex-cli")
             {
-                for (var slot = 1; slot <= SessionRegistry.SlotCount; slot++)
+                for (var slot = 1; slot <= bridge.SessionSlotCount; slot++)
                 {
                     if (bridge.Grid.SlotSession(slot)?.SessionKey != target) continue;
                     label = String.IsNullOrWhiteSpace(session.Project) ? $"Session {slot}" : $"{slot}: {session.Project}";

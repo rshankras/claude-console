@@ -186,6 +186,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 this._cwds[path] = metadata.Cwd;
             }
 
+            // Do not consume a finished transcript before its process identity is available.
+            // A later directory scan must be able to replay it even if the file never grows again.
+            if (this.RequireSessionDirectories && this.KeyFor(path) == null) return 0;
+
             // First sighting: start from a bounded wide tail, not the beginning. The last edge wins,
             // so this recovers the current turn without replaying a whole day of history.
             if (known < 0)
@@ -800,6 +804,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         internal String KeyFor(String rolloutPath)
         {
             var metadata = this.MetadataFor(rolloutPath);
+            if (this.RequireSessionDirectories) return this.VerifiedKeyFor(rolloutPath, metadata);
             if (this._claims.TryGetValue(rolloutPath, out var claimed))
             {
                 if (!this.LiveSessions.Any(s => s.Key == claimed)) return null;
@@ -868,6 +873,29 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
             this._claims[rolloutPath] = ordered[0].Key;
             return ordered[0].Key;
+        }
+
+        // Production never guesses when either side of the identity is unreadable. A recently
+        // closed session can be only seconds older than its replacement, so absolute time skew
+        // alone is insufficient: the rollout must also begin after the process starts.
+        private String VerifiedKeyFor(String path, (DateTime? StartedUtc, String Cwd) metadata)
+        {
+            if (!metadata.StartedUtc.HasValue || String.IsNullOrWhiteSpace(metadata.Cwd)) return null;
+            var started = metadata.StartedUtc.Value;
+            Boolean Matches((String Key, DateTime Start) session) =>
+                this.DirectoryMatch(session.Key, metadata.Cwd) == true
+                && started >= session.Start.ToUniversalTime()
+                && (started - session.Start.ToUniversalTime()).TotalSeconds <= MaxStartSkewSeconds;
+
+            if (this._claims.TryGetValue(path, out var claimed))
+            {
+                if (this.LiveSessions.Any(s => s.Key == claimed && Matches(s))) return claimed;
+                this._claims.Remove(path);
+            }
+            var matches = this.LiveSessions.Where(s => Matches(s) && !this._claims.ContainsValue(s.Key)).ToList();
+            if (matches.Count != 1) return null;
+            this._claims[path] = matches[0].Key;
+            return matches[0].Key;
         }
 
         private Boolean? DirectoryMatch(String key, String rolloutDirectory)
@@ -964,7 +992,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 PluginLog.Verbose(ex, $"CodexRolloutBridge: cannot read session metadata from {path}");
             }
 
-            this._metadata[path] = result;
+            // Files can first appear empty or mid-record. Cache only a complete identity.
+            if (result.Item1.HasValue && !String.IsNullOrWhiteSpace(result.Item2)) this._metadata[path] = result;
             return result;
         }
 

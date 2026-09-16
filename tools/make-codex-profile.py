@@ -26,8 +26,6 @@ Run from the repo root:  python3 tools/make-codex-profile.py
 import json
 import os
 import zipfile
-import copy
-import uuid
 
 DISPLAY = "Vizhi for Codex — Keypad"
 PLUGIN = "VizhiCodex"
@@ -166,21 +164,6 @@ def first_page(profile) -> list[dict]:
     return profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"][0]["controls"]
 
 
-def add_session_page(profile) -> None:
-    """Expose slots 4–6 without changing any existing page's bindings or identity."""
-    pages = profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"]
-    page_id = uuid.uuid5(uuid.NAMESPACE_URL, "vizhi-extra-sessions:" + profile["name"]).hex.upper()
-    if any(page["name"] == page_id for page in pages):
-        return
-    page = copy.deepcopy(pages[0])
-    page["name"] = page_id
-    page["displayName"] = "Sessions 4–6"
-    controls = {control["controlId"]: control for control in page["controls"]}
-    for control_id, slot in enumerate((4, 5, 6)):
-        controls[control_id]["pressAction"] = f"${PLUGIN}___{ACTION}SessionSlotCommand___{slot}"
-    pages.insert(1, page)
-
-
 def update_preview(preview, profile) -> None:
     """Make the static Options+ strip tell the same truth as the imported first page.
 
@@ -223,7 +206,6 @@ def build_profile(src: str, dst: str, guid: str) -> None:
     freed = strip_unsupported(profile)
     print(f"   {freed} keys freed")
     rearrange(profile)
-    add_session_page(profile)
     files["ProfileInfo.json"] = json.dumps(profile, indent=2).encode("utf-8")
 
     application = json.loads(files["ApplicationInfo.json"])

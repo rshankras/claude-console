@@ -1,21 +1,20 @@
 {
-  "revision": "2026-09-16.1",
+  "revision": "2026-09-16.2",
   "product": "VizhiCodex",
   "profiles": [
     {
       "file": "VizhiCodex-Keypad.lp5",
-      "layout_sha256": "262025088c24869c9d1ba54e68001d1dfe0addc0cc4ef42e63e17066391be7a9"
+      "layout_sha256": "952e1c15728fdc60e2b0466505c43c7f90be1d92462bfbbf01676c334e8583f1"
     },
     {
       "file": "VizhiCodex-Windows.lp5",
-      "layout_sha256": "36fbc8b69e7cd69be68b2bbcd137200fc52f20a5cc9ef9e4617f9846289b7775"
+      "layout_sha256": "952e1c15728fdc60e2b0466505c43c7f90be1d92462bfbbf01676c334e8583f1"
     }
   ],
   "changes": [
-    "Page 1: sessions 1\u20133 with Esc / No / Yes and Screenshot / Dictate / Draft",
-    "Page 2: sessions 4\u20136 with the same answer and interaction controls",
-    "Previous pages 2\u20135 keep every binding and follow the new session page",
-    "Codex Yes/No require an explicit selection when multiple sessions are open and show the target slot and project"
+    "Restore the five-page layout with exactly three session keys on page 1",
+    "Pages 2-5 retain Codex controls, prompts, terminal navigation and Git actions",
+    "Hidden sessions cannot be selected or light or receive Yes/No answers, including saved pins from the six-slot layout"
   ],
   "action_ids": "Existing action bindings remain stable. See differences.json from tools/profile-update.py for exact IDs and slots."
 }

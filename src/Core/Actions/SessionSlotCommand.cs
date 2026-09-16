@@ -39,7 +39,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // This keeps the image dynamic while allowing its state bar to reach the button edge.
             this.SetWidget(true);
 
-            for (var slot = 1; slot <= SessionRegistry.SlotCount; slot++)
+            for (var slot = 1; slot <= _bridge.SessionSlotCount; slot++)
             {
                 this.AddParameter(slot.ToString(), $"Session {slot}", "Sessions")
                     .SetDescription($"{_bridge.Agent.DisplayName} session {slot}: shows its project and what it is doing; press to focus that terminal tab and keep every other key aimed at it until you pick another session (press again to release)");
@@ -55,8 +55,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             this.ActionImageChanged();   // repaint every slot when the grid changes
         }
 
-        private static Boolean TryGetSlot(String actionParameter, out Int32 slot) =>
-            Int32.TryParse(actionParameter, out slot) && slot >= 1 && slot <= SessionRegistry.SlotCount;
+        private Boolean TryGetSlot(String actionParameter, out Int32 slot) =>
+            Int32.TryParse(actionParameter, out slot) && slot >= 1 && slot <= _bridge.SessionSlotCount;
 
         protected override void RunCommand(String actionParameter)
         {
