@@ -18,7 +18,10 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// <summary>User-facing words for an agent bridge that needs attention (#69).</summary>
     internal static class AgentBridgeNotice
     {
-        internal const String PublicHelpUrl = "https://www.rshankar.com/keypad-profiles/#codex-hook-trust";
+        // Every user-facing link lives on vizhi.dev: the source repository is closed, and this card
+        // appears exactly when someone is stuck on hook trust — the worst moment to send them
+        // somewhere that is not the product's own documentation.
+        internal const String PublicHelpUrl = "https://vizhi.dev/vizhi-codex/#hooks";
 
         internal static String FaceLabel(AgentBridgeStatus status) =>
             status switch
