@@ -249,7 +249,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             {
                 bridge.Alert();
                 bridge.Notify?.Invoke(PluginStatus.Warning,
-                    "Press the intended session key before Yes or No. Sessions 4–6 are on the second session page in the updated profile.",
+                    "Press the session key for the Codex session you mean, then Yes or No. " +
+                    "With more than one session running, the keypad will not guess which one an approval belongs to.",
                     BridgeNotice.SupportUrl, "Select a Codex session");
                 PluginLog.Info("AnswerCommand: select a Codex session first — no approval was sent");
                 return;

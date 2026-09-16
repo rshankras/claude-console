@@ -682,7 +682,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return null;
             }
 
-            var name = Path.GetFileName(projectDir.TrimEnd('/'));
+            // Split on BOTH separators rather than deferring to Path.GetFileName, which only knows
+            // the separator of the machine it runs on. A Codex rollout carries the cwd written by
+            // whichever platform produced it, so a Mac reading a Windows-authored transcript got
+            // the whole `C:\demo\repos\presskit` as the session label instead of `presskit`.
+            var trimmed = projectDir.TrimEnd('/', '\\');
+            var cut = trimmed.LastIndexOfAny(new[] { '/', '\\' });
+            var name = cut < 0 ? trimmed : trimmed.Substring(cut + 1);
             return String.IsNullOrEmpty(name) ? null : name;
         }
 

@@ -515,6 +515,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("/", null)]
         [InlineData("", null)]
         [InlineData(null, null)]
+        // A rollout carries the cwd of the machine that wrote it, so both separators must split on
+        // either OS — Path.GetFileName only knows the host's, and left the whole Windows path as
+        // the label when a Mac read a Windows-authored transcript.
+        [InlineData(@"C:\demo\repos\presskit", "presskit")]
+        [InlineData(@"C:\demo\repos\presskit\", "presskit")]
+        [InlineData(@"\\server\share\stage", "stage")]
+        [InlineData("presskit", "presskit")]
+        [InlineData(@"\", null)]
         public void Project_name_is_the_directory_basename(String dir, String expected)
         {
             Assert.Equal(expected, SessionRegistry.ProjectName(dir));
