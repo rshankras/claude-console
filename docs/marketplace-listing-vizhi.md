@@ -26,9 +26,15 @@ Read out of the uploaded `.lplug4`; the form fills them itself. To change any, e
 | Homepage | https://vizhi.dev/vizhi-codex/ |
 | Copyright | Copyright © 2026 S.Ravi Shankar. All rights reserved. |
 
-> All user-facing links point at vizhi.dev as of 2026-09-09: the source repository will be closed,
-> so nothing a user can reach may point at github.com (#68). One engine builds both plugins; the
-> product pages on vizhi.dev say so.
+> All user-facing links point at vizhi.dev as of 2026-09-09: the source repository is meant to be
+> closed, so nothing a user can reach may point at github.com (#68). One engine builds both plugins;
+> the product pages on vizhi.dev say so.
+>
+> **Caveat as of 2026-09-16:** `claude-console` is still public, and the 1.6.1 package is published
+> as a release on it. Closing that repository would 404 the release download — the same failure as
+> #68/#71, when every card button broke for a week. The Marketplace is the real distribution channel
+> and the layouts are already served from vizhi.dev, so the exposure is the release link alone.
+> Decide before closing the repo whether the package also needs a home on vizhi.dev.
 
 ## Teaser card description — limit 120 characters
 
@@ -103,6 +109,11 @@ Things a QA reviewer is likely to hit, with the honest answer ready:
 - **The screenshot picker switches the keypad to its default profile** while the overlay is open,
   so Vizhi's Escape key is off screen. Press Escape on the keyboard: the picker closes and the
   Vizhi profile returns by itself. Known issue, accepted for this release.
+- **The Windows helper executables are unsigned.** Smart App Control or an organization policy can
+  block them, and the symptom is keys that beep while nothing types. A reviewer who hits this on
+  Windows is seeing a code-signing gap, not a broken plugin. macOS is unaffected: the voice helper is
+  Developer ID signed, notarized and stapled, and re-verified after packing. Stated in the GitHub
+  release notes and at <https://vizhi.dev/vizhi-codex/#windows>.
 - **Not affiliated with OpenAI.** "Codex" is OpenAI's product; the listing and README both say so.
 
 ## Before submitting — checklist
@@ -119,5 +130,10 @@ Things a QA reviewer is likely to hit, with the honest answer ready:
 - [x] `PRIVACY.md` and `EULA.md` cover this product and both platforms
 - [x] Repo front page names this product and links to its README
 - [x] Fresh-install test passed (register → import layout → keys live)
-- [ ] Screenshots/artwork for the listing page
+- [x] Screenshots/artwork — keypad photo at <https://vizhi.dev/assets/codex-keypad@2x.jpg>, page 1
+      mid-session with a pending approval
+- [x] Released and tagged: `vizhi-codex/v1.6.1`, package sha `70e6408ea216…`. Do **not** submit the
+      earlier `ef35c7d765ea…` build sitting in the same folder; it predates the help-URL fix
 - [ ] EULA reviewed by counsel (open item in SUBMISSION.md)
+- [ ] Decide how the unsigned Windows helpers are handled: sign them, or submit with the limitation
+      disclosed as above

@@ -42,11 +42,15 @@ packaging process is [SUBMISSION.md](../SUBMISSION.md); listing copy is
       certificate and sign them, ship unsigned with the limitation disclosed on the listing, or
       hold the Windows half. Whichever is chosen should be stated in the listing, not discovered
       by a user.
-- [ ] **Tag and publish.** No `vizhi-codex/v1.6.1` tag exists. The draft release
-      `vizhi-codex/v1.6.1-9b7595a` was cut for moving the package to the Windows laptop and is
-      build-identified rather than version-identified. Decide whether to publish that draft,
-      retag cleanly as `vizhi-codex/v1.6.1`, or keep GitHub releases internal now that the
-      repository is going closed.
+- [x] **Tagged and published** on 2026-09-16: `vizhi-codex/v1.6.1` on `80e6ade`, a full release
+      rather than a pre-release, deliberately NOT marked latest so Claude Console 2.2.2 keeps that
+      badge — one repository, two products. Both earlier drafts were deleted; they carried the
+      pre-#107 package and were a way to grab the wrong file. The published assets were downloaded
+      and checked against their own `SHA256SUMS.txt`.
+- [ ] **Where the package lives if the repo closes.** It is published on `claude-console`, which is
+      still public but intended to close. Closing it 404s the release download, the same failure as
+      #68/#71. The Marketplace is the real channel and the layouts already live on vizhi.dev, so the
+      exposure is the release link alone — but decide before closing.
 
 ## Not in this release
 
