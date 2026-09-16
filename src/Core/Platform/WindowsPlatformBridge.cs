@@ -35,10 +35,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         internal WindowsPlatformBridge(AgentProcessMatcher matcher = null, String cliCommand = "claude")
         {
             this._matcher = matcher ?? AgentProcessMatcher.None;
-            WindowsTerminalCli.AgentCli = String.IsNullOrWhiteSpace(cliCommand) ? "claude" : cliCommand;
+            this._cliCommand = String.IsNullOrWhiteSpace(cliCommand) ? "claude" : cliCommand;
+            WindowsTerminalCli.AgentCli = this._cliCommand;
         }
 
         private readonly AgentProcessMatcher _matcher;
+        private readonly String _cliCommand;
 
         // Discovery, injection and terminal control are all implemented (Phases 1-3). Voice is
         // not (Phase 5) — those keys log and no-op. Nothing gates on this today; it is the
@@ -134,6 +136,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
 
             var sessions = WindowsProcessWatcher.SessionsFrom(rows, this._matcher);
+
+            // Only Codex needs these hints — it can withhold SessionStart until its first prompt,
+            // leaving a key with no project name. Claude Code names every session through its own
+            // hook, so reading another process's memory for it would be a cost with no reader.
+            // The macOS bridge gates the same way; keep the two backends symmetrical.
+            if (_cliCommand != "codex")
+            {
+                _sessionDirectories.Clear();
+                return sessions;
+            }
+
             foreach (var stale in _sessionDirectories.Keys.Where(k => !sessions.Contains(k)).ToArray())
                 _sessionDirectories.Remove(stale);
             foreach (var row in rows)

@@ -51,7 +51,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var start = DateTime.UtcNow;
             var rows = new[] { new WindowsProcessInfo { Pid = 123, Name = "codex.exe", CommandLine = "codex.exe", StartTime = start } };
-            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.CodexCli)
+            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.CodexCli, "codex")
             {
                 ProcessEnumerator = () => rows,
                 DirectoryResolver = (_, _) => @"C:\Projects\new-project",
@@ -61,6 +61,29 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             rows = Array.Empty<WindowsProcessInfo>();
             Assert.Empty(bridge.DiscoverSessions());
             Assert.Empty(bridge.SessionDirectories);
+        }
+
+        /// <summary>
+        /// Only Codex needs the directory hint — it can withhold SessionStart until its first
+        /// prompt. Claude Code names every session through its own hook, so reading another
+        /// process's memory for it would be a cost with no reader, on every discovery pass. The
+        /// resolver must not even be called; the macOS bridge gates the same way.
+        /// </summary>
+        [Fact]
+        public void An_agent_that_names_its_own_sessions_reads_no_process_memory()
+        {
+            var start = DateTime.UtcNow;
+            var rows = new[] { new WindowsProcessInfo { Pid = 123, Name = "claude.exe", CommandLine = "claude.exe", StartTime = start } };
+            var asked = 0;
+            var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode, "claude")
+            {
+                ProcessEnumerator = () => rows,
+                DirectoryResolver = (_, _) => { asked++; return @"C:\Projects\whatever"; },
+            };
+
+            Assert.Single(bridge.DiscoverSessions());
+            Assert.Empty(bridge.SessionDirectories);
+            Assert.Equal(0, asked);
         }
 
         [Fact]
