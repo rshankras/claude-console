@@ -236,6 +236,78 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("done", CodexStateReader.Parse(this.SharedState()).Activity);
         }
 
+        /// <summary>
+        /// The hook owns PermissionRequest and can write it between two of our polls. A lifecycle
+        /// edge read afterwards says nothing about approvals, so it must not bury one: that turned
+        /// the amber key grey with nothing left to re-emit it. A plugin reload hit this every time,
+        /// because the wide first-sighting tail always finds a task_started to replay.
+        /// </summary>
+        [Fact]
+        public void A_task_started_edge_cannot_overwrite_a_permission_hook()
+        {
+            var path = this.Rollout("edge-approval", Today, SessionMeta);
+            var bridge = this.New();
+            bridge.Poll();
+
+            Directory.CreateDirectory(this._ipc);
+            File.WriteAllText(
+                Path.Combine(this._ipc, "shared.json"),
+                "{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"PermissionRequest\",\"ts\":1,\"payload\":{\"tool_name\":\"Bash\"}}");
+
+            this.Append(path, TaskStarted);
+            bridge.Poll();
+            Assert.Equal("waiting", CodexStateReader.Parse(this.SharedState()).Activity);
+
+            // A terminal edge is still stronger than the approval, even if PostToolUse was missed.
+            this.Append(path, TaskComplete);
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal("done", CodexStateReader.Parse(this.SharedState()).Activity);
+        }
+
+        /// <summary>Naming a session is never grounds for discarding a live approval on its key.</summary>
+        [Fact]
+        public void A_first_sighting_cannot_clobber_a_waiting_keyed_file()
+        {
+            var path = this.Rollout("first-sighting", Today, SessionMeta);
+            Directory.CreateDirectory(this._ipc);
+            File.WriteAllText(
+                Path.Combine(this._ipc, "pid-100-cli.json"),
+                "{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"PermissionRequest\",\"ts\":1,\"payload\":{\"tool_name\":\"Bash\"}}");
+
+            var bridge = this.New();
+            bridge.LiveSessions = new List<(String, DateTime)>
+            {
+                ("pid-100-cli", new DateTime(2026, 8, 20, 14, 0, 0, DateTimeKind.Utc)),
+            };
+            bridge.Poll();
+
+            var keyed = CodexStateReader.Parse(
+                File.ReadAllText(Path.Combine(this._ipc, "pid-100-cli.json")));
+            Assert.Equal("waiting", keyed.Activity);
+        }
+
+        /// <summary>
+        /// Preserving a waiting envelope must not freeze it: a SECOND approval is a new question,
+        /// with its own command, and has to replace the first even though both read "waiting".
+        /// </summary>
+        [Fact]
+        public void A_newer_code_mode_approval_still_replaces_an_older_one()
+        {
+            var path = this.Rollout(
+                "two-approvals", Today, SessionMeta, TaskStarted,
+                CodeModeExec("call-1", "git push origin feature"));
+            var bridge = this.New();
+            bridge.Poll();
+            Assert.Equal("git push origin feature", CodexStateReader.Parse(this.SharedState()).PendingCommand);
+
+            this.Append(path, CodeModeExec("call-2", "rm -rf build"));
+            Assert.Equal(1, bridge.Poll());
+
+            var snap = CodexStateReader.Parse(this.SharedState());
+            Assert.Equal("waiting", snap.Activity);
+            Assert.Equal("rm -rf build", snap.PendingCommand);
+        }
+
         [Fact]
         public void A_code_mode_escalation_becomes_a_keyed_cli_approval()
         {

@@ -233,6 +233,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             String activity = null;
             String pendingCommand = null;
             String transport = null;
+            // A Busy edge means two different things and only this flag tells them apart: a bare
+            // task_started says nothing about approvals, while the code-mode output below is the
+            // resolution of an approval we ourselves published. Both land on BusyEvent, so the
+            // activity value alone cannot decide whether a waiting envelope may be overwritten.
+            var resolvesApproval = false;
             foreach (var line in complete.Split('\n'))
             {
                 var mapped = ActivityFor(line);
@@ -241,6 +246,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                     activity = mapped;
                     pendingCommand = null;
                     transport = null;
+                    resolvesApproval = false;
 
                     if (String.Equals(mapped, CodexStateBridge.IdleEvent, StringComparison.Ordinal))
                     {
@@ -258,6 +264,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                     activity = "PermissionRequest";
                     pendingCommand = command;
                     transport = "rollout-code-mode";
+                    resolvesApproval = false;
                 }
                 else if (TryCodeModeOutput(line, out var completedCallId)
                     && this._pendingApprovalCalls.TryGetValue(path, out var pendingCallId)
@@ -267,6 +274,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                     activity = CodexStateBridge.BusyEvent;
                     pendingCommand = null;
                     transport = null;
+                    resolvesApproval = true;
                 }
 
                 var cwd = CwdFrom(line);
@@ -292,11 +300,26 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // rollout has been safely correlated, publish its immutable metadata immediately
                 // so an old/missing state file cannot leave the key labelled only "Codex". Keep
                 // this per-session: metadata from one rollout must not replace shared activity.
-                return firstSighting && this.WriteState(path, "SessionStart", writeShared: false) ? 1 : 0;
+                // Naming a session is never grounds for discarding a live approval on its key.
+                return firstSighting
+                    && this.WriteState(path, "SessionStart", writeShared: false, preserveWaiting: true)
+                        ? 1 : 0;
             }
 
             this._activities[path] = activity;
-            return this.WriteState(path, activity, pendingCommand: pendingCommand, transport: transport) ? 1 : 0;
+
+            // A lifecycle edge is not evidence about an approval. The hook owns PermissionRequest
+            // and can write it between two of our polls, so a task_started read afterwards must
+            // not bury it — that turned the amber key grey with nothing left to re-emit it. Only
+            // a terminal edge (task_complete / turn_aborted), a fresh approval, or the code-mode
+            // output that resolves our own approval may clear a waiting envelope.
+            var preserveWaiting =
+                String.Equals(activity, CodexStateBridge.BusyEvent, StringComparison.Ordinal)
+                && !resolvesApproval;
+
+            return this.WriteState(
+                path, activity, preserveWaiting: preserveWaiting,
+                pendingCommand: pendingCommand, transport: transport) ? 1 : 0;
         }
 
         /// <summary>
