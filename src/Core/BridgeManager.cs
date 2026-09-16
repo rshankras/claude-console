@@ -390,6 +390,24 @@ namespace Loupedeck.ClaudeConsolePlugin
         // reaching through RoutingTty's fallbacks.
         internal String PinnedTty => _pinnedTty;
 
+        // Once a multi-session Codex workflow needs a deliberate choice, losing or releasing
+        // that choice must not silently arm another session, even if only one remains.
+        private Boolean _codexApprovalNeedsSelection;
+
+        internal String ApprovalTty()
+        {
+            if (this.Agent.Id != "codex-cli") return this.RoutingTty();
+
+            var live = Grid.LiveSessions();
+            if (live.Count > 1 || !String.IsNullOrEmpty(_pinnedTty))
+                _codexApprovalNeedsSelection = true;
+
+            if (!String.IsNullOrEmpty(_pinnedTty)
+                && live.Any(s => s.SessionKey == _pinnedTty)) return _pinnedTty;
+
+            return !_codexApprovalNeedsSelection && live.Count == 1 ? live[0].SessionKey : null;
+        }
+
         // ------------------------------------------------------------------------------------------
         // Singleton — the SDK auto-discovers PluginDynamicCommand/Adjustment subclasses and
         // instantiates them with their parameterless constructors, so they cannot receive the
@@ -888,6 +906,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             _pinnedTty = session.SessionKey;
+            if (this.Agent.Id == "codex-cli") _codexApprovalNeedsSelection = true;
             Grid.FocusedSession = session.SessionKey;   // survives a plugin reload, like the slot assignments
             _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
             OnTargetChanged?.Invoke();

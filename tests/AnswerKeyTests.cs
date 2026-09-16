@@ -115,7 +115,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var body = source.Substring(source.IndexOf("static void AnswerApproval(", StringComparison.Ordinal));
 
             var setup = body.IndexOf("LiveStatusFace.SetupWord(bridge.LiveStatusApplies, bridge.LiveStatus)", StringComparison.Ordinal);
-            var decide = body.IndexOf("Decide(approve, hasPending", StringComparison.Ordinal);
+            var decide = body.IndexOf("Decide(approve,", StringComparison.Ordinal);
             Assert.True(setup >= 0, "AnswerApproval no longer checks the live-status setup word");
             Assert.True(decide > setup, "the setup check must come before the menu decision");
             Assert.Contains("BridgeNotice.AnswerNeedsSetup()", body.Substring(setup, decide - setup));

@@ -1,23 +1,21 @@
 {
-  "revision": "2026-09-14.1",
+  "revision": "2026-09-16.1",
   "product": "VizhiCodex",
   "profiles": [
     {
       "file": "VizhiCodex-Keypad.lp5",
-      "layout_sha256": "952e1c15728fdc60e2b0466505c43c7f90be1d92462bfbbf01676c334e8583f1"
+      "layout_sha256": "262025088c24869c9d1ba54e68001d1dfe0addc0cc4ef42e63e17066391be7a9"
     },
     {
       "file": "VizhiCodex-Windows.lp5",
-      "layout_sha256": "952e1c15728fdc60e2b0466505c43c7f90be1d92462bfbbf01676c334e8583f1"
+      "layout_sha256": "36fbc8b69e7cd69be68b2bbcd137200fc52f20a5cc9ef9e4617f9846289b7775"
     }
   ],
   "changes": [
-    "Page 1: Esc / No / Yes above Screenshot / Dictate / Draft",
-    "Page 2: Model / Plan / Skills, Review / Context / Compact, Up / Enter / Down",
-    "Page 3: Explore / Explain / Document, Optimize / Refactor / FixBug, CodeAudit / WriteTests / Security",
-    "Page 4: Project / NewTab / NewCodex, Prev / Next / Exit, Agent / Fork / Resume",
-    "Page 5: Status / Diff / Log, Commit / Push / PR",
-    "Profile package identities and dependency metadata identify VizhiCodex consistently"
+    "Page 1: sessions 1\u20133 with Esc / No / Yes and Screenshot / Dictate / Draft",
+    "Page 2: sessions 4\u20136 with the same answer and interaction controls",
+    "Previous pages 2\u20135 keep every binding and follow the new session page",
+    "Codex Yes/No require an explicit selection when multiple sessions are open and show the target slot and project"
   ],
   "action_ids": "Existing action bindings remain stable. See differences.json from tools/profile-update.py for exact IDs and slots."
 }

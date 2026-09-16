@@ -34,10 +34,20 @@ same title.
 | Page | Keys |
 |---|---|
 | 1 — Sessions & interaction | Codex sessions ×3 · Esc · No · Yes · **Screenshot** · **Dictate** · **Draft** |
-| 2 — Codex controls | Model · Plan · Skills · Review · **Context gauge** · Compact · Up · Enter · Down |
-| 3 — Prompts | Explore · Explain · Document · Optimize · Refactor · Fix Bug · Code Audit · Write Tests · Security |
-| 4 — Terminal | Voice "Go to Project" · New Tab · New Codex · Prev/Next Tab · Exit · Agent · Fork · Resume |
-| 5 — Git | Git Status · Diff · Log · Commit · Push · Create PR |
+| 2 — More sessions | Codex sessions 4–6 · Esc · No · Yes · Screenshot · Dictate · Draft |
+| 3 — Codex controls | Model · Plan · Skills · Review · **Context gauge** · Compact · Up · Enter · Down |
+| 4 — Prompts | Explore · Explain · Document · Optimize · Refactor · Fix Bug · Code Audit · Write Tests · Security |
+| 5 — Terminal | Voice "Go to Project" · New Tab · New Codex · Prev/Next Tab · Exit · Agent · Fork · Resume |
+| 6 — Git | Git Status · Diff · Log · Commit · Push · Create PR |
+
+With multiple Codex sessions open, press a session key before Yes/No. Until a session is selected,
+both answer keys show **Select session** without an approval badge. Once selected, they show its
+slot number and project name; a pending request in another session cannot redirect either key.
+If the selected session closes or you release its pin, select again before answering. A fresh
+single-session workflow still works without this extra selection. Sessions 4–6 are on page 2.
+
+Existing imported profiles keep their layout until updated. Import the revised profile separately
+(or add Session 4–6 actions to a custom page); the approval guard also works with older layouts.
 
 Highlights that are Codex-specific:
 
@@ -45,11 +55,11 @@ Highlights that are Codex-specific:
   and the path is typed into your running session with an instruction Codex's model follows to
   open the image. Add your question, press Return.
 - **Native `/review`.** One press opens Codex's review picker — uncommitted changes, against a
-  base branch, or a commit. (Page 3's Code Audit is different on purpose: it types a structured
+  base branch, or a commit. (Page 4's Code Audit is different on purpose: it types a structured
   review *prompt* into the current conversation.)
 - **Codex power controls.** Plan, Agent, Fork, Skills, and Resume open Codex's own TUI
   workflows. The keypad does not imitate their menus; it opens the native picker and leaves the
-  menu arrows and Enter available on page 2. Plan sends the native Shift+Tab toggle rather than
+  menu arrows and Enter available on page 3. Plan sends the native Shift+Tab toggle rather than
   repeatedly entering /plan; a customized CLI keymap may require restoring that shortcut.
   When the Agent workflow opens `codex agents` in a separate tab, tap the pinned session again
   to release targeting, then focus that tab before using the keypad arrows.

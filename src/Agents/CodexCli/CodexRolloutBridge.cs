@@ -86,12 +86,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             Array.Empty<(String, DateTime)>();
 
         /// <summary>
+        /// Direct process CWD observations, independent of the state files this bridge writes.
+        /// Close launch times alone cannot distinguish several projects starting together.
+        /// </summary>
+        internal IReadOnlyDictionary<String, String> LiveSessionDirectories { get; set; }
+
+        /// <summary>Production waits for the first process scan before claiming any transcript.</summary>
+        internal Boolean RequireSessionDirectories { get; init; }
+
+        /// <summary>
         /// Read whatever has been appended since the last call and write the resulting state.
         /// Returns how many envelopes were written — for tests and logging, not for control flow.
         /// Never throws: a transport that breaks the plugin is worse than one that reports nothing.
         /// </summary>
         public Int32 Poll()
         {
+            if (this.RequireSessionDirectories && this.LiveSessionDirectories == null) return 0;
+
             var written = 0;
 
             try
@@ -781,18 +792,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// <summary>
         /// Attach a rollout file to the session key of the process that owns it.
         ///
-        /// Neither side knows the other: the rollout carries a thread id and cwd, the grid keys on
-        /// pid + start time. What they share is WHEN they began — a rollout file is created as its
-        /// codex process starts. So: the live session whose start time is nearest the file's
-        /// creation, claims stick once made, and an ambiguous match claims NOTHING and leaves the
-        /// shared file to do its job. A wrong per-session claim would put another session's state
-        /// on a key, which is worse than a key that waits.
+        /// Match the rollout's project against independently observed process directories before
+        /// comparing start times. CLI startup can take longer than the interval between launches:
+        /// matching only timestamps swapped Presskit and Stage when three projects opened together.
+        /// Unknown directories retain the bounded time fallback; known mismatches never qualify.
         /// </summary>
         internal String KeyFor(String rolloutPath)
         {
+            var metadata = this.MetadataFor(rolloutPath);
             if (this._claims.TryGetValue(rolloutPath, out var claimed))
             {
-                return this.LiveSessions.Any(s => s.Key == claimed) ? claimed : null;
+                if (!this.LiveSessions.Any(s => s.Key == claimed)) return null;
+                if (this.DirectoryMatch(claimed, metadata.Cwd) != false) return claimed;
+                // A directory may become readable after an initial time-only claim. Do not
+                // keep writing another project's state after direct evidence disproves it.
+                this._claims.Remove(rolloutPath);
             }
 
             var live = this.LiveSessions;
@@ -801,7 +815,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 return null;
             }
 
-            var metadata = this.MetadataFor(rolloutPath);
             DateTime started;
             if (metadata.StartedUtc.HasValue)
             {
@@ -820,7 +833,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 }
             }
 
-            var unclaimed = live.Where(s => !this._claims.ContainsValue(s.Key)).ToList();
+            var unclaimed = live.Where(s => !this._claims.ContainsValue(s.Key)
+                && this.DirectoryMatch(s.Key, metadata.Cwd) != false).ToList();
+
+            // Prefer positive directory evidence over a closer process whose CWD is unavailable.
+            var matching = unclaimed.Where(s => this.DirectoryMatch(s.Key, metadata.Cwd) == true).ToList();
+            if (matching.Count > 0) unclaimed = matching;
             if (unclaimed.Count == 0)
             {
                 return null;
@@ -850,6 +868,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
             this._claims[rolloutPath] = ordered[0].Key;
             return ordered[0].Key;
+        }
+
+        private Boolean? DirectoryMatch(String key, String rolloutDirectory)
+        {
+            if (String.IsNullOrWhiteSpace(rolloutDirectory)
+                || this.LiveSessionDirectories == null
+                || !this.LiveSessionDirectories.TryGetValue(key, out var processDirectory)
+                || String.IsNullOrWhiteSpace(processDirectory)) return null;
+
+            // This transport runs on Windows. Compare separator/case variants without touching
+            // the filesystem or using transcript-derived grid labels as evidence of ownership.
+            return String.Equals(
+                rolloutDirectory.Replace('/', '\\').TrimEnd('\\'),
+                processDirectory.Replace('/', '\\').TrimEnd('\\'),
+                StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>

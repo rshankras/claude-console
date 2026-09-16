@@ -244,17 +244,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return;
             }
 
-            var target = bridge.RoutingTty();
-            var hasPending = false;
-            if (!String.IsNullOrEmpty(target) && bridge.Grid.Sessions.TryGetValue(target, out var session))
+            var decision = TargetState(bridge);
+            if (decision.NeedsSelection)
             {
-                // PendingTool is filled only from a captured PermissionRequest payload, and only
-                // while the session is waiting on it — the same field that lights the risk badge.
-                hasPending = !String.IsNullOrEmpty(session.PendingTool);
+                bridge.Alert();
+                bridge.Notify?.Invoke(PluginStatus.Warning,
+                    "Press the intended session key before Yes or No. Sessions 4–6 are on the second session page in the updated profile.",
+                    BridgeNotice.SupportUrl, "Select a Codex session");
+                PluginLog.Info("AnswerCommand: select a Codex session first — no approval was sent");
+                return;
             }
 
+            var target = decision.Key;
+
             var canObserve = bridge.Agent?.Capabilities.ApprovalSignal ?? true;
-            switch (Decide(approve, hasPending, canObserve))
+            switch (Decide(approve, decision.HasPending, canObserve))
             {
                 case AnswerVia.MenuConfirm:
                     Answered(bridge, target, bridge.InjectKeyTo(target, KeyStroke.Return), "approved");
@@ -321,16 +325,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         // The risk of whatever the targeted session is waiting on — i.e. what pressing Yes right now
         // would approve. None when nothing is pending, which leaves the key looking normal.
-        private static ApprovalRisk TargetRisk()
+        internal static (String Key, String Label, ApprovalRisk Risk, Boolean HasPending, Boolean NeedsSelection)
+            TargetState(BridgeManager bridge)
         {
-            var bridge = BridgeManager.Instance;
-            var target = bridge.RoutingTty();
-            if (String.IsNullOrEmpty(target))
+            var target = bridge.ApprovalTty();
+            if (String.IsNullOrEmpty(target) || !bridge.Grid.Sessions.TryGetValue(target, out var session))
             {
-                return ApprovalRisk.None;
+                return (null, null, ApprovalRisk.None, false,
+                    bridge.Agent.Id == "codex-cli" && bridge.Grid.LiveSessions().Count > 0);
             }
 
-            return bridge.Grid.Sessions.TryGetValue(target, out var session) ? session.Risk : ApprovalRisk.None;
+            String label = null;
+            if (bridge.Agent.Id == "codex-cli")
+            {
+                for (var slot = 1; slot <= SessionRegistry.SlotCount; slot++)
+                {
+                    if (bridge.Grid.SlotSession(slot)?.SessionKey != target) continue;
+                    label = String.IsNullOrWhiteSpace(session.Project) ? $"Session {slot}" : $"{slot}: {session.Project}";
+                    break;
+                }
+            }
+            return (target, label, session.Risk, !String.IsNullOrEmpty(session.PendingTool), false);
         }
 
         /// <summary>
@@ -378,11 +393,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     return KeyImage.RenderDecisionTile(imageSize, setup, KeyImage.Gray, approve: actionParameter == Yes, risk: ApprovalRisk.None);
                 }
 
-                var pendingRisk = TargetRisk();
+                var decision = TargetState(bridge);
+                if (decision.NeedsSelection)
+                    return KeyImage.RenderDecisionTile(imageSize, "Select", KeyImage.Gray,
+                        approve: actionParameter == Yes, risk: ApprovalRisk.None, targetLabel: "session");
+
                 return KeyImage.RenderDecisionTile(
                     imageSize, label, color,
                     approve: actionParameter == Yes,
-                    risk: IndicatorRisk(actionParameter == Yes, pendingRisk));
+                    risk: IndicatorRisk(actionParameter == Yes, decision.Risk),
+                    targetLabel: decision.Label);
             }
 
             return KeyImage.RenderWidgetAction(imageSize, label, actionParameter);

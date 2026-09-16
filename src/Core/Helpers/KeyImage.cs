@@ -216,7 +216,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         public static BitmapImage RenderDecisionTile(
             PluginImageSize imageSize, String label, BitmapColor color,
-            Boolean approve, ApprovalRisk risk)
+            Boolean approve, ApprovalRisk risk, String targetLabel = null)
         {
             using (var bitmap = ButtonCanvas(imageSize))
             {
@@ -239,8 +239,15 @@ namespace Loupedeck.ClaudeConsolePlugin
                     PluginLog.Verbose(ex, $"KeyImage: decision glyph '{glyph}' failed to load — tile keeps colour + label");
                 }
 
-                var labelY = (Int32)(h * 0.66f);
-                bitmap.DrawText(label, 0, labelY, w, h - labelY, White, fontSize: (Int32)(15 * scale));
+                var labelY = (Int32)(h * (targetLabel == null ? 0.66f : 0.62f));
+                var labelHeight = targetLabel == null ? h - labelY : (Int32)(h * 0.20f);
+                bitmap.DrawText(label, 0, labelY, w, labelHeight, White, fontSize: (Int32)(15 * scale));
+                if (targetLabel != null)
+                {
+                    var caption = targetLabel.Length <= 16 ? targetLabel : targetLabel.Substring(0, 15) + "…";
+                    bitmap.DrawText(caption, (Int32)(3 * scale), (Int32)(h * 0.82f),
+                        w - (Int32)(6 * scale), (Int32)(h * 0.17f), White, fontSize: (Int32)(10 * scale));
+                }
                 DrawApprovalBadge(bitmap, risk);
                 return bitmap.ToImage();
             }

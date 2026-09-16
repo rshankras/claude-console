@@ -529,6 +529,109 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         // ------------------------------------------------------------------------------------
 
         [Fact]
+        public void Production_poll_waits_for_independent_directory_discovery_before_consuming_a_rollout()
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("presskit", Today, Metadata(start, @"C:\demo\presskit"), TaskComplete);
+            var bridge = new CodexRolloutBridge(this._root, this._ipc)
+            {
+                Now = () => Today, RequireSessionDirectories = true,
+                LiveSessions = new[] { ("stage", start), ("presskit", start.AddSeconds(-5)) },
+            };
+            Assert.Equal(0, bridge.Poll());
+            Assert.False(File.Exists(Path.Combine(this._ipc, "stage.json")));
+            bridge.LiveSessionDirectories = new Dictionary<String, String>
+            {
+                ["stage"] = @"C:\demo\stage", ["presskit"] = @"C:\demo\presskit",
+            };
+            Assert.Equal(1, bridge.Poll());
+            Assert.False(File.Exists(Path.Combine(this._ipc, "stage.json")));
+            Assert.Equal(path, CodexStateReader.Parse(File.ReadAllText(Path.Combine(this._ipc, "presskit.json"))).TranscriptPath);
+        }
+
+        private static String Metadata(DateTime started, String cwd) => JsonSerializer.Serialize(new
+        {
+            type = "session_meta",
+            payload = new { timestamp = started.ToString("O"), cwd },
+        });
+
+        [Fact]
+        public void Closely_launched_projects_keep_their_own_labels_and_transcripts()
+        {
+            var start = new DateTime(2026, 8, 20, 14, 0, 0, DateTimeKind.Utc);
+            var projects = new[] { "presskit", "faq", "stage" };
+            var bridge = this.New();
+            var directories = new Dictionary<String, String>();
+            var live = new List<(String, DateTime)>();
+            var paths = new Dictionary<String, String>();
+            for (var i = 0; i < projects.Length; i++)
+            {
+                var project = projects[i];
+                var cwd = @"C:\demo\repos\" + project;
+                live.Add((project, start.AddSeconds(i * 2.5)));
+                directories[project] = cwd;
+                // Each transcript appears after the next CLI has started, as on the demo laptop.
+                paths[project] = this.Rollout(project, Today,
+                    Metadata(start.AddSeconds(5 + i * 4), cwd), TaskComplete);
+            }
+            bridge.LiveSessions = live;
+            bridge.LiveSessionDirectories = directories;
+
+            bridge.Poll();
+
+            var grid = new SessionRegistry(this._ipc, Path.Combine(this._root, "activity"),
+                Path.Combine(this._root, "registry.json")) { Agent = new CodexCliAdapter() };
+            grid.Refresh(new HashSet<String>(projects));
+            foreach (var project in projects)
+            {
+                Assert.Equal(project, grid.Sessions[project].Project);
+                Assert.Equal(paths[project], grid.Sessions[project].TranscriptPath);
+            }
+        }
+
+        [Fact]
+        public void A_nearby_process_in_a_different_project_cannot_claim_a_rollout()
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("stage", Today, Metadata(start, @"C:\demo\stage"), TaskComplete);
+            var bridge = this.New();
+            bridge.LiveSessions = new[] { ("presskit", start) };
+            bridge.LiveSessionDirectories = new Dictionary<String, String> { ["presskit"] = @"C:\demo\presskit" };
+
+            Assert.Null(bridge.KeyFor(path));
+        }
+
+        [Theory]
+        [InlineData(@"C:\demo\presskit")]
+        [InlineData("c:/DEMO/presskit/")]
+        public void A_known_project_match_beats_an_unknown_but_closer_process(String directory)
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("presskit", Today, Metadata(start, @"C:\demo\presskit"), TaskComplete);
+            var bridge = this.New();
+            bridge.LiveSessions = new[] { ("unknown", start), ("presskit", start.AddSeconds(-5)) };
+            bridge.LiveSessionDirectories = new Dictionary<String, String> { ["presskit"] = directory };
+
+            Assert.Equal("presskit", bridge.KeyFor(path));
+        }
+
+        [Fact]
+        public void Newly_observed_directory_rejects_an_incorrect_cached_claim()
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("stage", Today, Metadata(start, @"C:\demo\stage"), TaskComplete);
+            var bridge = this.New();
+            bridge.LiveSessions = new[] { ("presskit", start), ("stage", start.AddSeconds(-5)) };
+            Assert.Equal("presskit", bridge.KeyFor(path));
+            bridge.LiveSessionDirectories = new Dictionary<String, String>
+            {
+                ["presskit"] = @"C:\demo\presskit", ["stage"] = @"C:\demo\stage",
+            };
+
+            Assert.Equal("stage", bridge.KeyFor(path));
+        }
+
+        [Fact]
         public void One_live_session_claims_the_rollout()
         {
             var path = this.Rollout("a", Today, TaskStarted);

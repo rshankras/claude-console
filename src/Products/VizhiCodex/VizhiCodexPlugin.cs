@@ -113,7 +113,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             // Nothing in Load depends on these grants; they are for a future codex.
             _ = System.Threading.Tasks.Task.Run(Platform.CodexSandboxAccess.EnsureGranted);
 
-            var bridge = new CodexRolloutBridge();
+            var bridge = new CodexRolloutBridge { RequireSessionDirectories = true };
             var manager = BridgeManager.Instance;
 
             manager.PullState = () =>
@@ -129,6 +129,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
 
                 bridge.LiveSessions = live;
+                bridge.LiveSessionDirectories = manager.Grid?.DiscoveredProjectDirs;
                 bridge.Poll();
             };
 
