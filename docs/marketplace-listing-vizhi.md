@@ -61,14 +61,16 @@ Coexists with Claude Console.
 ## Release notes — limit 1000 characters
 
 First Marketplace release for this product, so written as an introduction rather than a
-changelog. No version heading — the page shows the version from the package. **995 characters**
-(5 spare):
+changelog. No version heading — the page shows the version from the package. **986 characters**
+(14 spare). The approval line carried a `(macOS)` qualifier until 1.6.1; Codex's Windows hook now
+writes the same envelope, and risk classification has never been OS-gated, so the keys light on
+both platforms:
 
 ```markdown
 First Marketplace release. Vizhi for Codex makes the MX Creative Keypad a control surface for OpenAI Codex CLI on macOS and Windows.
 
 - **A key per session** — run up to 3 Codex sessions, each key showing its project, state & context; press one to focus it
-- **Answer Codex** — Yes/No and menu navigation; approval keys light amber or red when Codex reports risk (macOS)
+- **Answer Codex** — Yes/No and menu navigation; approval keys light amber or red when Codex reports risk
 - **One-press prompts** — Fix Bug, Write Tests, Review & more, customizable
 - **Screenshot** — capture a screen region into the running conversation
 - **Native Codex controls** — Plan, Agent, Fork, Skills, Status, Resume and Review
@@ -93,12 +95,27 @@ Things a QA reviewer is likely to hit, with the honest answer ready:
   That is Codex's own security model; the plugin can't and shouldn't bypass it.
 - **Windows uses official hooks plus rollout fallback.** `commandWindows` carries exact lifecycle
   and approval state; Codex's session transcript keeps basic state alive if a hook is missed.
+- **With more than one session running, Yes/No refuse until a session key is pressed.** That is
+  deliberate, not a broken key: the keypad will not guess which session an approval belongs to,
+  because answering the wrong one runs or cancels the wrong command. The keys beep and a card
+  explains it once. Press a session key first, then Yes or No. With a single session and no
+  selection ever made, the keys answer it directly.
+- **The screenshot picker switches the keypad to its default profile** while the overlay is open,
+  so Vizhi's Escape key is off screen. Press Escape on the keyboard: the picker closes and the
+  Vizhi profile returns by itself. Known issue, accepted for this release.
 - **Not affiliated with OpenAI.** "Codex" is OpenAI's product; the listing and README both say so.
 
 ## Before submitting — checklist
 
-- [x] Package contains exactly one DLL, no `PluginApi.dll` (what got Claude Console 2.0.0
-      rejected). Verify: `unzip -l VizhiCodex_<ver>.lplug4 | grep '\.dll'`
+- [x] Exactly one **plugin** DLL and no `PluginApi.dll` or its host closure (what got Claude
+      Console 2.0.0 rejected). A bare `grep '\.dll'` is no longer a useful check: since the Windows
+      whisper runtime started shipping, the package legitimately carries twelve more under
+      `bin/voice/whisper-bin-win/`. Verify the three things that actually matter:
+      ```bash
+      unzip -l VizhiCodex_<ver>.lplug4 | grep -c 'PluginApi.dll'                 # 0
+      unzip -l VizhiCodex_<ver>.lplug4 | grep -cE ' bin/[A-Za-z]+Plugin\.dll$'   # 1
+      unzip -l VizhiCodex_<ver>.lplug4 | grep -cE 'ExCSS|Svg\.|Newtonsoft|YamlDotNet'  # 0
+      ```
 - [x] `PRIVACY.md` and `EULA.md` cover this product and both platforms
 - [x] Repo front page names this product and links to its README
 - [x] Fresh-install test passed (register → import layout → keys live)
