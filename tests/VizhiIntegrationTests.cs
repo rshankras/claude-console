@@ -217,7 +217,7 @@ public class VizhiIntegrationTests : IDisposable
         Assert.Empty(platform.Keys);
         Write("extra-3", "PermissionRequest");
         bridge.Grid.Refresh(live);
-        Assert.Equal("3: extra-3", AnswerCommand.TargetState(bridge).Label);
+        Assert.Equal("extra-3", AnswerCommand.TargetState(bridge).Key);
         AnswerCommand.AnswerApproval(bridge, approve);
         Assert.Equal(("extra-3", approve ? KeyStroke.Return : KeyStroke.Escape), Assert.Single(platform.Keys));
         Assert.Equal("Bash", bridge.Grid.SlotSession(5).PendingTool);

@@ -40,8 +40,9 @@ same title.
 | 5 — Git | Git Status · Diff · Log · Commit · Push · Create PR |
 
 With multiple Codex sessions open, press a session key before Yes/No. Until a session is selected,
-both answer keys show **Select session** without an approval badge. Once selected, they show its
-slot number and project name; a pending request in another session cannot redirect either key.
+both answer keys show **Select session** without an approval badge. Once selected, the highlighted
+session pill identifies the target; the answer keys show **Yes** and **No**. A pending request in
+another session cannot redirect either key.
 If the selected session closes or you release its pin, select again before answering. A fresh
 single-session workflow still works without this extra selection. The keypad is limited to three
 session keys on page 1. Additional sessions can remain open in the terminal, but their pending

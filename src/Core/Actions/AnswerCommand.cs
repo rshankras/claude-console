@@ -325,27 +325,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         // The risk of whatever the targeted session is waiting on — i.e. what pressing Yes right now
         // would approve. None when nothing is pending, which leaves the key looking normal.
-        internal static (String Key, String Label, ApprovalRisk Risk, Boolean HasPending, Boolean NeedsSelection)
+        internal static (String Key, ApprovalRisk Risk, Boolean HasPending, Boolean NeedsSelection)
             TargetState(BridgeManager bridge)
         {
             var target = bridge.ApprovalTty();
             if (String.IsNullOrEmpty(target) || !bridge.Grid.Sessions.TryGetValue(target, out var session))
             {
-                return (null, null, ApprovalRisk.None, false,
+                return (null, ApprovalRisk.None, false,
                     bridge.Agent.Id == "codex-cli" && bridge.Grid.LiveSessions().Count > 0);
             }
 
-            String label = null;
-            if (bridge.Agent.Id == "codex-cli")
-            {
-                for (var slot = 1; slot <= bridge.SessionSlotCount; slot++)
-                {
-                    if (bridge.Grid.SlotSession(slot)?.SessionKey != target) continue;
-                    label = String.IsNullOrWhiteSpace(session.Project) ? $"Session {slot}" : $"{slot}: {session.Project}";
-                    break;
-                }
-            }
-            return (target, label, session.Risk, !String.IsNullOrEmpty(session.PendingTool), false);
+            return (target, session.Risk, !String.IsNullOrEmpty(session.PendingTool), false);
         }
 
         /// <summary>
@@ -401,8 +391,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return KeyImage.RenderDecisionTile(
                     imageSize, label, color,
                     approve: actionParameter == Yes,
-                    risk: IndicatorRisk(actionParameter == Yes, decision.Risk),
-                    targetLabel: decision.Label);
+                    risk: IndicatorRisk(actionParameter == Yes, decision.Risk));
             }
 
             return KeyImage.RenderWidgetAction(imageSize, label, actionParameter);
