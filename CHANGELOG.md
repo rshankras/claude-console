@@ -3,7 +3,46 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.2.3] — 2026-09-16
+
+Claude Console and Vizhi for Codex compile the same engine, so the work done for Vizhi 1.6.1
+reaches this product too. Nothing here is a new feature; these are the shared changes a 2.2.2
+rebuild would otherwise have picked up unannounced. The keypad's faces, colours and key names
+are deliberately unchanged from 2.2.2 — each product now declares its own identity, so Vizhi's
+blue and its relabelled keys stay with Vizhi.
+
+### Fixed
+- **Go to Project handles a path containing an apostrophe.** The shell command was spliced into
+  AppleScript with a broken single-quote escape, so a folder like `Ravi's Apps` produced a
+  malformed command. The command is now passed as an argument instead of being interpolated.
+- **A reused terminal tab no longer inherits the previous session's project name.** macOS hands
+  out `ttys000` again as tabs close and open, and a session with no name of its own yet could
+  show the last occupant's.
+- **The Context key shows a dash until the session reports.** It previously read `0%` before the
+  first status line, which is indistinguishable from a genuinely empty context window and is the
+  kind of invented value the key is supposed to refuse.
+- **The release scripts fail on a bad signature instead of reporting success.** `spctl` and
+  `stapler` were tolerated with `|| true`, so a rejected helper could still reach the green
+  success line (#66). The packaged helper is now extracted and re-verified after packing.
+
+### Changed
+- **An empty `prompts.json` array now removes every prompt key**, rather than reseeding the
+  twelve defaults. Writing `[]` meant "no keys" and got the opposite; there was previously no way
+  to express removal at all. Delete the file to restore the defaults. Logged when it happens,
+  since keys vanishing otherwise reads as a broken plugin.
+- **Windows session discovery matches an interpreter's arguments, not its install path.** A
+  bundled `node.exe` living under an agent's own directory could otherwise be mistaken for a
+  session of that agent.
+- **Log lines carry the product name**, so two consoles writing to one log can be told apart.
+- The voice helper's microphone permission string no longer names a single product. It reaches
+  an installed helper only when the helper is re-signed.
+
 ## Vizhi for Codex [1.6.1] — 2026-09-15
+
+### Known issues
+- **The screenshot picker switches the keypad to its default profile** and hides Vizhi's Escape
+  key while the overlay is open. Pressing Escape on the keyboard dismisses the picker and
+  restores the Vizhi profile. Accepted for this release rather than fixed.
 
 ### Fixed
 - **A rollout lifecycle edge could discard a live approval.** The hook owns `PermissionRequest`

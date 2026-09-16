@@ -54,6 +54,9 @@ Highlights that are Codex-specific:
 - **Screenshot → current conversation.** Press, drag a region (the system's own ⇧⌘4 picker),
   and the path is typed into your running session with an instruction Codex's model follows to
   open the image. Add your question, press Return.
+  *Known issue:* while the picker is open the keypad switches to its default profile, so Vizhi's
+  Escape key is not on screen. Press Escape on the keyboard to dismiss the picker; the Vizhi
+  profile comes back on its own.
 - **Native `/review`.** One press opens Codex's review picker — uncommitted changes, against a
   base branch, or a commit. (Page 3's Code Audit is different on purpose: it types a structured
   review *prompt* into the current conversation.)
