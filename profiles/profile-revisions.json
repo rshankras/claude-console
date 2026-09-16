@@ -1,0 +1,20 @@
+{
+  "revision": "2026-09-16.2",
+  "product": "VizhiCodex",
+  "profiles": [
+    {
+      "file": "VizhiCodex-Keypad.lp5",
+      "layout_sha256": "952e1c15728fdc60e2b0466505c43c7f90be1d92462bfbbf01676c334e8583f1"
+    },
+    {
+      "file": "VizhiCodex-Windows.lp5",
+      "layout_sha256": "952e1c15728fdc60e2b0466505c43c7f90be1d92462bfbbf01676c334e8583f1"
+    }
+  ],
+  "changes": [
+    "Restore the five-page layout with exactly three session keys on page 1",
+    "Pages 2-5 retain Codex controls, prompts, terminal navigation and Git actions",
+    "Hidden sessions cannot be selected or light or receive Yes/No answers, including saved pins from the six-slot layout"
+  ],
+  "action_ids": "Existing action bindings remain stable. See differences.json from tools/profile-update.py for exact IDs and slots."
+}

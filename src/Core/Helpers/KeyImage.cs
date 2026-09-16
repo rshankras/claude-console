@@ -13,6 +13,26 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// </summary>
     internal static class KeyImage
     {
+        private static String _identityIconFolder = "icons";
+
+        /// <summary>
+        /// Select the product's neutral icon set. Each product compiles Core into its own assembly,
+        /// so this setting remains isolated even when Claude Console and Vizhi run side by side.
+        /// State-semantic artwork (Yes/No, warnings, model tiers and listening) remains shared.
+        /// </summary>
+        internal static void UseIdentityIconFolder(String folder) =>
+            _identityIconFolder = String.IsNullOrWhiteSpace(folder) ? "icons" : folder;
+
+        private static String IconResource(String icon)
+        {
+            var stateSemantic = icon == "allow" || icon == "deny" ||
+                icon == "brain_haiku" || icon == "brain_sonnet" || icon == "brain_opus" ||
+                icon == "gauge_warn" || icon == "gauge_crit" ||
+                icon == "wave0" || icon == "wave1" || icon == "wave2" || icon == "wave3";
+            var folder = stateSemantic ? "icons" : _identityIconFolder;
+            return folder + "." + icon + ".png";
+        }
+
         // Palette. The state colours are the DESIGN's, sampled from the 2026-08-26 Logitech
         // frames rather than picked here — their set is deliberately muted against the Tailwind-ish
         // values this file used to carry, and mixing the two reads as two palettes on one pad.
@@ -42,7 +62,31 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static readonly BitmapColor White = new BitmapColor(0xFF, 0xFF, 0xFF);
 
         /// <summary>Corner-bracket colour marking the session key the typing keys are aimed at.</summary>
-        private static readonly BitmapColor Selection = new BitmapColor(0x60, 0xA5, 0xFA);
+        private static BitmapColor Selection = new BitmapColor(0x60, 0xA5, 0xFA);
+
+        private static BitmapColor _sessionBar = SelectionOrange;
+
+        /// <summary>
+        /// The bar behind the routed session's state word. Identity, not state: the word itself
+        /// still says what the session is doing, and an inactive session is grey on every product.
+        /// </summary>
+        internal static BitmapColor SessionBar => _sessionBar;
+
+        /// <summary>
+        /// Declare the product's two identity colours — the corner bracket and the routed-session
+        /// bar. Defaults are Claude Console's, so a product that never calls this keeps the faces
+        /// QA signed off. Called from the plugin CONSTRUCTOR beside UseIdentityIconFolder, before
+        /// the SDK builds any action. Each product compiles Core into its own assembly, so the
+        /// setting stays isolated when both plugins run side by side.
+        ///
+        /// The engine owns state colour (Amber/Red/Green and the grey quiet bar) and must never
+        /// learn an agent's name to pick one; identity belongs to whoever is shipping the keypad.
+        /// </summary>
+        internal static void UseIdentityColors(BitmapColor selection, BitmapColor sessionBar)
+        {
+            Selection = selection;
+            _sessionBar = sessionBar;
+        }
 
         // Approval badge: amber for a routine request, red when the command is destructive.
         // These two are the only palette entries that paint pixels today — Render ignores its
@@ -69,7 +113,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                         // by name SUFFIX, so a bare "up.png" also matches "scroll_up.png" (and "tab.png"
                         // matches "new_tab.png"), and it returns the first alphabetically — the wrong one.
                         // "icons.up.png" pins the lookup to exactly one embedded resource.
-                        var img = PluginResources.ReadImage("icons." + icon + ".png");
+                        var img = PluginResources.ReadImage(IconResource(icon));
                         var w = bitmap.Width;
                         var h = bitmap.Height;
                         // The three utility-row glyphs use denser/taller artwork than the mic and
@@ -147,6 +191,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 var barY = titleH;
                 var barH = h - barY;
+
                 bitmap.FillRectangle(0, barY, w, barH, barColor);
                 bitmap.DrawText(
                     stateWord, 0, barY, w, barH,
@@ -171,7 +216,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         public static BitmapImage RenderDecisionTile(
             PluginImageSize imageSize, String label, BitmapColor color,
-            Boolean approve, ApprovalRisk risk)
+            Boolean approve, ApprovalRisk risk, String targetLabel = null)
         {
             using (var bitmap = ButtonCanvas(imageSize))
             {
@@ -186,7 +231,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var cy = h * 0.42f;
                 try
                 {
-                    var img = PluginResources.ReadImage("icons." + glyph + ".png");
+                    var img = PluginResources.ReadImage(IconResource(glyph));
                     bitmap.DrawImage(img, (w - size) / 2, (Int32)(cy - (size / 2f)), size, size);
                 }
                 catch (Exception ex)
@@ -194,8 +239,15 @@ namespace Loupedeck.ClaudeConsolePlugin
                     PluginLog.Verbose(ex, $"KeyImage: decision glyph '{glyph}' failed to load — tile keeps colour + label");
                 }
 
-                var labelY = (Int32)(h * 0.66f);
-                bitmap.DrawText(label, 0, labelY, w, h - labelY, White, fontSize: (Int32)(15 * scale));
+                var labelY = (Int32)(h * (targetLabel == null ? 0.66f : 0.62f));
+                var labelHeight = targetLabel == null ? h - labelY : (Int32)(h * 0.20f);
+                bitmap.DrawText(label, 0, labelY, w, labelHeight, White, fontSize: (Int32)(15 * scale));
+                if (targetLabel != null)
+                {
+                    var caption = targetLabel.Length <= 16 ? targetLabel : targetLabel.Substring(0, 15) + "…";
+                    bitmap.DrawText(caption, (Int32)(3 * scale), (Int32)(h * 0.82f),
+                        w - (Int32)(6 * scale), (Int32)(h * 0.17f), White, fontSize: (Int32)(10 * scale));
+                }
                 DrawApprovalBadge(bitmap, risk);
                 return bitmap.ToImage();
             }
@@ -213,7 +265,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 try
                 {
-                    var img = PluginResources.ReadImage("icons." + icon + ".png");
+                    var img = PluginResources.ReadImage(IconResource(icon));
                     var size = (Int32)(Math.Min(w, h) * 0.58);
                     bitmap.DrawImage(img, (w - size) / 2, (Int32)(h * 0.08), size, size);
                 }

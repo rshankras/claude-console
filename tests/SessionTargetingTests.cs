@@ -19,6 +19,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class SessionTargetingTests : IDisposable
     {
+        /// <summary>
+        /// The routed-session bar is product identity, and the engine's default is the colour
+        /// Claude Console shipped. A product that wants its own says so from its constructor; the
+        /// engine never picks by agent name, so Vizhi's blue cannot follow Claude Console into a
+        /// rebuild. Restores the default afterwards — KeyImage is static for the process.
+        /// </summary>
+        [Fact]
+        public void Selected_session_bar_is_the_products_to_declare_and_defaults_to_Claudes()
+        {
+            Assert.Equal(KeyImage.SelectionOrange, KeyImage.SessionBar);
+
+            var codexBlue = new BitmapColor(0x81, 0xA8, 0xED);
+            try
+            {
+                KeyImage.UseIdentityColors(codexBlue, codexBlue);
+                Assert.Equal(codexBlue, KeyImage.SessionBar);
+            }
+            finally
+            {
+                KeyImage.UseIdentityColors(new BitmapColor(0x60, 0xA5, 0xFA), KeyImage.SelectionOrange);
+            }
+
+            Assert.Equal(KeyImage.SelectionOrange, KeyImage.SessionBar);
+        }
+
         private readonly String _root =
             Path.Combine(Path.GetTempPath(), "cc-target-" + Guid.NewGuid().ToString("N"));
 

@@ -25,7 +25,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         private Int32 _frame;
 
         public StatusCommand()
-            : base(displayName: "Activity", description: "Shows whether Claude is working, waiting, or ready (press to turn live status on, hold to turn it off)", groupName: "Core")
+            : base(
+                displayName: "Activity",
+                description: BridgeManager.Instance.Agent.Capabilities.SettingsFileWiring
+                    ? $"Shows whether {BridgeManager.Instance.Agent.DisplayName} is working, waiting, or ready (press to turn live status on, hold to turn it off)"
+                    : $"Shows whether {BridgeManager.Instance.Agent.DisplayName} is working, waiting, or ready",
+                groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
             // Without the hooks this key used to fall through to "Ready" forever — a value the agent

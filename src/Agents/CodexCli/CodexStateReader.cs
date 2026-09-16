@@ -36,6 +36,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// <summary>Where the rollout JSONL lives, if the best-effort token read wants it.</summary>
         public String TranscriptPath { get; set; }
 
+        public Int64? TranscriptActivityTs { get; set; }
+
         public Int64 Ts { get; set; }
 
         public ApprovalRisk Risk { get; set; } = ApprovalRisk.None;
@@ -94,6 +96,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 snap.ProjectDir = Str(p, "cwd");
                 snap.PermissionMode = Str(p, "permission_mode");
                 snap.TranscriptPath = Str(p, "transcript_path");
+                snap.TranscriptActivityTs = p.TryGetProperty("transcript_activity_ts", out var transcriptTs)
+                    && transcriptTs.ValueKind == JsonValueKind.Number
+                    && transcriptTs.TryGetInt64(out var observedAt)
+                        ? observedAt
+                        : null;
                 snap.LastAssistantMessage = Str(p, "last_assistant_message");
 
                 var toolName = Str(p, "tool_name");

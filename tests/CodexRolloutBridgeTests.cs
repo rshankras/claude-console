@@ -3,6 +3,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Text.Json;
 
     using Loupedeck.ClaudeConsolePlugin.Agents;
 
@@ -60,6 +61,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         private const String TaskComplete =
             "{\"timestamp\":\"2026-08-20T14:00:09.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\",\"last_agent_message\":\"done\"}}";
 
+        private const String TurnAborted =
+            "{\"timestamp\":\"2026-08-20T14:00:05.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"turn_aborted\"}}";
+
+        private static String CodeModeExec(String callId, String command, String permission = "require_escalated")
+        {
+            var input = "const r = await tools.exec_command({cmd:"
+                + JsonSerializer.Serialize(command)
+                + ",workdir:\"C:\\\\Users\\\\me\\\\proj\",sandbox_permissions:"
+                + JsonSerializer.Serialize(permission)
+                + "});\ntext(r.output);";
+            return JsonSerializer.Serialize(new
+            {
+                timestamp = "2026-08-20T14:00:02.000Z",
+                type = "response_item",
+                payload = new { type = "custom_tool_call", name = "exec", call_id = callId, input },
+            });
+        }
+
+        private static String CodeModeOutput(String callId) => JsonSerializer.Serialize(new
+        {
+            timestamp = "2026-08-20T14:00:03.000Z",
+            type = "response_item",
+            payload = new { type = "custom_tool_call_output", call_id = callId, output = Array.Empty<Object>() },
+        });
+
         // ------------------------------------------------------------------------------------
         // The translation: rollout events become the hook's envelope
         // ------------------------------------------------------------------------------------
@@ -76,6 +102,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             Assert.Equal(CodexStateBridge.IdleEvent, CodexRolloutBridge.ActivityFor(TaskComplete));
             Assert.Equal("done", CodexStateReader.ActivityFor(CodexRolloutBridge.ActivityFor(TaskComplete)));
+        }
+
+        [Fact]
+        public void An_interrupted_task_becomes_the_idle_envelope()
+        {
+            Assert.Equal(CodexStateBridge.IdleEvent, CodexRolloutBridge.ActivityFor(TurnAborted));
+            Assert.Equal("done", CodexStateReader.ActivityFor(CodexRolloutBridge.ActivityFor(TurnAborted)));
         }
 
         /// <summary>
@@ -165,8 +198,231 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(path, CodexStateReader.Parse(state).TranscriptPath);
         }
 
+        [Fact]
+        public void Rollout_growth_refreshes_a_busy_session_even_without_another_lifecycle_edge()
+        {
+            var path = this.Rollout("busy-growth", Today, TaskStarted);
+            var bridge = this.New();
+            Assert.Equal(1, bridge.Poll());
+
+            this.Append(path, "{\"timestamp\":\"2026-08-20T14:00:02.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\"}}");
+            Assert.Equal(1, bridge.Poll());
+
+            var snap = CodexStateReader.Parse(this.SharedState());
+            Assert.Equal("busy", snap.Activity);
+            Assert.NotNull(snap.TranscriptActivityTs);
+        }
+
+        [Fact]
+        public void Rollout_heartbeat_cannot_overwrite_a_permission_hook()
+        {
+            var path = this.Rollout("approval", Today, TaskStarted);
+            var bridge = this.New();
+            Assert.Equal(1, bridge.Poll());
+
+            Directory.CreateDirectory(this._ipc);
+            File.WriteAllText(
+                Path.Combine(this._ipc, "shared.json"),
+                "{\"schema\":1,\"agent\":\"codex-cli\",\"transport\":\"hook\",\"event\":\"PermissionRequest\",\"ts\":1,\"payload\":{\"tool_name\":\"Bash\"}}");
+
+            this.Append(path, "{\"timestamp\":\"2026-08-20T14:00:02.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\"}}");
+            Assert.Equal(0, bridge.Poll());
+            Assert.Equal("waiting", CodexStateReader.Parse(this.SharedState()).Activity);
+
+            // A real terminal edge is stronger than the old approval and must clear it even if a
+            // PostToolUse hook was missed.
+            this.Append(path, TaskComplete);
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal("done", CodexStateReader.Parse(this.SharedState()).Activity);
+        }
+
+        /// <summary>
+        /// The hook owns PermissionRequest and can write it between two of our polls. A lifecycle
+        /// edge read afterwards says nothing about approvals, so it must not bury one: that turned
+        /// the amber key grey with nothing left to re-emit it. A plugin reload hit this every time,
+        /// because the wide first-sighting tail always finds a task_started to replay.
+        /// </summary>
+        [Fact]
+        public void A_task_started_edge_cannot_overwrite_a_permission_hook()
+        {
+            var path = this.Rollout("edge-approval", Today, SessionMeta);
+            var bridge = this.New();
+            bridge.Poll();
+
+            Directory.CreateDirectory(this._ipc);
+            File.WriteAllText(
+                Path.Combine(this._ipc, "shared.json"),
+                "{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"PermissionRequest\",\"ts\":1,\"payload\":{\"tool_name\":\"Bash\"}}");
+
+            this.Append(path, TaskStarted);
+            bridge.Poll();
+            Assert.Equal("waiting", CodexStateReader.Parse(this.SharedState()).Activity);
+
+            // A terminal edge is still stronger than the approval, even if PostToolUse was missed.
+            this.Append(path, TaskComplete);
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal("done", CodexStateReader.Parse(this.SharedState()).Activity);
+        }
+
+        /// <summary>Naming a session is never grounds for discarding a live approval on its key.</summary>
+        [Fact]
+        public void A_first_sighting_cannot_clobber_a_waiting_keyed_file()
+        {
+            var path = this.Rollout("first-sighting", Today, SessionMeta);
+            Directory.CreateDirectory(this._ipc);
+            File.WriteAllText(
+                Path.Combine(this._ipc, "pid-100-cli.json"),
+                "{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"PermissionRequest\",\"ts\":1,\"payload\":{\"tool_name\":\"Bash\"}}");
+
+            var bridge = this.New();
+            bridge.LiveSessions = new List<(String, DateTime)>
+            {
+                ("pid-100-cli", new DateTime(2026, 8, 20, 14, 0, 0, DateTimeKind.Utc)),
+            };
+            bridge.Poll();
+
+            var keyed = CodexStateReader.Parse(
+                File.ReadAllText(Path.Combine(this._ipc, "pid-100-cli.json")));
+            Assert.Equal("waiting", keyed.Activity);
+        }
+
+        /// <summary>
+        /// Preserving a waiting envelope must not freeze it: a SECOND approval is a new question,
+        /// with its own command, and has to replace the first even though both read "waiting".
+        /// </summary>
+        [Fact]
+        public void A_newer_code_mode_approval_still_replaces_an_older_one()
+        {
+            var path = this.Rollout(
+                "two-approvals", Today, SessionMeta, TaskStarted,
+                CodeModeExec("call-1", "git push origin feature"));
+            var bridge = this.New();
+            bridge.Poll();
+            Assert.Equal("git push origin feature", CodexStateReader.Parse(this.SharedState()).PendingCommand);
+
+            this.Append(path, CodeModeExec("call-2", "rm -rf build"));
+            Assert.Equal(1, bridge.Poll());
+
+            var snap = CodexStateReader.Parse(this.SharedState());
+            Assert.Equal("waiting", snap.Activity);
+            Assert.Equal("rm -rf build", snap.PendingCommand);
+        }
+
+        [Fact]
+        public void A_code_mode_escalation_becomes_a_keyed_cli_approval()
+        {
+            var path = this.Rollout(
+                "code-approval", Today, SessionMeta, TaskStarted,
+                CodeModeExec("call-approval", "git push origin feature"));
+            var bridge = this.New();
+            bridge.LiveSessions = new List<(String, DateTime)>
+            {
+                ("pid-100-cli", new DateTime(2026, 8, 20, 14, 0, 0, DateTimeKind.Utc)),
+            };
+
+            Assert.Equal(1, bridge.Poll());
+
+            var shared = CodexStateReader.Parse(this.SharedState());
+            Assert.Equal("waiting", shared.Activity);
+            Assert.Equal("Bash", shared.PendingTool);
+            Assert.Equal("git push origin feature", shared.PendingCommand);
+            Assert.Contains("\"transport\":\"rollout-code-mode\"", this.SharedState());
+
+            var keyed = CodexStateReader.Parse(File.ReadAllText(Path.Combine(this._ipc, "pid-100-cli.json")));
+            Assert.Equal("waiting", keyed.Activity);
+            Assert.Equal("git push origin feature", keyed.PendingCommand);
+        }
+
+        [Fact]
+        public void Matching_code_mode_output_clears_the_cli_approval()
+        {
+            var path = this.Rollout("code-output", Today, TaskStarted, CodeModeExec("call-1", "git push"));
+            var bridge = this.New();
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal("waiting", CodexStateReader.Parse(this.SharedState()).Activity);
+
+            this.Append(path, CodeModeOutput("some-other-call"));
+            Assert.Equal(0, bridge.Poll());
+            Assert.Equal("waiting", CodexStateReader.Parse(this.SharedState()).Activity);
+
+            this.Append(path, CodeModeOutput("call-1"));
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal("busy", CodexStateReader.Parse(this.SharedState()).Activity);
+            Assert.Null(CodexStateReader.Parse(this.SharedState()).PendingCommand);
+        }
+
+        [Fact]
+        public void A_non_escalated_exec_never_claims_an_approval()
+        {
+            var diagnostic = "rg 'sandbox_permissions:\"require_escalated\"' src";
+            var path = this.Rollout(
+                "ordinary-exec", Today, TaskStarted,
+                CodeModeExec("call-ordinary", diagnostic, permission: "use_default"));
+            var bridge = this.New();
+
+            Assert.Equal(1, bridge.Poll());
+            var snap = CodexStateReader.Parse(this.SharedState());
+            Assert.Equal("busy", snap.Activity);
+            Assert.Null(snap.PendingTool);
+        }
+
+        [Fact]
+        public void A_rollout_heartbeat_cannot_overwrite_a_synthetic_cli_approval()
+        {
+            var path = this.Rollout("approval-heartbeat", Today, TaskStarted, CodeModeExec("call-1", "git push"));
+            var bridge = this.New();
+            Assert.Equal(1, bridge.Poll());
+
+            this.Append(path, "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\"}}");
+            Assert.Equal(0, bridge.Poll());
+            Assert.Equal("waiting", CodexStateReader.Parse(this.SharedState()).Activity);
+        }
+
+        [Fact]
+        public void A_reload_mid_turn_recovers_task_started_beyond_the_normal_poll_tail()
+        {
+            var toolOutput = "{\"ignored\":\"" + new String('x', 2 * 1024 * 1024) + "\"}";
+            this.Rollout("reload-busy", Today, TaskStarted, toolOutput);
+
+            var bridge = this.New();
+            Assert.Equal(1, bridge.Poll());
+
+            Assert.Equal("busy", CodexStateReader.Parse(this.SharedState()).Activity);
+        }
+
         private const String TurnContext =
             "{\"timestamp\":\"2026-08-20T14:00:00.500Z\",\"type\":\"turn_context\",\"payload\":{\"turn_id\":\"t1\",\"cwd\":\"C:\\\\Users\\\\me\\\\proj\",\"workspace_roots\":[]}}";
+
+        private const String SessionMeta =
+            "{\"timestamp\":\"2026-08-20T14:00:05.000Z\",\"type\":\"session_meta\",\"payload\":{\"timestamp\":\"2026-08-20T14:00:00.000Z\",\"cwd\":\"C:\\\\Users\\\\me\\\\metadata-project\"}}";
+
+        [Fact]
+        public void Session_metadata_supplies_cwd_even_when_it_is_outside_the_catch_up_tail()
+        {
+            var filler = "{\"ignored\":\"" + new String('x', 70 * 1024) + "\"}";
+            this.Rollout("metadata", Today, SessionMeta, filler, TaskStarted);
+            var bridge = this.New();
+
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal(@"C:\Users\me\metadata-project", CodexStateReader.Parse(this.SharedState()).ProjectDir);
+        }
+
+        [Fact]
+        public void Session_metadata_alone_replaces_missing_or_stale_per_session_state()
+        {
+            var path = this.Rollout("metadata-only", Today, SessionMeta);
+            var bridge = this.New();
+            var started = new DateTime(2026, 8, 20, 14, 0, 0, DateTimeKind.Utc);
+            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-real", started) };
+
+            Assert.Equal(1, bridge.Poll());
+
+            var state = File.ReadAllText(Path.Combine(this._ipc, "pid-100-real.json"));
+            var snap = CodexStateReader.Parse(state);
+            Assert.Equal(@"C:\Users\me\metadata-project", snap.ProjectDir);
+            Assert.Equal("done", snap.Activity);
+            Assert.False(File.Exists(Path.Combine(this._ipc, "shared.json")));
+        }
 
         // ------------------------------------------------------------------------------------
         // Polling: only what is new, only what is complete
@@ -273,13 +529,210 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         // ------------------------------------------------------------------------------------
 
         [Fact]
+        public void Production_poll_waits_for_independent_directory_discovery_before_consuming_a_rollout()
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("presskit", Today, Metadata(start, @"C:\demo\presskit"), TaskComplete);
+            var bridge = new CodexRolloutBridge(this._root, this._ipc)
+            {
+                Now = () => Today, RequireSessionDirectories = true,
+                LiveSessions = new[] { ("stage", start), ("presskit", start.AddSeconds(-5)) },
+            };
+            Assert.Equal(0, bridge.Poll());
+            Assert.False(File.Exists(Path.Combine(this._ipc, "stage.json")));
+            bridge.LiveSessionDirectories = new Dictionary<String, String>
+            {
+                ["stage"] = @"C:\demo\stage", ["presskit"] = @"C:\demo\presskit",
+            };
+            Assert.Equal(1, bridge.Poll());
+            Assert.False(File.Exists(Path.Combine(this._ipc, "stage.json")));
+            Assert.Equal(path, CodexStateReader.Parse(File.ReadAllText(Path.Combine(this._ipc, "presskit.json"))).TranscriptPath);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Production_retries_metadata_seen_before_the_first_record_is_complete(Boolean partial)
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("presskit-incomplete", Today);
+            var metadata = Metadata(start.AddSeconds(2), @"C:\demo\presskit");
+            File.WriteAllText(path, partial ? metadata.Substring(0, metadata.Length / 2) : "");
+            var bridge = new CodexRolloutBridge(this._root, this._ipc)
+            {
+                Now = () => Today, RequireSessionDirectories = true,
+                LiveSessions = new[] { ("presskit", start), ("stage", start.AddSeconds(2)) },
+                LiveSessionDirectories = new Dictionary<String, String>
+                {
+                    ["presskit"] = @"C:\demo\presskit", ["stage"] = @"C:\demo\stage",
+                },
+            };
+            Assert.Equal(0, bridge.Poll());
+            Assert.Null(bridge.KeyFor(path));
+            File.WriteAllText(path, metadata + "\n" + TaskComplete + "\n");
+            Assert.Equal(1, bridge.Poll());
+            Assert.False(File.Exists(Path.Combine(this._ipc, "stage.json")));
+            Assert.Equal(@"C:\demo\presskit", CodexStateReader.Parse(
+                File.ReadAllText(Path.Combine(this._ipc, "presskit.json"))).ProjectDir);
+        }
+
+        [Fact]
+        public void Production_waits_for_the_target_directory_and_replays_an_unchanged_finished_rollout()
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("unknown-directory", Today,
+                Metadata(start.AddSeconds(2), @"C:\demo\presskit"), TaskComplete);
+            var directories = new Dictionary<String, String>();
+            var bridge = new CodexRolloutBridge(this._root, this._ipc)
+            {
+                Now = () => Today, RequireSessionDirectories = true,
+                LiveSessions = new[] { ("presskit", start) }, LiveSessionDirectories = directories,
+            };
+            Assert.Equal(0, bridge.Poll());
+            Assert.Null(bridge.KeyFor(path));
+            Assert.False(File.Exists(Path.Combine(this._ipc, "presskit.json")));
+            directories["presskit"] = @"C:\demo\presskit";
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal(path, CodexStateReader.Parse(
+                File.ReadAllText(Path.Combine(this._ipc, "presskit.json"))).TranscriptPath);
+        }
+
+        [Fact]
+        public void Production_rejects_a_recent_transcript_from_before_the_process_started()
+        {
+            var start = DateTime.UtcNow;
+            var old = this.Rollout("older-stage", Today,
+                Metadata(start.AddSeconds(-30), @"C:\demo\stage"), TaskComplete);
+            var bridge = new CodexRolloutBridge(this._root, this._ipc)
+            {
+                Now = () => Today, RequireSessionDirectories = true,
+                LiveSessions = new[] { ("stage", start) },
+                LiveSessionDirectories = new Dictionary<String, String> { ["stage"] = @"C:\demo\stage" },
+            };
+            Assert.Null(bridge.KeyFor(old));
+            Assert.Equal(0, bridge.Poll());
+            var current = this.Rollout("current-stage", Today,
+                Metadata(start.AddSeconds(2), @"C:\demo\stage"), TaskComplete);
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal(current, CodexStateReader.Parse(
+                File.ReadAllText(Path.Combine(this._ipc, "stage.json"))).TranscriptPath);
+        }
+
+        private static String Metadata(DateTime started, String cwd) => JsonSerializer.Serialize(new
+        {
+            type = "session_meta",
+            payload = new { timestamp = started.ToString("O"), cwd },
+        });
+
+        [Fact]
+        public void Closely_launched_projects_keep_their_own_labels_and_transcripts()
+        {
+            var start = new DateTime(2026, 8, 20, 14, 0, 0, DateTimeKind.Utc);
+            var projects = new[] { "presskit", "faq", "stage" };
+            var bridge = this.New();
+            var directories = new Dictionary<String, String>();
+            var live = new List<(String, DateTime)>();
+            var paths = new Dictionary<String, String>();
+            for (var i = 0; i < projects.Length; i++)
+            {
+                var project = projects[i];
+                var cwd = @"C:\demo\repos\" + project;
+                live.Add((project, start.AddSeconds(i * 2.5)));
+                directories[project] = cwd;
+                // Each transcript appears after the next CLI has started, as on the demo laptop.
+                paths[project] = this.Rollout(project, Today,
+                    Metadata(start.AddSeconds(5 + i * 4), cwd), TaskComplete);
+            }
+            bridge.LiveSessions = live;
+            bridge.LiveSessionDirectories = directories;
+
+            bridge.Poll();
+
+            var grid = new SessionRegistry(this._ipc, Path.Combine(this._root, "activity"),
+                Path.Combine(this._root, "registry.json")) { Agent = new CodexCliAdapter() };
+            grid.Refresh(new HashSet<String>(projects));
+            foreach (var project in projects)
+            {
+                Assert.Equal(project, grid.Sessions[project].Project);
+                Assert.Equal(paths[project], grid.Sessions[project].TranscriptPath);
+            }
+        }
+
+        [Fact]
+        public void A_nearby_process_in_a_different_project_cannot_claim_a_rollout()
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("stage", Today, Metadata(start, @"C:\demo\stage"), TaskComplete);
+            var bridge = this.New();
+            bridge.LiveSessions = new[] { ("presskit", start) };
+            bridge.LiveSessionDirectories = new Dictionary<String, String> { ["presskit"] = @"C:\demo\presskit" };
+
+            Assert.Null(bridge.KeyFor(path));
+        }
+
+        [Theory]
+        [InlineData(@"C:\demo\presskit")]
+        [InlineData("c:/DEMO/presskit/")]
+        public void A_known_project_match_beats_an_unknown_but_closer_process(String directory)
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("presskit", Today, Metadata(start, @"C:\demo\presskit"), TaskComplete);
+            var bridge = this.New();
+            bridge.LiveSessions = new[] { ("unknown", start), ("presskit", start.AddSeconds(-5)) };
+            bridge.LiveSessionDirectories = new Dictionary<String, String> { ["presskit"] = directory };
+
+            Assert.Equal("presskit", bridge.KeyFor(path));
+        }
+
+        [Fact]
+        public void Newly_observed_directory_rejects_an_incorrect_cached_claim()
+        {
+            var start = DateTime.UtcNow;
+            var path = this.Rollout("stage", Today, Metadata(start, @"C:\demo\stage"), TaskComplete);
+            var bridge = this.New();
+            bridge.LiveSessions = new[] { ("presskit", start), ("stage", start.AddSeconds(-5)) };
+            Assert.Equal("presskit", bridge.KeyFor(path));
+            bridge.LiveSessionDirectories = new Dictionary<String, String>
+            {
+                ["presskit"] = @"C:\demo\presskit", ["stage"] = @"C:\demo\stage",
+            };
+
+            Assert.Equal("stage", bridge.KeyFor(path));
+        }
+
+        [Fact]
         public void One_live_session_claims_the_rollout()
         {
             var path = this.Rollout("a", Today, TaskStarted);
+            var created = new FileInfo(path).CreationTimeUtc;
             var bridge = this.New();
-            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", Today) };
+            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", created.AddSeconds(-1)) };
 
             Assert.Equal("pid-100-abc", bridge.KeyFor(path));
+        }
+
+        [Fact]
+        public void An_old_rollout_does_not_claim_a_new_live_session()
+        {
+            var path = this.Rollout("old", Today, TaskStarted);
+            var created = new FileInfo(path).CreationTimeUtc;
+            var bridge = this.New();
+            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-new", created.AddHours(3)) };
+
+            Assert.Null(bridge.KeyFor(path));
+        }
+
+        [Fact]
+        public void Session_metadata_timestamp_correlates_the_rollout_instead_of_ntfs_creation_time()
+        {
+            var path = this.Rollout("metadata", Today, SessionMeta, TaskStarted);
+            var bridge = this.New();
+            bridge.LiveSessions = new List<(String, DateTime)>
+            {
+                ("pid-100-real", new DateTime(2026, 8, 20, 13, 59, 57, DateTimeKind.Utc)),
+            };
+
+            Assert.Equal("pid-100-real", bridge.KeyFor(path));
         }
 
         [Fact]
@@ -335,8 +788,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void A_claim_is_kept_across_polls()
         {
             var first = this.Rollout("a", Today, TaskStarted);
+            var created = new FileInfo(first).CreationTimeUtc;
             var bridge = this.New();
-            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", Today) };
+            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", created) };
             Assert.Equal("pid-100-abc", bridge.KeyFor(first));
 
             // A second rollout appears; the first session is already spoken for.
@@ -349,8 +803,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void A_claim_lapses_when_its_session_dies()
         {
             var path = this.Rollout("a", Today, TaskStarted);
+            var created = new FileInfo(path).CreationTimeUtc;
             var bridge = this.New();
-            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", Today) };
+            bridge.LiveSessions = new List<(String, DateTime)> { ("pid-100-abc", created) };
             bridge.KeyFor(path);
 
             bridge.LiveSessions = Array.Empty<(String, DateTime)>();

@@ -70,9 +70,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Runtime home shared with the voice helper: ~/.claude/claude-console/
         private static String ClaudeDir => Path.Combine(UserHome, ".claude");
         private static String ClaudeConsoleHome => Path.Combine(ClaudeDir, "claude-console");
-        private static String VoiceHelperApp => Path.Combine(ClaudeConsoleHome, "ClaudeVoiceHelper.app");
+        internal static String VoiceRuntimeHome(String home, String product) => product == "codex-console"
+            ? Path.Combine(home, ".codex", "vizhi-runtime")
+            : Path.Combine(home, ".claude", "claude-console");
+        private static String RuntimeHome => VoiceRuntimeHome(UserHome, IpcPaths.ProductSlug);
+        private static String VoiceHelperApp => Path.Combine(RuntimeHome, "ClaudeVoiceHelper.app");
         // Self-contained whisper-cli produced by tools/voice/bundle-whisper.sh (no Homebrew needed).
-        private static String WhisperBinDir => Path.Combine(ClaudeConsoleHome, "whisper-bin");
+        private static String WhisperBinDir => Path.Combine(RuntimeHome, "whisper-bin");
         private static String BundledWhisperCli => Path.Combine(WhisperBinDir, "whisper-cli");
 
         // Live-status bridge — the scripts the plugin installs and the settings.json it edits on the
@@ -213,7 +217,17 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Test seam: lets the unit tests stand in a known target tab instead of shelling out to
         // osascript to discover the frontmost one. Assigning ActiveTty is exactly what the
         // frontmost-tab probe does, so it is also how the tests simulate a poll.
-        internal String ActiveTty { get => _activeTty; set => _activeTty = value; }
+        internal String ActiveTty
+        {
+            get => _activeTty;
+            set
+            {
+                if (_activeTty == value) { return; }
+                _activeTty = value;
+                OnTargetChanged?.Invoke();
+            }
+        }
+        internal event Action OnTargetChanged;
 
         /// <summary>The active OS backend. Internal so tests can substitute a fake.</summary>
         internal IPlatformBridge Platform => _platform;
@@ -230,6 +244,27 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// its own hooks file and its keys must never say "Set up" (#58).
         /// </summary>
         internal Boolean LiveStatusApplies => this.Agent?.Capabilities.SettingsFileWiring ?? false;
+
+        /// <summary>
+        /// Status of an agent-owned bridge that is not controlled by the live-status switch. Codex
+        /// uses this for hook trust; Claude leaves it Ready and continues to use LiveStatus.
+        /// </summary>
+        internal AgentBridgeStatus AgentBridgeState => _agentBridgeStatus;
+
+        private AgentBridgeStatus _agentBridgeStatus = AgentBridgeStatus.Ready;
+
+        internal event Action<AgentBridgeStatus> OnAgentBridgeStatusChanged;
+
+        internal void SetAgentBridgeStatus(AgentBridgeStatus status)
+        {
+            if (_agentBridgeStatus == status)
+            {
+                return;
+            }
+
+            _agentBridgeStatus = status;
+            OnAgentBridgeStatusChanged?.Invoke(status);
+        }
 
         /// <summary>
         /// Which agent the keys are driving. Actions read this to ask for the agent's own word for
@@ -355,6 +390,64 @@ namespace Loupedeck.ClaudeConsolePlugin
         // reaching through RoutingTty's fallbacks.
         internal String PinnedTty => _pinnedTty;
 
+        // Codex has one row of session keys. Discovery may track additional sessions, but
+        // those hidden sessions must not become selectable or arm an approval key.
+        internal Int32 SessionSlotCount => this.Agent.Id == "codex-cli" ? 3 : SessionRegistry.SlotCount;
+
+        private Boolean IsSelectableSession(String key) => !String.IsNullOrEmpty(key)
+            && Enumerable.Range(1, this.SessionSlotCount).Any(slot => Grid.SlotSession(slot)?.SessionKey == key);
+
+        // Once a multi-session Codex workflow needs a deliberate choice, losing or releasing
+        // that choice must not silently arm another session, even if only one remains.
+        //
+        // Volatile because the poll thread raises it and the keypad thread reads it while painting.
+        private volatile Boolean _codexApprovalNeedsSelection;
+
+        /// <summary>
+        /// Raised where the state actually changes — a second session observed by the poll, or a
+        /// session chosen by a key press — never from <see cref="ApprovalTty"/>, which the key faces
+        /// call on every repaint. A latch set while painting could be raised by a session the user
+        /// never saw, and it never clears, so the cause has to be a real event.
+        /// </summary>
+        internal void NoteCodexSelectionNeeded()
+        {
+            if (this.Agent.Id == "codex-cli") { _codexApprovalNeedsSelection = true; }
+        }
+
+        private Int32 _selectNoticePosted;
+
+        /// <summary>
+        /// True the first time it is asked in each spell of needing a selection. The beep answers
+        /// every press; this card explains it once, because the same sentence repeated per press
+        /// fills the Options+ message centre and reads as a new problem each time. Instance state,
+        /// not static: it describes this bridge's situation, and a later spell is a new question.
+        /// </summary>
+        internal Boolean ShouldExplainSelection() =>
+            Interlocked.Exchange(ref _selectNoticePosted, 1) == 0;
+
+        /// <summary>An answer found its target, so the next unanswered spell explains itself again.</summary>
+        internal void SelectionResolved() => Interlocked.Exchange(ref _selectNoticePosted, 0);
+
+        /// <summary>
+        /// Which session an approval would go to, or null when the user must choose first. A pure
+        /// query: it decides, it does not record. Codex only — every other agent answers wherever
+        /// the keys are already aimed.
+        /// </summary>
+        internal String ApprovalTty()
+        {
+            if (this.Agent.Id != "codex-cli") { return this.RoutingTty(); }
+
+            if (this.IsSelectableSession(_pinnedTty)) { return _pinnedTty; }
+
+            if (_codexApprovalNeedsSelection) { return null; }
+
+            // Still safe without the latch: a second session that is live RIGHT NOW fails this
+            // count, so the latch only has to carry the case where one has since gone away.
+            var live = Grid.LiveSessions();
+            return live.Count == 1 && this.IsSelectableSession(live[0].SessionKey)
+                ? live[0].SessionKey : null;
+        }
+
         // ------------------------------------------------------------------------------------------
         // Singleton — the SDK auto-discovers PluginDynamicCommand/Adjustment subclasses and
         // instantiates them with their parameterless constructors, so they cannot receive the
@@ -387,6 +480,11 @@ namespace Loupedeck.ClaudeConsolePlugin
             Grid.LoadPersisted();   // keep slot assignments across a plugin reload
             _pinnedTty = Grid.FocusedSession;   // ...and the session you had selected
 
+            // A selection survived the reload, so the deliberate choice it represents survives too:
+            // if its session is gone, the keys must ask again rather than fall back to whatever is
+            // left. ApprovalTty used to infer this while painting; it is a load-time fact.
+            if (!String.IsNullOrEmpty(_pinnedTty)) { this.NoteCodexSelectionNeeded(); }
+
             // One-shot timer, re-armed at the END of each PollState (see its finally). This makes
             // polls NON-OVERLAPPING: the next poll can't start until the previous one finishes, so a
             // slow poll (osascript) can never pile callbacks onto the thread pool. An auto-repeating
@@ -417,7 +515,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     var tty = _platform.QueryFrontmostSession();
                     if (!String.IsNullOrEmpty(tty))
                     {
-                        _activeTty = tty;
+                        ActiveTty = tty;
                     }
                 }
 
@@ -429,7 +527,15 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var liveTtys = _pollTick % 4 == 2 || _quietPolls >= QuietPollsBeforeSlow
                     ? _platform.DiscoverSessions()
                     : null;
+                if (liveTtys != null && this.Agent.Id == "codex-cli")
+                {
+                    Grid.DiscoveredProjectDirs = _platform.SessionDirectories;
+                }
                 Grid.Refresh(liveTtys);
+
+                // A second Codex session means an approval can no longer be attributed on its own.
+                // Noted here, where the grid actually changes, rather than while painting a key.
+                if (Grid.LiveSessions().Count > 1) { this.NoteCodexSelectionNeeded(); }
 
                 // Where the agent cannot push state to us, pull it. Only Windows/Codex sets this
                 // (its hook runner spawns nothing there), and the bridge writes the very same IPC
@@ -818,6 +924,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         public void SelectSlot(Int32 slot)
         {
+            if (slot < 1 || slot > this.SessionSlotCount) return;
+
             var session = Grid.SlotSession(slot);
             if (session == null)
             {
@@ -842,15 +950,17 @@ namespace Loupedeck.ClaudeConsolePlugin
             // tab is focused either way, so the gesture still reads as "take me to this session".
             if (_pinnedTty == session.SessionKey)
             {
-                this.ClearPin();
                 _activeTty = session.SessionKey;
+                this.ClearPin();
                 PluginLog.Info($"BridgeManager: unpinned slot {slot} ({session.Project}) — keys follow the frontmost tab again");
                 return;
             }
 
             _pinnedTty = session.SessionKey;
+            this.NoteCodexSelectionNeeded();
             Grid.FocusedSession = session.SessionKey;   // survives a plugin reload, like the slot assignments
             _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
+            OnTargetChanged?.Invoke();
             PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.SessionKey} ({session.Project})");
         }
 
@@ -866,6 +976,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             PluginLog.Info($"BridgeManager: released the pin on {_pinnedTty} — keys follow the frontmost tab again");
             _pinnedTty = null;
             Grid.FocusedSession = null;
+            OnTargetChanged?.Invoke();
         }
 
         /// <summary>
@@ -949,7 +1060,14 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// Returns the platform's outcome, so a caller that must act only on a keystroke that
         /// actually landed (the answer keys clearing a badge, #60) can tell.
         /// </summary>
-        public InjectionOutcome InjectKey(KeyStroke key) => _platform.InjectKey(RoutingTty(), key);
+        public InjectionOutcome InjectKey(KeyStroke key) => this.InjectKeyTo(RoutingTty(), key);
+
+        /// <summary>
+        /// Send a key to an already-resolved target. Approval actions use this so the session they
+        /// acknowledge is exactly the session that received the decision, even if focus changes.
+        /// </summary>
+        internal InjectionOutcome InjectKeyTo(String sessionKey, KeyStroke key) =>
+            _platform.InjectKey(sessionKey, key);
 
         /// <summary>
         /// Accept the highlighted autocomplete AND submit it in one press.
@@ -981,6 +1099,8 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             return _platform.CaptureScreenshotInteractive(path) ? path : null;
         }
+
+        internal Boolean TryCancelScreenshot() => _platform.TryCancelScreenshot();
 
         /// <summary>Open a terminal and start the agent with extra CLI args (e.g. -i shot.png).</summary>
         public void LaunchAgentSession(params String[] extraArgs) => _platform.LaunchAgentSession(extraArgs);
@@ -1114,7 +1234,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             if (Voice.Phase == VoicePhase.Cancelling) { return false; }
             var psi = new ProcessStartInfo(helper) { UseShellExecute = false, CreateNoWindow = true };
-            foreach (var argument in WindowsTools.Arguments(helper, "voice", new List<String>
+            var voiceArguments = new List<String>
             {
                 "--maxsec", "60",
                 "--out", VoiceWavFile,
@@ -1123,7 +1243,20 @@ namespace Loupedeck.ClaudeConsolePlugin
                 "--model", VoiceModelFile,
                 "--whisper", WindowsWhisperCli,
                 "--ready", VoiceReadyFile,
-            })) { psi.ArgumentList.Add(argument); }
+            };
+            if (Voice.Intent == VoiceIntent.Project)
+            {
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                var candidates = ProjectDiscovery.Candidates(home, ProjectDiscovery.DefaultRootsFile(home), this.KnownProjectDirs());
+                var vocabulary = ProjectVocabulary.For(candidates.Paths);
+                if (vocabulary.Length > 0)
+                {
+                    voiceArguments.Add("--prompt");
+                    voiceArguments.Add(vocabulary);
+                    PluginLog.Info($"Project voice: supplying vocabulary from {candidates.Paths.Count} discovered projects");
+                }
+            }
+            foreach (var argument in WindowsTools.Arguments(helper, "voice", voiceArguments)) { psi.ArgumentList.Add(argument); }
             using var process = Process.Start(psi);
             if (process == null) { return false; }
             var ready = false;
@@ -1207,7 +1340,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (Directory.Exists(pkgHelper) && !RuntimeTreeMatchesPackage(pkgHelper, VoiceHelperApp))
                 {
                     PluginLog.Info($"BridgeManager: installing voice helper from package -> {VoiceHelperApp}");
-                    Directory.CreateDirectory(ClaudeConsoleHome);
+                    Directory.CreateDirectory(RuntimeHome);
                     // Never ditto INTO an existing helper bundle — macOS refuses it (#59, below).
                     if (InstallBundleByReplacement(pkgHelper, VoiceHelperApp))
                     {

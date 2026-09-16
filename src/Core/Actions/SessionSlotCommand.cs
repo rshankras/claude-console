@@ -19,9 +19,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// do nothing on press.
     ///
     /// Face layout (2026-08-30 design): the project (directory) name is centred in the black title
-    /// region, with the live state in a bar along the bottom. Claude copper identifies the currently
-    /// active/routed session; inactive sessions use grey. The word in the bar says what that session
-    /// is doing (Thinking / Allow? / Waiting / Complete), independently of the bar colour.
+    /// region, with the live state in a bar along the bottom. The active/routed session uses its
+    /// product identity colour (Claude orange or Codex blue); inactive sessions use grey. The word
+    /// in the bar says what that session is doing (Thinking / Allow? / Waiting / Complete),
+    /// independently of the bar colour.
     /// </summary>
     public class SessionSlotCommand : PluginDynamicCommand
     {
@@ -38,14 +39,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // This keeps the image dynamic while allowing its state bar to reach the button edge.
             this.SetWidget(true);
 
-            for (var slot = 1; slot <= SessionRegistry.SlotCount; slot++)
+            for (var slot = 1; slot <= _bridge.SessionSlotCount; slot++)
             {
                 this.AddParameter(slot.ToString(), $"Session {slot}", "Sessions")
-                    .SetDescription($"Claude session {slot}: shows its project and what it is doing; press to focus that Terminal tab and keep every other key aimed at it until you pick another session (press again to release)");
+                    .SetDescription($"{_bridge.Agent.DisplayName} session {slot}: shows its project and what it is doing; press to focus that terminal tab and keep every other key aimed at it until you pick another session (press again to release)");
             }
 
             _bridge.Grid.OnGridChanged += this.OnGridChanged;
             _bridge.OnLiveStatusChanged += _ => this.OnGridChanged();   // the setup word comes and goes with the wiring (#58)
+            _bridge.OnAgentBridgeStatusChanged += _ => this.OnGridChanged();
         }
 
         private void OnGridChanged()
@@ -53,8 +55,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             this.ActionImageChanged();   // repaint every slot when the grid changes
         }
 
-        private static Boolean TryGetSlot(String actionParameter, out Int32 slot) =>
-            Int32.TryParse(actionParameter, out slot) && slot >= 1 && slot <= SessionRegistry.SlotCount;
+        private Boolean TryGetSlot(String actionParameter, out Int32 slot) =>
+            Int32.TryParse(actionParameter, out slot) && slot >= 1 && slot <= _bridge.SessionSlotCount;
 
         protected override void RunCommand(String actionParameter)
         {
@@ -91,18 +93,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             var active = session.SessionKey == _bridge.RoutingTty();
             var name = String.IsNullOrWhiteSpace(session.Project) ? _bridge.Agent.DisplayName : session.Project;
-            // Routing is a distinct state cue, not Claude branding: use the golden orange sampled
-            // from the approved mockup rather than the coral used by the action icons. The mockup
-            // keeps the state word white on both active and inactive bars.
-            var barColor = active ? KeyImage.SelectionOrange : KeyImage.Gray;
-            var setupWord = LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
-            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord), barColor, darkText: false);
+            // Routing stays the cue: inactive sessions remain grey. Only the selected bar follows
+            // product identity, which the product declares — the engine does not know whose it is.
+            var barColor = active ? KeyImage.SessionBar : KeyImage.Gray;
+            var setupWord = AgentBridgeNotice.FaceLabel(_bridge.AgentBridgeState)
+                ?? LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
+            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord, _bridge.Agent.Id), barColor, darkText: false);
         }
 
         // Colour communicates routing; this word communicates session state. Keeping those two
         // signals independent means an inactive session can still say "Allow?" without looking active.
         // setupWord is the bar's live-status word ("Set up" / "Status off") while the wiring is absent, else null.
-        internal static String StateWord(GridSession session, String setupWord)
+        internal static String StateWord(GridSession session, String setupWord, String agentId = null)
         {
             // With the wiring off, nothing can write a session's state or its pending payload, so
             // whatever the registry holds is frozen at best — the owner read "Complete" under a
@@ -117,6 +119,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             {
                 return "Allow?";
             }
+
+            if (agentId == "codex-cli" && session.IsProvisional) { return "Ready"; }
 
             switch (session.State)
             {

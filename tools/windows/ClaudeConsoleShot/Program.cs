@@ -62,6 +62,9 @@ internal static class ShotProgram
 
         var outputPath = args[0];
         var baseline = GetClipboardSequenceNumber();
+        using var cancellation = args.Length == 3 && args[1] == "--cancel-event"
+            ? EventWaitHandle.OpenExisting(args[2]) : null;
+        if (cancellation?.WaitOne(0) == true) return ExitNoCapture;
 
         try
         {
@@ -77,10 +80,41 @@ internal static class ShotProgram
         var watch = Stopwatch.StartNew();
         var overlaySeen = false;
         var overlayGoneAt = TimeSpan.Zero;
+        var cancellationAt = TimeSpan.Zero;
+        var captureWindow = IntPtr.Zero;
 
         while (watch.Elapsed < Deadline)
         {
             Thread.Sleep(200);
+
+            var foreground = GetForegroundWindow();
+            var pickerFocused = IsOverlayWindow(foreground);
+            if (pickerFocused) captureWindow = foreground;
+            if (cancellation?.WaitOne(0) == true)
+            {
+                // Window-addressed messages, never global SendInput and never terminal input.
+                // Only the visible capture process may receive this cancellation.
+                if (IsOverlayWindow(captureWindow))
+                {
+                    // Modern SnippingTool ignores posted keyboard messages. WM_CLOSE is a
+                    // window-addressed dismissal request and cannot type into another app.
+                    PostMessageW(captureWindow, 0x0010, IntPtr.Zero, IntPtr.Zero);
+                    var closing = Stopwatch.StartNew();
+                    while (IsOverlayWindow(captureWindow) && closing.ElapsedMilliseconds < 2000)
+                        Thread.Sleep(50);
+                    Console.Error.WriteLine(IsOverlayWindow(captureWindow)
+                        ? "capture picker did not acknowledge cancellation"
+                        : "capture picker dismissed");
+                    return ExitNoCapture;
+                }
+                // A cancellation can race asynchronous protocol launch. Give the picker a
+                // bounded chance to appear so it isn't left open after this helper exits.
+                if (cancellationAt == TimeSpan.Zero) cancellationAt = watch.Elapsed;
+                if (watch.Elapsed - cancellationAt > TimeSpan.FromSeconds(3)) return ExitNoCapture;
+                continue;
+            }
+            if (pickerFocused && (GetAsyncKeyState(0x1B) & 0x8001) != 0)
+                return ExitNoCapture;
 
             if (GetClipboardSequenceNumber() != baseline)
             {
@@ -97,7 +131,9 @@ internal static class ShotProgram
 
             // Esc detection: once the overlay process has been seen and is gone again with the
             // clipboard untouched, the user dismissed it — exit now, not at the deadline.
-            var overlayUp = OverlayProcessNames.Any(n => Process.GetProcessesByName(n).Length > 0);
+            // SnippingTool remains alive after its picker closes. Track visible windows,
+            // not process lifetime, so keyboard Escape doesn't leave a 120-second waiter.
+            var overlayUp = HasVisibleOverlay();
             if (overlayUp)
             {
                 overlaySeen = true;
@@ -122,6 +158,33 @@ internal static class ShotProgram
     }
 
     // ---- clipboard ---------------------------------------------------------
+
+    private static Boolean IsOverlayWindow(IntPtr window)
+    {
+        if (window == IntPtr.Zero || !IsWindowVisible(window)) return false;
+        GetWindowThreadProcessId(window, out var pid);
+        try
+        {
+            using var process = Process.GetProcessById((Int32)pid);
+            return OverlayProcessNames.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
+    private static Boolean HasVisibleOverlay()
+    {
+        var found = false;
+        EnumWindows((window, _) => { if (IsOverlayWindow(window)) found = true; return !found; }, IntPtr.Zero);
+        return found;
+    }
+
+    private delegate Boolean WindowCallback(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern Boolean EnumWindows(WindowCallback callback, IntPtr parameter);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern Boolean IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] private static extern UInt32 GetWindowThreadProcessId(IntPtr window, out UInt32 pid);
+    [DllImport("user32.dll")] private static extern Int16 GetAsyncKeyState(Int32 key);
+    [DllImport("user32.dll")] private static extern Boolean PostMessageW(IntPtr window, UInt32 message, IntPtr wParam, IntPtr lParam);
 
     private const UInt32 CF_BITMAP = 2;
     private static readonly UInt32 CF_PNG = RegisterClipboardFormatW("PNG");

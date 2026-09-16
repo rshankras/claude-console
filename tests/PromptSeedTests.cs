@@ -78,6 +78,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.DoesNotContain(onDisk, p => p.Prompt == "Explain how this code works");
         }
 
+        [Fact]
+        public void Codex_label_does_not_migrate_the_shared_Claude_prompt_file()
+        {
+            var original = PromptCommand.LoadPrompts(_file).ToList();
+            var before = File.ReadAllText(_file);
+            var review = original.Single(p => p.Id == "review");
+            Assert.Equal("Review", PromptCommand.ProductLabel(review, "claude-code"));
+            Assert.Equal("Code Audit", PromptCommand.ProductLabel(review, "codex-cli"));
+            Assert.Equal("Review", PromptCommand.LoadPrompts(_file).Single(p => p.Id == "review").Label);
+            Assert.Equal(before, File.ReadAllText(_file));
+            review.Label = "My review";
+            Assert.Equal("My review", PromptCommand.ProductLabel(review, "codex-cli"));
+        }
+
         [Theory]
         [InlineData("prompt")]   // reworded one prompt
         [InlineData("label")]    // relabelled one key

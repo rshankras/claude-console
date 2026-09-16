@@ -16,6 +16,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class VoiceFailureTests
     {
+        [Fact]
+        public void VoiceFailuresHaveAReadableHoldAndRetryClearsImmediately()
+        {
+            // The hold is the product's to declare, and the engine default is the 2.5 s Claude
+            // Console shipped — a longer Vizhi hold must not follow it into a rebuild.
+            Assert.Equal(2500, VoiceFailure.HoldMs);
+            try
+            {
+                VoiceFailure.UseHold(8000);
+                Assert.Equal(8000, VoiceFailure.HoldMs);
+            }
+            finally
+            {
+                VoiceFailure.UseHold(2500);
+            }
+
+            using var face = new FailureFace(() => { }, VoiceFailure.HoldMs);
+            face.Show(VoiceFailure.NoSpeech);
+            Assert.True(face.IsActive);
+            face.Clear();
+            Assert.False(face.IsActive);
+            Assert.Null(face.Text);
+        }
+
         // ---------------------------------------------------------------------------------------
         // The words on the key are chosen by what the user should DO
         // ---------------------------------------------------------------------------------------

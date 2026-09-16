@@ -285,8 +285,21 @@ internal static class InjectProgram
         // Verify the target IS the session we were told to type into, before attaching to anything.
         // Windows recycles PIDs: without this, a stale session key could attach to an unrelated
         // process that inherited the number and type into it. This is the guard.
-        if (Int64.TryParse(opts.GetValueOrDefault("--start-ticks"), NumberStyles.None, CultureInfo.InvariantCulture, out var expectedTicks)
-            && expectedTicks > 0)
+        if (!Int64.TryParse(opts.GetValueOrDefault("--start-ticks"), NumberStyles.None, CultureInfo.InvariantCulture, out var expectedTicks)
+            || expectedTicks <= 0)
+        {
+            Console.Error.WriteLine("missing or invalid --start-ticks");
+            return ExitSessionMissing;
+        }
+
+        using var inputLock = SessionInputLock.TryAcquire(pid, expectedTicks);
+        if (inputLock == null)
+        {
+            Console.Error.WriteLine("input busy or previous delivery interrupted; nothing sent");
+            return ExitFailed;
+        }
+
+        // Revalidate AFTER waiting: a queued request must never attach to a reused process.
         {
             if (!VerifyStartTime(pid, expectedTicks, out var why))
             {

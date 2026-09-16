@@ -59,10 +59,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.False(File.Exists(b.HookScript));
         }
 
-        /// <summary>The platform default is the real decision: hooks everywhere except Windows.</summary>
+        /// <summary>Current Codex supports command hooks on Windows as well as Unix.</summary>
         [Fact]
         public void The_default_follows_the_platform() =>
-            Assert.Equal(!OperatingSystem.IsWindows(), new CodexStateBridge(this._home, this._sessions).InstallsHooks);
+            Assert.True(new CodexStateBridge(this._home, this._sessions).InstallsHooks);
 
         [Fact]
         public void Install_writes_the_hooks_file_and_the_launcher()
@@ -100,6 +100,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }
         }
 
+        [Fact]
+        public void Windows_hooks_use_the_official_commandWindows_override()
+        {
+            var b = this.New();
+            var hooks = JsonNode.Parse(b.BuildHooksJson(windows: true))["hooks"].AsObject();
+
+            foreach (var evt in CodexStateBridge.Events)
+            {
+                var handler = hooks[evt][0]["hooks"][0];
+                Assert.Equal(b.HookCommand(evt, windows: true), handler["command"].GetValue<String>());
+                Assert.Equal(b.HookCommand(evt, windows: true), handler["commandWindows"].GetValue<String>());
+            }
+        }
+
         /// <summary>
         /// A home directory with a space in it is ordinary on macOS, and an unquoted path would
         /// split into two arguments — the hook would then run with the wrong event name, or not
@@ -112,12 +126,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var spaced = Path.Combine(this._home, "Application Support", ".codex");
             var b = new CodexStateBridge(spaced, this._sessions) { InstallsHooks = true };
-            b.EnsureInstalled(Script);
-
-            var command = JsonNode.Parse(File.ReadAllText(b.HooksFile))
+            var command = JsonNode.Parse(b.BuildHooksJson(windows: false))
                 ["hooks"]["Stop"][0]["hooks"][0]["command"].GetValue<String>();
 
-            Assert.Equal(b.HookCommand("Stop"), command);
+            Assert.Equal(b.HookCommand("Stop", windows: false), command);
             Assert.Contains($"'{b.HookScript}'", b.HookCommand("Stop", windows: false));
         }
 
@@ -154,9 +166,90 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             b.EnsureInstalled(Script);
 
             Directory.CreateDirectory(this._sessions);
-            File.WriteAllText(Path.Combine(this._sessions, "ttys003.json"), "{}");
+            File.WriteAllText(
+                Path.Combine(this._sessions, "ttys003.json"),
+                "{\"schema\":1,\"transport\":\"hook\",\"event\":\"SessionStart\"}");
 
             Assert.Equal(CodexBridgeStatus.Active, b.Status);
+        }
+
+        /// <summary>
+        /// The launcher does not stamp a transport — the rollout fallback is the only writer that
+        /// does, so absence of the field means the hook wrote it. Demanding an explicit "hook"
+        /// would have failed every envelope written before that field existed: on update each
+        /// user's own working hook would read as untrusted, and an installation whose launcher
+        /// rewrite failed would say "Run /hooks" for good while the hook kept running.
+        /// </summary>
+        [Fact]
+        public void An_envelope_with_no_transport_field_is_the_hooks_and_proves_trust()
+        {
+            var b = this.New();
+            b.EnsureInstalled(Script);
+
+            Directory.CreateDirectory(this._sessions);
+            File.WriteAllText(
+                Path.Combine(this._sessions, "ttys003.json"),
+                "{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"SessionStart\",\"ts\":1,\"payload\":null}");
+
+            Assert.Equal(CodexBridgeStatus.Active, b.Status);
+        }
+
+        [Fact]
+        public void An_event_from_before_the_current_launcher_does_not_falsely_prove_trust()
+        {
+            var b = this.New();
+            b.EnsureInstalled(Script);
+
+            Directory.CreateDirectory(this._sessions);
+            var envelope = Path.Combine(this._sessions, "ttys003.json");
+            File.WriteAllText(envelope, "{\"schema\":1,\"transport\":\"hook\",\"event\":\"SessionStart\"}");
+            File.SetLastWriteTimeUtc(envelope, DateTime.UtcNow.AddMinutes(-5));
+
+            // A changed launcher is a changed trusted program even though its stable command in
+            // hooks.json remains identical. Until that launcher fires, the old envelope is stale.
+            Assert.True(b.EnsureInstalled(Script + "\n# updated"));
+            Assert.Equal(CodexBridgeStatus.AwaitingTrust, b.Status);
+
+            File.WriteAllText(envelope, "{\"schema\":1,\"transport\":\"hook\",\"event\":\"Stop\"}");
+            Assert.Equal(CodexBridgeStatus.Active, b.Status);
+        }
+
+        [Fact]
+        public void Rollout_state_does_not_falsely_prove_hook_trust()
+        {
+            var b = this.New();
+            b.EnsureInstalled(Script);
+
+            Directory.CreateDirectory(this._sessions);
+            File.WriteAllText(
+                Path.Combine(this._sessions, "pid-1.json"),
+                "{\"schema\":1,\"transport\":\"rollout\",\"event\":\"UserPromptSubmit\"}");
+
+            Assert.Equal(CodexBridgeStatus.AwaitingTrust, b.Status);
+        }
+
+        [Theory]
+        [InlineData("rollout")]
+        [InlineData("rollout-code-mode")]
+        public void Fresh_fallback_approval_cannot_prove_hook_trust(String transport)
+        {
+            var bridge = New();
+            bridge.EnsureInstalled(Script);
+            Directory.CreateDirectory(_sessions);
+            var envelope = Path.Combine(_sessions, "pid-42.json");
+            File.WriteAllText(envelope, System.Text.Json.JsonSerializer.Serialize(new
+            {
+                schema = 1, transport, @event = "PermissionRequest",
+                payload = new { tool_name = "Bash", tool_input = new { command = "git push" } },
+            }));
+            File.SetLastWriteTimeUtc(envelope, DateTime.UtcNow.AddSeconds(2));
+            Assert.Equal(CodexBridgeStatus.AwaitingTrust, bridge.Status);
+            File.WriteAllText(envelope, "{\"schema\":1,\"transport\":\"hook\",\"event\":\"Stop\"}");
+            Assert.Equal(CodexBridgeStatus.Active, bridge.Status);
+            var timestamp = File.GetLastWriteTimeUtc(bridge.HooksFile);
+            Assert.False(bridge.EnsureInstalled(Script));
+            Assert.Equal(timestamp, File.GetLastWriteTimeUtc(bridge.HooksFile));
+            Assert.Equal(CodexBridgeStatus.Active, bridge.Status);
         }
 
         [Fact]

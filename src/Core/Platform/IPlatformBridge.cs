@@ -66,6 +66,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// </summary>
         HashSet<String> DiscoverSessions();
 
+        // Optional directory hints from the same process discovery pass, never activity evidence.
+        IReadOnlyDictionary<String, String> SessionDirectories => null;
+
         /// <summary>
         /// The session id of the terminal tab the user is looking at, or null when the terminal
         /// isn't frontmost / isn't running. Called on the poll timer, so it must be cheap and
@@ -125,6 +128,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// plugin service, the same shape as voice's Microphone grant.
         /// </summary>
         Boolean CaptureScreenshotInteractive(String outputPath);
+
+        /// <summary>Cancel this product's active capture; true means Escape was consumed.</summary>
+        Boolean TryCancelScreenshot() => false;
 
         /// <summary>
         /// Open a terminal and start the agent CLI with <paramref name="extraArgs"/> appended —

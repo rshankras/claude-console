@@ -61,6 +61,46 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Codex_apps_internal_node_runtime_is_not_a_cli_session()
+        {
+            // Captured from Codex App on Windows. The executable path contains "Codex", but the
+            // process is an MCP server, not an interpreter running the Codex CLI. Matching argv[0]
+            // gave this process a phantom session key alongside two real terminal sessions.
+            var appServer = Proc(22768, "node.exe",
+                @"""C:\Users\sahan\AppData\Local\OpenAI\Codex\runtimes\cua_node\415ffebf3d576e9b\bin\node.exe"" ./server.mjs");
+
+            Assert.False(WindowsProcessWatcher.IsAgentSession(appServer, AgentProcessMatcher.CodexCli));
+        }
+
+        [Theory]
+        [InlineData("sandbox -c default_permissions=node_repl -- node.exe kernel.js", false)]
+        [InlineData("\"sandbox\" -- node.exe trusted-worker.js", false)]
+        [InlineData("", true)]
+        [InlineData("resume session-id", true)]
+        [InlineData("--sandbox workspace-write", true)]
+        [InlineData("\"sandbox project needs fixing\"", true)]
+        [InlineData("resume sandbox", true)]
+        public void Codex_sandbox_workers_are_not_interactive_sessions(String arguments, Boolean expected)
+        {
+            var process = Proc(16916, "codex.exe",
+                "\"C:\\Users\\Test User\\AppData\\Local\\OpenAI\\Codex\\bin\\version\\codex.exe\" " + arguments);
+            Assert.Equal(expected, WindowsProcessWatcher.IsAgentSession(process, AgentProcessMatcher.CodexCli));
+        }
+
+        [Fact]
+        public void Two_terminals_and_two_sandbox_workers_produce_only_two_session_keys()
+        {
+            var first = Proc(19268, "codex.exe", "codex.exe", 23832);
+            var second = Proc(1860, "codex.exe", "codex.exe resume session-id", 11700);
+            var worker = Proc(16916, "codex.exe", "codex.exe sandbox -c default_permissions=node_repl -- node.exe kernel.js", 22424);
+            var trustedWorker = Proc(21104, "codex.exe", "codex.exe sandbox -- node.exe trusted-worker.js", 22424);
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { first, second, worker, trustedWorker }, AgentProcessMatcher.CodexCli);
+            Assert.Equal(2, sessions.Count);
+            Assert.Contains(WindowsProcessWatcher.SessionKeyFor(first), sessions);
+            Assert.Contains(WindowsProcessWatcher.SessionKeyFor(second), sessions);
+        }
+
+        [Fact]
         public void A_claude_session_is_invisible_to_the_codex_matcher()
         {
             Assert.False(WindowsProcessWatcher.IsAgentSession(NativeCli(1234), AgentProcessMatcher.CodexCli));

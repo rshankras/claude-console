@@ -58,15 +58,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             TabCompletion = false,       // no completion to accept — verified on hardware
             InputModes = false,          // approval policy is a flag/picker, not a cycle chord
 
-            // The two below are TRANSPORT-dependent, so they differ by OS. Codex's hook runner
-            // creates no process on Windows — proven on hardware 2026-08-20 with a known-good
-            // probe exe that logs every invocation and cannot exit nonzero, never invoked while
-            // codex reported "hook exited with code 1" (docs/spike-windows-codex-hooks.md).
-            // Windows therefore drives state from the rollout stream instead, which carries the
-            // busy/idle edges but no approval event: claiming ApprovalSignal there would light
-            // keys amber on evidence that does not exist.
-            ApprovalSignal = !OperatingSystem.IsWindows(),  // PermissionRequest hook (macOS)
-            HooksNeedTrust = !OperatingSystem.IsWindows(),  // no hooks installed on Windows at all
+            // Codex now documents commandWindows for lifecycle hooks. PermissionRequest is the
+            // authoritative approval edge on both platforms; Windows keeps rollout polling only
+            // as a recovery fallback for old/untrusted hooks.
+            ApprovalSignal = true,
+            HooksNeedTrust = true,
             SettingsFileWiring = false,  // our own ~/.codex/hooks.json, gated by Codex's trust prompt — no Enable/Disable keys
 
             MultiConsumerHooks = true,   // matcher groups; concurrent handlers per event
@@ -123,6 +119,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 ProjectDir = snap.ProjectDir,
                 SessionId = snap.SessionId,
                 Activity = snap.Activity,
+                ActivityTs = snap.Ts > 0 ? snap.Ts : null,
+                // Codex appends event_msg/turn_aborted after Escape. Claude Code writes nothing,
+                // so the shared interrupt policy needs this one semantic difference to interpret
+                // a newer transcript correctly.
+                TranscriptWritesOnInterrupt = true,
                 PendingTool = snap.PendingTool,
                 PendingCommand = snap.PendingCommand,
                 Risk = snap.Risk,
@@ -130,11 +131,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // Best-effort, and the only reader of an unstable format in the plugin — it
                 // returns null rather than a guess whenever the transcript surprises it.
                 CtxPercent = CodexContextReader.PercentFrom(snap.TranscriptPath),
-                // The rollout file. Codex reports its own activity, so the stall rule does not
-                // currently consult this — it is surfaced so the two agents describe themselves the
-                // same way, and NOT as a claim that Codex's stall behaviour has been verified (#30
-                // says a Codex equivalent needs its own check, and it has not had one).
+                // The rollout file grows while Codex works, so the shared stall rule can distinguish
+                // a long-running turn from one interrupted before Codex emitted a terminal event.
                 TranscriptPath = snap.TranscriptPath,
+                TranscriptActivityTs = snap.TranscriptActivityTs,
             };
         }
 
@@ -145,16 +145,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 AgentVerb.Compact => "/compact",
                 AgentVerb.Clear => "/new",
                 AgentVerb.Exit => "/exit",
-                // No context command: the number isn't exposed, so the key hides rather than
-                // typing something Codex would reject.
-                AgentVerb.Context => null,
+                // Codex's /status includes current token usage and remaining context capacity.
+                AgentVerb.Context => "/status",
                 // Review is a first-class TUI command (tui/chatwidget/review_popups.rs in the
                 // 0.148 binary): typing "/review" opens the picker — uncommitted, against a base
                 // branch, or a commit. The earlier note here called it subcommand-only; that was
                 // the CLI's `codex review`, and it missed the TUI door. Same trap as images.
                 AgentVerb.Review => "/review",
-                // ResumeLast really is launch-only (`codex resume --last`) — a launch path verb.
-                AgentVerb.ResumeLast => null,
+                // Current Codex exposes both the launch form (`codex resume`) and an in-session
+                // picker (`/resume`). The latter is the right hardware interaction: it preserves
+                // the running terminal and lets the user choose the saved chat on screen.
+                AgentVerb.ResumeLast => "/resume",
+                AgentVerb.Plan => "/plan",
+                AgentVerb.Agent => "/agent",
+                AgentVerb.Fork => "/fork",
+                AgentVerb.Skills => "/skills",
+                AgentVerb.SessionStatus => "/status",
                 _ => null,
             };
     }

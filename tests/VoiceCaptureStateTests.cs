@@ -19,6 +19,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     {
         private static readonly DateTime T0 = new DateTime(2026, 8, 27, 22, 0, 0, DateTimeKind.Utc);
 
+        [Theory]
+        [InlineData(VoiceIntent.Send, VoiceIntent.Draft)]
+        [InlineData(VoiceIntent.Send, VoiceIntent.Project)]
+        [InlineData(VoiceIntent.Draft, VoiceIntent.Send)]
+        [InlineData(VoiceIntent.Draft, VoiceIntent.Project)]
+        [InlineData(VoiceIntent.Project, VoiceIntent.Send)]
+        [InlineData(VoiceIntent.Project, VoiceIntent.Draft)]
+        public void Windows_cross_key_cancel_waits_for_cleanup_then_restarts_with_the_new_intent(
+            VoiceIntent initial, VoiceIntent next)
+        {
+            var state = new VoiceCaptureState();
+            Assert.Equal(VoiceAction.Start, state.Press(initial, T0, awaitReadiness: true).Action);
+            Assert.Equal("Starting", state.StartupLabel(initial));
+            Assert.Null(state.StartupLabel(next));
+            var cancelled = state.Press(next, T0.AddSeconds(1), awaitReadiness: true);
+            Assert.Equal(VoiceAction.Cancel, cancelled.Action);
+            Assert.Equal(initial, cancelled.Intent);
+            Assert.False(state.MarkReady(T0.AddSeconds(2)));
+            Assert.Equal("Cancelling", state.StartupLabel(initial));
+            Assert.Equal(VoiceAction.Refuse, state.Press(next, T0.AddSeconds(3), awaitReadiness: true).Action);
+            state.Finish(); // helper exit/cleanup, not merely the second key press
+            Assert.Equal(VoiceAction.Start, state.Press(next, T0.AddSeconds(4), awaitReadiness: true).Action);
+            Assert.True(state.MarkReady(T0.AddSeconds(5)));
+            var stopped = state.Press(initial, T0.AddSeconds(6), awaitReadiness: true);
+            Assert.Equal(VoiceAction.Stop, stopped.Action);
+            Assert.Equal(next, stopped.Intent);
+        }
+
         [Fact]
         public void A_press_from_idle_starts_recording_with_that_keys_intent()
         {

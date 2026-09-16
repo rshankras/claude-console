@@ -18,9 +18,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     /// </summary>
     public class PromptCommand : PluginDynamicCommand
     {
-        private static readonly String ConfigFile = Path.Combine(
+        private static String ConfigFile => ProductPromptConfig.Resolve(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "claude-console", "prompts.json");
+            BridgeManager.Instance.Agent.ProductSlug,
+            message =>
+            {
+                PluginLog.Warning(message);
+                BridgeManager.Instance.Notify?.Invoke(PluginStatus.Warning, message, BridgeNotice.SupportUrl, "Prompt settings");
+            });
 
         // Written to be worth a dedicated key: each prompt scopes itself to something concrete
         // (the uncommitted diff, the code under discussion — or it asks), names a method, and says
@@ -34,7 +39,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             new PromptDef { Id = "explore",     Label = "Explore",     Icon = "explore",     Prompt = "Give me a guided tour of this codebase: what it does, the architecture and key modules with file paths, how data flows through one typical operation, and anything that would surprise a new contributor. Finish with the five files most worth reading first, and why." },
             new PromptDef { Id = "explain",     Label = "Explain",     Icon = "explain",     Prompt = "Explain how the code we're looking at works — or ask me which file or function, if nothing is in context. Start with a one-paragraph summary, then walk the flow step by step, calling out non-obvious decisions, invariants, and gotchas a reader would miss." },
             new PromptDef { Id = "refactor",    Label = "Refactor",    Icon = "refactor",    Prompt = "Refactor the code under discussion for clarity without changing behavior: clearer names, smaller functions, less nesting, no duplication. Keep the public API stable, keep comments that explain why, and run the tests afterward to prove nothing broke." },
-            new PromptDef { Id = "review",      Label = "Review",       Icon = "review",      Prompt = "Review the current changes — the uncommitted diff if there is one, otherwise the last commit — like a careful senior engineer: correctness, edge cases, error handling, concurrency, security. Give file:line, severity, and a concrete failure scenario for each finding; skip style nits. If it's clean, say so." },
+            new PromptDef { Id = "review",      Label = "Review",   Icon = "review",      Prompt = "Review the current changes — the uncommitted diff if there is one, otherwise the last commit — like a careful senior engineer: correctness, edge cases, error handling, concurrency, security. Give file:line, severity, and a concrete failure scenario for each finding; skip style nits. If it's clean, say so." },
             new PromptDef { Id = "optimize",    Label = "Optimize",    Icon = "optimize",    Prompt = "Find what is actually slow before optimizing: measure or trace the hot path in the code under discussion and state your evidence. Then optimize only the top bottleneck, keep behavior identical, and say what improvement you expect and how to verify it." },
             new PromptDef { Id = "security",    Label = "Security",     Icon = "security",    Prompt = "Audit the current changes — or the module in context — for security issues: unvalidated input at trust boundaries, injection, path traversal, secrets in code or logs, unsafe temp files and permissions. Rate each finding by exploitability with the concrete attack; skip purely theoretical ones." },
             new PromptDef { Id = "document",    Label = "Document",     Icon = "document",    Prompt = "Document the code under discussion: doc comments on public APIs that explain purpose, constraints, and the why — not restating signatures — plus a usage example where one helps. Match the project's existing documentation style, and update the README if user-facing behavior changed." },
@@ -63,6 +68,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         public PromptCommand()
             : base()
         {
+            var agentName = BridgeManager.Instance.Agent.DisplayName;
             foreach (var p in LoadPrompts(ConfigFile))
             {
                 if (String.IsNullOrEmpty(p.Id))
@@ -70,15 +76,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     continue;
                 }
                 _prompts[p.Id] = p;
-                var param = this.AddParameter(p.Id, p.Label ?? p.Id, "Prompts");
+                var param = this.AddParameter(p.Id, ProductLabel(p, BridgeManager.Instance.Agent.Id) ?? p.Id, "Prompts");
                 if (!String.IsNullOrWhiteSpace(p.Prompt))
                 {
                     param.SetDescription(p.Submits
-                        ? "Types this prompt into Claude Code: " + p.Prompt
+                        ? $"Types this prompt into {agentName}: " + p.Prompt
                         : "Types this prompt for you to edit before sending (press Return to send): " + p.Prompt);
                 }
             }
         }
+
+        // Branding belongs on the face, not in a config file shared with Claude Console.
+        internal static String ProductLabel(PromptDef prompt, String agentId) =>
+            agentId == "codex-cli" && prompt?.Id == "review" && prompt.Label == "Review"
+                ? "Code Audit" : prompt?.Label;
 
         // Load from prompts.json; fall back to (and seed) the built-in defaults. A file that is
         // byte-for-byte semantically the pre-1.7 seed — i.e. the user never touched it — is
@@ -87,6 +98,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         // Internal + path-injected so the tests can drive it against a temp file.
         internal static IEnumerable<PromptDef> LoadPrompts(String configFile)
         {
+            if (configFile == null) { return Defaults; }
             try
             {
                 if (File.Exists(configFile))
@@ -94,20 +106,32 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     var json = File.ReadAllText(configFile);
                     var list = JsonSerializer.Deserialize<List<PromptDef>>(json,
                         new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    if (list != null && list.Count > 0)
+                    if (list != null)
                     {
                         if (IsUneditedLegacySeed(list))
                         {
-                            PluginLog.Info("PromptCommand: prompts.json is the unedited pre-1.7 seed — upgrading it to the current defaults");
-                            WriteStarter(configFile);
+                            PluginLog.Info("PromptCommand: prompts.json is an unedited generated seed — upgrading it to the current defaults");
+                            WriteStarter(configFile, overwrite: true);
                             return Defaults;
                         }
+
+                        // An empty array means "no prompt keys", and is honoured: reseeding the
+                        // defaults would be the opposite of what was asked, and would leave no way
+                        // to express removal at all. It is worth a log line, because the symptom —
+                        // every Prompts key gone from the profile — otherwise looks like a broken
+                        // plugin rather than a config the user wrote. Delete the file to reseed.
+                        if (list.Count == 0)
+                        {
+                            PluginLog.Info($"PromptCommand: {configFile} is an empty array — adding no prompt keys. Delete the file to restore the defaults.");
+                        }
+
                         return list;
                     }
                 }
                 else
                 {
                     WriteStarter(configFile);
+                    if (File.Exists(configFile)) { return LoadPrompts(configFile); }
                 }
             }
             catch (Exception ex)
@@ -143,13 +167,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         // First run (or legacy upgrade): drop the defaults into the config dir as an editable file.
-        private static void WriteStarter(String configFile)
+        private static void WriteStarter(String configFile, Boolean overwrite = false)
         {
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(configFile));
                 var json = JsonSerializer.Serialize(Defaults, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(configFile, json);
+                ProductPromptConfig.Publish(configFile, json, overwrite);
                 PluginLog.Info($"PromptCommand: wrote starter prompts.json to {configFile}");
             }
             catch (Exception ex)
@@ -171,7 +195,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
-            => NameFor(Find(_prompts, actionParameter), actionParameter);
+            => ProductLabel(Find(_prompts, actionParameter), BridgeManager.Instance.Agent.Id)
+                ?? NameFor(Find(_prompts, actionParameter), actionParameter);
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {

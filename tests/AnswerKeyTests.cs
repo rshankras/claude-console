@@ -19,7 +19,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// then made the amber badge require a captured payload — because an idle prompt is "waiting"
     /// too. So a session idling with nothing to approve got Return (Yes) / Escape (No) at it. The
     /// decision now keys on the captured PAYLOAD, exactly like the badge: an approval we can see →
-    /// Return/Escape; anything else → do nothing.
+    /// Return/Escape; anything else → do nothing when the transport is expected to report it.
+    /// Agents without approval observation are the explicit exception: a manual Yes/No press sends
+    /// Return/Escape without ever typing a word. Current Codex hooks report approvals on Windows.
     ///
     /// These tests are about the DECISION, not the AppleScript: which delivery a press should use
     /// given whether the targeted session has a pending approval.
@@ -50,6 +52,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // captured payload → NoOp (beep), for BOTH keys.
             Assert.Equal(AnswerCommand.AnswerVia.NoOp, AnswerCommand.Decide(approve: true, hasPendingApproval: false));
             Assert.Equal(AnswerCommand.AnswerVia.NoOp, AnswerCommand.Decide(approve: false, hasPendingApproval: false));
+        }
+
+        [Fact]
+        public void An_agent_without_approval_observation_can_still_answer_a_visible_prompt()
+        {
+            Assert.Equal(
+                AnswerCommand.AnswerVia.UnobservedConfirm,
+                AnswerCommand.Decide(approve: true, hasPendingApproval: false, canObserveApprovals: false));
+            Assert.Equal(
+                AnswerCommand.AnswerVia.UnobservedReject,
+                AnswerCommand.Decide(approve: false, hasPendingApproval: false, canObserveApprovals: false));
+        }
+
+        [Fact]
+        public void The_unobserved_No_path_is_never_the_confirm_path()
+        {
+            var yes = AnswerCommand.Decide(approve: true, hasPendingApproval: false, canObserveApprovals: false);
+            var no = AnswerCommand.Decide(approve: false, hasPendingApproval: false, canObserveApprovals: false);
+
+            Assert.Equal(AnswerCommand.AnswerVia.UnobservedConfirm, yes);
+            Assert.Equal(AnswerCommand.AnswerVia.UnobservedReject, no);
+            Assert.NotEqual(yes, no);
         }
 
         [Fact]
@@ -88,10 +112,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // wiring, so the press must be explained BEFORE Decide() — which can only ever say NoOp
             // there — and the explanation must reach Options+, not just the log.
             var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Core", "Actions", "AnswerCommand.cs"));
-            var body = source.Substring(source.IndexOf("private static void AnswerApproval(", StringComparison.Ordinal));
+            var body = source.Substring(source.IndexOf("static void AnswerApproval(", StringComparison.Ordinal));
 
             var setup = body.IndexOf("LiveStatusFace.SetupWord(bridge.LiveStatusApplies, bridge.LiveStatus)", StringComparison.Ordinal);
-            var decide = body.IndexOf("Decide(approve, hasPending)", StringComparison.Ordinal);
+            var decide = body.IndexOf("Decide(approve,", StringComparison.Ordinal);
             Assert.True(setup >= 0, "AnswerApproval no longer checks the live-status setup word");
             Assert.True(decide > setup, "the setup check must come before the menu decision");
             Assert.Contains("BridgeNotice.AnswerNeedsSetup()", body.Substring(setup, decide - setup));
@@ -105,7 +129,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // clears the payload itself — but only on a keystroke the platform reports as landed.
             // A badge left over a failed injection is still true; a badge cleared over one is a lie.
             var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Core", "Actions", "AnswerCommand.cs"));
-            var body = source.Substring(source.IndexOf("private static void Answered(", StringComparison.Ordinal));
+            var body = source.Substring(source.IndexOf("internal static void Answered(", StringComparison.Ordinal));
 
             var landed = body.IndexOf("outcome == InjectionOutcome.Ok", StringComparison.Ordinal);
             var clear = body.IndexOf("bridge.Grid.ClearPendingApproval(target)", StringComparison.Ordinal);

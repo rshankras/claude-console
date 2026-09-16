@@ -44,6 +44,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.DoesNotContain("systemSymbolName", generator);
         }
 
+        [Fact]
+        public void Codex_power_controls_have_identity_blue_icons()
+        {
+            var directory = Path.GetDirectoryName(
+                RepoFile("src", "Products", "VizhiCodex", "Resources", "icons_codex", "brain.png"));
+
+            foreach (var name in new[] { "plan", "agent", "fork", "review_core", "skills", "status", "resume" })
+            {
+                Assert.True(File.Exists(Path.Combine(directory, name + ".png")),
+                    $"Codex control has no blue icon: {name}.png");
+            }
+        }
+
         private static String IconDirectory() => Path.GetDirectoryName(
             RepoFile("src", "Core", "Resources", "icons", "brain.png"));
 

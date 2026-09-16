@@ -176,7 +176,7 @@ All of these focus Claude's Terminal tab before sending keys.
 
 Every **Prompts** key is yours to change. The keys show one-word labels (Explore, Review, …), but each sends a **full, structured prompt** — Review, for instance, asks for a senior-engineer pass with file:line, severity, and a concrete failure scenario per finding; Deploy runs the checks but stops for your approval before anything goes public.
 
-All of it is defined in `~/.claude/claude-console/prompts.json` (seeded with the defaults on first run). Edit it to suit how you work — reword any prompt, relabel or re-icon a key, delete keys you never press, or add your own macros. Each entry becomes its own bindable key, and there's no fixed count:
+Claude Console stores these keys in `~/.claude/claude-console/prompts.json`; Vizhi for Codex uses `~/.codex/vizhi/prompts.json`. On its first load, Vizhi copies an existing valid Claude prompt file without changing the original. Future edits are independent. If no source exists, defaults are seeded. A malformed source is left untouched, with defaults used in memory and migration retried on the next load. Edit it to suit how you work — reword any prompt, relabel or re-icon a key, delete keys you never press, or add your own macros. Each entry becomes its own bindable key, and there's no fixed count:
 
 ```json
 [
@@ -193,7 +193,7 @@ All of it is defined in `~/.claude/claude-console/prompts.json` (seeded with the
 - **`icon`** — an embedded icon basename. Since 2.2.0 every action icon is the same copper monochrome (colour is reserved for state), so the name only picks the glyph: `fix_bug`, `write_tests`, `explore`, `explain`, `refactor`, `review`, `optimize`, `security`, `document`, `deploy`, `commit`, `diff`, `push`, `create_pr`, `status`, `log`, `project`, `terminal`, `screenshot`, `compact` (an unknown name falls back to text).
 - **`submit`** *(optional, default `true`)* — set `false` to make a **draft key**: it types the prompt but doesn't press Return, so you can edit or finish the sentence before sending it.
 
-Reload the plugin to pick up edits (restart Logi Options+ / `killall LogiPluginService`). Delete the file to restore the built-in defaults. **Your edits are permanent** — once you change anything in the file, no plugin update will overwrite it; only an untouched factory `prompts.json` is upgraded in place when a release improves the defaults.
+Reload the plugin to pick up edits (restart Logi Options+ / `killall LogiPluginService`). On either product, an empty JSON array (`[]`) removes every prompt key. Deleting the file restores the built-in defaults in Claude Console, and in Vizhi retries the one-time copy from Claude's file. **Your edits are permanent** — once you change anything in the file, no plugin update will overwrite it; only an untouched factory `prompts.json` is upgraded in place when a release improves the defaults.
 
 ## Key map
 
