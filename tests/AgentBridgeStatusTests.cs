@@ -21,7 +21,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Equal("Merge hooks", AgentBridgeNotice.FaceLabel(AgentBridgeStatus.ForeignConfiguration));
             Assert.Contains("left it unchanged", AgentBridgeNotice.Message(AgentBridgeStatus.ForeignConfiguration));
-            Assert.Equal("https://www.rshankar.com/keypad-profiles/#codex-hook-trust", AgentBridgeNotice.PublicHelpUrl);
+            // On vizhi.dev, never the personal blog or github.com — the repo is closed and the
+            // listing points users at this domain. BridgeNoticeTests fetches the anchor when
+            // CC_CHECK_LINKS=1.
+            Assert.Equal("https://vizhi.dev/vizhi-codex/#hooks", AgentBridgeNotice.PublicHelpUrl);
         }
 
         [Fact]
