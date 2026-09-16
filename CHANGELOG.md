@@ -1,6 +1,21 @@
 # Changelog
 
+All notable changes to Claude Console are documented here. Format based on
+[Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
+
 ## Vizhi for Codex [1.6.1] — 2026-09-09
+
+### Fixed
+- **A rollout lifecycle edge could discard a live approval.** The hook owns `PermissionRequest`
+  and can write it between two polls; a `task_started` read afterwards then overwrote it with
+  Busy, turning the amber key grey with nothing left to re-emit it. A plugin reload during a
+  pending approval hit this every time. Only a terminal edge, a newer approval, or the code-mode
+  output that resolves the approval may now clear a waiting session.
+- **Updating no longer reports working hooks as untrusted.** Hook trust was proved by a
+  `transport` field that the launcher had only just started writing, so every envelope written by
+  an earlier version read as untrusted — permanently if the launcher rewrite failed. The launcher
+  no longer carries the tag, and the reader infers it from absence, since the rollout fallback is
+  the only writer that stamps one.
 
 ### Changed
 - **Voice now shows `Setting up` during its first packaged-runtime check.** The check and any required
@@ -9,9 +24,9 @@
 - **Screenshot now carries its own Windows runtime.** The capture helper no longer assumes that
   Options+'s private .NET runtime is globally discoverable, so it can open the snipping overlay on
   machines without a separate .NET Desktop installation.
-
-All notable changes to Claude Console are documented here. Format based on
-[Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
+- **Each product now declares its own identity.** The keypad's identity colours, icon set and
+  failure-word hold are named by the plugin rather than chosen inside the shared engine, so the
+  two products can look different without either one moving the other's keys.
 
 ## [2.2.2] — 2026-09-13
 

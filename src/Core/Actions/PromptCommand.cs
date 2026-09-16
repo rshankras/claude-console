@@ -114,6 +114,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                             WriteStarter(configFile, overwrite: true);
                             return Defaults;
                         }
+
+                        // An empty array means "no prompt keys", and is honoured: reseeding the
+                        // defaults would be the opposite of what was asked, and would leave no way
+                        // to express removal at all. It is worth a log line, because the symptom —
+                        // every Prompts key gone from the profile — otherwise looks like a broken
+                        // plugin rather than a config the user wrote. Delete the file to reseed.
+                        if (list.Count == 0)
+                        {
+                            PluginLog.Info($"PromptCommand: {configFile} is an empty array — adding no prompt keys. Delete the file to restore the defaults.");
+                        }
+
                         return list;
                     }
                 }

@@ -193,7 +193,7 @@ Claude Console stores these keys in `~/.claude/claude-console/prompts.json`; Viz
 - **`icon`** — an embedded icon basename. Since 2.2.0 every action icon is the same copper monochrome (colour is reserved for state), so the name only picks the glyph: `fix_bug`, `write_tests`, `explore`, `explain`, `refactor`, `review`, `optimize`, `security`, `document`, `deploy`, `commit`, `diff`, `push`, `create_pr`, `status`, `log`, `project`, `terminal`, `screenshot`, `compact` (an unknown name falls back to text).
 - **`submit`** *(optional, default `true`)* — set `false` to make a **draft key**: it types the prompt but doesn't press Return, so you can edit or finish the sentence before sending it.
 
-Reload the plugin to pick up edits (restart Logi Options+ / `killall LogiPluginService`). For Claude Console, delete the file to restore the built-in defaults. Deleting Vizhi’s file retries migration from Claude; use an empty JSON array (`[]`) to remove all prompt keys. **Your edits are permanent** — once you change anything in the file, no plugin update will overwrite it; only an untouched factory `prompts.json` is upgraded in place when a release improves the defaults.
+Reload the plugin to pick up edits (restart Logi Options+ / `killall LogiPluginService`). On either product, an empty JSON array (`[]`) removes every prompt key. Deleting the file restores the built-in defaults in Claude Console, and in Vizhi retries the one-time copy from Claude's file. **Your edits are permanent** — once you change anything in the file, no plugin update will overwrite it; only an untouched factory `prompts.json` is upgraded in place when a release improves the defaults.
 
 ## Key map
 
