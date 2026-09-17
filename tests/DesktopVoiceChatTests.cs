@@ -144,10 +144,76 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.True(toggled);
         }
 
+        [Fact]
+        public void Configured_toggle_stays_available_without_an_AX_surface_or_voice_button()
+        {
+            Assert.Equal("Voice Chat", DesktopVoiceChatCommand.LabelFor(DesktopState.Unavailable, shortcut: true));
+            var fake = new Fake { HasVoiceShortcut = true };
+            var actions = new DesktopVoiceActions(fake);
+            Assert.True(actions.RequestVoice(DesktopVoiceState.Unavailable, new VoiceCaptureState(), out var feedback));
+            Assert.Equal("Requested", feedback);
+            Assert.Equal(1, fake.Toggles);
+            Assert.Empty(fake.Requests);
+        }
+
+        [Fact]
+        public void Configured_toggle_never_changes_semantics_based_on_stale_observed_state()
+        {
+            var fake = new Fake { HasVoiceShortcut = true };
+            var now = 100L;
+            var actions = new DesktopVoiceActions(fake) { Clock = () => now };
+            var capture = new VoiceCaptureState();
+            foreach (var state in new[] { DesktopVoiceState.Active, DesktopVoiceState.Ready, DesktopVoiceState.Unavailable })
+            {
+                Assert.True(actions.RequestVoice(state, capture, out _));
+                Assert.False(actions.RequestVoice(state, capture, out _)); // contact bounce
+                now += 1200;
+            }
+            Assert.Equal(3, fake.Toggles);
+            Assert.Empty(fake.Requests);
+        }
+
+        [Fact]
+        public void Configured_toggle_refuses_during_local_capture_and_transcription()
+        {
+            var fake = new Fake { HasVoiceShortcut = true };
+            var actions = new DesktopVoiceActions(fake);
+            var capture = new VoiceCaptureState();
+            capture.Press(VoiceIntent.DesktopDraft, DateTime.UtcNow, awaitReadiness: true);
+            Assert.False(actions.RequestVoice(DesktopVoiceState.Unavailable, capture, out _));
+            capture.MarkReady(DateTime.UtcNow);
+            Assert.False(actions.RequestVoice(DesktopVoiceState.Active, capture, out _));
+            capture.Press(VoiceIntent.DesktopDraft, DateTime.UtcNow);
+            Assert.False(actions.RequestVoice(DesktopVoiceState.Ready, capture, out var feedback));
+            Assert.Equal("Dictating", feedback);
+            Assert.Equal(0, fake.Toggles);
+            Assert.Empty(fake.Requests);
+        }
+
+        [Fact]
+        public void Failed_shortcut_does_not_attempt_an_AX_fallback_or_block_an_immediate_retry()
+        {
+            var fake = new Fake { HasVoiceShortcut = true, ToggleError = "app-not-frontmost" };
+            var actions = new DesktopVoiceActions(fake) { Clock = () => 100 };
+            var capture = new VoiceCaptureState();
+            Assert.False(actions.RequestVoice(DesktopVoiceState.Ready, capture, out var feedback));
+            Assert.Equal("Open App", feedback);
+            fake.ToggleError = null;
+            Assert.True(actions.RequestVoice(DesktopVoiceState.Unavailable, capture, out _));
+            Assert.Equal(2, fake.Toggles);
+            Assert.Empty(fake.Requests);
+            Assert.False(actions.RequestDictation(VoiceIntent.DesktopDraft, capture,
+                _ => throw new Exception("must wait for transition"), out _));
+        }
+
         private sealed class Fake : IDesktopAutomation
         {
             public DesktopSnapshot Next = DesktopSnapshot.Unavailable;
             public readonly List<Boolean> Requests = new List<Boolean>();
+            public Boolean HasVoiceShortcut { get; set; }
+            public Int32 Toggles;
+            public String ToggleError;
+            public Boolean ToggleVoiceChat(out String error) { Toggles++; error = ToggleError; return error == null; }
             public DesktopSnapshot Status() => Next;
             public Boolean SetVoiceChat(Boolean active, out String error) { Requests.Add(active); error = null; return true; }
             public Boolean Press(String[] labels, out String matched) => throw new InvalidOperationException();

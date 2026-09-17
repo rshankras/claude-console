@@ -1,12 +1,53 @@
 # Vizhi Desktop native Voice — 2026-09-17
 
-Branch: `integrate/vizhi-desktop-main`. Current correction: **0.12.2 / Vizhi Adaptive 3**.
+Branch: `integrate/vizhi-desktop-main`. Current correction: **0.12.3 / Vizhi Adaptive 3**.
 
 Status: **0.12.2 installed locally** with Adaptive 3 selected. The user confirmed **No Voice**
 remained after 0.12.1; that installed DLL and helper matched the package. Native recognition and
 direct draft insertion remain unresolved. Version 0.12.2 adds draft recovery and progress feedback.
+Version 0.12.3 adds a confirmed shortcut path; its plan and verification are below.
 
-## Decision and revised plan
+## 0.12.3 confirmed Voice Chat shortcut
+
+The user supplied a settings screenshot at 15:44 showing **Toggle voice chat — Start or stop voice
+chat**, assigned **⌃⇧V (Control–Shift–V)**. It also shows **Start dictation** assigned **⌃⇧D**.
+This establishes toggle semantics and the actual configured chord; earlier screenshots established
+only that the waveform control exists. Voice Draft retains its offline capture/recovery workflow.
+
+Use the explicitly configured toggle as the primary Voice Chat path on this installation. Set
+`~/.claude/claude-console/desktop-voice-shortcut.json` to:
+
+```json
+{ "toggleVoiceChat": "Control+Shift+V" }
+```
+
+The same home key now renders **Voice Chat / TOGGLE** independent of AX surface/voice recognition.
+One press posts Control–Shift–V to the already-frontmost ChatGPT process. It neither activates an
+app nor scans controls; both key-down and key-up retain the same target PID even if focus changes.
+If ChatGPT is not frontmost, return **Open App** and send nothing. Successful posting reports
+**Requested**; it cannot establish whether the app accepted the event or which voice state followed.
+There is no second AX fallback after a shortcut attempt, which could otherwise double-toggle.
+
+Preserve 1.2-second repeat suppression. Refuse any configured toggle while local capture is
+starting, recording, cancelling, or transcribing. The existing observed-active guard for new
+dictation remains, but an unobservable native session cannot be inferred from shortcut presses:
+end native Voice in the app before using offline Voice Draft. No claimed microphone lock.
+
+Configuration is opt-in and local; a release package does not assume this user's binding for every
+installation. Missing/invalid configuration retains the original exact-button path described below.
+The parser accepts ANSI letter-key positions plus Control/Shift/Option/Command; Control or Command
+is required. Existing profile identities and bindings do not change. Reload to apply configuration.
+
+Validation: **323 targeted C# tests passed**; production Swift modifier/dispatch functions passed
+with synthetic PIDs and an inert event sink; previous AX targeting regressions passed. The full
+helper compiles and signs. Tests cover unknown AX state, configuration validation, one toggle per
+press, repeat suppression, local-capture exclusion, failure without fallback, and fixed-PID routing
+across a simulated focus change. No live events were posted to ChatGPT; the Computer Use restriction
+was respected. Live start/stop remains a user acceptance check after installation.
+
+## Historical 0.12.0 design
+
+### Decision and revised plan
 
 Add native Voice as a separate app-owned action. The current offline Dictate & Send and Voice
 Draft actions remain available. The default profile places **Voice Chat** at home bottom-right;

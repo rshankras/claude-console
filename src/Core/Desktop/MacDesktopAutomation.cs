@@ -29,6 +29,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             ".claude", "claude-console", "VizhiAxBridge");
 
         private readonly IDesktopAppAdapter _app;
+        private readonly DesktopVoiceShortcut _voiceShortcut;
 
         /// <summary>
         /// The process seam, settable so tests exercise argument construction and JSON handling
@@ -38,7 +39,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         internal Func<List<String>, Int32, String> Runner { get; set; } =
             (args, timeoutMs) => BoundedProcess.Run(HelperPath, args, timeoutMs, wantOutput: true);
 
-        public MacDesktopAutomation(IDesktopAppAdapter app) => _app = app;
+        public MacDesktopAutomation(IDesktopAppAdapter app, DesktopVoiceShortcut voiceShortcut = null)
+        {
+            _app = app;
+            _voiceShortcut = voiceShortcut;
+        }
+
+        public Boolean HasVoiceShortcut => _voiceShortcut != null;
+
+        public Boolean ToggleVoiceChat(out String error)
+        {
+            if (_voiceShortcut == null) { error = "shortcut-unconfigured"; return false; }
+            var args = new List<String> { "shortcut", "--app", _app.BundleId,
+                "--key-code", _voiceShortcut.KeyCode.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "--modifiers", _voiceShortcut.Modifiers };
+            var json = this.Runner(args, 2500);
+            error = TryParseOk(json, out _) ? null : Describe(json);
+            return error == null;
+        }
 
         public DesktopSnapshot Status()
         {

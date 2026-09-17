@@ -58,7 +58,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             _app = new OpenAiDesktopAdapter();
             IDesktopAutomation automation = OperatingSystem.IsWindows()
                 ? new WindowsDesktopAutomation(_app)
-                : new MacDesktopAutomation(_app);
+                : new MacDesktopAutomation(_app, DesktopVoiceShortcut.Load(DesktopVoiceShortcut.ConfigPath));
             _monitor = new DesktopMonitor(automation);
             DesktopServices.Declare(_app, automation, _monitor);
 
@@ -108,6 +108,11 @@ namespace Loupedeck.ClaudeConsolePlugin
             // Package-only installs: copy the AX helper out of the .lplug4 (dev builds already
             // have it from tools/desktop/build.sh). Voice installs itself lazily on first press.
             DesktopRuntime.EnsureInstalled(this.AssemblyFilePath);
+
+            if (DesktopServices.Automation.HasVoiceShortcut)
+            {
+                PluginLog.Info("VizhiDesktopPlugin: Voice Chat uses configured shortcut");
+            }
 
             _monitor.Start();
 

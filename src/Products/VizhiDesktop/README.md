@@ -29,7 +29,10 @@ are observed. Native start/end, first-use setup, and microphone behavior still n
 pass; automated validation uses synthetic app states and does not record audio. The user's current
 app still reports **No Voice** after 0.12.1, and Voice Draft transcription has succeeded while
 composer insertion failed. Version **0.12.2** adds clipboard recovery for refused drafts; it does
-not claim to repair native Voice detection or direct insertion. Copy Answer remains
+not claim to repair native Voice detection or direct insertion. Version **0.12.3** adds an
+explicitly configured Voice Chat shortcut that works independently of AX button detection;
+the user's screenshot confirms Control–Shift–V toggles Voice Chat. Live keypad start/stop still
+requires user validation. Copy Answer remains
 unavailable pending a verified assistant-response selector. A fail-closed Windows UI
 Automation foundation exists, but application-identity reconnaissance and live validation have
 not been run, so Windows packaging remains deliberately disabled.
@@ -134,22 +137,36 @@ account, and permissions; this key does not start the offline transcription help
 an API key. Voice is supported in Chat, Work, and Codex subject to availability, including existing
 Codex tasks as that capability rolls out. See the [official Voice documentation](https://learn.chatgpt.com/docs/features/voice).
 
-1. Open the chat or task you want to discuss, then press **Voice Chat · TALK** on Adaptive 3.
-2. Complete any first-use voice setup or microphone permission prompts in ChatGPT. **Check App**
-   means the key requested a transition; it is not a claim that recording started.
-3. When the app exposes its stop-voice control, the key becomes **End Voice · ACTIVE**. Press it
-   to end the session. ACTIVE describes the session, not whether its microphone is muted.
-4. **Stop** on Controls continues to interrupt a task; it does not end the voice conversation.
+With the confirmed shortcut configured:
 
-**No Voice** means this window exposes no unambiguous supported voice control. Check feature
-availability and the app's Voice settings. There is no guessed keyboard shortcut fallback.
-Only the focused/main app window is addressed; return to the window with the voice session to
-end it. A changed or ambiguous state refuses the press instead of toggling the opposite action.
+1. Keep the intended ChatGPT chat or Codex task frontmost. Press **Voice Chat · TOGGLE** at the
+   bottom-right of Adaptive 3's home page to start; press again to stop.
+2. Complete any first-use setup in ChatGPT. **Requested** means the shortcut was posted, not that
+   the app acknowledged it. The key stays **Voice Chat / TOGGLE** in both states.
+3. **Open App** means ChatGPT was not frontmost/running and no shortcut was sent. **Dictating**
+   means finish the local Voice Draft capture first. Rapid repeat presses are suppressed.
+4. **Stop** on Controls interrupts task generation; it does not end Voice Chat.
+
+The local configuration is `~/.claude/claude-console/desktop-voice-shortcut.json`:
+
+```json
+{ "toggleVoiceChat": "Control+Shift+V" }
+```
+
+Match this to the shortcut shown in your own ChatGPT settings, then reload the plugin. The parser
+accepts macOS ANSI letter-key positions with Control, Shift, Option, and Command modifiers and
+requires Control or Command. This screenshot-confirmed mapping is not assumed for other users:
+the package does not seed the file. Without a valid configuration, the original exact-button
+mode remains: **Voice Chat / TALK**, **End Voice / ACTIVE**, or **No Voice / CHECK APP**. No Voice
+means detection failed to find a supported control, not that the feature is absent from ChatGPT.
 
 The plugin serializes its native and dictation keys: local capture/transcription blocks native
 start, and an observed active native session blocks a new local dictation. Existing local capture
 can always be stopped. These checks cannot coordinate atomically with voice started outside Vizhi
-or in another app window. Mute/unmute and long-press gestures are deferred until verified.
+or in another app window. Shortcut posting does not establish session state; when AX recognition
+is unavailable, end native Voice in ChatGPT before starting offline Voice Draft. Mute/unmute and
+long-press gestures are deferred until verified. The screenshot also confirms Control–Shift–D
+starts ChatGPT dictation, but this update retains the existing offline Voice Draft workflow.
 
 ## Choose a layout
 

@@ -25,6 +25,9 @@
 //           Set-value races React's async state: set -> settle -> verify -> fall back to
 //           AXFocused+AXSelectedText (the editing pipeline) -> verify again. Proven 2026-08-24.
 //   focus   -> {"ok":true}   the ONE deliberate focus: bring the app forward.
+//   shortcut --key-code <macOS ANSI key code> --modifiers <control,shift,option,command>
+//           -> {"ok":true,"requested":"shortcut"}; posts only to the already-frontmost app.
+//           Does not scan controls, activate an app, or establish whether the app handled it.
 //   send    --send-label <label> --stop <label>... --approve <label>...
 //           -> {"ok":true,"sent":true}; preserves the current draft, refuses ambiguous targets.
 //
@@ -111,9 +114,28 @@ func forceAccessibility(_ appEl: AXUIElement) {
 
 if verb == "help" || verb == "--help" {
     print("""
-    VizhiAxBridge <status|inspect|press|press-exact|voice|write|send|focus> --app <bundle-id> [verb args]  (see source header)
+    VizhiAxBridge <status|inspect|press|press-exact|voice|shortcut|write|send|focus> --app <bundle-id> [verb args]  (see source header)
     """)
     exit(0)
+}
+
+func shortcutFlags(_ value: String) -> CGEventFlags? {
+    let names = value.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+    let known: [String: CGEventFlags] = ["control": .maskControl, "shift": .maskShift,
+                                        "option": .maskAlternate, "command": .maskCommand]
+    guard Set(names).count == names.count,
+          names.contains("control") || names.contains("command"),
+          names.allSatisfy({ known[$0] != nil }) else { return nil }
+    return names.reduce(CGEventFlags()) { $0.union(known[$1]!) }
+}
+
+// The target PID is fixed for BOTH events, even if foreground focus changes between them.
+// Exposed as a pure dispatch seam so tests never post a real keyboard event.
+func dispatchShortcut(targetPid: Int32, frontmostPid: Int32?, post: (Int32, Bool) -> Void) -> Bool {
+    guard targetPid > 0, frontmostPid == targetPid else { return false }
+    post(targetPid, true)
+    post(targetPid, false)
+    return true
 }
 
 guard AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": false] as CFDictionary) else {
@@ -121,6 +143,27 @@ guard AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": false] as CFD
 }
 guard let runningApp = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first else {
     fail("app-not-running", 3)
+}
+
+// A confirmed app shortcut works independently of Chromium's button roles and AX tree.
+// Handle it before constructing or enhancing the app's accessibility tree.
+if verb == "shortcut" {
+    guard let codeText = argValue("--key-code"), let keyCode = CGKeyCode(codeText), keyCode < 128,
+          let flags = shortcutFlags(argValue("--modifiers") ?? "") else { fail("invalid-shortcut", 4) }
+    guard let source = CGEventSource(stateID: .privateState),
+          let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
+          let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) else {
+        fail("shortcut-event-unavailable", 5)
+    }
+    down.flags = flags
+    up.flags = flags
+    guard dispatchShortcut(targetPid: runningApp.processIdentifier,
+                           frontmostPid: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                           post: { pid, isDown in (isDown ? down : up).postToPid(pid) }) else {
+        fail("app-not-frontmost", 4)
+    }
+    // Event posting returns no app acknowledgement. Never infer active/ended from this result.
+    emit(["requested": "shortcut"], code: 0)
 }
 let appEl = AXUIElementCreateApplication(runningApp.processIdentifier)
 forceAccessibility(appEl)

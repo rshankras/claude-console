@@ -46,7 +46,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         // User supplied the visible tooltip "Start Voice Chat" on 2026-09-17. AX matching
         // ignores case/whitespace and checks all semantic button labels; the tooltip does not
         // establish which AX attribute carries it. End labels still require live validation.
-        // No substring or hotkey fallback. These apply to ChatGPT AND Codex.
+        // No substring fallback. A separately configured hotkey can bypass AX recognition.
+        // These labels apply to ChatGPT AND Codex.
         public String[] StartVoiceLabels => new[] { "Start voice chat", "Start new voice chat" };
         public String[] EndVoiceLabels => new[] { "Stop voice chat" };
 

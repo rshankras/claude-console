@@ -21,6 +21,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 feedback = null;
                 // A rapid second press must not reverse a request whose face has just refreshed.
                 if (_lastVoiceRequest.HasValue && Clock() - _lastVoiceRequest.Value < 1200) { return false; }
+                if (_automation.HasVoiceShortcut)
+                {
+                    // A configured toggle is an intentional toggle, regardless of stale/missing
+                    // AX state. Do not present it as an explicit Start or End operation.
+                    if (capture.Phase != VoicePhase.Idle) { feedback = "Dictating"; return false; }
+                    if (!_automation.ToggleVoiceChat(out var shortcutError))
+                    {
+                        feedback = shortcutError is "app-not-frontmost" or "app-not-running" ? "Open App" : "Check App";
+                        PluginLog.Warning($"DesktopVoiceActions: {shortcutError}");
+                        return false;
+                    }
+                    _lastVoiceRequest = Clock();
+                    feedback = "Requested"; // events posted; no claim that the app accepted them
+                    return true;
+                }
                 if (seen == DesktopVoiceState.Unavailable) { feedback = "No Voice"; return false; }
                 var start = seen == DesktopVoiceState.Ready;
                 if (start && capture.Phase != VoicePhase.Idle) { feedback = "Dictating"; return false; }

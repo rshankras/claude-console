@@ -3,6 +3,18 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [0.12.3] — Vizhi Desktop — 2026-09-17
+
+- Add an explicitly configured native Voice Chat shortcut. The user's app settings screenshot
+  confirms **Control–Shift–V** is **Toggle voice chat — Start or stop voice chat**.
+- With the shortcut configured, the home key stays **Voice Chat / TOGGLE**, including when AX
+  voice controls or the web tree are unavailable. Post one chord only to the already-frontmost
+  ChatGPT process; do not activate another app or fall back to a second toggle method.
+- Keep key feedback honest: **Requested** means events were posted; the app owns start/stop state.
+  Refuse while local dictation is in progress and suppress repeat requests within 1.2 seconds.
+- Preserve all profile identities/bindings and the Voice Draft clipboard recovery path. The
+  shortcut is local configuration, not a presumed default for every ChatGPT installation.
+
 ## [0.12.2] — Vizhi Desktop — 2026-09-17
 
 - Recover a Voice Draft that the composer refuses by copying its transcript to the macOS clipboard.

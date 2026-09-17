@@ -30,6 +30,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Request a specific native voice transition, never a blind toggle.</summary>
         Boolean SetVoiceChat(Boolean active, out String error) { error = "unsupported"; return false; }
 
+        /// <summary>A user-configured toggle is independent of AX voice-state recognition.</summary>
+        Boolean HasVoiceShortcut => false;
+        Boolean ToggleVoiceChat(out String error) { error = "unsupported"; return false; }
+
         /// <summary>Open one exact, unambiguous sidebar title. Unsupported helpers fail closed.</summary>
         Boolean PressConversation(String title) => false;
 
