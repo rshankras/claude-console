@@ -39,6 +39,14 @@ if ! dotnet test "$REPO/tests/ClaudeConsolePlugin.Tests.csproj" --nologo "$@"; t
 fi
 
 echo
+if [ "$(uname -s)" = "Darwin" ]; then
+  echo "▶ desktop AX regressions"
+  if ! python3 "$REPO/tests/scripts/test-desktop-ax.py"; then
+    STATUS=1
+  fi
+fi
+
+echo
 echo "▶ bridge script tests"
 if ! bash "$REPO/tests/scripts/test-bridge-scripts.sh"; then
   STATUS=1

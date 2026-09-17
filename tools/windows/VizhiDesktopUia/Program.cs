@@ -339,7 +339,17 @@ internal static class Program
         }
 
         var nodes = Scan(root);
+        var marker = Value(options, "--conversation");
         var target = FirstPressable(nodes, labels);
+        if (marker != null)
+        {
+            var matches = nodes.Where((node, i) => node.Pressable
+                && String.Equals(node.Text, labels[0], StringComparison.Ordinal)
+                && nodes.Skip(i + 1).TakeWhile(child => child.Depth > node.Depth)
+                    .Any(child => child.Pressable && child.Text == marker)).ToList();
+            if (matches.Count > 1) return Fail("ambiguous-conversation", 4);
+            target = matches.SingleOrDefault();
+        }
         if (target == null)
         {
             return Fail("no-match", 4);

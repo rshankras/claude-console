@@ -138,6 +138,9 @@ func targetWindows() -> [AXUIElement] {
     return windows.count == 1 ? windows : []
 }
 
+// Capture once per invocation. A re-scan must never retarget another window after a wait.
+let operationWindows = targetWindows()
+
 // One DFS over the target window (never the menu bar — thousands of AXMenuItems of pure noise).
 // Returns tree order, which the card-text heuristic depends on.
 func scanWindows() -> (nodes: [Node], webArea: Bool) {
@@ -153,7 +156,7 @@ func scanWindows() -> (nodes: [Node], webArea: Bool) {
                           pressable: actionNames(el).contains(kAXPressAction as String), depth: depth))
         for c in children(el) { rec(c, depth + 1) }
     }
-    for w in targetWindows() { rec(w, 0) }
+    for w in operationWindows { rec(w, 0) }
     return (nodes, webArea)
 }
 
@@ -176,6 +179,27 @@ func firstPressable(matching labels: [String], in nodes: [Node]) -> Node? {
     return nodes.first { n in
         n.pressable && !n.text.isEmpty && needles.contains { n.text.lowercased().contains($0) }
     }
+}
+
+// Exact titles only, and only rows with the adapter's sidebar marker in their subtree.
+func conversationMatches(title: String, marker: String, nodes: [Node]) -> [Node] {
+    guard !title.isEmpty && !marker.isEmpty else { return [] }
+    return nodes.indices.compactMap { i in
+        let n = nodes[i]
+        guard n.pressable && n.text == title else { return nil }
+        var j = i + 1
+        while j < nodes.count && nodes[j].depth > n.depth {
+            if nodes[j].pressable && nodes[j].text == marker { return n }
+            j += 1
+        }
+        return nil
+    }
+}
+
+// The baseline comes from verified app/mode controls, never from possibly-running peers.
+func conversationState(state: String, images: Int, baseline: Int?) -> String {
+    guard state == "idle", let baseline = baseline, baseline >= 0 else { return state }
+    return images > baseline ? "running" : state
 }
 
 // Whitespace-collapse: the card is laid out for a window (newlines, runs of spaces); consumers
@@ -248,7 +272,7 @@ case "status":
     // app-agnostic). DFS order is the sidebar's own order, i.e. recency. State, verified live
     // 2026-08-25: "awaiting"/"unread" are literal static texts on the row; "running" has NO text,
     // only an extra activity image. The idle baseline differs by mode (ChatGPT: pin; Codex:
-    // pin + archive), so derive it from the focused window rather than hardcoding either count.
+    // pin + archive), so the adapter supplies the verified idle count for each mode.
     var readings: [(title: String, state: String, selected: Bool, images: Int)] = []
     if let convMarker = argValue("--conv-marker"), !convMarker.isEmpty {
         let awaiting = argValue("--state-awaiting") ?? ""
@@ -292,10 +316,12 @@ case "status":
         }
     }
 
-    let baselineImages = readings.map { $0.images }.min() ?? 0
+    let baselineImages = argValues("--idle-images").compactMap { entry -> Int? in
+        let parts = entry.split(separator: "=", maxSplits: 1)
+        return parts.count == 2 && String(parts[0]) == mode ? Int(parts[1]) : nil
+    }.first
     let conversations: [[String: String]] = readings.map { reading in
-        let state = reading.state == "idle" && reading.images > baselineImages
-            ? "running" : reading.state
+        let state = conversationState(state: reading.state, images: reading.images, baseline: baselineImages)
         return ["title": reading.title, "state": state,
                 "selected": reading.selected ? "true" : "false"]
     }
@@ -327,7 +353,15 @@ case "press":
     if !waitForWebContent(seconds: 2) { fail("surface-unavailable", 5) }
     let before = frontmostName()
     let pressScan = scanWindows().nodes
-    guard let target = firstPressable(matching: labels, in: pressScan) else {
+    let candidate: Node?
+    if let marker = argValue("--conversation") {
+        let matches = conversationMatches(title: labels[0], marker: marker, nodes: pressScan)
+        if matches.count > 1 { fail("ambiguous-conversation", 4) }
+        candidate = matches.first
+    } else {
+        candidate = firstPressable(matching: labels, in: pressScan)
+    }
+    guard let target = candidate else {
         fail("no-match", 4)
     }
 
@@ -377,8 +411,17 @@ case "write":
 
     var sent = false
     if let sendLabel = argValue("--send-label") {
-        // Re-scan: the send control may only exist once the composer is non-empty.
-        guard let send = firstPressable(matching: [sendLabel], in: scanWindows().nodes) else {
+        // Abort if the user changed windows or the composer was replaced during the write.
+        // Even this final scan stays scoped to the original window.
+        let currentWindows = targetWindows()
+        let sendNodes = scanWindows().nodes
+        guard operationWindows.count == 1 && currentWindows.count == 1,
+              CFEqual(operationWindows[0], currentWindows[0]),
+              sendNodes.contains(where: { CFEqual($0.el, composer.el) }),
+              str(composer.el, kAXValueAttribute as String) == text else {
+            fail("composer-target-changed", 6)
+        }
+        guard let send = firstPressable(matching: [sendLabel], in: sendNodes) else {
             emit(["method": method, "sent": false, "error": "send-not-found"], code: 4)
         }
         if AXUIElementPerformAction(send.el, kAXPressAction as CFString) != .success {

@@ -112,7 +112,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 return;
             }
 
-            if (!DesktopServices.Automation.Press(new[] { conversation.Title }, out _))
+            if (!DesktopServices.Automation.PressConversation(conversation.Title))
             {
                 PluginLog.Warning($"AllChatsDynamicFolder: '{conversation.Title}' no longer matches — sidebar changed?");
                 return;

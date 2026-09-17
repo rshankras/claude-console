@@ -24,6 +24,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// </summary>
         Boolean Press(String[] labels, out String matched);
 
+        /// <summary>Open one exact, unambiguous sidebar title. Unsupported helpers fail closed.</summary>
+        Boolean PressConversation(String title) => false;
+
         /// <summary>
         /// Press with the expected-card guard: <paramref name="expectCard"/> is the card text
         /// the keypad RENDERED; the press is refused ("card-changed") when the card beside the

@@ -63,6 +63,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 AddEach(args, "--state-awaiting", new[] { _app.ConversationAwaitingText });
                 AddEach(args, "--state-unread", new[] { _app.ConversationUnreadText });
             }
+            foreach (var mode in _app.ModeNames)
+            {
+                if (_app.ConversationIdleImages(mode) is Int32 count)
+                {
+                    args.AddRange(new[] { "--idle-images", $"{mode}={count}" });
+                }
+            }
             AddContextLabels(args);
 
             // 2.5s budget: the walk measured ~130ms end-to-end; the margin covers a cold
@@ -101,6 +108,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             matched = ReadString(root, "matched");
             PluginLog.Info($"MacDesktopAutomation.Press: “{matched}” (frontmost stayed {ReadString(root, "frontAfter")})");
             return true;
+        }
+
+        public Boolean PressConversation(String title)
+        {
+            if (String.IsNullOrWhiteSpace(title) || String.IsNullOrEmpty(_app.ConversationItemMarker))
+            {
+                return false;
+            }
+            var args = new List<String> { "press", "--app", _app.BundleId };
+            args.AddRange(new[] { "--label", title, "--conversation", _app.ConversationItemMarker });
+            return TryParseOk(this.Runner(args, 4000), out _);
         }
 
         public Boolean WriteComposer(String text, Boolean send, out String error)

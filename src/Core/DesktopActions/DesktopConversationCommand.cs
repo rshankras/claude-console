@@ -71,7 +71,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             // Jump: open the conversation, then bring the app forward. Press first — the press
             // targets by title and needs the tree as-is; the focus is cosmetic and can't fail
             // the jump.
-            if (!DesktopServices.Automation.Press(new[] { conv.Title }, out _))
+            if (!DesktopServices.Automation.PressConversation(conv.Title))
             {
                 PluginLog.Warning($"DesktopConversationCommand: “{conv.Title}” no longer matches — sidebar changed?");
                 return;

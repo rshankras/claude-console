@@ -24,9 +24,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         // Two-step red (review round): a High-risk card takes TWO presses — the first arms
         // (face flips to "Press again"), the second within the window fires. Amber stays
         // one-press; the risk grade is an extra warning, not the security boundary.
-        private static readonly TimeSpan ArmWindow = TimeSpan.FromSeconds(3);
-        private DateTime _armedUntil = DateTime.MinValue;
-        private String _armedFor;
+        private readonly DesktopApprovalConfirmation _confirmation = new DesktopApprovalConfirmation();
 
         public DesktopApprovalCommand()
             : base()
@@ -38,7 +36,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
             if (DesktopServices.Declared)
             {
-                DesktopServices.Monitor.OnChanged += _ => this.ActionImageChanged();
+                DesktopServices.Monitor.OnChanged += state =>
+                {
+                    _confirmation.Observe(state);
+                    this.ActionImageChanged();
+                };
             }
         }
 
@@ -51,27 +53,21 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             }
 
             var state = DesktopServices.Monitor.Current;
-            if (state.Activity != DesktopActivity.WaitingApproval)
+            _confirmation.Observe(state);
+            if (state.Activity != DesktopActivity.WaitingApproval || String.IsNullOrWhiteSpace(state.CardText))
             {
                 PluginLog.Info($"DesktopApprovalCommand({actionParameter}): nothing pending — ignored");
                 return;
             }
 
-            if (state.Risk == ApprovalRisk.High)
+            if (state.Risk == ApprovalRisk.High && !_confirmation.Confirm(actionParameter, state, DateTime.UtcNow))
             {
-                var armed = DateTime.UtcNow < _armedUntil && _armedFor == actionParameter;
-                if (!armed)
-                {
-                    _armedUntil = DateTime.UtcNow + ArmWindow;
-                    _armedFor = actionParameter;
-                    this.ActionImageChanged();
-                    PluginLog.Info($"DesktopApprovalCommand({actionParameter}): red — armed, press again to confirm");
-                    return;
-                }
+                this.ActionImageChanged();
+                PluginLog.Info($"DesktopApprovalCommand({actionParameter}): red — armed, press again to confirm");
+                return;
             }
 
-            _armedUntil = DateTime.MinValue;
-            _armedFor = null;
+            _confirmation.Reset();
 
             var app = DesktopServices.App;
             var labels = actionParameter == Approve ? app.ApproveLabels : app.DenyLabels;
@@ -101,7 +97,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             var pending = state.Activity == DesktopActivity.WaitingApproval;
 
-            if (pending && DateTime.UtcNow < _armedUntil && _armedFor == actionParameter)
+            if (pending && _confirmation.IsArmed(actionParameter, state, DateTime.UtcNow))
             {
                 return "Press again";
             }

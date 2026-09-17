@@ -112,12 +112,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void Running_uses_the_focused_modes_observed_sidebar_baseline()
+        public void Running_uses_the_adapters_verified_idle_baseline()
         {
-            // ChatGPT idle rows expose one image; Codex exposes two. Deriving the minimum makes
-            // the additional spinner readable in either mode without mislabelling all Codex rows.
-            Assert.Contains("let baselineImages = readings.map", Source());
-            Assert.Contains("reading.images > baselineImages", Source());
+            Assert.Contains("argValues(\"--idle-images\")", Source());
+            Assert.Contains("conversationState(state: reading.state", Source());
         }
 
         [Fact]
@@ -127,7 +125,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Contains("kAXFocusedWindowAttribute", source);
             Assert.Contains("kAXMainWindowAttribute", source);
-            Assert.Contains("for w in targetWindows()", source);
+            Assert.Contains("let operationWindows = targetWindows()", source);
+            Assert.Contains("for w in operationWindows", source);
+            Assert.Contains("CFEqual(operationWindows[0], currentWindows[0])", source);
             Assert.Contains("windows.count == 1 ? windows : []", source);
         }
 

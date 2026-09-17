@@ -77,6 +77,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             return true;
         }
 
+        public Boolean PressConversation(String title)
+        {
+            if (String.IsNullOrWhiteSpace(title) || String.IsNullOrEmpty(_app.ConversationItemMarker))
+            {
+                return false;
+            }
+            var args = BaseArgs("press");
+            args.AddRange(new[] { "--label", title, "--conversation", _app.ConversationItemMarker });
+            return TryParseOk(this.Runner(args, 4000), out _);
+        }
+
         public Boolean WriteComposer(String text, Boolean send, out String error)
         {
             error = null;

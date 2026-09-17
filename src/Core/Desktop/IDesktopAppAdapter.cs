@@ -101,6 +101,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>The literal row text meaning "finished, result unseen".</summary>
         String ConversationUnreadText { get; }
 
+        /// <summary>Verified macOS idle row image count per mode; null disables spinner inference.</summary>
+        Int32? ConversationIdleImages(String mode) => null;
+
         /// <summary>Controls that open the current task's diff/review surface. Empty hides the key.</summary>
         String[] ShowDiffLabels { get; }
 

@@ -27,6 +27,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Conversation_navigation_uses_exact_sidebar_selector()
+        {
+            var auto = new WindowsDesktopAutomation(new OpenAiDesktopAdapter());
+            List<String> captured = null;
+            auto.Runner = (args, _) =>
+            {
+                captured = args;
+                return "{\"ok\":true}";
+            };
+            Assert.True(auto.PressConversation("Plan"));
+            Assert.Contains("--conversation", captured);
+            Assert.Contains("Pin chat", captured);
+            Assert.Contains("Plan", captured);
+            auto.Runner = (_, _) => "{\"ok\":false,\"error\":\"ambiguous-conversation\"}";
+            Assert.False(auto.PressConversation("Plan"));
+        }
+
+        [Fact]
         public void Status_uses_windows_titles_and_the_same_snapshot_contract_as_macOS()
         {
             var (auto, calls) = Build(

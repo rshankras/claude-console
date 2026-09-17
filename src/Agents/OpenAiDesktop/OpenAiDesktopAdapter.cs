@@ -61,6 +61,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         public String ConversationUnreadText => "Unread";
 
+        // Verified AX row controls: ChatGPT has pin; Codex has pin and archive.
+        public Int32? ConversationIdleImages(String mode) => mode switch
+        {
+            "ChatGPT" => 1,
+            "Codex" => 2,
+            _ => null,
+        };
+
         // The Review surface, from the live button inventory; first match wins. Verify on
         // hardware which of these opens vs toggles — fails safe (logged no-match) either way.
         public String[] ShowDiffLabels => this.ControlLabels(DesktopControl.Changes);

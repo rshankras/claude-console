@@ -32,6 +32,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Conversation_navigation_uses_exact_sidebar_selector()
+        {
+            var auto = new MacDesktopAutomation(new OpenAiDesktopAdapter());
+            List<String> captured = null;
+            auto.Runner = (args, _) =>
+            {
+                captured = args;
+                return "{\"ok\":true}";
+            };
+            Assert.True(auto.PressConversation("Plan"));
+            Assert.Contains("--conversation", captured);
+            Assert.Contains("Pin chat", captured);
+            Assert.Contains("Plan", captured);
+            auto.Runner = (_, _) => "{\"ok\":false,\"error\":\"ambiguous-conversation\"}";
+            Assert.False(auto.PressConversation("Plan"));
+        }
+
+        [Fact]
         public void Status_sends_every_adapter_label_and_parses_the_reply()
         {
             var (auto, calls) = Build(
@@ -50,6 +68,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("--attention", args);
             Assert.Contains("needs attention", args);
             Assert.Contains("--mode-prefix", args);
+            Assert.Contains("--idle-images", args);
+            Assert.Contains("ChatGPT=1", args);
+            Assert.Contains("Codex=2", args);
             Assert.Contains("--search", args);
             Assert.Contains("--changes", args);
             Assert.Contains("--projects", args);
