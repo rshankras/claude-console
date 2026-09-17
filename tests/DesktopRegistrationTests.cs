@@ -150,7 +150,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 DesktopLp5(), null, Path.Combine(this._root, "upgrade"), windows: false));
 
             var installed = JsonNode.Parse(File.ReadAllText(Path.Combine(appDir, "ApplicationInfo.json")));
-            Assert.Equal(next, (String)installed["defaultProfileName"]);
+            Assert.Equal(previous, (String)installed["defaultProfileName"]);
+            Assert.Equal(next, File.ReadAllText(Path.Combine(appDir, ".vizhi-packaged-profile")));
             Assert.True(File.Exists(Path.Combine(appDir, "Profiles", next, "ProfileInfo.json")));
             Assert.True(File.Exists(Path.Combine(previousDir, "user-customization.ict")));
             Assert.False(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(
@@ -184,6 +185,42 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.True(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(
                 DesktopLp5(), null, root, windows: false));
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Changing_default_never_reinstalls_or_requests_restart(Boolean legacy)
+        {
+            var root = Path.Combine(_root, "choice");
+            SelfRegistration.CreateRegistration(DesktopLp5(), null, root, windows: false);
+            var appDir = Path.Combine(root, "Loupedeck70", "@_vizhidesktop");
+            var infoPath = Path.Combine(appDir, "ApplicationInfo.json");
+            var installed = JsonNode.Parse(File.ReadAllText(infoPath));
+            installed["defaultProfileName"] = "MY-CUSTOM-PROFILE";
+            File.WriteAllText(infoPath, installed.ToJsonString());
+            var before = File.ReadAllText(infoPath);
+            if (legacy) File.Delete(Path.Combine(appDir, ".vizhi-packaged-profile"));
+
+            Assert.False(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(DesktopLp5(), null, root, false));
+            Assert.Equal(before, File.ReadAllText(infoPath));
+            Assert.True(File.Exists(Path.Combine(appDir, ".vizhi-packaged-profile")));
+            Assert.False(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(DesktopLp5(), null, root, false));
+        }
+
+        [Fact]
+        public void New_revision_is_installed_alongside_custom_default_only_once()
+        {
+            var root = Path.Combine(_root, "new-revision");
+            var appDir = Path.Combine(root, "Loupedeck70", "@_vizhidesktop");
+            Directory.CreateDirectory(appDir);
+            File.WriteAllText(Path.Combine(appDir, ".vizhi-packaged-profile"), "OLD-REVISION");
+            File.WriteAllText(Path.Combine(appDir, "ApplicationInfo.json"),
+                "{\"nativePluginName\":\"VizhiDesktop\",\"defaultProfileName\":\"MY-CUSTOM-PROFILE\"}");
+            Assert.True(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(DesktopLp5(), null, root, false));
+            Assert.Equal("MY-CUSTOM-PROFILE", (String)JsonNode.Parse(
+                File.ReadAllText(Path.Combine(appDir, "ApplicationInfo.json")))["defaultProfileName"]);
+            Assert.False(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(DesktopLp5(), null, root, false));
         }
 
         [Fact]

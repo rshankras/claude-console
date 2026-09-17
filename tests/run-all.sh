@@ -40,6 +40,8 @@ fi
 
 echo
 if [ "$(uname -s)" = "Darwin" ]; then
+  echo "▶ desktop package build"
+  if ! python3 "$REPO/tests/scripts/test-desktop-package.py"; then STATUS=1; fi
   echo "▶ desktop AX regressions"
   if ! python3 "$REPO/tests/scripts/test-desktop-ax.py"; then
     STATUS=1

@@ -52,6 +52,13 @@ onto whichever keys you like.
 imported itself over it would wipe whatever you already had there, so this product doesn't. It is
 one placement, once.
 
+## Updates
+
+Updates refresh the installed automation helper when its packaged contents change. A failed
+copy or signature check leaves the previous helper in place so the next load can retry.
+New packaged layouts are added alongside existing profiles. Your selected default stays selected;
+choose the new layout in Options+ when you want to adopt it.
+
 ## The auto-imported pages
 
 Bound to the app, so they appear while ChatGPT is frontmost.

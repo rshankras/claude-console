@@ -162,7 +162,8 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
         }
 
         /// <summary>
-        /// Adopt a newly versioned packaged profile into an existing self-registered application.
+        /// Install a newly versioned packaged profile alongside existing profiles, preserving
+        /// the user's default selection. Track adoption separately from the Options+ document.
         /// The old profile directory is deliberately retained: it may contain user customization
         /// or icon snapshots. Only registrations stamped as ours or naming this plugin as their
         /// native owner are eligible, and the application document is replaced atomically after
@@ -197,15 +198,23 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
             var nativeOwner = (String)installed?["nativePluginName"];
             var ours = String.Equals(stampedOwner, pluginName, StringComparison.Ordinal)
                 || String.Equals(nativeOwner, pluginName, StringComparison.Ordinal);
-            if (!ours
-                || String.Equals((String)installed?["defaultProfileName"], nextProfile,
-                    StringComparison.Ordinal))
+            if (!ours)
             {
                 return false;
             }
 
             var profilesDir = Path.Combine(appDir, "Profiles");
             var profileDir = Path.Combine(profilesDir, nextProfile);
+            var revisionFile = Path.Combine(appDir, ".vizhi-packaged-profile");
+            // Keep package revision outside ApplicationInfo: Options+ rewrites that document,
+            // and defaultProfileName is the user's selection, not an installation marker.
+            if (File.Exists(revisionFile) && File.ReadAllText(revisionFile) == nextProfile
+                && File.Exists(Path.Combine(profileDir, "ProfileInfo.json"))) return false;
+            if (File.Exists(Path.Combine(profileDir, "ProfileInfo.json")))
+            {
+                WriteProfileRevision(appDir, nextProfile);
+                return false; // adopt older installations without changing their default or restarting
+            }
             String staging = null;
             try
             {
@@ -219,12 +228,12 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
                     staging = null;
                 }
 
-                // Keep service/user settings from the installed document, but refresh the
-                // package-owned identity and binding fields alongside the new default pointer.
+                // Install the new layout alongside existing profiles. Keep the user's default
+                // even on legacy installs where the previous package revision is unknown.
                 foreach (var field in new[]
                 {
                     "name", "displayName", "description", "deviceType", "nativePluginName",
-                    "hasNativePlugin", "processOrBundleName", "modes", "defaultProfileName",
+                    "hasNativePlugin", "processOrBundleName", "modes",
                 })
                 {
                     installed[field] = packaged[field]?.DeepClone();
@@ -240,6 +249,7 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
                 {
                     File.Copy(iconPath, Path.Combine(appDir, "ApplicationIcon.png"), overwrite: true);
                 }
+                WriteProfileRevision(appDir, nextProfile);
                 return true;
             }
             catch
@@ -293,11 +303,27 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
                 }
 
                 ExtractProfile(zip, profileDir);
+                WriteProfileRevision(appDir, profileName);
             }
             catch
             {
                 try { Directory.Delete(appDir, recursive: true); } catch { }
                 throw;
+            }
+        }
+
+        private static void WriteProfileRevision(String appDir, String profileName)
+        {
+            var target = Path.Combine(appDir, ".vizhi-packaged-profile");
+            var temp = target + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                File.WriteAllText(temp, profileName);
+                File.Move(temp, target, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(temp)) File.Delete(temp);
             }
         }
 

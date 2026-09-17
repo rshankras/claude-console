@@ -67,7 +67,6 @@ case "$PRODUCT" in
   VizhiDesktop) SHIPS_DESKTOP=1 ;;
   *)            SHIPS_DESKTOP=0 ;;
 esac
-AXBRIDGE="$HOME_DIR/VizhiAxBridge"
 
 # Terminal products have both platform backends. VizhiDesktop is macOS-only until its UI
 # Automation helper meets the rule every Windows helper has had to since #83 — bundle its own
@@ -231,14 +230,13 @@ fi
 
 # --- embed the desktop AX helper next to the plugin DLL (bin/desktop/) ---------------------------
 # DesktopRuntime looks for it at <plugin dir>/desktop/VizhiAxBridge and installs it into the
-# runtime home on first use. tools/desktop/build.sh produces and signs it.
+# runtime home on load. Always build from THIS checkout, never from the developer's runtime.
 PKG_DESKTOP="$BUILD_DIR/bin/desktop"
 if [ "$SHIPS_DESKTOP" = "1" ]; then
-  [ -f "$AXBRIDGE" ] || { echo "error: AX helper missing ($AXBRIDGE) — run tools/desktop/build.sh first." >&2; exit 1; }
-  echo ">>> embedding desktop AX helper -> $PKG_DESKTOP"
+  echo ">>> building and signing desktop AX helper -> $PKG_DESKTOP"
   rm -rf "$PKG_DESKTOP"
   mkdir -p "$PKG_DESKTOP"
-  ditto "$AXBRIDGE" "$PKG_DESKTOP/VizhiAxBridge"     # ditto preserves signature + exec bit
+  bash "$ROOT/tools/desktop/build.sh" --no-install --output "$PKG_DESKTOP/VizhiAxBridge"
 else
   rm -rf "$PKG_DESKTOP"
 fi

@@ -3,56 +3,67 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     using System;
     using System.Collections.Generic;
     using System.IO;
-
+    using System.Security.Cryptography;
     using Loupedeck.ClaudeConsolePlugin.Platform;
 
-    /// <summary>
-    /// First-run install of the AX helper from the plugin package — the voice-runtime pattern
-    /// (BridgeManager.EnsureVoiceRuntimeInstalled) applied to a single binary: package-only
-    /// installs get a working helper copied into the shared runtime home; dev builds (where
-    /// tools/desktop/build.sh already installed it) are a no-op. Files unpacked from a
-    /// downloaded .lplug4 carry com.apple.quarantine, so strip it after copying — a quarantined
-    /// helper dies on first spawn with no visible error.
-    /// </summary>
+    /// <summary>Install or refresh the packaged AX helper without exposing a partial binary.</summary>
     internal static class DesktopRuntime
     {
         /// <summary>Idempotent; safe to call on every Load. Never throws.</summary>
         public static void EnsureInstalled(String pluginAssemblyFilePath)
         {
-            if (!OperatingSystem.IsMacOS())
-            {
-                return;
-            }
-
+            if (!OperatingSystem.IsMacOS()) return;
             try
             {
                 var pluginDir = Path.GetDirectoryName(pluginAssemblyFilePath);
-                if (String.IsNullOrEmpty(pluginDir))
+                if (String.IsNullOrEmpty(pluginDir)) return;
+                if (Refresh(Path.Combine(pluginDir, "desktop", "VizhiAxBridge"),
+                    MacDesktopAutomation.HelperPath, BoundedProcess.RunForExitCode))
                 {
-                    return;
+                    PluginLog.Info($"DesktopRuntime: refreshed AX helper at {MacDesktopAutomation.HelperPath}");
                 }
-
-                var packaged = Path.Combine(pluginDir, "desktop", "VizhiAxBridge");
-                if (!File.Exists(packaged) || File.Exists(MacDesktopAutomation.HelperPath))
-                {
-                    return;
-                }
-
-                Directory.CreateDirectory(Path.GetDirectoryName(MacDesktopAutomation.HelperPath));
-
-                // ditto preserves the code signature and exec bit; File.Copy would break the
-                // signature the same way it broke the voice helper's.
-                BoundedProcess.RunForExitCode("/usr/bin/ditto",
-                    new List<String> { packaged, MacDesktopAutomation.HelperPath }, 10000);
-                BoundedProcess.RunForExitCode("/usr/bin/xattr",
-                    new List<String> { "-d", "com.apple.quarantine", MacDesktopAutomation.HelperPath }, 5000);
-
-                PluginLog.Info($"DesktopRuntime: installed AX helper to {MacDesktopAutomation.HelperPath}");
             }
             catch (Exception ex)
             {
-                PluginLog.Warning(ex, "DesktopRuntime.EnsureInstalled failed — desktop keys will report unavailable");
+                PluginLog.Warning(ex, "DesktopRuntime: refresh failed; previous helper retained");
             }
         }
+
+        // Paths and process runner are injected so upgrade and failure tests never touch the
+        // user's runtime. Stage beside the destination so the final rename is atomic.
+        internal static Boolean Refresh(String packaged, String target,
+            Func<String, List<String>, Int32, Int32?> run)
+        {
+            if (!File.Exists(packaged) || SameContent(packaged, target)) return false;
+            Directory.CreateDirectory(Path.GetDirectoryName(target));
+            var staging = target + ".staging-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                if (run("/usr/bin/ditto", new List<String> { packaged, staging }, 10000) != 0
+                    || !SameContent(packaged, staging))
+                {
+                    throw new IOException("AX helper copy failed or did not match the package");
+                }
+                // ditto preserves executable permissions and signing metadata. Verify before
+                // replacing the old helper; a failed copy/signature must be retryable next load.
+                if (run("/usr/bin/codesign", new List<String> { "--verify", "--strict", staging }, 5000) != 0)
+                {
+                    throw new IOException("AX helper signature verification failed");
+                }
+                // No quarantine attribute is a normal case (xattr then returns nonzero).
+                run("/usr/bin/xattr", new List<String> { "-d", "com.apple.quarantine", staging }, 5000);
+                File.Move(staging, target, overwrite: true);
+                return true;
+            }
+            finally
+            {
+                if (File.Exists(staging)) File.Delete(staging);
+            }
+        }
+
+        private static Boolean SameContent(String a, String b) => File.Exists(b)
+            && new FileInfo(a).Length == new FileInfo(b).Length
+            && Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(a)))
+                == Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(b)));
     }
 }
