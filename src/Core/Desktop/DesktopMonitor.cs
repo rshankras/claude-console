@@ -16,6 +16,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public String CardText { get; init; } = "";
         public String Mode { get; init; } = "";
         public Boolean Attention { get; init; }
+        public Boolean CanSend { get; init; }
+        public Boolean CanCopyAnswer { get; init; }
         public DesktopControl AvailableControls { get; init; }
 
         /// <summary>Sidebar conversations, raw, in the app's own order (recency first).</summary>
@@ -183,6 +185,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 CardText = snap.CardText ?? "",
                 Mode = snap.Mode ?? "",
                 Attention = snap.Attention,
+                CanSend = snap.CanSend && activity == DesktopActivity.Ready,
+                CanCopyAnswer = snap.CanCopyAnswer && activity == DesktopActivity.Ready,
                 AvailableControls = snap.AvailableControls,
                 Conversations = conversations,
                 Slots = slotMap != null ? slotMap.Apply(conversations) : conversations.Take(DesktopSlotMap.SlotCount).ToArray(),
@@ -196,6 +200,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             a.Activity != b.Activity
             || a.Risk != b.Risk
             || a.Attention != b.Attention
+            || a.CanSend != b.CanSend
+            || a.CanCopyAnswer != b.CanCopyAnswer
             || a.AvailableControls != b.AvailableControls
             || !String.Equals(a.Mode, b.Mode, StringComparison.Ordinal)
             || !String.Equals(a.CardText, b.CardText, StringComparison.Ordinal)

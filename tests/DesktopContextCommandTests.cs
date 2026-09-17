@@ -8,7 +8,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     public class DesktopContextCommandTests
     {
         [Fact]
-        public void Primary_key_is_search_in_chatgpt_and_files_in_codex()
+        public void Primary_key_is_search_in_chatgpt_and_changes_in_codex()
         {
             var chat = DesktopContextCommand.FaceFor(
                 DesktopContextCommand.Primary, "ChatGPT", DesktopControl.Search);
@@ -19,7 +19,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("Search", chat.Label);
             Assert.Equal(DesktopControl.Search, chat.Control);
             Assert.True(codex.Enabled);
-            Assert.Equal("Files", codex.Label);
+            Assert.Equal("Changes", codex.Label);
             Assert.Equal(DesktopControl.Changes, codex.Control);
         }
 

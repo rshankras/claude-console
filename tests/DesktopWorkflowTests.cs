@@ -65,8 +65,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.False(defaults.Single(w => w.Id == "review_pr").Submits);
             Assert.False(defaults.Single(w => w.Id == "debug").Submits);
-            // ...and everything else sends on one press.
-            Assert.All(defaults.Where(w => w.Id != "review_pr" && w.Id != "debug"),
+            Assert.False(defaults.Single(w => w.Id == "refactor").Submits);
+            // The remaining briefs identify their scope.
+            Assert.All(defaults.Where(w => w.Id != "review_pr" && w.Id != "debug" && w.Id != "refactor"),
                 w => Assert.True(w.Submits));
         }
 
@@ -119,6 +120,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.All(list.Where(w => drafts.Contains(w.Id)), w => Assert.False(w.Submits));
             Assert.All(list.Where(w => !drafts.Contains(w.Id)), w => Assert.True(w.Submits));
+        }
+
+        [Fact]
+        public void Writing_draft_uses_a_pen_even_for_an_existing_default_configuration()
+        {
+            var legacy = new DesktopWorkflowCommand.WorkflowDef { Id = "draft", Icon = "voice_draft" };
+            Assert.Equal("writing", DesktopWorkflowCommand.WorkflowIcon(legacy, "ChatGPT"));
+            Assert.Equal("voice_draft", legacy.Icon); // do not rewrite user configuration
+        }
+
+        [Fact]
+        public void Optional_review_and_test_execution_do_not_displace_favorites()
+        {
+            var extras = DesktopWorkflowCommand.ExtraWorkflows;
+            Assert.Contains(extras, w => w.Id == "review_changes" && w.Prompt.Contains("uncommitted"));
+            Assert.Contains(extras, w => w.Id == "run_tests" && w.Prompt.Contains("Do not claim tests passed"));
+            Assert.Equal(9, DesktopWorkflowCommand.LoadWorkflows(this.ConfigPath).Count());
         }
 
         private static String RepoDir(params String[] parts)

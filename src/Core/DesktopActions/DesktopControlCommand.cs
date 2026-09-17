@@ -96,7 +96,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                     // or the label drifted) → do nothing rather than guess a direction.
                     var current = auto.Status().Mode;
                     var target = app.ModeNames.FirstOrDefault(n => !String.Equals(n, current, StringComparison.Ordinal));
-                    if (String.IsNullOrEmpty(current) || target == null)
+                    if (!app.ModeNames.Contains(current, StringComparer.Ordinal) || target == null)
                     {
                         PluginLog.Info("DesktopControlCommand(mode): current mode unknown — ignored");
                         return;
@@ -144,9 +144,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             var label = this.GetCommandDisplayName(actionParameter, imageSize);
             var icon = actionParameter switch
             {
-                Stop => "esc",
+                Stop => "stop",
                 NewChat => "new_claude",
-                Mode => "model",
+                Mode => "switch_mode",
                 ShowDiff => "diff",
                 Focus => "terminal",
                 _ => null,

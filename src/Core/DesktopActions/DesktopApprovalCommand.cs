@@ -104,7 +104,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
             if (actionParameter == Approve && pending && !String.IsNullOrEmpty(state.ActiveTitle))
             {
-                var t = state.ActiveTitle;
+                var t = DesktopConversationLabels.Display(state.Mode, state.ActiveTitle);
                 return t.Length <= 18 ? t : t.Substring(0, 17) + "…";
             }
 
@@ -125,7 +125,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             }
 
             return KeyImage.Render(
-                imageSize, actionParameter == Approve ? "Approve" : "Deny", KeyImage.Blue, icon);
+                imageSize, actionParameter == Approve ? "Approve" : "Deny", KeyImage.Gray, icon + "_idle");
         }
 
         // WHY THE CARD TEXT IS NOT ON THE KEY. It was, until hardware said otherwise: the card's

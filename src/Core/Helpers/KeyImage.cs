@@ -296,6 +296,35 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
         }
 
+        /// <summary>A full-key action with a readable title and explicit DRAFT/SEND intent strip.</summary>
+        public static BitmapImage RenderIntentTile(
+            PluginImageSize imageSize, String label, String icon, String intent)
+        {
+            using var bitmap = ButtonCanvas(imageSize);
+            bitmap.Clear(Background);
+            var w = bitmap.Width;
+            var h = bitmap.Height;
+            var scale = Math.Min(w, h) / 96f;
+            var size = (Int32)(Math.Min(w, h) * 0.44f);
+            try
+            {
+                var glyph = PluginResources.ReadImage(IconResource(icon));
+                bitmap.DrawImage(glyph, (w - size) / 2, (Int32)(h * 0.04f), size, size);
+            }
+            catch (Exception ex) { PluginLog.Verbose(ex, $"KeyImage: intent glyph '{icon}' unavailable"); }
+            var lines = WrapConversationTitle(label ?? "", 13, 2);
+            var lineH = (Int32)(15 * scale);
+            var top = (Int32)(h * 0.48f) + Math.Max(0, ((Int32)(h * 0.31f) - lines.Length * lineH) / 2);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                bitmap.DrawText(lines[i], 2, top + i * lineH, w - 4, lineH, White, fontSize: (Int32)(13 * scale));
+            }
+            var barY = (Int32)(h * 0.80f);
+            bitmap.FillRectangle(0, barY, w, h - barY, Gray);
+            bitmap.DrawText(intent ?? "", 0, barY, w, h - barY, White, fontSize: (Int32)(11 * scale));
+            return bitmap.ToImage();
+        }
+
         /// <summary>
         /// A full-surface conversation card: the conversation title occupies the upper 75% and
         /// the live state is written inside a flush colour bar across the bottom 25% — the same

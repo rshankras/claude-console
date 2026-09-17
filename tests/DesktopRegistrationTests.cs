@@ -265,6 +265,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.EndsWith("DesktopControlCommand___mode", pageTwo[0]);
             Assert.EndsWith("DesktopControlCommand___stop", pageTwo[1]);
             Assert.EndsWith("DesktopVoiceDraftCommand", pageTwo[2]);
+            Assert.EndsWith("DesktopComposerCommand___send", pageTwo[7]);
+            Assert.EndsWith("DesktopComposerCommand___output", pageTwo[8]);
+            Assert.Equal("Controls", (String)pages[1]["displayName"]);
             for (var slot = 1; slot <= 4; slot++)
             {
                 Assert.EndsWith($"DesktopContextCommand___secondary_{slot}", pageTwo[slot + 2]);
@@ -277,6 +280,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 Assert.EndsWith($"DesktopWorkflowCommand___slot_{slot}", pageThree[slot - 1]);
             }
+        }
+
+        [Fact]
+        public void Everyday_is_an_explicit_import_with_its_own_identity_and_draft_send_stop_row()
+        {
+            using var zip = System.IO.Compression.ZipFile.OpenRead(RepoFile(
+                "src", "Products", "VizhiDesktop", "package", "optional-profiles", "VizhiDesktop-Everyday.lp5"));
+            String Read(String name) { using var reader = new StreamReader(zip.GetEntry(name).Open()); return reader.ReadToEnd(); }
+            var profile = JsonNode.Parse(Read("ProfileInfo.json"));
+            var guid = (String)profile["name"];
+            Assert.Equal("Vizhi Everyday", (String)profile["displayName"]);
+            Assert.Equal(guid, (String)profile["packageName"]);
+            Assert.Equal(guid, (String)JsonNode.Parse(Read("ApplicationInfo.json"))["defaultProfileName"]);
+            Assert.Contains($"name: {guid}", Read("metadata/LoupedeckPackage.yaml"));
+            using var original = System.IO.Compression.ZipFile.OpenRead(DesktopLp5());
+            using var originalReader = new StreamReader(original.GetEntry("ProfileInfo.json").Open());
+            Assert.NotEqual(guid, (String)JsonNode.Parse(originalReader.ReadToEnd())["name"]);
+            var pages = profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"].AsArray();
+            Assert.Equal(3, pages.Count);
+            var home = pages[0]["controls"].AsArray();
+            Assert.EndsWith("DesktopVoiceDraftCommand", (String)home[6]["pressAction"]);
+            Assert.EndsWith("DesktopComposerCommand___send", (String)home[7]["pressAction"]);
+            Assert.EndsWith("DesktopControlCommand___stop", (String)home[8]["pressAction"]);
+            Assert.DoesNotContain("$ClaudeConsole", Read("metadata/ProfilePreview.json"));
         }
 
         private static String RepoFile(params String[] parts)

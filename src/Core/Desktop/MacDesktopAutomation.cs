@@ -71,6 +71,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 }
             }
             AddContextLabels(args);
+            args.AddRange(new[] { "--send-label", _app.SendLabel });
 
             // 2.5s budget: the walk measured ~130ms end-to-end; the margin covers a cold
             // Chromium tree, not a hung one — BoundedProcess kills anything slower.
@@ -110,6 +111,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             return true;
         }
 
+        public Boolean PressInMode(String[] labels, String mode, out String matched)
+        {
+            matched = null;
+            if (String.IsNullOrEmpty(mode) || String.IsNullOrEmpty(_app.ModePrefix) || labels?.Length is not > 0)
+            {
+                return false;
+            }
+            var args = new List<String> { "press", "--app", _app.BundleId,
+                "--mode-prefix", _app.ModePrefix, "--expect-mode", mode };
+            AddEach(args, "--label", labels);
+            if (!TryParseOk(this.Runner(args, 4000), out var result)) { return false; }
+            matched = ReadString(result, "matched");
+            return true;
+        }
+
         public Boolean PressConversation(String title)
         {
             if (String.IsNullOrWhiteSpace(title) || String.IsNullOrEmpty(_app.ConversationItemMarker))
@@ -131,6 +147,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             }
 
             var args = new List<String> { "write", "--app", _app.BundleId, "--text", text };
+            AddEach(args, "--stop", _app.StopLabels);
+            AddEach(args, "--approve", _app.ApproveLabels);
             if (send)
             {
                 args.Add("--send-label");
@@ -148,6 +166,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
             PluginLog.Info($"MacDesktopAutomation.WriteComposer: {text.Length} chars via {ReadString(root, "method")}, sent={ReadString(root, "sent")}");
             return true;
+        }
+
+        public Boolean SendComposer(out String error)
+        {
+            var args = new List<String> { "send", "--app", _app.BundleId, "--send-label", _app.SendLabel };
+            AddEach(args, "--stop", _app.StopLabels);
+            AddEach(args, "--approve", _app.ApproveLabels);
+            var json = this.Runner(args, 4000);
+            error = TryParseOk(json, out _) ? null : Describe(json);
+            return error == null;
         }
 
         public Boolean SwitchMode(String modeName)

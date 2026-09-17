@@ -71,7 +71,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             KeyImage.Render(imageSize, "All Chats", KeyImage.Blue, "all_chats");
 
         public override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            TryDecodeTitle(actionParameter, out var title) ? Trim(title) : "Unavailable";
+            TryDecodeTitle(actionParameter, out var title) ? Trim(DisplayTitle(title)) : "Unavailable";
 
         public override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
@@ -91,7 +91,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             // surfaces: title wrapped in the top 75%, state word in the bar. FaceFor already yields
             // exactly those inputs; the old icon-plus-badge face was the pre-redesign session look.
             var (word, color, darkText) = DesktopConversationCommand.FaceFor(conversation.State);
-            return KeyImage.RenderConversationSlot(imageSize, Trim(title), word, color, darkText);
+            return KeyImage.RenderConversationSlot(imageSize, DisplayTitle(title), word, color, darkText);
         }
 
         public override void RunCommand(String actionParameter)
@@ -172,6 +172,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             DesktopServices.Declared
                 ? DesktopServices.Monitor.Current.Conversations
                 : Array.Empty<DesktopConversation>();
+
+        private static String DisplayTitle(String title) => DesktopConversationLabels.Display(
+            DesktopServices.Declared ? DesktopServices.Monitor.Current.Mode : "", title);
 
         private static String Trim(String title) =>
             title.Length <= 24 ? title : title.Substring(0, 23) + "…";

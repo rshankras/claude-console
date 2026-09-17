@@ -32,6 +32,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Contextual_press_carries_the_observed_mode_and_refuses_mode_change()
+        {
+            var (auto, calls) = Build("{\"ok\":false,\"error\":\"mode-changed\"}");
+            Assert.False(auto.PressInMode(new[] { "Changes +" }, "Codex", out _));
+            var call = Assert.Single(calls);
+            Assert.Contains("--expect-mode", call);
+            Assert.Contains("--mode-prefix", call);
+            Assert.Contains("Codex", call);
+            Assert.False(auto.PressInMode(new[] { "Search" }, "", out _));
+            Assert.Single(calls);
+        }
+
+        [Fact]
         public void Conversation_navigation_uses_exact_sidebar_selector()
         {
             var auto = new MacDesktopAutomation(new OpenAiDesktopAdapter());

@@ -25,6 +25,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         public DesktopVoiceCommand()
             : base(displayName: "Voice", description: "Speak a prompt — press to start, press again to send it to the app", groupName: "Agent")
         {
+            this.SetWidget(true);
             _face = new ListeningFace(() => this.ActionImageChanged());
             _fail = new FailureFace(() => this.ActionImageChanged(), holdMs: VoiceFailure.HoldMs);
 
@@ -66,17 +67,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             PluginLog.Info($"DesktopVoiceCommand: recording={_face.IsActive}");
         }
 
-        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            StartupLabel ?? (_face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Voice"));
+        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) => "\u200B";
 
-        // Listening wins over a stale failure: a new press means a new attempt.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
-            StartupLabel != null
-                ? KeyImage.Render(imageSize, StartupLabel, KeyImage.Blue, "voice")
-                : _face.IsActive
-                ? KeyImage.Render(imageSize, "Listening", KeyImage.Green, _face.Icon)
-                : _fail.IsActive
-                    ? KeyImage.Render(imageSize, _fail.Text, KeyImage.Red, "voice")
-                    : KeyImage.Render(imageSize, "Voice", KeyImage.Blue, "voice");
+            KeyImage.RenderIntentTile(imageSize,
+                StartupLabel ?? (_face.IsActive ? "Listening" : _fail.IsActive ? _fail.Text : "Voice"),
+                _face.IsActive ? _face.Icon : "voice",
+                _fail.IsActive && !_face.IsActive ? "CHECK APP" : "SEND");
     }
 }

@@ -19,6 +19,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         public DesktopVoiceDraftCommand()
             : base(displayName: "Voice Draft", description: "Speak — the transcript waits in the composer for you to review and send", groupName: "Agent")
         {
+            this.SetWidget(true);
             _face = new ListeningFace(() => this.ActionImageChanged());
             _fail = new FailureFace(() => this.ActionImageChanged(), holdMs: VoiceFailure.HoldMs);
 
@@ -60,17 +61,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             PluginLog.Info($"DesktopVoiceDraftCommand: recording={_face.IsActive}");
         }
 
-        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            StartupLabel ?? (_face.IsActive ? "Listening" : (_fail.IsActive ? _fail.Text : "Voice Draft"));
+        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) => "\u200B";
 
-        // Listening wins over a stale failure: a new press means a new attempt.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
-            StartupLabel != null
-                ? KeyImage.Render(imageSize, StartupLabel, KeyImage.Blue, "voice_draft")
-                : _face.IsActive
-                ? KeyImage.Render(imageSize, "Listening", KeyImage.Green, _face.Icon)
-                : _fail.IsActive
-                    ? KeyImage.Render(imageSize, _fail.Text, KeyImage.Red, "voice_draft")
-                    : KeyImage.Render(imageSize, "Voice Draft", KeyImage.Blue, "voice_draft");
+            KeyImage.RenderIntentTile(imageSize,
+                StartupLabel ?? (_face.IsActive ? "Listening" : _fail.IsActive ? _fail.Text : "Voice Draft"),
+                _face.IsActive ? _face.Icon : "voice_draft",
+                _fail.IsActive && !_face.IsActive ? "CHECK APP" : "DRAFT");
     }
 }

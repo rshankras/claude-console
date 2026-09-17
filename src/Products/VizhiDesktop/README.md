@@ -23,8 +23,9 @@ product. *(Not an OpenAI product; ChatGPT and Codex are trademarks of OpenAI.)*
 **Preview, macOS package only.** The core Accessibility mechanism is verified end to end on a live app:
 reading the approval card unfocused, pressing Allow/Deny with another app frontmost and no focus
 theft, writing and submitting the composer, and switching the app between its ChatGPT and Codex
-modes — all while the app sat in the background. The revised three-chat/All Chats profile and
-voice-runtime repair still need a macOS hardware regression pass. A fail-closed Windows UI
+modes — all while the app sat in the background. Version **0.11.0** adds the Adaptive 2 and Everyday layouts, guarded Send, explicit DRAFT/SEND
+faces, and optional conversation labels. These additions and the voice-runtime repair still need
+a macOS hardware regression pass. Copy Answer remains unavailable pending a verified assistant-response selector. A fail-closed Windows UI
 Automation foundation exists, but application-identity reconnaissance and live validation have
 not been run, so Windows packaging remains deliberately disabled.
 
@@ -73,22 +74,89 @@ conversations. Each card keeps the title in its upper area and reports **Ready**
 **Allow?**, or **Complete** in a coloured bar below it. Complete means ChatGPT marked the finished
 result unread; a conversation already open when it finishes returns directly to Ready. Positions
 stay stable while the sidebar reorders. The middle row is **All Chats · New Chat · Search** in
-ChatGPT and **All Chats · New Chat · Files** in Codex. Files becomes **No Changes** and is disabled
+ChatGPT and **All Chats · New Chat · Changes** in Codex. Changes becomes **No Changes** and is disabled
 until the focused Codex task exposes a diff. All Chats opens a paged folder containing every
 conversation the focused window makes visible; press one to jump. The bottom row answers the one
-that's waiting: **Approve · Deny · Voice** — the same
-sessions-above/answers-below shape as the terminal consoles, so one muscle memory covers the
-whole family.
+that's waiting: **Approve · Deny · Voice**. Idle approval glyphs are grey; pending requests add a risk badge.
+The approval row keeps its position when app modes change.
 
-**Page 2 · Actions.** The top row is always **Mode · Stop · Voice Draft**. The remaining verified
+**Page 2 · Controls.** The top row is always **Mode · Stop · Voice Draft**. Mode shows the
+current mode with switching arrows; pressing it selects the other mode. The remaining verified
 controls adapt by mode: **Projects · Plugins · Scheduled · Explore** in ChatGPT and
-**Permissions · Attach Files · Pull Requests · Quick Chat** in Codex.
+**Permissions · Attach Files · Pull Requests · Quick Chat** in Codex. The final two positions are
+**Send** and **Copy Answer / Changes**. Copy Answer currently reads **No Answer**: this release
+does not have a verified way to distinguish the latest assistant response from other Copy buttons.
 
 **Page 3 · Workflows.** The nine stable positions become general conversation workflows in
 ChatGPT (**Summarize, Explain, Rewrite, Draft, Compare, Research, Brainstorm, Plan, Continue**) and
 development workflows in Codex (**Review PR, Debug, Refactor, Write Tests, Explain Diff, Fix CI,
 Security, Update Dependencies, Continue**). Workflows missing a target are drafts: Vizhi fills the
-composer and brings the app forward for editing instead of sending an incomplete request.
+composer and brings the app forward for editing instead of sending an incomplete request. Each
+key has a **DRAFT** or **SEND** strip; existing composer text is preserved and the workflow shows
+**Draft Exists**. New Codex defaults draft Review PR, Debug, and Refactor because their targets
+need to be supplied. Your existing workflow JSON retains its own submission choices.
+
+## Start with one draft
+
+1. Open the intended conversation and go to **Controls**.
+2. Press **Voice Draft · DRAFT**, speak, then press it again to finish dictation.
+3. Read and edit the transcript in the app. Press **Send** when it is ready.
+4. Use **Stop** to interrupt a running response. Its square icon is distinct from navigation.
+
+**Voice · SEND**, on the standard home page, sends the transcript when you stop dictating.
+It is speech-to-text, not native Voice Chat. Workflows marked SEND also submit immediately;
+DRAFT workflows wait for your edit. These keys address the window targeted when the operation
+runs, so keep the intended conversation open through transcription. Existing draft text blocks
+insertion; move or finish that draft before starting another workflow or dictation.
+
+Send does not replace text. It requires a non-empty draft, one composer, and an enabled exact
+Send control in the composer's local container. It refuses while an approval or Stop control
+is present, on ambiguous/incomplete surfaces, or if its window/composer/draft changes during
+validation. **No Draft** means no eligible draft; **Not Sent** means the guarded operation failed.
+This cannot be treated as an atomic app API: live multi-window testing remains required.
+
+## Choose a layout
+
+- **Vizhi Adaptive 2** keeps Approve · Deny · Voice on the home page. It is the packaged default
+  for new installations. Updates preserve the currently selected profile; choose Adaptive 2 in
+  Options+ to adopt the new layout.
+- **Vizhi Everyday** replaces only the home approval row with **Voice Draft · Send · Stop**.
+  Voice Draft is the dictation-to-draft action. The other two pages are the same. Import
+  [VizhiDesktop-Everyday.lp5](package/optional-profiles/VizhiDesktop-Everyday.lp5) explicitly in
+  Options+; it is stored outside the auto-import folder and never selected automatically.
+
+Both profiles follow ChatGPT/Codex mode. Everyday is a user-selected alternative; switching
+app modes never swaps approval keys into the dictation row. Existing customized profiles are retained.
+
+## Short chat labels and workflow favorites
+
+Configuration lives in `~/.claude/claude-console/`. Reload Vizhi Desktop or restart Logi Plugin
+Service after editing these files. Examples are in [package/examples](package/examples).
+
+**Conversation labels:** create `desktop-conversation-labels.json` with exact app titles:
+
+```json
+{
+  "ChatGPT": { "Planning the September trip": "Trip" },
+  "Codex": { "Review Vizhi Desktop integration": "Vizhi" }
+}
+```
+
+Aliases appear on conversation cards, in All Chats, and on identifiable approval captions. They do not rename chats or change the
+original title used to navigate or verify approvals. Missing, invalid, empty, or duplicated
+aliases fall back to the original title. Mode names and title keys are case-sensitive.
+
+**Workflow favorites:** edit `desktop-chatgpt-workflows.json` and `desktop-workflows.json`
+(Codex). The first nine usable entries fill the nine positions in order. Each entry has `id`,
+`label`, `icon`, `prompt`, and `submit`; `false` drafts, `true` sends. Existing files are never
+rewritten during upgrades. Use an explicit `submit` value when creating a favorite; older
+entries without one retain their existing send behavior.
+
+**Review Changes** and **Run Tests** are also available as separate optional actions in Options+.
+Review Changes scopes itself to uncommitted work and stops if the tree is clean. Review PR
+requires a PR identifier. Run Tests executes existing tests and reports evidence; Write Tests
+asks for new coverage. To put an optional action on the adaptive workflow page, replace one
+entry in the Codex JSON with its example from `desktop-workflow-extras.json`.
 
 ## What it will not do
 
@@ -97,8 +165,8 @@ composer and brings the app forward for editing instead of sending an incomplete
 - **No cost or context keys.** The desktop app publishes neither, and this keypad never shows a
   number the agent did not report. (The terminal consoles show cost for Claude Code because Claude
   Code reports it.)
-- **No typing into the wrong window.** Every action addresses the app's controls directly through
-  Accessibility rather than sending keystrokes, so there is no focused window to get wrong.
+- **No generic Copy fallback.** An arbitrary Copy control may belong to a user message, code
+  block, or older response. Copy Answer stays unavailable until message ownership is verified.
 
 ## Permissions
 

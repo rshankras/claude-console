@@ -21,18 +21,27 @@ def function(name):
     return source[start:end]
 
 fixture = '''
+import Foundation
 // Minimal AX tree facade for executing the real scanner without live app access.
 struct FakeElement {
     let role: String
     let text: String
     let children: [FakeElement]
+    var value: String? = nil
+    var enabled: Bool? = true
 }
 typealias AXUIElement = FakeElement
 let kAXRoleAttribute = "AXRole"
 let kAXPressAction = "AXPress"
 let MAX_DEPTH = 40
 let MAX_NODES = 1500
-func str(_ el: FakeElement, _ name: String) -> String? { el.role }
+let kAXValueAttribute = "AXValue"
+let kAXEnabledAttribute = "AXEnabled"
+func str(_ el: FakeElement, _ name: String) -> String? { name == kAXValueAttribute ? el.value : el.role }
+func attr(_ el: FakeElement, _ name: String) -> Any? { el.enabled }
+let arguments = ["--send-label": ["Send"], "--stop": ["Stop"], "--approve": ["Allow"]]
+func argValues(_ name: String) -> [String] { arguments[name] ?? [] }
+func argValue(_ name: String) -> String? { argValues(name).first }
 func children(_ el: FakeElement) -> [FakeElement] { el.children }
 func displayText(_ el: FakeElement) -> String { el.text }
 func actionNames(_ el: FakeElement) -> [String] { ["AXPress"] }
@@ -51,6 +60,7 @@ func targetWindows() -> [AXUIElement] { focusedWindows }
 fixture += next(line for line in source.splitlines() if line.startswith('let operationWindows =')) + '\n'
 fixture += function('scanWindows') + '\n'
 fixture += function('conversationMatches') + '\n' + function('conversationState')
+fixture += '\n' + '\n'.join(function(n) for n in ['firstPressable', 'composerSendTarget', 'sendTarget'])
 fixture += '''
 func row(_ text: String, _ depth: Int = 0) -> Node {
     Node(el: original, role: "AXButton", text: text, pressable: true, depth: depth)
@@ -76,7 +86,32 @@ for baseline in [1, 2] {
     assert(conversationState(state: "unread", images: baseline + 1, baseline: baseline) == "unread")
 }
 assert(conversationState(state: "idle", images: 3, baseline: nil) == "idle")
-print("Desktop AX window targeting, matching, and activity regressions passed")
+func node(_ role: String, _ text: String, _ depth: Int, enabled: Bool? = true, value: String? = nil) -> Node {
+    Node(el: FakeElement(role: role, text: text, children: [], value: value, enabled: enabled),
+         role: role, text: text, pressable: role == "AXButton", depth: depth)
+}
+let web = node("AXWebArea", "", 0)
+let group = node("AXGroup", "", 1)
+let composer = node("AXTextArea", "reviewed draft", 2, value: "reviewed draft")
+let send = node("AXButton", "Send", 2)
+let eligible = [web, group, composer, send]
+assert(sendTarget(in: eligible)?.text == "Send")
+// A disabled/unknown-enabled button, wrong label, duplicate composer, or draftless placeholder
+// must never submit. An unrelated Send button elsewhere in the window is not a fallback.
+assert(sendTarget(in: [web, group, composer, node("AXButton", "Send", 2, enabled: false)]) == nil)
+assert(sendTarget(in: [web, group, composer, node("AXButton", "Send", 2, enabled: nil)]) == nil)
+assert(sendTarget(in: [web, group, composer, node("AXButton", "Send feedback", 2)]) == nil)
+assert(sendTarget(in: eligible + [composer]) == nil)
+assert(sendTarget(in: eligible + [send]) == nil)
+assert(sendTarget(in: [web, group, node("AXTextArea", "Ask anything", 2, value: ""), send]) == nil)
+assert(sendTarget(in: [web, group, node("AXTextArea", " ", 2, value: " "), send]) == nil)
+assert(sendTarget(in: [web, group, composer, node("AXGroup", "other", 1), send]) == nil)
+assert(sendTarget(in: eligible + [node("AXButton", "Stop", 1)]) == nil)
+assert(sendTarget(in: eligible + [node("AXButton", "Allow", 1)]) == nil)
+// Nested composer wrappers remain supported within the same local group.
+assert(sendTarget(in: [web, group, node("AXGroup", "editor", 2),
+    node("AXTextArea", "draft", 3, value: "draft"), send]) != nil)
+print("Desktop AX targeting, draft eligibility, matching, and activity regressions passed")
 '''
 with tempfile.TemporaryDirectory(prefix='vizhi-ax-tests-') as tmp:
     script = Path(tmp) / 'main.swift'

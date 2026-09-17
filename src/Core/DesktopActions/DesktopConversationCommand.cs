@@ -96,7 +96,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             }
 
             var (word, color, darkText) = FaceFor(conv.State);
-            return KeyImage.RenderConversationSlot(imageSize, conv.Title, word, color, darkText);
+            var title = DesktopConversationLabels.Display(DesktopServices.Monitor.Current.Mode, conv.Title);
+            return KeyImage.RenderConversationSlot(imageSize, title, word, color, darkText);
         }
 
         // Desktop states are the app's own observable truths. Colour reinforces the two states

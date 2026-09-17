@@ -27,6 +27,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Open one exact, unambiguous sidebar title. Unsupported helpers fail closed.</summary>
         Boolean PressConversation(String title) => false;
 
+        /// <summary>Press a contextual destination only if the observed mode still matches.</summary>
+        Boolean PressInMode(String[] labels, String mode, out String matched) { matched = null; return false; }
+
         /// <summary>
         /// Press with the expected-card guard: <paramref name="expectCard"/> is the card text
         /// the keypad RENDERED; the press is refused ("card-changed") when the card beside the
@@ -41,6 +44,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// user targeted, or nowhere, and the failure is reported.
         /// </summary>
         Boolean WriteComposer(String text, Boolean send, out String error);
+
+        /// <summary>Submit the existing draft without replacing it. Unsupported helpers fail closed.</summary>
+        Boolean SendComposer(out String error) { error = "unsupported"; return false; }
+
+        /// <summary>Copy only an identifiable, completed assistant answer.</summary>
+        Boolean CopyAnswer(out String error) { error = "unsupported"; return false; }
 
         /// <summary>Switch the app to <paramref name="modeName"/> (switcher press, then menu pick).</summary>
         Boolean SwitchMode(String modeName);

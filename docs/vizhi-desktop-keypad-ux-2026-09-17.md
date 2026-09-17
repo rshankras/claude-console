@@ -2,7 +2,7 @@
 
 Date: 2026-09-17  
 Branch: `integrate/vizhi-desktop-main`  
-Status: Design recommendation for future work; not an approved implementation plan.
+Status: Implementation authorized and applied on the integration branch; live validation and installation pending.
 
 ## Recommendation
 
@@ -162,7 +162,7 @@ Global-profile actions remain useful for supervision while another app is frontm
 6. Add optional short conversation labels and workflow favorites.
 7. Prototype the everyday home preset and compare it with the established layout using actual tasks.
 
-These are proposed priorities, not authorization to implement or install the redesign.
+The user subsequently authorized implementation, including profile changes. Installation remains a separate step.
 
 ## Validation questions
 
@@ -177,4 +177,49 @@ These are proposed priorities, not authorization to implement or install the red
 
 ## Implementation status
 
-This note captures UX recommendations only. The preceding integration fixes for targeting, approvals, runtime upgrades, release-helper builds, and profile selection are separate work. None of the new layouts or actions proposed here should be treated as shipped or installed based on this document.
+Implementation target: **0.11.0**, branch `integrate/vizhi-desktop-main`.
+
+| Plan item | Result |
+|---|---|
+| Preserve three pages and direct approvals | Adaptive 2 profile generated, 27 bindings; home approval row retained |
+| Add Send | One helper invocation, unique composer, exact enabled local Send, non-empty draft, window/composer/text recheck; no send while busy or waiting approval |
+| Fill Controls positions | Send plus adaptive Copy Answer / Changes; Copy remains unavailable pending live feasibility |
+| Clarify labels and icons | Square Stop, switching arrows, writing glyph, grey idle approvals, full-tile DRAFT/SEND strips for voice and workflows |
+| Improve workflow scope | Review PR, Debug, and Refactor draft in new defaults; optional Review Changes and Run Tests actions; pre-existing drafts preserved |
+| Short conversation labels | Mode-scoped JSON aliases, used only for display; original targeting and approval identities retained |
+| Workflow favorites | Existing per-mode JSON ordering retained; examples and editing instructions added; user files preserved |
+| Everyday preset | Separate explicit-import profile with Voice Draft (dictate to draft) · Send · Stop; no automatic approval-row switching |
+| Profile migration | New stable GUIDs, existing selection/customizations retained; desktop preview metadata replaces stale donor metadata |
+| Mode refresh investigation | Regression covers same titles across a mode change and verifies refreshed controls/draft state; photographed behavior still needs reproduction on hardware |
+
+See the [product walkthrough and configuration guide](../src/Products/VizhiDesktop/README.md),
+[default profile](../src/Products/VizhiDesktop/package/profiles/DefaultProfile70.lp5), and
+[Everyday profile](../src/Products/VizhiDesktop/package/optional-profiles/VizhiDesktop-Everyday.lp5).
+
+**Remaining live validation:** Voice Draft → inspect → Send in ChatGPT and Codex, with empty,
+existing, and edited drafts; window/conversation changes while an operation is pending; mode
+switch and Search/Changes refresh; readability of the new strips on the keypad; Everyday task
+flow; and identification of the latest completed assistant message. Computer Use blocked live
+app access during this work; that was not bypassed through the helper. Native Voice Chat and
+Terminal remain future candidates. Copy Answer deliberately stays at **No Answer** and performs
+no copy action until assistant ownership and completion can be established.
+
+Automated validation covers the helper's actual matching functions against synthetic trees,
+client/monitor behavior, aliases, profile identities/bindings, and preservation of existing
+configuration. Helper/plugin builds are isolated from the live runtime. These checks do not
+establish live app compatibility or hardware readability. The work has not been installed.
+
+### Validation recorded for 0.11.0
+
+- Full C# suite: **1,433 passed, 13 skipped** (platform-specific Windows tests).
+- All script suites passed, including the production helper package-build test and synthetic AX tests.
+- Release plugin build: **0 warnings, 0 errors**, with `SkipPluginLink=true`.
+- Signed helper compiled using `--no-install` to a temporary output; the installed runtime was preserved.
+- Both profiles: all 27 bindings and preview identities checked; a second generation produced identical bytes.
+- New Stop and writing PNGs visually inspected. Standalone SDK tile rendering could not load the
+  host's SkiaSharp dependency; final tile rendering/readability still needs the Logi host and keypad.
+
+Reproduce with `bash tests/run-all.sh`, then
+`dotnet build src/Products/VizhiDesktop/VizhiDesktopPlugin.csproj -c Release -p:SkipPluginLink=true`.
+Regenerate profiles with `python3 tools/make-desktop-profile.py`; regenerate the new desktop-only
+icons with `swift tools/generate-desktop-icons.swift --ux-only`.

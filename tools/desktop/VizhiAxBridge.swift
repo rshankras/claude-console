@@ -25,6 +25,8 @@
 //           Set-value races React's async state: set -> settle -> verify -> fall back to
 //           AXFocused+AXSelectedText (the editing pipeline) -> verify again. Proven 2026-08-24.
 //   focus   -> {"ok":true}   the ONE deliberate focus: bring the app forward.
+//   send    --send-label <label> --stop <label>... --approve <label>...
+//           -> {"ok":true,"sent":true}; preserves the current draft, refuses ambiguous targets.
 //
 // Exit codes: 0 ok · 2 not AX-trusted · 3 app not running · 4 no match / not found · 5 AX error.
 // AX trust rides on the RESPONSIBLE process: spawned directly by LogiPluginService this helper
@@ -95,7 +97,7 @@ func forceAccessibility(_ appEl: AXUIElement) {
 
 if verb == "help" || verb == "--help" {
     print("""
-    VizhiAxBridge <status|inspect|press|write|focus> --app <bundle-id> [verb args]  (see source header)
+    VizhiAxBridge <status|inspect|press|write|send|focus> --app <bundle-id> [verb args]  (see source header)
     """)
     exit(0)
 }
@@ -146,9 +148,10 @@ let operationWindows = targetWindows()
 func scanWindows() -> (nodes: [Node], webArea: Bool) {
     var nodes: [Node] = []
     var webArea = false
+    var complete = true
     var visited = 0
     func rec(_ el: AXUIElement, _ depth: Int) {
-        if depth > MAX_DEPTH || visited > MAX_NODES { return }
+        if depth > MAX_DEPTH || visited >= MAX_NODES { complete = false; return }
         visited += 1
         let role = str(el, kAXRoleAttribute as String) ?? "?"
         if role == "AXWebArea" { webArea = true }
@@ -157,7 +160,8 @@ func scanWindows() -> (nodes: [Node], webArea: Bool) {
         for c in children(el) { rec(c, depth + 1) }
     }
     for w in operationWindows { rec(w, 0) }
-    return (nodes, webArea)
+    // A partial tree cannot establish uniqueness or rule out an approval/running task.
+    return (nodes, webArea && complete)
 }
 
 // Bounded wait for the web content tree — used by press/write (which must not act on a half
@@ -179,6 +183,46 @@ func firstPressable(matching labels: [String], in nodes: [Node]) -> Node? {
     return nodes.first { n in
         n.pressable && !n.text.isEmpty && needles.contains { n.text.lowercased().contains($0) }
     }
+}
+
+// Send is never a substring search over the entire window. Require exactly one composer,
+// a non-empty draft, and an enabled exact Send button in a shared local container. The
+// window/web area are too broad to establish that relationship. Unknown layouts fail closed.
+func composerSendTarget(nodes: [Node], label: String, enabled: (Node) -> Bool) -> Node? {
+    let composers = nodes.indices.filter { nodes[$0].role == "AXTextArea" }
+    guard !label.isEmpty, composers.count == 1 else { return nil }
+    let index = composers[0]
+    guard !nodes[index].text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+    var depth = nodes[index].depth
+    for i in (0..<index).reversed() where nodes[i].depth < depth {
+        let ancestor = nodes[i]
+        if ["AXWindow", "AXWebArea"].contains(ancestor.role) { return nil }
+        depth = ancestor.depth
+        let end = nodes[(i + 1)...].firstIndex { $0.depth <= depth } ?? nodes.count
+        let matches = nodes[(i + 1)..<end].filter { $0.pressable && $0.text == label }
+        if !matches.isEmpty {
+            return matches.count == 1 && enabled(matches[0]) ? matches[0] : nil
+        }
+    }
+    return nil
+}
+
+func sendTarget(in nodes: [Node]) -> Node? {
+    // AXValue, not the text area's placeholder/description, establishes that a draft exists.
+    let composers = nodes.filter { $0.role == "AXTextArea" }
+    guard composers.count == 1,
+          let draft = str(composers[0].el, kAXValueAttribute as String),
+          !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          firstPressable(matching: argValues("--stop"), in: nodes) == nil,
+          firstPressable(matching: argValues("--approve"), in: nodes) == nil else { return nil }
+    return composerSendTarget(nodes: nodes, label: argValue("--send-label") ?? "") {
+        (attr($0.el, kAXEnabledAttribute as String) as? Bool) == true
+    }
+}
+
+func sameOperationWindow() -> Bool {
+    let current = targetWindows()
+    return operationWindows.count == 1 && current.count == 1 && CFEqual(operationWindows[0], current[0])
 }
 
 // Exact titles only, and only rows with the adapter's sidebar marker in their subtree.
@@ -332,6 +376,10 @@ case "status":
         "approvalPresent": approve != nil,
         "denyPresent": deny != nil,
         "stopPresent": stop != nil,
+        "canSend": sendTarget(in: nodes) != nil,
+        // No verified assistant-message ownership selector in this adapter yet. In particular,
+        // the last arbitrary "Copy message" button can belong to the user or an older answer.
+        "canCopyAnswer": false,
         "searchPresent": present("--search"),
         "changesPresent": present("--changes"),
         "projectsPresent": present("--projects"),
@@ -352,7 +400,14 @@ case "press":
     if labels.isEmpty { fail("no --label given", 4) }
     if !waitForWebContent(seconds: 2) { fail("surface-unavailable", 5) }
     let before = frontmostName()
-    let pressScan = scanWindows().nodes
+    let currentScan = scanWindows()
+    if !currentScan.webArea { fail("surface-unavailable", 5) }
+    let pressScan = currentScan.nodes
+    if let expectedMode = argValue("--expect-mode") {
+        let prefix = argValue("--mode-prefix") ?? ""
+        let modes = pressScan.filter { !prefix.isEmpty && $0.text.hasPrefix(prefix) }
+        guard modes.count == 1, modes[0].text == prefix + expectedMode else { fail("mode-changed", 6) }
+    }
     let candidate: Node?
     if let marker = argValue("--conversation") {
         let matches = conversationMatches(title: labels[0], marker: marker, nodes: pressScan)
@@ -379,16 +434,46 @@ case "press":
     if hasFlag("--dry") {
         emit(["matched": target.text, "dry": true], code: 0)
     }
+    guard sameOperationWindow() else { fail("window-changed", 6) }
     let rc = AXUIElementPerformAction(target.el, kAXPressAction as CFString)
     if rc != .success { fail("press-failed rc=\(rc.rawValue)", 5) }
     emit(["matched": target.text, "frontBefore": before, "frontAfter": frontmostName()], code: 0)
 
+case "send":
+    if !waitForWebContent(seconds: 2) { fail("surface-unavailable", 5) }
+    let initialScan = scanWindows()
+    if !initialScan.webArea { fail("surface-unavailable", 5) }
+    let initial = initialScan.nodes
+    guard let target = sendTarget(in: initial),
+          let composer = initial.first(where: { $0.role == "AXTextArea" }),
+          let draft = str(composer.el, kAXValueAttribute as String) else { fail("no-sendable-draft", 4) }
+    let windowTitle = str(operationWindows[0], kAXTitleAttribute as String)
+    let latestScan = scanWindows()
+    let latest = latestScan.nodes
+    guard latestScan.webArea, sameOperationWindow(),
+          str(operationWindows[0], kAXTitleAttribute as String) == windowTitle,
+          latest.contains(where: { $0.role == "AXTextArea" && CFEqual($0.el, composer.el) }),
+          str(composer.el, kAXValueAttribute as String) == draft,
+          let confirmed = sendTarget(in: latest), CFEqual(confirmed.el, target.el) else {
+        fail("composer-target-changed", 6)
+    }
+    if AXUIElementPerformAction(target.el, kAXPressAction as CFString) != .success {
+        fail("send-press-failed", 5)
+    }
+    emit(["sent": true], code: 0)
+
 case "write":
     guard let text = argValue("--text"), !text.isEmpty else { fail("no --text given", 4) }
     if !waitForWebContent(seconds: 2) { fail("surface-unavailable", 5) }
-    guard let composer = scanWindows().nodes.first(where: { $0.role == "AXTextArea" }) else {
-        fail("no-composer", 4)
+    let writeScan = scanWindows()
+    if !writeScan.webArea { fail("surface-unavailable", 5) }
+    let composers = writeScan.nodes.filter { $0.role == "AXTextArea" }
+    guard composers.count == 1, sameOperationWindow() else { fail("no-unique-composer", 4) }
+    let composer = composers[0]
+    guard let existing = str(composer.el, kAXValueAttribute as String) else {
+        fail("composer-value-unavailable", 4)
     }
+    if !existing.isEmpty { fail("draft-exists", 4) }
 
     // Plan A: raw value set. Readback races React's async state application, so settle first;
     // a stale readback does NOT mean failure (first sitting proved the set landed anyway) —
@@ -410,18 +495,19 @@ case "write":
     }
 
     var sent = false
-    if let sendLabel = argValue("--send-label") {
+    if argValue("--send-label") != nil {
         // Abort if the user changed windows or the composer was replaced during the write.
         // Even this final scan stays scoped to the original window.
         let currentWindows = targetWindows()
-        let sendNodes = scanWindows().nodes
-        guard operationWindows.count == 1 && currentWindows.count == 1,
+        let sendScan = scanWindows()
+        let sendNodes = sendScan.nodes
+        guard sendScan.webArea, operationWindows.count == 1 && currentWindows.count == 1,
               CFEqual(operationWindows[0], currentWindows[0]),
               sendNodes.contains(where: { CFEqual($0.el, composer.el) }),
               str(composer.el, kAXValueAttribute as String) == text else {
             fail("composer-target-changed", 6)
         }
-        guard let send = firstPressable(matching: [sendLabel], in: sendNodes) else {
+        guard let send = sendTarget(in: sendNodes) else {
             emit(["method": method, "sent": false, "error": "send-not-found"], code: 4)
         }
         if AXUIElementPerformAction(send.el, kAXPressAction as CFString) != .success {

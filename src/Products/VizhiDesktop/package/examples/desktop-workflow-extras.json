@@ -1,0 +1,16 @@
+[
+  {
+    "id": "review_changes",
+    "label": "Review Changes",
+    "icon": "review",
+    "submit": true,
+    "prompt": "Review the current workspace's uncommitted changes. If the working tree is clean, report that and stop. Check correctness, edge cases, and security; give file:line and a concrete failure scenario for each finding. Do not edit files."
+  },
+  {
+    "id": "run_tests",
+    "label": "Run Tests",
+    "icon": "write_tests",
+    "submit": true,
+    "prompt": "Run this project's existing relevant test suite using its documented commands. Report the command, exit status, failures, and any tests you could not run. Do not claim tests passed unless you executed them; do not write new tests or change code."
+  }
+]

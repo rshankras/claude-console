@@ -1,26 +1,15 @@
 #!/usr/bin/env python3
-"""Build Vizhi Desktop's packaged keypad profile from Claude Console's as a structural donor.
+"""Rebuild Vizhi Desktop's two 3x3 profiles from its tracked profile structure.
 
-Same three laws as make-codex-profile.py, which this follows:
-  1. Key bindings name the plugin that owns them ($VizhiDesktop___...); anything else is a key
-     that renders and does nothing.
-  2. Identity is the GUID, not the display string — and it lives in FOUR places (ProfileInfo
-     name + packageName, ApplicationInfo defaultProfileName, metadata yaml name). VizhiCodex's
-     package ships with the fourth still carrying the donor GUID (latent dedupe hazard); this
-     product ships all four correct.
-  3. Keys for things the product does not have are DROPPED, not disabled. The desktop product
-     shares no key with the terminal layout, so every donor binding is dropped and one page is
-     rebuilt from scratch; donor pages 2-5 are removed outright.
-
-Deliberately inherited from the donor: metadata/ProfilePreview.json (Options+ cosmetic preview
-only — carries donor action names, same known-cosmetic state VizhiCodex ships with) and the
-generic dial adjustment + its ActionIcons entry (the service-owned mouse-wheel default).
+Each binding names VizhiDesktop; identity agrees in all four package documents. The default
+retains approvals, and Everyday is an explicit import outside the auto-import profiles folder.
+The existing profile supplies only hardware geometry and service-owned dial bindings. Preview
+metadata is rebuilt with desktop labels and glyphs. Outputs have deterministic ZIP timestamps.
 
 Usage: python3 tools/make-desktop-profile.py
-Reads  src/Products/ClaudeConsole/package/profiles/DefaultProfile70.lp5
-Writes src/Products/VizhiDesktop/package/profiles/DefaultProfile70.lp5
 """
 
+import base64
 import io
 import json
 import pathlib
@@ -28,19 +17,21 @@ import sys
 import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-DONOR = ROOT / "src/Products/ClaudeConsole/package/profiles/DefaultProfile70.lp5"
 OUT = ROOT / "src/Products/VizhiDesktop/package/profiles/DefaultProfile70.lp5"
+DONOR = OUT  # tracked desktop geometry; never depend on generated terminal product packages
 
 # Adaptive-profile identity. Rotated once for the mode-aware layout: the updater installs this as
-# a new default and RETAINS the earlier profile, so existing user customization is never overwritten.
+# an additional profile and RETAINS the user-selected default and earlier profile, so existing user customization is never overwritten.
 # Never regenerate for ordinary updates or Options+ will accumulate duplicate profiles.
-GUID = "F2C5D1F769AD4BE19B5902EF3309213A"
+GUID = "6CA374714642475581835B05D0E6F7AC"
+EVERYDAY_GUID = "A4B07D949FB2461B941D80BEB3D77A28"
+EVERYDAY_OUT = OUT.parent.parent / "optional-profiles/VizhiDesktop-Everyday.lp5"
 APP = "@_vizhidesktop"
 DISPLAY = "Vizhi Desktop"
-PROFILE_DISPLAY = "Vizhi Adaptive"
+PROFILE_DISPLAY = "Vizhi Adaptive 2"
 PLUGIN = "VizhiDesktop"
 BUNDLE = "com.openai.codex"
-DESCRIPTION = "Codex agent controls for the ChatGPT desktop app."
+DESCRIPTION = "Conversations, app controls, and nine adaptive workflow favorites for ChatGPT and Codex."
 
 NS = "Loupedeck.ClaudeConsolePlugin.DesktopActions"
 
@@ -74,7 +65,7 @@ PAGE_ONE = [
     act("DesktopConversationCommand", "3"),       # 2  ┘ state faces, press to jump
     folder("AllChatsDynamicFolder"),              # 3  ┐ overflow: every AX-visible conversation
     act("DesktopControlCommand", "new_chat"),    # 4  │ start work; status already lives in cards
-    act("DesktopContextCommand", "primary"),     # 5  ┘ Search in ChatGPT · Files in Codex
+    act("DesktopContextCommand", "primary"),     # 5  ┘ Search in ChatGPT · Changes in Codex
     act("DesktopApprovalCommand", "approve"),     # 6  ┐
     act("DesktopApprovalCommand", "deny"),        # 7  │ the bottom row answers
     act("DesktopVoiceCommand"),                   # 8  ┘
@@ -89,8 +80,8 @@ PAGE_TWO = [
     act("DesktopContextCommand", "secondary_2"), # 4  Plugins · Attach Files
     act("DesktopContextCommand", "secondary_3"), # 5  Scheduled · Pull Requests
     act("DesktopContextCommand", "secondary_4"), # 6  Explore · Quick Chat
-    None,                                         # 7
-    None,                                         # 8
+    act("DesktopComposerCommand", "send"),        # 7  submit the existing draft
+    act("DesktopComposerCommand", "output"),      # 8  Copy Answer (when supported) · Changes
 ]
 
 # Page 3 · adaptive workflows. The physical slots stay fixed; DesktopWorkflowCommand resolves
@@ -98,15 +89,22 @@ PAGE_TWO = [
 PAGE_THREE = [act("DesktopWorkflowCommand", f"slot_{slot}") for slot in range(1, 10)]
 
 
-def main() -> None:
-    donor = zipfile.ZipFile(DONOR)
-    entries = {i.filename: donor.read(i.filename) for i in donor.infolist() if not i.is_dir()}
+EVERYDAY_HOME = PAGE_ONE[:6] + [
+    act("DesktopVoiceDraftCommand"),
+    act("DesktopComposerCommand", "send"),
+    act("DesktopControlCommand", "stop"),
+]
+
+
+def build_profile(out, guid, display_name, home) -> None:
+    with zipfile.ZipFile(DONOR) as donor:
+        entries = {i.filename: donor.read(i.filename) for i in donor.infolist() if not i.is_dir()}
 
     # --- ProfileInfo.json: identity + a single rebuilt page ---
     profile = json.loads(entries["ProfileInfo.json"])
-    profile["name"] = GUID
-    profile["packageName"] = GUID          # self-owning: installs refresh instead of skipping
-    profile["displayName"] = PROFILE_DISPLAY
+    profile["name"] = guid
+    profile["packageName"] = guid          # self-owning: installs refresh instead of skipping
+    profile["displayName"] = display_name
     profile["description"] = DESCRIPTION
     profile["applicationName"] = APP
     profile["nativePluginName"] = PLUGIN
@@ -114,7 +112,7 @@ def main() -> None:
     for mode in profile["layout"]["layoutModes"]:
         for ws in mode["workspaces"]:
             pages = ws["pressPages"]
-            layout_pages = [("Conversations", PAGE_ONE), ("Actions", PAGE_TWO), ("Workflows", PAGE_THREE)]
+            layout_pages = [("Conversations", home), ("Controls", PAGE_TWO), ("Workflows", PAGE_THREE)]
             if len(pages) < len(layout_pages):
                 sys.exit(f"donor has fewer than {len(layout_pages)} press pages — wrong donor?")
             kept = []
@@ -136,7 +134,7 @@ def main() -> None:
     app_info["description"] = DESCRIPTION
     app_info["nativePluginName"] = PLUGIN
     app_info["processOrBundleName"] = BUNDLE
-    app_info["defaultProfileName"] = GUID
+    app_info["defaultProfileName"] = guid
     entries["ApplicationInfo.json"] = json.dumps(app_info, indent=2).encode()
 
     # --- metadata/LoupedeckPackage.yaml: the fourth GUID location, shipped CORRECT here ---
@@ -144,9 +142,9 @@ def main() -> None:
     fixed = []
     for line in yaml_text.splitlines():
         if line.startswith("name:"):
-            fixed.append(f"name: {GUID}")
+            fixed.append(f"name: {guid}")
         elif line.startswith("displayName:"):
-            fixed.append(f"displayName: {PROFILE_DISPLAY}")
+            fixed.append(f"displayName: {display_name}")
         else:
             fixed.append(line)
     entries["metadata/LoupedeckPackage.yaml"] = ("\n".join(fixed) + "\n").encode()
@@ -155,16 +153,41 @@ def main() -> None:
     entries["metadata/AdvancedInfo.json"] = json.dumps(
         {"additionalPluginNames": [PLUGIN]}).encode()
 
+    # Cosmetic preview has the home-page controls; live faces are rendered by the plugin.
+    labels = ["Conversation 1", "Conversation 2", "Conversation 3", "All Chats", "New Chat",
+              "Search / Changes"] + (["Voice Draft · DRAFT", "Send", "Stop"] if home == EVERYDAY_HOME
+                                      else ["Approve", "Deny", "Voice · SEND"])
+    icons = ["all_chats", "all_chats", "all_chats", "all_chats", "new_claude", "explore"] + (
+        ["voice_draft", "enter", "stop"] if home == EVERYDAY_HOME else ["yes_idle", "no_idle", "voice"])
+    icon_dir = ROOT / "src/Products/VizhiDesktop/Resources/desktop_icons"
+    def icon_bytes(icon):
+        path = icon_dir / f"{icon}.png"
+        if not path.exists():
+            path = ROOT / "src/Core/Resources/icons" / f"{icon}.png"
+        return path.read_bytes()
+
+    entries["metadata/ProfilePreview.json"] = json.dumps({
+        "buttonPages": [{"controlId": i, "actionName": binding, "displayName": label,
+                         "description": "Live desktop action; follows the active conversation and mode.",
+                         "image": base64.b64encode(icon_bytes(icon)).decode()}
+                        for i, (binding, label, icon) in enumerate(zip(home, labels, icons))],
+        "encoderPages": []}, indent=2).encode()
+
     # --- write (store, like the originals) ---
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
         for name, data in entries.items():
-            z.writestr(name, data)
-    OUT.write_bytes(buf.getvalue())
+            z.writestr(zipfile.ZipInfo(name, date_time=(2026, 9, 17, 0, 0, 0)), data)
+    out.write_bytes(buf.getvalue())
 
-    bound = sum(1 for b in PAGE_ONE + PAGE_TWO + PAGE_THREE if b)
-    print(f"wrote {OUT.relative_to(ROOT)}: 3 pages, {bound} bound keys, GUID {GUID}")
+    bound = sum(1 for b in home + PAGE_TWO + PAGE_THREE if b)
+    print(f"wrote {out.relative_to(ROOT)}: 3 pages, {bound} bound keys, GUID {guid}")
+
+
+def main() -> None:
+    build_profile(OUT, GUID, PROFILE_DISPLAY, PAGE_ONE)
+    build_profile(EVERYDAY_OUT, EVERYDAY_GUID, "Vizhi Everyday", EVERYDAY_HOME)
 
 
 if __name__ == "__main__":

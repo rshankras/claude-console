@@ -37,7 +37,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             new WorkflowDef { Id = "review_pr",   Label = "Review PR",   Icon = "review",      Submit = false, Prompt = "Review pull request #: correctness first, then edge cases, error handling, and security; give file:line and a concrete failure scenario per finding, skip style nits, and finish with merge / needs-work and the one change that matters most." },
             new WorkflowDef { Id = "debug",       Label = "Debug",       Icon = "fix_bug",     Submit = false, Prompt = "Debug this error: . Reproduce it first, state the root cause in one paragraph, make the smallest fix that addresses the cause, and add a regression test that fails without it." },
-            new WorkflowDef { Id = "refactor",    Label = "Refactor",    Icon = "refactor",                    Prompt = "Refactor the area we discussed most recently for clarity without changing behavior: clearer names, smaller functions, less nesting, no duplication. Keep the public API stable and run the tests afterward to prove nothing broke." },
+            new WorkflowDef { Id = "refactor",    Label = "Refactor",    Icon = "refactor", Submit = false,    Prompt = "Refactor this area: . Aim for clarity without changing behavior: clearer names, smaller functions, less nesting, no duplication. Keep the public API stable and run the tests afterward to prove nothing broke." },
             new WorkflowDef { Id = "write_tests", Label = "Write Tests", Icon = "write_tests",                 Prompt = "Write tests for the most recent changes — the uncommitted diff if there is one, otherwise the last commit. Use the project's test framework and conventions, cover the happy path, edge cases, and failure modes, then run the suite and fix any failures." },
             new WorkflowDef { Id = "explain_diff", Label = "Explain Diff", Icon = "diff",                      Prompt = "Explain the current diff — uncommitted changes if any, otherwise the last commit — change by change: what each does, why it was likely needed, and anything risky or surprising a reviewer should look at twice." },
             new WorkflowDef { Id = "fix_ci",      Label = "Fix CI",      Icon = "deploy",                      Prompt = "Find out why CI is failing: read the latest failing run, reproduce the failure locally if possible, fix the cause rather than the symptom, and state clearly whether the failure was the code or the pipeline." },
@@ -53,7 +53,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             new WorkflowDef { Id = "summarize", Label = "Summarize", Icon = "document", Prompt = "Summarize our conversation so far: decisions, important context, unresolved questions, and the next useful action. Keep it concise and use headings only where they help." },
             new WorkflowDef { Id = "explain", Label = "Explain", Icon = "explain", Prompt = "Explain the topic we were discussing in plain language, including the key idea, why it matters, one concrete example, and the most common misunderstanding." },
             new WorkflowDef { Id = "rewrite", Label = "Rewrite", Icon = "document", Submit = false, Prompt = "Rewrite this material: . Preserve the meaning, improve clarity and flow, and match this audience and tone: ." },
-            new WorkflowDef { Id = "draft", Label = "Draft", Icon = "voice_draft", Submit = false, Prompt = "Draft a: . Audience: . Goal: . Tone: . Keep it concise and ready to use." },
+            new WorkflowDef { Id = "draft", Label = "Draft", Icon = "writing", Submit = false, Prompt = "Draft a: . Audience: . Goal: . Tone: . Keep it concise and ready to use." },
             new WorkflowDef { Id = "compare", Label = "Compare", Icon = "diff", Submit = false, Prompt = "Compare:  versus . Use the criteria that matter most for this decision, call out meaningful tradeoffs, and finish with a recommendation and its assumptions." },
             new WorkflowDef { Id = "research", Label = "Research", Icon = "review_core", Submit = false, Prompt = "Research: . Prefer primary and current sources, distinguish verified facts from inference, and finish with the practical conclusions and source links." },
             new WorkflowDef { Id = "brainstorm", Label = "Brainstorm", Icon = "brain", Prompt = "Brainstorm useful approaches to the problem we were discussing. Give a varied shortlist, identify the strongest three, and explain the tradeoff that makes each one distinct." },
@@ -61,13 +61,26 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             new WorkflowDef { Id = "continue", Label = "Continue", Icon = "enter", Prompt = "Continue where we left off: briefly restate the current objective and what remains, then take the next useful step." },
         };
 
+        // Optional assignments; these do not displace the user's nine favorites.
+        internal static readonly WorkflowDef[] ExtraWorkflows =
+        {
+            new WorkflowDef { Id = "review_changes", Label = "Review Changes", Icon = "review", Submit = true,
+                Prompt = "Review the current workspace's uncommitted changes. If the working tree is clean, report that and stop. Check correctness, edge cases, and security; give file:line and a concrete failure scenario for each finding. Do not edit files." },
+            new WorkflowDef { Id = "run_tests", Label = "Run Tests", Icon = "write_tests", Submit = true,
+                Prompt = "Run this project's existing relevant test suite using its documented commands. Report the command, exit status, failures, and any tests you could not run. Do not claim tests passed unless you executed them; do not write new tests or change code." },
+        };
+
         private readonly Dictionary<String, WorkflowDef> _codexById = new Dictionary<String, WorkflowDef>();
         private readonly IReadOnlyList<WorkflowDef> _codexWorkflows;
         private readonly IReadOnlyList<WorkflowDef> _chatGptWorkflows;
+        private readonly FailureFace _feedback;
+        private String _feedbackParameter;
 
         public DesktopWorkflowCommand()
             : base()
         {
+            this.SetWidget(true);
+            _feedback = new FailureFace(() => this.ActionImageChanged(), holdMs: 2500);
             if (!DesktopServices.Declared || !DesktopServices.App.Capabilities.ComposerWrite)
             {
                 _codexWorkflows = Array.Empty<WorkflowDef>();
@@ -80,7 +93,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
             // Legacy named Codex actions stay registered so existing customized profiles keep
             // working. The adaptive default profile binds the stable slot_* parameters below.
-            foreach (var w in _codexWorkflows)
+            foreach (var w in _codexWorkflows.Concat(ExtraWorkflows).DistinctBy(w => w.Id))
             {
                 _codexById[w.Id] = w;
                 this.AddParameter(w.Id, w.Label ?? w.Id, "Workflows")
@@ -150,9 +163,17 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override void RunCommand(String actionParameter)
         {
-            var mode = IsSlot(actionParameter) && DesktopServices.Declared
+            if (!DesktopServices.Declared) { return; }
+            _feedbackParameter = actionParameter;
+            _feedback.Clear();
+            var mode = IsSlot(actionParameter) || actionParameter is "review_changes" or "run_tests"
                 ? DesktopServices.Automation.Status().Mode
                 : "Codex"; // legacy named actions have always been Codex workflows
+            if (actionParameter is "review_changes" or "run_tests" && mode != "Codex")
+            {
+                _feedback.Show("Use Codex");
+                return;
+            }
             var w = this.Resolve(actionParameter, mode);
             if (w == null || String.IsNullOrEmpty(w.Prompt))
             {
@@ -163,6 +184,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             if (!DesktopServices.Automation.WriteComposer(w.Prompt, send: w.Submits, out var error))
             {
                 PluginLog.Warning($"DesktopWorkflowCommand({w.Id}): {error}");
+                _feedback.Show(error == "draft-exists" ? "Draft Exists" : w.Submits ? "Not Sent" : "Not Typed");
                 return;
             }
 
@@ -175,24 +197,26 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             PluginLog.Info($"DesktopWorkflowCommand: {(w.Submits ? "sent" : "drafted")} '{w.Id}'");
         }
 
-        // A draft key looks like a draft: the trailing ellipsis is writing's own mark for
-        // "more needed here" (review round: the face should say whether a press sends).
+        // Widget labels and explicit submission state are rendered together, without an SDK label strip.
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
         {
-            var mode = DesktopServices.Declared ? DesktopServices.Monitor.Current.Mode : "";
-            var w = this.Resolve(actionParameter, mode);
-            return w != null
-                ? (w.Label ?? actionParameter) + (w.Submits ? "" : "…")
-                : IsSlot(actionParameter) ? "Mode?" : actionParameter;
+            return "\u200B"; // the full tile owns its label and submission strip
         }
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var mode = DesktopServices.Declared ? DesktopServices.Monitor.Current.Mode : "";
-            var icon = this.Resolve(actionParameter, mode)?.Icon ?? "status";
-            return KeyImage.Render(
-                imageSize, this.GetCommandDisplayName(actionParameter, imageSize), KeyImage.Blue, icon);
+            var workflow = this.Resolve(actionParameter, mode);
+            var failed = _feedback.IsActive && _feedbackParameter == actionParameter;
+            return KeyImage.RenderIntentTile(imageSize,
+                failed ? _feedback.Text : workflow?.Label ?? "Mode?",
+                WorkflowIcon(workflow, mode), failed ? "CHECK APP" : workflow == null ? "UNAVAILABLE" :
+                workflow.Submits ? "SEND" : "DRAFT");
         }
+
+        internal static String WorkflowIcon(WorkflowDef workflow, String mode) =>
+            mode == "ChatGPT" && workflow?.Id == "draft" && workflow.Icon == "voice_draft"
+                ? "writing" : workflow?.Icon ?? "status";
 
         private WorkflowDef Resolve(String actionParameter, String mode)
         {

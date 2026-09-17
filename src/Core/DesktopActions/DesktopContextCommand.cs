@@ -24,7 +24,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             {
                 [Primary] = new Pair(
                     new Choice(DesktopControl.Search, "Search", "explore"),
-                    new Choice(DesktopControl.Changes, "Files", "diff", "No Changes")),
+                    new Choice(DesktopControl.Changes, "Changes", "diff", "No Changes")),
                 [Secondary1] = new Pair(
                     new Choice(DesktopControl.Projects, "Projects", "project"),
                     new Choice(DesktopControl.Permissions, "Permissions", "security")),
@@ -75,7 +75,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             }
 
             var labels = DesktopServices.App.ControlLabels(face.Control);
-            if (!DesktopServices.Automation.Press(labels, out _))
+            if (!DesktopServices.Automation.PressInMode(labels, snapshot.Mode, out _))
             {
                 PluginLog.Warning($"DesktopContextCommand({actionParameter}): '{face.Label}' disappeared before press");
             }

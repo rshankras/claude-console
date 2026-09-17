@@ -42,6 +42,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         };
 
         [Fact]
+        public void Mode_and_draft_changes_refresh_faces_even_with_identical_titles()
+        {
+            var fake = new FakeAutomation();
+            using var monitor = new DesktopMonitor(fake);
+            var states = new List<DesktopState>();
+            monitor.OnChanged += states.Add;
+            var conversations = new[] { new DesktopConversation { Title = "Plan" } };
+            fake.Next = new DesktopSnapshot { SurfaceAvailable = true, Mode = "ChatGPT",
+                AvailableControls = DesktopControl.Search, Conversations = conversations };
+            monitor.PollOnce();
+            fake.Next = new DesktopSnapshot { SurfaceAvailable = true, Mode = "Codex",
+                AvailableControls = DesktopControl.Changes, Conversations = conversations };
+            monitor.PollOnce();
+            fake.Next = new DesktopSnapshot { SurfaceAvailable = true, Mode = "Codex", CanSend = true,
+                AvailableControls = DesktopControl.Changes, Conversations = conversations };
+            monitor.PollOnce();
+            Assert.Equal(3, states.Count);
+            Assert.Equal("Codex", states[1].Mode);
+            Assert.Equal(DesktopControl.Changes, states[1].AvailableControls);
+            Assert.True(states[2].CanSend);
+            Assert.Equal("Plan", states[2].Slots[0].Title);
+        }
+
+        [Fact]
         public void Control_presence_maps_to_the_three_activities()
         {
             Assert.Equal(DesktopActivity.Ready, DesktopMonitor.Map(Snap()).Activity);
