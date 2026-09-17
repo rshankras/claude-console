@@ -76,6 +76,16 @@
     <EmbeddedResource Include="Resources\desktop_icons\*.png" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The SDK's static plugin declaration (see ClaudeConsolePlugin.csproj, #63). Every product
+         shares the Loupedeck.ClaudeConsolePlugin namespace, so the logical name is the same; the
+         file differs only in the product display name (the inert parser sentinel is shared).
+         Without it the service logs "'PluginConfiguration.xml' file not found" on every load. -->
+    <EmbeddedResource Include="PluginConfiguration.xml">
+      <LogicalName>Loupedeck.ClaudeConsolePlugin.PluginConfiguration.xml</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <Target Name="CopyPackage" AfterTargets="PostBuildEvent">
     <Message Text="📦 Copying package files..." Importance="High" />
     <ItemGroup>

@@ -13,8 +13,12 @@ def breakdown(path):
             name = entry.filename.replace('\\', '/')
             if name.startswith('bin/claude-console-') and name.endswith('.exe'):
                 group = name.rsplit('/', 1)[-1]
+            elif name.startswith('bin/voice/whisper-bin-win/'):
+                group = 'voice payload (Windows)'
             elif name.startswith('bin/voice/'):
-                group = 'voice payload (both platforms)'
+                group = 'voice payload (macOS)'
+            elif name.startswith('bin/desktop/'):
+                group = 'desktop AX helper'
             else:
                 group = 'plugin and metadata'
             groups[group] += entry.compress_size

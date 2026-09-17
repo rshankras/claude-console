@@ -93,16 +93,49 @@ Land it the way the engine already lets a product customise behaviour — `Notif
   `Empty_voice_package_is_never_considered_a_valid_runtime` tests something main still has;
   rewrite it against `RuntimeTreeMatchesPackage` (internal static) rather than the removed API.
 
-## 4. Ten mechanical conflicts
+## 4. Ten mechanical conflicts — DONE, with two findings the plan did not have
 
 | File | Hunks | Resolution |
 |---|---|---|
-| `VoiceCommand.cs`, `VoiceDraftCommand.cs`, `ProjectVoiceCommand.cs` | 1 each | Take main. This also removes the last three callers of the now-private `StartVoiceCapture()`. |
-| `tools/voice/pack-release.sh` | 5 | Take main's rewrite, then re-add `VizhiDesktop` to `SHIPS_VOICE` and keep the branch's Windows-helper gating |
-| `tools/voice/ClaudeVoiceHelper.swift`, `tools/voice/bundle-whisper.sh` | 4, 2 | Take main |
-| `tools/convert-designer-icons.swift`, `tools/generate-icons.swift` | 1 each | Take main; check whether the branch's converter fix `6726b51` is already superseded |
-| `tools/windows/build-windows-payload.sh` | 1 | Merge both: Desktop adds `VizhiDesktopUia` |
-| `docs/multi-agent-architecture.md` | 1 | Merge prose by hand |
+| `VoiceCommand.cs`, `VoiceDraftCommand.cs`, `ProjectVoiceCommand.cs` | 1 each | Took main. Removed the last three callers of the now-private `StartVoiceCapture()`. |
+| `tools/voice/pack-release.sh` | 5 | Main's rewrite, plus: `VizhiDesktop` in `SHIPS_VOICE`; the branch's `SHIPS_DESKTOP` block (AX helper → `bin/desktop/VizhiAxBridge`, where `DesktopRuntime` looks); the branch's `SHIPS_WINDOWS` gate around main's Windows preflight, helper build, whisper embed and final check; Desktop proves `desktop_icons.all_chats.png` reached the DLL in place of a hook resource. |
+| `tools/verify-package.sh` | — (not a conflict) | **Needed the same gate.** Main's verifier demanded `claude-console-hook.exe` and the Windows whisper bundle unconditionally, so a Desktop package could never verify. It now reads `pluginFolderWin` off the package yaml: declared → every Windows check as before; not declared → any helper exe or `whisper-bin-win/` is rejected as inert payload. No product literal. The shipped 1.6.1 package still verifies. |
+| `tools/voice/ClaudeVoiceHelper.swift`, `tools/voice/bundle-whisper.sh` | 4, 2 | Took main. |
+| `tools/convert-designer-icons.swift` | 1 | Took main; the branch's converter fix `6726b51` is already there (the guard at line 26). |
+| `tools/generate-icons.swift` | 1 | Took main, and did **not** re-add the branch's `all_chats` SF Symbol line: main rewrote the script to render only the voice wave frames, on the stated rule that every static icon comes from the designer SVG pipeline so a regeneration cannot restore a second visual language. The PNG is committed. See the design point below. |
+| `tools/windows/build-windows-payload.sh` | 1 | Took main **unchanged** — see the Windows finding. |
+| `docs/multi-agent-architecture.md` | 1 | Desktop section restored ahead of the historical registration section. Its reason 1 was rewritten: the branch argued a desktop bundle *escaped* the Terminal-binding collision, but main's plugins are universal and there is no collision to escape; the app binding is now the distinguishing property. The "`@_claudeconsole` and `@_codexconsole` coexist" line was not re-added. |
+
+**Windows finding — the branch contradicted itself, and main's rule decides it.** The branch's
+`build-windows-payload.sh` listed `VizhiDesktopUia` as a Desktop project, while the branch's own
+`pack-release.sh` gated Desktop off the Windows payload (`SHIPS_WINDOWS=0`, "macOS-only for now").
+`tools/windows/VizhiDesktopUia` is `SelfContained=false`, and since #83 main rejects any
+framework-dependent Windows helper (it fails on a clean install). The Desktop yaml declares no
+`pluginFolderWin`. So the position taken is the branch's packer, not its builder: **Desktop 0.10
+is a macOS-only package.** `WindowsVoiceTests` was asserting the builder's side
+(`PROJECTS=(VizhiDesktopUia ClaudeConsoleVoice)` — a standalone voice exe main no longer has
+either); it now pins the gate in the packer and the verifier. The option not taken: make the UIA
+helper self-contained, add it to the toolkit build, declare the folder — that is the W0 step and
+needs the laptop.
+
+**Also found:** the branch had committed a 177 KB framework-dependent
+`VizhiDesktopUia/publish-win-x64/vizhi-desktop-uia.exe` that main's `.gitignore` excludes
+(`tools/windows/**/publish-*/`); it is untracked now. And `all_chats.png` had been generated into
+the **shared** icon folder, where all three product DLLs embed it, although Desktop resolves every
+non-state icon from `desktop_icons` (no fallback); the shared copy is removed and
+`DesktopWorkflowTests` pins the Desktop folder instead of the shared one.
+
+**A third product needs a third `PluginConfiguration.xml`.** Found by packing, not by the
+compiler: main's packer proves that resource reached the DLL, and Desktop had none. Main added
+one per product for #63 (the service logs "'PluginConfiguration.xml' file not found" on every load
+without it, which Logitech QA counted), and the Desktop product predates that fix. Desktop now
+embeds its own under the shared logical name — display name "Vizhi Desktop", homepage the yaml's —
+and `PluginConfigurationTests` covers all three products.
+
+**Packed end to end on 2026-09-17** with `pack-release.sh 0.10.0 VizhiDesktop` (offline link
+check): `VizhiDesktop_0.10.0.lplug4`, 2.5 MB, verifier clean as a macOS-only package — no Windows
+helpers, the macOS voice payload, `bin/desktop/VizhiAxBridge`, the profile and the declaration.
+That package is the candidate for the device pass in step 6; it was not installed.
 
 Not a problem: `tests/BridgeNoticeTests.cs` appeared in the error scan but it is the pre-existing
 xUnit1031 **warning**, not an error.
@@ -125,11 +158,18 @@ xUnit1031 **warning**, not an error.
 
 ## Design points for the owner, none blocking
 
-- Desktop identity colours (§2).
+- Desktop identity colours (§2). Taken for now: Codex blue for both selection and the session
+  bar, declared from the product, since Desktop drives the Codex app.
 - Conversation and All Chats faces move to the Logitech-reviewed name-plus-state-bar design (§2).
   Confirm that is wanted for Desktop, since the layout already deviates from the Appendix-D drawing
   sent to them and that deviation is still unflagged.
 - Intent naming (§3): two intents versus one intent plus a submit flag.
+- `all_chats` is the one icon with no designer SVG: it was an SF Symbol render on the branch.
+  Main's rule is that static icons come from the designer pipeline, so it wants an SVG before
+  Desktop ships, or a decision that this one may stay hand-rendered.
+- Before Desktop ships, its `LoupedeckPackage.yaml` still says `license: MIT` with the MIT URL
+  and points support and home at GitHub; the other two products went proprietary and point at
+  vizhi.dev.
 
 ## Traps
 

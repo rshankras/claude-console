@@ -73,9 +73,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Every_default_icon_is_a_real_embedded_resource()
         {
-            // A typo'd icon name renders as bare text and looks like a broken key; the icons
-            // live as PNGs in Core/Resources/icons and this pins the mapping to real files.
-            var iconsDir = RepoDir("src", "Core", "Resources", "icons");
+            // A typo'd icon name renders as bare text and looks like a broken key. The desktop
+            // product resolves every non-state icon from ITS identity folder (the plugin
+            // constructor calls KeyImage.UseIdentityIconFolder("desktop_icons")), so that folder,
+            // not the shared one, is what the mapping must be pinned to.
+            var iconsDir = RepoDir("src", "Products", "VizhiDesktop", "Resources", "desktop_icons");
 
             var defaults = DesktopWorkflowCommand.LoadWorkflows(this.ConfigPath)
                 .Concat(DesktopWorkflowCommand.LoadChatGptWorkflows(this.ChatGptConfigPath));

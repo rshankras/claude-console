@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+    <plugin displayName="Vizhi Desktop" homepage="https://github.com/rshankras/claude-console" />
+    <aliases />
+    <modes>
+        <mode name="Main" />
+    </modes>
+    <actions>
+        <!-- See ClaudeConsole/PluginConfiguration.xml. This is hidden from all real devices. -->
+        <group name="Compatibility" displayName="Compatibility">
+            <command name="LegacyParserSentinel" displayName="Legacy parser sentinel" deviceType="0" />
+        </group>
+    </actions>
+    <layouts>
+        <layout name="Main" />
+    </layouts>
+</configuration>

@@ -106,43 +106,59 @@ if product:
             warn(f"CHANGELOG.md has no '## [{yaml_version}]' section — is [Unreleased] still waiting to be renamed?")
 
 # --- Windows helpers: present, self-contained, no sidecars (#83) --------------------------------
+# The package yaml decides whether Windows is a target. A pluginFolderWin declaration means the
+# service will load this package on Windows, so every helper must be there and self-contained. A
+# package that declares no Windows folder must ship no helper at all: an exe that is never
+# launched is dead weight, and one that would fail on a clean install (#83) is a trap for whoever
+# later adds the declaration without rebuilding. Vizhi Desktop is macOS-only until its UI
+# Automation helper bundles its runtime.
+ships_windows = bool(re.search(r"(?m)^pluginFolderWin:\s*\S", yaml))
 helpers = direct("bin/claude-console-", ".exe")
-if not has("bin/claude-console-hook.exe"):
-    err("bin/claude-console-hook.exe missing — live status cannot work on Windows")
-toolkit = "bin/claude-console-tools.exe"
-standalone = ["bin/claude-console-" + t + ".exe" for t in ("inject", "voice", "focus", "shot")]
-if has(toolkit):
-    contract = "claude-console-tools/v1 inject focus voice shot"
-    payload = read(toolkit)
-    if contract.encode("utf-16-le") not in payload:
-        err("the toolkit has no supported command contract — rebuild the shared helper")
-    for n in standalone:
-        if has(n):
-            err(f"{n} duplicates the shared toolkit's runtime — remove stale staged helpers")
+print(f"    windows       {'declared (pluginFolderWin)' if ships_windows else 'not declared: a macOS-only package'}")
+if not ships_windows:
+    for n in helpers:
+        err(f"{n} shipped but the yaml declares no pluginFolderWin — drop the inert helper or declare Windows")
 else:
-    # Older release packages remain verifiable; all four functions must be represented.
-    for n in standalone:
-        if not has(n):
-            err(f"{n} missing and no shared toolkit is present")
-for n in helpers:
-    size = names[n].file_size
-    if size < 1_000_000:
-        err(f"{n} is {size:,} bytes — a framework-dependent stub that needs a runtime clean machines lack (#83)")
-    stem = n[:-4]
-    for sidecar in (stem + ".dll", stem + ".runtimeconfig.json", stem + ".deps.json"):
-        if has(sidecar):
-            err(f"{sidecar} shipped beside {n} — the helper is not self-contained")
+    if not has("bin/claude-console-hook.exe"):
+        err("bin/claude-console-hook.exe missing — live status cannot work on Windows")
+    toolkit = "bin/claude-console-tools.exe"
+    standalone = ["bin/claude-console-" + t + ".exe" for t in ("inject", "voice", "focus", "shot")]
+    if has(toolkit):
+        contract = "claude-console-tools/v1 inject focus voice shot"
+        payload = read(toolkit)
+        if contract.encode("utf-16-le") not in payload:
+            err("the toolkit has no supported command contract — rebuild the shared helper")
+        for n in standalone:
+            if has(n):
+                err(f"{n} duplicates the shared toolkit's runtime — remove stale staged helpers")
+    else:
+        # Older release packages remain verifiable; all four functions must be represented.
+        for n in standalone:
+            if not has(n):
+                err(f"{n} missing and no shared toolkit is present")
+    for n in helpers:
+        size = names[n].file_size
+        if size < 1_000_000:
+            err(f"{n} is {size:,} bytes — a framework-dependent stub that needs a runtime clean machines lack (#83)")
+        stem = n[:-4]
+        for sidecar in (stem + ".dll", stem + ".runtimeconfig.json", stem + ".deps.json"):
+            if has(sidecar):
+                err(f"{sidecar} shipped beside {n} — the helper is not self-contained")
 print(f"    helpers       {len(helpers)}: " + ", ".join(os.path.basename(h) for h in helpers))
 
 # --- voice payload (#24, #47, #64) -------------------------------------------------------------
 if not under("bin/voice/"):
-    err("no bin/voice/ payload — both products ship offline voice")
+    err("no bin/voice/ payload — every product ships offline voice")
 else:
     win = "bin/voice/whisper-bin-win/"
-    if not has(win + "whisper-cli.exe"):
-        err("no Windows whisper-cli.exe in the package (#47)")
-    if not any(n.startswith(win + "ggml-cpu") for n in names):
-        err("the Windows whisper bundle ships no ggml-cpu backend (#24)")
+    if not ships_windows:
+        if under(win):
+            err("bin/voice/whisper-bin-win/ shipped but the yaml declares no pluginFolderWin — inert payload")
+    else:
+        if not has(win + "whisper-cli.exe"):
+            err("no Windows whisper-cli.exe in the package (#47)")
+        if not any(n.startswith(win + "ggml-cpu") for n in names):
+            err("the Windows whisper bundle ships no ggml-cpu backend (#24)")
     mac = "bin/voice/whisper-bin/"
     if not has(mac + "whisper-cli"):
         err("no macOS whisper-cli in the package")

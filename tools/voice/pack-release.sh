@@ -11,7 +11,7 @@
 # un-notarized helper.
 #
 # Usage: bash tools/voice/pack-release.sh [version] [product]
-#        product = ClaudeConsole (default) | VizhiCodex — one repo, one package per run.
+#        product = ClaudeConsole (default) | VizhiCodex | VizhiDesktop — one repo, one package per run.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -55,11 +55,28 @@ verify_macos_helper() {
 # both packages reuses one model download. Executable runtime copies are product-specific;
 # verify microphone consent after moving a helper to its product runtime location.
 case "$PRODUCT" in
-  ClaudeConsole|VizhiCodex) SHIPS_VOICE=1 ;;
+  ClaudeConsole|VizhiCodex|VizhiDesktop) SHIPS_VOICE=1 ;;
   *)
-    echo "error: unsupported product '$PRODUCT' (expected ClaudeConsole or VizhiCodex)." >&2
+    echo "error: unsupported product '$PRODUCT' (expected ClaudeConsole, VizhiCodex or VizhiDesktop)." >&2
     exit 2
     ;;
+esac
+
+# Which products ship the desktop AX helper (drives a GUI agent app via Accessibility).
+case "$PRODUCT" in
+  VizhiDesktop) SHIPS_DESKTOP=1 ;;
+  *)            SHIPS_DESKTOP=0 ;;
+esac
+AXBRIDGE="$HOME_DIR/VizhiAxBridge"
+
+# Terminal products have both platform backends. VizhiDesktop is macOS-only until its UI
+# Automation helper meets the rule every Windows helper has had to since #83 — bundle its own
+# runtime — and tools/windows/VizhiDesktopUia is still framework-dependent. Until then the
+# package declares no pluginFolderWin and carries no Windows helper or whisper bundle:
+# verify-package.sh rejects either as inert payload.
+case "$PRODUCT" in
+  ClaudeConsole|VizhiCodex) SHIPS_WINDOWS=1 ;;
+  *)                        SHIPS_WINDOWS=0 ;;
 esac
 
 # --- preflight: the voice payload must exist and be notarized ------------------------------------
@@ -79,19 +96,23 @@ if [ "$SHIPS_VOICE" = "1" ]; then
   verify_macos_helper "$APP"
   # The Windows bundle needs the same proof, and it can only be produced on Windows: run
   # whisper-cli.exe against a real recording there, then write the marker beside it.
-  [ -d "$WIN_WBIN" ] || {
-    echo "error: Windows whisper bundle missing ($WIN_WBIN) — set WINDOWS_WHISPER_DIR to a smoke-tested Windows bundle (#47)." >&2
-    exit 1
-  }
-  [ -f "$WIN_WBIN/whisper-cli.exe" ] || {
-    echo "error: Windows whisper bundle has no whisper-cli.exe ($WIN_WBIN)." >&2
-    exit 1
-  }
-  [ -f "$WIN_WBIN/TRANSCRIPTION_SMOKE_OK" ] || {
-    echo "error: $WIN_WBIN has not passed a real transcription smoke test on Windows." >&2
-    exit 1
-  }
-  echo ">>> voice payload OK (helper notarized + stapled, both bundles transcription-verified)"
+  if [ "$SHIPS_WINDOWS" = "1" ]; then
+    [ -d "$WIN_WBIN" ] || {
+      echo "error: Windows whisper bundle missing ($WIN_WBIN) — set WINDOWS_WHISPER_DIR to a smoke-tested Windows bundle (#47)." >&2
+      exit 1
+    }
+    [ -f "$WIN_WBIN/whisper-cli.exe" ] || {
+      echo "error: Windows whisper bundle has no whisper-cli.exe ($WIN_WBIN)." >&2
+      exit 1
+    }
+    [ -f "$WIN_WBIN/TRANSCRIPTION_SMOKE_OK" ] || {
+      echo "error: $WIN_WBIN has not passed a real transcription smoke test on Windows." >&2
+      exit 1
+    }
+    echo ">>> voice payload OK (helper notarized + stapled, both bundles transcription-verified)"
+  else
+    echo ">>> voice payload OK (helper notarized + stapled, macOS bundle transcription-verified; $PRODUCT ships no Windows payload)"
+  fi
 else
   echo ">>> $PRODUCT ships no voice payload — skipping the notarization preflight"
 fi
@@ -121,6 +142,9 @@ PLUGIN_DLL="$BUILD_DIR/bin/${PRODUCT}Plugin.dll"
 case "$PRODUCT" in
   ClaudeConsole) BRIDGE_RESOURCE="ClaudeConsole.statusline-handler.sh" ;;
   VizhiCodex)    BRIDGE_RESOURCE="CodexConsole.codex-hook.sh" ;;
+  # No hook script — the desktop product drives a GUI app through Accessibility. Its own icon
+  # folder is the product-specific resource group here, so prove that one reached the DLL.
+  VizhiDesktop)  BRIDGE_RESOURCE="desktop_icons.all_chats.png" ;;
 esac
 for resource in \
   "Loupedeck.ClaudeConsolePlugin.PluginConfiguration.xml" \
@@ -173,8 +197,12 @@ LINK="$HOME/Library/Application Support/Logi/LogiPluginService/Plugins/ClaudeCon
 # One .lplug4 serves both platforms: LoupedeckPackage.yaml points pluginFolderMac AND
 # pluginFolderWin at bin/, so the hook and toolkit ride beside the plugin DLL and are simply
 # never launched on macOS.
-echo ">>> building Windows helper payload"
-bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64 "$PRODUCT"
+if [ "$SHIPS_WINDOWS" = "1" ]; then
+  echo ">>> building Windows helper payload"
+  bash "$ROOT/tools/windows/build-windows-payload.sh" Release win-x64 "$PRODUCT"
+else
+  echo ">>> $PRODUCT ships no Windows payload — skipping the Windows helpers"
+fi
 
 # --- embed the notarized voice payload next to the plugin DLL (bin/voice/) ------------------------
 PKG_VOICE="$BUILD_DIR/bin/voice"
@@ -184,15 +212,35 @@ if [ "$SHIPS_VOICE" = "1" ]; then
   mkdir -p "$PKG_VOICE"
   ditto "$APP"  "$PKG_VOICE/ClaudeVoiceHelper.app"   # ditto preserves signature + exec bits
   ditto "$WBIN" "$PKG_VOICE/whisper-bin"
-  ditto "$WIN_WBIN" "$PKG_VOICE/whisper-bin-win"
+  if [ "$SHIPS_WINDOWS" = "1" ]; then
+    ditto "$WIN_WBIN" "$PKG_VOICE/whisper-bin-win"
+  fi
   # The markers are proof for THIS script, not payload: RuntimeTreeMatchesPackage compares every
   # packaged file, so anything copied here lands in every user's runtime home. 2.2.0 stripped
   # only the Windows one, and Logitech QA read the asymmetry as "the smoke test was run for Mac
   # only" (#64). Both go; the attestation lives in this script's output instead.
   rm -f "$PKG_VOICE/whisper-bin/TRANSCRIPTION_SMOKE_OK" "$PKG_VOICE/whisper-bin-win/TRANSCRIPTION_SMOKE_OK"
-  echo "   smoke-tested: macOS bundle $(date -r "$WBIN/TRANSCRIPTION_SMOKE_OK" '+%Y-%m-%d %H:%M'), Windows bundle $(date -r "$WIN_WBIN/TRANSCRIPTION_SMOKE_OK" '+%Y-%m-%d %H:%M') (markers not shipped)"
+  if [ "$SHIPS_WINDOWS" = "1" ]; then
+    echo "   smoke-tested: macOS bundle $(date -r "$WBIN/TRANSCRIPTION_SMOKE_OK" '+%Y-%m-%d %H:%M'), Windows bundle $(date -r "$WIN_WBIN/TRANSCRIPTION_SMOKE_OK" '+%Y-%m-%d %H:%M') (markers not shipped)"
+  else
+    echo "   smoke-tested: macOS bundle $(date -r "$WBIN/TRANSCRIPTION_SMOKE_OK" '+%Y-%m-%d %H:%M') (marker not shipped)"
+  fi
 else
   rm -rf "$PKG_VOICE"
+fi
+
+# --- embed the desktop AX helper next to the plugin DLL (bin/desktop/) ---------------------------
+# DesktopRuntime looks for it at <plugin dir>/desktop/VizhiAxBridge and installs it into the
+# runtime home on first use. tools/desktop/build.sh produces and signs it.
+PKG_DESKTOP="$BUILD_DIR/bin/desktop"
+if [ "$SHIPS_DESKTOP" = "1" ]; then
+  [ -f "$AXBRIDGE" ] || { echo "error: AX helper missing ($AXBRIDGE) — run tools/desktop/build.sh first." >&2; exit 1; }
+  echo ">>> embedding desktop AX helper -> $PKG_DESKTOP"
+  rm -rf "$PKG_DESKTOP"
+  mkdir -p "$PKG_DESKTOP"
+  ditto "$AXBRIDGE" "$PKG_DESKTOP/VizhiAxBridge"     # ditto preserves signature + exec bit
+else
+  rm -rf "$PKG_DESKTOP"
 fi
 
 # --- pack ----------------------------------------------------------------------------------------
@@ -239,8 +287,18 @@ if [ "$SHIPS_VOICE" = "1" ]; then
   # Not `grep -q`: under `set -o pipefail` its early exit can SIGPIPE unzip, and the pipeline then
   # fails a package that carries the bundle (3 of 30 runs on 2026-09-04; it failed the first 2.2.1
   # pack). Reading the whole listing costs nothing and cannot race.
-  unzip -l "$OUT" | grep "voice/whisper-bin-win/whisper-cli.exe" >/dev/null || {
-    echo "error: the package carries no Windows whisper bundle — packaged Windows voice would fail (#47)." >&2
+  if [ "$SHIPS_WINDOWS" = "1" ]; then
+    unzip -l "$OUT" | grep "voice/whisper-bin-win/whisper-cli.exe" >/dev/null || {
+      echo "error: the package carries no Windows whisper bundle — packaged Windows voice would fail (#47)." >&2
+      exit 1
+    }
+  fi
+fi
+if [ "$SHIPS_DESKTOP" = "1" ]; then
+  echo "   desktop payload in package:"
+  unzip -l "$OUT" | grep "desktop/VizhiAxBridge" | sed 's/^/     /'
+  unzip -l "$OUT" | grep "desktop/VizhiAxBridge" >/dev/null || {
+    echo "error: the package carries no AX helper — every desktop key would report No helper." >&2
     exit 1
   }
 fi
