@@ -26,6 +26,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData(VoiceIntent.Draft, VoiceIntent.Project)]
         [InlineData(VoiceIntent.Project, VoiceIntent.Send)]
         [InlineData(VoiceIntent.Project, VoiceIntent.Draft)]
+        [InlineData(VoiceIntent.Desktop, VoiceIntent.DesktopDraft)]
+        [InlineData(VoiceIntent.DesktopDraft, VoiceIntent.Send)]
         public void Windows_cross_key_cancel_waits_for_cleanup_then_restarts_with_the_new_intent(
             VoiceIntent initial, VoiceIntent next)
         {

@@ -17,6 +17,16 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         /// <summary>Treat it as a project name and open that project (the Go to Project key).</summary>
         Project,
+
+        /// <summary>
+        /// Hand it to the product's transcript sink and submit — a voice key aimed at something
+        /// that is not a terminal, such as a desktop app's composer. The engine never learns what
+        /// the sink is; see BridgeManager.TranscriptSink.
+        /// </summary>
+        Desktop,
+
+        /// <summary>Hand it to the product's transcript sink and leave it there for review.</summary>
+        DesktopDraft,
     }
 
     internal enum VoicePhase

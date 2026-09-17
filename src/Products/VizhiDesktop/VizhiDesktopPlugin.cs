@@ -61,6 +61,23 @@ namespace Loupedeck.ClaudeConsolePlugin
                 : new MacDesktopAutomation(_app);
             _monitor = new DesktopMonitor(automation);
             DesktopServices.Declare(_app, automation, _monitor);
+
+            // The voice keys are aimed at the app's composer, not a terminal. The engine keeps
+            // capture, routing and the named failure faces; the product only says where the words
+            // go. A draft is brought forward so it can be read before it is sent.
+            BridgeManager.Instance.TranscriptSink = (text, send) =>
+            {
+                if (!automation.WriteComposer(text, send, out var error))
+                {
+                    return error ?? "the composer did not accept the text";
+                }
+                if (!send) { automation.FocusApp(); }
+                return null;
+            };
+
+            // Same family as Vizhi for Codex, same hold: a failure word is an instruction, held
+            // long enough to read and act on.
+            VoiceFailure.UseHold(8000);
         }
 
         public override void Load()

@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
+    using System.Collections.Generic;
     using System.IO;
 
     using Xunit;
@@ -214,39 +215,59 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         // Voice runtime/capture ownership — every voice key shares the same IPC files.
         // -------------------------------------------------------------------------------------
 
+        // -------------------------------------------------------------------------------------
+        // The transcript sink — a product's voice keys aimed at something that is not a terminal.
+        // The engine still owns delivery failures, so they reach the key like every other (#18).
+        // -------------------------------------------------------------------------------------
+
         [Fact]
-        public void Only_one_voice_action_can_own_the_shared_capture_pipeline()
+        public void A_desktop_capture_with_no_sink_installed_says_No_target_on_its_key()
         {
-            var bridge = new BridgeManager(new PlatformSeamTests.FakePlatformBridge());
+            var platform = new PlatformSeamTests.FakePlatformBridge();
+            var bridge = new BridgeManager(platform);
+            var failures = new List<(VoiceIntent Intent, String Text)>();
+            bridge.OnVoiceFailed += (intent, text) => failures.Add((intent, text));
 
-            Assert.True(bridge.TryReserveVoiceCapture());
-            Assert.True(bridge.VoiceCaptureActive);
-            Assert.False(bridge.TryReserveVoiceCapture());
+            bridge.DeliverToSink("hello", submit: true);
 
-            bridge.ReleaseVoiceCapture();
-
-            Assert.False(bridge.VoiceCaptureActive);
-            Assert.True(bridge.TryReserveVoiceCapture());
-            bridge.ReleaseVoiceCapture();
+            Assert.Equal((VoiceIntent.Desktop, VoiceFailure.NoTarget), Assert.Single(failures));
+            Assert.Equal(1, platform.Alerts);
         }
 
         [Fact]
-        public void Voice_capture_fails_closed_when_runtime_validation_fails()
+        public void The_sink_gets_the_words_and_the_submit_flag_and_only_a_refusal_reaches_the_key()
         {
-            if (!BridgeManager.VoiceSupported)
-            {
-                return;
-            }
-
             var platform = new PlatformSeamTests.FakePlatformBridge();
-            var bridge = new BridgeManager(platform)
+            var bridge = new BridgeManager(platform);
+            var failures = new List<(VoiceIntent Intent, String Text)>();
+            bridge.OnVoiceFailed += (intent, text) => failures.Add((intent, text));
+            var delivered = new List<(String Text, Boolean Submit)>();
+            bridge.TranscriptSink = (text, submit) =>
             {
-                VoiceRuntimeInstaller = () => false,
+                delivered.Add((text, submit));
+                return text == "bad" ? "composer hidden" : null;
             };
 
-            Assert.False(bridge.StartVoiceCapture());
-            Assert.False(bridge.VoiceCaptureActive);
+            bridge.DeliverToSink("draft me", submit: false);
+            bridge.DeliverToSink("bad", submit: true);
+
+            Assert.Equal(new[] { ("draft me", false), ("bad", true) }, delivered);
+            Assert.Equal((VoiceIntent.Desktop, VoiceFailure.NotTyped), Assert.Single(failures));
             Assert.Equal(1, platform.Alerts);
+        }
+
+        [Fact]
+        public void A_sink_that_throws_is_a_Not_typed_failure_not_a_crash()
+        {
+            var platform = new PlatformSeamTests.FakePlatformBridge();
+            var bridge = new BridgeManager(platform);
+            var failures = new List<(VoiceIntent Intent, String Text)>();
+            bridge.OnVoiceFailed += (intent, text) => failures.Add((intent, text));
+            bridge.TranscriptSink = (_, _) => throw new InvalidOperationException("boom");
+
+            bridge.DeliverToSink("x", submit: false);
+
+            Assert.Equal((VoiceIntent.DesktopDraft, VoiceFailure.NotTyped), Assert.Single(failures));
         }
 
         [Fact]

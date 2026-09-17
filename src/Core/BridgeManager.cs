@@ -182,6 +182,16 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal Func<String, String, String, String, Int32, CancellationToken, Boolean?> Prompt { get; set; }
 
         /// <summary>
+        /// Where a transcript goes when a product's voice keys are aimed at something that is not a
+        /// terminal — the desktop surface types into the app's own composer. Installed by the product
+        /// in its constructor, like Notify and Toast; the engine keeps capture, routing and failure
+        /// reporting and never learns what the sink is. (text, submit) → null when the words landed,
+        /// otherwise why they did not. Null-safe: with no sink installed a Desktop-intent capture
+        /// says <c>No target</c> on its key rather than vanishing into a log line.
+        /// </summary>
+        internal Func<String, Boolean, String> TranscriptSink { get; set; }
+
+        /// <summary>
         /// A dictation failed: which key's capture it was, and the words that key should show (#18).
         /// Raised from whichever thread learns of the failure — the keys repaint from timer threads
         /// already, so that is safe — and always AFTER the beep, so sound and face agree.
@@ -2555,6 +2565,29 @@ namespace Loupedeck.ClaudeConsolePlugin
         // transcribed and then dropped with a WARN line, indistinguishable on the device from one
         // that landed (2.2.1 Windows retest, item 6). The key now says No target / Not typed like
         // every other voice failure, and the log keeps the words so nothing dictated is lost.
+        // The desktop-surface twin of DeliverDictation: the product's sink puts the words where its
+        // keys are aimed, and the SAME named failures reach the key when it cannot (#18). A sink
+        // that throws is a failure like any other; the transcript is kept in the log either way.
+        internal void DeliverToSink(String text, Boolean submit)
+        {
+            var intent = submit ? VoiceIntent.Desktop : VoiceIntent.DesktopDraft;
+            var sink = this.TranscriptSink;
+            if (sink == null)
+            {
+                this.ReportVoiceFailure(intent, VoiceFailure.NoTarget,
+                    $"no transcript sink installed by the product. Dropped: \"{text}\"");
+                return;
+            }
+
+            String error;
+            try { error = sink(text, submit); }
+            catch (Exception ex) { error = ex.Message; }
+            if (error != null)
+            {
+                this.ReportVoiceFailure(intent, VoiceFailure.NotTyped, $"{error}. Dropped: \"{text}\"");
+            }
+        }
+
         internal void DeliverDictation(String text, Boolean submit)
         {
             var intent = submit ? VoiceIntent.Send : VoiceIntent.Draft;
@@ -2632,6 +2665,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         case VoiceIntent.Project: this.StopVoiceCaptureForProject(); break;
                         case VoiceIntent.Draft: this.StopVoiceCapture(submit: false); break;
+                        case VoiceIntent.Desktop: this.StopVoiceCaptureThen(text => this.DeliverToSink(text, submit: true)); break;
+                        case VoiceIntent.DesktopDraft: this.StopVoiceCaptureThen(text => this.DeliverToSink(text, submit: false)); break;
                         default: this.StopVoiceCapture(submit: true); break;
                     }
                     break;
