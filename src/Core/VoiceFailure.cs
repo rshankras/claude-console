@@ -59,6 +59,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// <summary>The session was known but the keystrokes did not land (terminal gone, elevated). The log has the outcome.</summary>
         internal const String NotTyped = "Not typed";
 
+        /// <summary>Insertion was not confirmed; the draft was copied for manual review and paste.</summary>
+        internal const String PasteDraft = "Paste Draft";
+
         /// <summary>whisper-cli is not in the runtime home. Reinstall the package.</summary>
         internal const String NoWhisper = "No whisper";
 

@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 {
     using System;
+    using System.Threading;
 
     using Loupedeck.ClaudeConsolePlugin.Desktop;
 
@@ -14,14 +15,17 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     {
         private readonly ListeningFace _face;
         private readonly FailureFace _fail;
-        private String StartupLabel => BridgeManager.Instance.Voice.StartupLabel(VoiceIntent.DesktopDraft);
+        private String ProgressLabel => BridgeManager.Instance.Voice.StartupLabel(VoiceIntent.DesktopDraft)
+            ?? (BridgeManager.Instance.Voice.IsTranscribing(VoiceIntent.DesktopDraft) ? "Transcribing" : null);
 
         public DesktopVoiceDraftCommand()
-            : base(displayName: "Voice Draft", description: "Speak — the transcript waits in the composer for you to review and send", groupName: "Agent")
+            : base(displayName: "Voice Draft", description: "Press to record, press again to transcribe. Review in the composer; if Paste Draft appears, review and paste with Cmd+V.", groupName: "Agent")
         {
             this.SetWidget(true);
             _face = new ListeningFace(() => this.ActionImageChanged());
-            _fail = new FailureFace(() => this.ActionImageChanged(), holdMs: VoiceFailure.HoldMs);
+            // Keep the outcome visible until the next attempt; a brief failure was easy to miss
+            // while the user looked at the composer waiting for their words.
+            _fail = new FailureFace(() => this.ActionImageChanged(), holdMs: Timeout.Infinite);
 
             // A dictation that failed says so on the key that was pressed, for a moment (#18). Only
             // this key's own captures: a failure routed to another key is that key's to show.
@@ -67,8 +71,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
             KeyImage.RenderIntentTile(imageSize,
-                StartupLabel ?? (_face.IsActive ? "Listening" : _fail.IsActive ? _fail.Text : "Voice Draft"),
+                _fail.IsActive ? _fail.Text : ProgressLabel ?? (_face.IsActive ? "Listening" : "Voice Draft"),
                 _face.IsActive ? _face.Icon : "voice_draft",
-                _fail.IsActive && !_face.IsActive ? "CHECK APP" : "DRAFT");
+                _fail.IsActive ? (_fail.Text == VoiceFailure.PasteDraft ? "CMD+V" : "CHECK APP")
+                    : _face.IsActive ? "PRESS TO STOP" : ProgressLabel != null ? "WAIT" : "DRAFT");
     }
 }

@@ -191,6 +191,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         internal Func<String, Boolean, String> TranscriptSink { get; set; }
 
+        /// <summary>Optional recovery for a desktop draft the sink refused. Never used for auto-send.</summary>
+        internal Func<String, Boolean> DraftClipboardFallback { get; set; }
+
         /// <summary>
         /// A dictation failed: which key's capture it was, and the words that key should show (#18).
         /// Raised from whichever thread learns of the failure — the keys repaint from timer threads
@@ -2584,6 +2587,19 @@ namespace Loupedeck.ClaudeConsolePlugin
             catch (Exception ex) { error = ex.Message; }
             if (error != null)
             {
+                if (!submit && this.DraftClipboardFallback != null)
+                {
+                    try
+                    {
+                        if (this.DraftClipboardFallback(text))
+                        {
+                            this.ReportVoiceFailure(intent, VoiceFailure.PasteDraft,
+                                "draft insertion was not confirmed; transcript copied for manual review and paste");
+                            return;
+                        }
+                    }
+                    catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: draft clipboard recovery failed"); }
+                }
                 this.ReportVoiceFailure(intent, VoiceFailure.NotTyped, $"{error}. Dropped: \"{text}\"");
             }
         }

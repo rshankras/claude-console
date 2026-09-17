@@ -74,6 +74,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (!send) { automation.FocusApp(); }
                 return null;
             };
+            BridgeManager.Instance.DraftClipboardFallback = DesktopDraftClipboard.Copy;
 
             // Same family as Vizhi for Codex, same hold: a failure word is an instruction, held
             // long enough to read and act on.

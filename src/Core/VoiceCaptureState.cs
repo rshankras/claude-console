@@ -208,5 +208,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return this._phase == VoicePhase.Recording && this._intent == intent;
             }
         }
+
+        internal Boolean IsTranscribing(VoiceIntent intent)
+        {
+            lock (this._lock)
+            {
+                return this._phase == VoicePhase.Transcribing && this._intent == intent;
+            }
+        }
     }
 }

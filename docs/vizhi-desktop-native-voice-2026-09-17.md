@@ -1,9 +1,10 @@
 # Vizhi Desktop native Voice — 2026-09-17
 
-Branch: `integrate/vizhi-desktop-main`. Current correction: **0.12.1 / Vizhi Adaptive 3**.
+Branch: `integrate/vizhi-desktop-main`. Current correction: **0.12.2 / Vizhi Adaptive 3**.
 
-Status: 0.12.1 installed locally. Plugin load and profile selection are verified;
-native audio interaction and visual keypad validation remain pending.
+Status: 0.12.1 installed locally; the user confirmed **No Voice** remains. The installed DLL and
+helper match the package, so this is not a stale install. Native recognition and direct draft
+insertion remain unresolved. Version 0.12.2 adds draft recovery and progress feedback.
 
 ## Decision and revised plan
 
@@ -122,5 +123,31 @@ The 0.12.1 package was built from `c3fae66`, verified, installed, and loaded by 
 at 15:12 on 2026-09-17. Runtime helper and DLL match the package. All 28 application/profile files
 are unchanged, and Adaptive 3 remains selected. Backup and receipt:
 `~/.claude/claude-console/backups/vizhi-desktop/20260917-151159/`.
-The user has been asked to confirm the live key label after this update; recognition is not yet
-reported as resolved.
+The user subsequently confirmed **No Voice** remains after this update. Capitalization was a
+code-level defect, but correcting it did not resolve recognition on this machine.
+
+## 0.12.2 Voice Draft recovery
+
+The user also reported no text appearing after dictation. Offline capture lifecycle records show
+two presses per attempt. At 15:14 the pipeline reported **No speech**. At 15:17 it produced a
+21-character transcript, then reported **Not typed**. No dictated words or app UI content were read
+for this diagnosis. The second attempt therefore reached transcription and failed at delivery;
+the precise composer rejection has not been established.
+
+Changes:
+
+- Show **PRESS TO STOP** during recording and **Transcribing / WAIT** during processing.
+- Keep Voice Draft failure feedback visible until another attempt begins.
+- On failed draft delivery, copy the original transcript to the macOS clipboard and show
+  **Paste Draft / CMD+V**. Users check the composer and paste manually if needed. A write that
+  was not confirmed may have partially landed; do not paste blindly into an existing draft.
+- Clipboard recovery replaces previous clipboard contents, uses a private temporary UTF-8 file,
+  bounds the copy process to two seconds, and cleans up that file afterward. It does not activate
+  ChatGPT, synthesize keystrokes, or submit text. A failed copy continues to report **Not typed**.
+- Successful delivery and Dictate & Send never invoke this fallback. Profile bindings stay stable.
+
+Validation: **282 targeted C# tests passed**, including refused/throwing delivery, successful
+delivery, auto-send exclusion, copy failure, Unicode preservation, private-file cleanup, and the
+transcription phase's original-intent ownership. Clipboard transport was tested with a fake process
+runner; no live pasteboard or ChatGPT interaction was performed. One pre-existing xUnit1031 warning
+remains. This is a recovery path, not a verified fix for the app's Accessibility compatibility.

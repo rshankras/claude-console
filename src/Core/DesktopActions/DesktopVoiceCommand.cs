@@ -20,7 +20,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     {
         private readonly ListeningFace _face;
         private readonly FailureFace _fail;
-        private String StartupLabel => BridgeManager.Instance.Voice.StartupLabel(VoiceIntent.Desktop);
+        private String ProgressLabel => BridgeManager.Instance.Voice.StartupLabel(VoiceIntent.Desktop)
+            ?? (BridgeManager.Instance.Voice.IsTranscribing(VoiceIntent.Desktop) ? "Transcribing" : null);
 
         public DesktopVoiceCommand()
             : base(displayName: "Dictate & Send", description: "Speak a prompt — press to start, press again to send it to the app", groupName: "Agent")
@@ -73,8 +74,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
             KeyImage.RenderIntentTile(imageSize,
-                StartupLabel ?? (_face.IsActive ? "Listening" : _fail.IsActive ? _fail.Text : "Dictate"),
+                _fail.IsActive ? _fail.Text : ProgressLabel ?? (_face.IsActive ? "Listening" : "Dictate"),
                 _face.IsActive ? _face.Icon : "voice",
-                _fail.IsActive && !_face.IsActive ? "CHECK APP" : "SEND");
+                _fail.IsActive ? "CHECK APP" : _face.IsActive ? "PRESS TO STOP" : ProgressLabel != null ? "WAIT" : "SEND");
     }
 }

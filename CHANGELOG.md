@@ -3,6 +3,17 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [0.12.2] — Vizhi Desktop — 2026-09-17
+
+- Recover a Voice Draft that the composer refuses by copying its transcript to the macOS clipboard.
+  The key shows **Paste Draft / CMD+V** until the next attempt. Review the composer before pasting:
+  an unconfirmed write may have partially landed. Recovery does not send text or simulate a paste.
+- Show **Transcribing / WAIT** after the second press and **PRESS TO STOP** while recording.
+  Keep Voice Draft failure messages visible until the next press.
+- Preserve existing profile identities and bindings. Native Voice recognition still reports
+  **No Voice** on the user's app after 0.12.1; direct draft insertion is also unresolved there.
+  This release adds draft recovery, not a verified repair of the app's Accessibility integration.
+
 ## [0.12.1] — Vizhi Desktop — 2026-09-17
 
 - Match complete button labels independent of capitalization and whitespace. The user-reported

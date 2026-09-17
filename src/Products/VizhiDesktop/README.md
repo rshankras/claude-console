@@ -26,7 +26,10 @@ theft, writing and submitting the composer, and switching the app between its Ch
 modes — all while the app sat in the background. Version **0.12.0** adds native Voice Chat and the
 Adaptive 3 layout. Voice uses documented exact button labels and enables only when those controls
 are observed. Native start/end, first-use setup, and microphone behavior still need a live hardware
-pass; automated validation uses synthetic app states and does not record audio. Copy Answer remains
+pass; automated validation uses synthetic app states and does not record audio. The user's current
+app still reports **No Voice** after 0.12.1, and Voice Draft transcription has succeeded while
+composer insertion failed. Version **0.12.2** adds clipboard recovery for refused drafts; it does
+not claim to repair native Voice detection or direct insertion. Copy Answer remains
 unavailable pending a verified assistant-response selector. A fail-closed Windows UI
 Automation foundation exists, but application-identity reconnaissance and live validation have
 not been run, so Windows packaging remains deliberately disabled.
@@ -101,8 +104,12 @@ need to be supplied. Your existing workflow JSON retains its own submission choi
 ## Start with one draft
 
 1. Open the intended conversation and go to **Controls**.
-2. Press **Voice Draft · DRAFT**, speak, then press it again to finish dictation.
-3. Read and edit the transcript in the app. Press **Send** when it is ready.
+2. Press **Voice Draft · DRAFT**, speak, then press it again to finish dictation. The key shows
+   **PRESS TO STOP** while recording and **Transcribing · WAIT** while processing.
+3. Read and edit the transcript in the app. If **Paste Draft · CMD+V** appears, insertion was not
+   confirmed and the transcript was copied to your clipboard. Check for any text already inserted,
+   click the intended composer, and paste with **Cmd+V** as needed. This replaces your previous
+   clipboard contents. Press **Send** when the draft is ready.
 4. Use **Stop** to interrupt a running response. Its square icon is distinct from navigation.
 
 **Dictate & Send** remains an optional action and keeps working in older profiles. It sends the
@@ -110,6 +117,9 @@ transcript when you stop dictating. Workflows marked SEND also submit immediatel
 DRAFT workflows wait for your edit. These keys address the window targeted when the operation
 runs, so keep the intended conversation open through transcription. Existing draft text blocks
 insertion; move or finish that draft before starting another workflow or dictation.
+Voice Draft errors stay visible until your next attempt. **Not typed** means insertion failed and
+clipboard recovery did not succeed; **No speech** means no usable transcript was produced. The
+clipboard fallback applies only to Voice Draft, never to Dictate & Send.
 
 Send does not replace text. It requires a non-empty draft, one composer, and an enabled exact
 Send control in the composer's local container. It refuses while an approval or Stop control
