@@ -2,7 +2,7 @@
 
 Date: 2026-09-17  
 Branch: `integrate/vizhi-desktop-main`  
-Status: Implementation authorized and applied on the integration branch; live validation and installation pending.
+Status: Version 0.11.0 installed locally on 2026-09-17; Adaptive 2 selected. End-to-end app interaction and physical keypad validation remain pending.
 
 ## Recommendation
 
@@ -207,7 +207,7 @@ no copy action until assistant ownership and completion can be established.
 Automated validation covers the helper's actual matching functions against synthetic trees,
 client/monitor behavior, aliases, profile identities/bindings, and preservation of existing
 configuration. Helper/plugin builds are isolated from the live runtime. These checks do not
-establish live app compatibility or hardware readability. The work has not been installed.
+establish live app compatibility or hardware readability. The local installation is recorded below.
 
 ### Validation recorded for 0.11.0
 
@@ -217,9 +217,27 @@ establish live app compatibility or hardware readability. The work has not been 
 - Signed helper compiled using `--no-install` to a temporary output; the installed runtime was preserved.
 - Both profiles: all 27 bindings and preview identities checked; a second generation produced identical bytes.
 - New Stop and writing PNGs visually inspected. Standalone SDK tile rendering could not load the
-  host's SkiaSharp dependency; final tile rendering/readability still needs the Logi host and keypad.
+  host's SkiaSharp dependency. After installation, the Controls page rendered in the Logi host;
+  physical keypad readability still needs confirmation.
 
 Reproduce with `bash tests/run-all.sh`, then
 `dotnet build src/Products/VizhiDesktop/VizhiDesktopPlugin.csproj -c Release -p:SkipPluginLink=true`.
 Regenerate profiles with `python3 tools/make-desktop-profile.py`; regenerate the new desktop-only
 icons with `swift tools/generate-desktop-icons.swift --ux-only`.
+
+### Local installation — 2026-09-17
+
+- Built and verified `VizhiDesktop_0_11_0.lplug4` from commit `3dee1ac`.
+- Installed 0.11.0 and restarted Logi Plugin Service; its log confirms version 0.11.0 loaded.
+- Verified the installed DLL matches the Release build and the runtime AX helper matches the package.
+- Installed **Vizhi Adaptive 2** and **Vizhi Everyday** alongside existing profiles; selected Adaptive 2 in Options+.
+- Confirmed the Controls page displays Mode, the square Stop icon, Voice Draft with DRAFT strip,
+  mode-specific destinations, Send, and Changes in Codex mode.
+- All ten original profile files retained their pre-installation hashes. Existing workflow configuration was preserved.
+- Backup and installation receipt: `~/.claude/claude-console/backups/vizhi-desktop/20260917-131104/`.
+
+The older command-line installer could not communicate with the running service. The verified
+package payload was placed in the existing plugin location, profiles were added without replacing
+existing ones, and the service was restarted to adopt them. A redundant waiting installer dialog
+was dismissed. Copy Answer remains disabled; no prompts, voice recordings, or approval actions
+were submitted during installation verification.
