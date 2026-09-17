@@ -18,6 +18,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public Boolean Attention { get; init; }
         public Boolean CanSend { get; init; }
         public Boolean CanCopyAnswer { get; init; }
+        public DesktopVoiceState VoiceChat { get; init; }
         public DesktopControl AvailableControls { get; init; }
 
         /// <summary>Sidebar conversations, raw, in the app's own order (recency first).</summary>
@@ -119,7 +120,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             {
                 // Re-arm only after this tick fully finished — ticks can never overlap or pile
                 // up — at a cadence matched to what's happening (review round: adaptive polling).
-                try { _timer?.Change(NextDelayMs(this.Current.Activity), Timeout.Infinite); } catch (ObjectDisposedException) { }
+                try { _timer?.Change(this.Current.VoiceChat == DesktopVoiceState.Active ? PollMs : NextDelayMs(this.Current.Activity), Timeout.Infinite); } catch (ObjectDisposedException) { }
             }
         }
 
@@ -187,6 +188,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 Attention = snap.Attention,
                 CanSend = snap.CanSend && activity == DesktopActivity.Ready,
                 CanCopyAnswer = snap.CanCopyAnswer && activity == DesktopActivity.Ready,
+                VoiceChat = snap.VoiceChat,
                 AvailableControls = snap.AvailableControls,
                 Conversations = conversations,
                 Slots = slotMap != null ? slotMap.Apply(conversations) : conversations.Take(DesktopSlotMap.SlotCount).ToArray(),
@@ -202,6 +204,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             || a.Attention != b.Attention
             || a.CanSend != b.CanSend
             || a.CanCopyAnswer != b.CanCopyAnswer
+            || a.VoiceChat != b.VoiceChat
             || a.AvailableControls != b.AvailableControls
             || !String.Equals(a.Mode, b.Mode, StringComparison.Ordinal)
             || !String.Equals(a.CardText, b.CardText, StringComparison.Ordinal)

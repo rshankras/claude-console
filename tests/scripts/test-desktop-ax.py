@@ -60,7 +60,8 @@ func targetWindows() -> [AXUIElement] { focusedWindows }
 fixture += next(line for line in source.splitlines() if line.startswith('let operationWindows =')) + '\n'
 fixture += function('scanWindows') + '\n'
 fixture += function('conversationMatches') + '\n' + function('conversationState')
-fixture += '\n' + '\n'.join(function(n) for n in ['firstPressable', 'composerSendTarget', 'sendTarget'])
+fixture += '\n' + '\n'.join(function(n) for n in ['firstPressable', 'exactButtons', 'uniqueEnabledButton',
+    'voiceState', 'voiceTarget', 'composerSendTarget', 'sendTarget'])
 fixture += '''
 func row(_ text: String, _ depth: Int = 0) -> Node {
     Node(el: original, role: "AXButton", text: text, pressable: true, depth: depth)
@@ -108,6 +109,52 @@ assert(sendTarget(in: [web, group, node("AXTextArea", " ", 2, value: " "), send]
 assert(sendTarget(in: [web, group, composer, node("AXGroup", "other", 1), send]) == nil)
 assert(sendTarget(in: eligible + [node("AXButton", "Stop", 1)]) == nil)
 assert(sendTarget(in: eligible + [node("AXButton", "Allow", 1)]) == nil)
+// Task Stop must not match the native voice stop control, regardless of DFS order.
+let startLabels = ["Start voice chat", "Start new voice chat"]
+let endLabels = ["Stop voice chat"]
+let startVoice = node("AXButton", "Start voice chat", 1)
+let endVoice = node("AXButton", "Stop voice chat", 1)
+let taskStop = node("AXButton", "Stop", 1)
+assert(uniqueEnabledButton(matching: ["Stop"], in: [endVoice, taskStop])?.text == "Stop")
+assert(uniqueEnabledButton(matching: ["Stop"], in: [endVoice]) == nil)
+assert(uniqueEnabledButton(matching: ["Stop"], in: [taskStop, taskStop]) == nil)
+assert(sendTarget(in: eligible + [endVoice]) != nil)
+func state(_ nodes: [Node]) -> String { voiceState(nodes: nodes, start: startLabels, end: endLabels) }
+func target(_ action: String, _ nodes: [Node]) -> Node? {
+    voiceTarget(action: action, nodes: nodes, start: startLabels, end: endLabels)
+}
+assert(state([startVoice]) == "ready")
+assert(state([node("AXButton", "Start new voice chat", 1)]) == "ready")
+assert(state([endVoice]) == "active")
+assert(state([startVoice, endVoice]) == "active")
+assert(target("start", [startVoice])?.text == "Start voice chat")
+assert(target("end", [endVoice])?.text == "Stop voice chat")
+// Stale expected states cannot turn End into Start or Start into End.
+assert(target("start", [endVoice]) == nil)
+assert(target("start", [startVoice, endVoice]) == nil)
+assert(target("end", [startVoice]) == nil)
+assert(target("toggle", [startVoice]) == nil)
+// A conversation named exactly like a control still has nested sidebar actions; ignore it.
+let pin = node("AXButton", "Pin chat", 2)
+assert(state([startVoice, pin]) == "unavailable")
+assert(state([endVoice, pin]) == "unavailable")
+assert(uniqueEnabledButton(matching: ["Stop"], in: [taskStop, pin]) == nil)
+assert(target("start", [startVoice, pin, startVoice])?.text == "Start voice chat")
+// No control, duplicates, text content, near matches, and unknown availability fail closed.
+for candidates in [[], [startVoice, startVoice], [endVoice, endVoice],
+    [node("AXButton", "How to Start voice chat", 1)],
+    [node("AXStaticText", "Start voice chat", 1)],
+    [node("AXButton", "Start voice chat", 1, enabled: false)],
+    [node("AXButton", "Start voice chat", 1, enabled: nil)]] as [[Node]] {
+    assert(state(candidates) == "unavailable")
+    assert(target("start", candidates) == nil)
+    assert(target("end", candidates) == nil)
+}
+let disabledEnd = node("AXButton", "Stop voice chat", 1, enabled: false)
+assert(state([startVoice, disabledEnd]) == "active")
+assert(target("start", [startVoice, disabledEnd]) == nil)
+assert(target("end", [disabledEnd]) == nil)
+assert(voiceState(nodes: [startVoice], start: [], end: endLabels) == "unavailable")
 // Nested composer wrappers remain supported within the same local group.
 assert(sendTarget(in: [web, group, node("AXGroup", "editor", 2),
     node("AXTextArea", "draft", 3, value: "draft"), send]) != nil)

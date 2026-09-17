@@ -52,6 +52,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public Boolean Press(String[] labels, out String matched) =>
             this.PressGuarded(labels, null, out matched, out _);
 
+        public Boolean PressExact(String[] labels)
+        {
+            if (labels?.Length is not > 0) { return false; }
+            var args = BaseArgs("press-exact");
+            AddEach(args, "--label", labels);
+            return TryParseOk(this.Runner(args, 4000), out _);
+        }
+
         public Boolean PressGuarded(String[] labels, String expectCard, out String matched, out String error)
         {
             matched = null;

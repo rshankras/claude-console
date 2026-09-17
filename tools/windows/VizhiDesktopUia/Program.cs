@@ -59,6 +59,7 @@ internal static class Program
                 "inspect" => InspectTarget(root),
                 "status" => Status(root, options),
                 "press" => Press(root, options),
+                "press-exact" => Press(root, options, exact: true),
                 "write" => Write(root, options),
                 "focus" => Focus(root),
                 _ => Fail($"unknown-verb {verb}", 4),
@@ -222,6 +223,11 @@ internal static class Program
             && needles.Any(label => n.Text.Contains(label, StringComparison.OrdinalIgnoreCase)));
     }
 
+    private static List<Node> ExactButtons(IReadOnlyList<Node> nodes, IReadOnlyList<String> labels) =>
+        nodes.Where((n, i) => n.Role == ControlType.Button.ProgrammaticName && n.Text.Length > 0
+            && labels.Contains(n.Text, StringComparer.Ordinal)
+            && !nodes.Skip(i + 1).TakeWhile(child => child.Depth > n.Depth).Any(child => child.Pressable)).ToList();
+
     private static String Collapse(String text) =>
         String.Join(" ", text.Split((Char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
@@ -259,7 +265,7 @@ internal static class Program
 
         var approve = FirstPressable(nodes, Values(options, "--approve"));
         var deny = FirstPressable(nodes, Values(options, "--deny"));
-        var stop = FirstPressable(nodes, Values(options, "--stop"));
+        var stop = ExactButtons(nodes, Values(options, "--stop")).FirstOrDefault();
         var attentionNeedle = Value(options, "--attention") ?? "";
         var modePrefix = Value(options, "--mode-prefix") ?? "";
         var mode = modePrefix.Length == 0 ? "" : nodes.Select(n => n.Text)
@@ -330,7 +336,7 @@ internal static class Program
     }
 
     [SupportedOSPlatform("windows")]
-    private static Int32 Press(AutomationElement root, Dictionary<String, List<String>> options)
+    private static Int32 Press(AutomationElement root, Dictionary<String, List<String>> options, Boolean exact = false)
     {
         var labels = Values(options, "--label");
         if (labels.Count == 0)
@@ -341,6 +347,12 @@ internal static class Program
         var nodes = Scan(root);
         var marker = Value(options, "--conversation");
         var target = FirstPressable(nodes, labels);
+        if (exact)
+        {
+            var matches = ExactButtons(nodes, labels);
+            target = matches.Count == 1 && matches[0].Pressable && matches[0].Element.Current.IsEnabled
+                ? matches[0] : null;
+        }
         if (marker != null)
         {
             var matches = nodes.Where((node, i) => node.Pressable

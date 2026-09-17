@@ -58,6 +58,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Labels that stop/interrupt the running task.</summary>
         String[] StopLabels { get; }
 
+        /// <summary>Exact native voice button labels. Empty means unsupported.</summary>
+        String[] StartVoiceLabels => Array.Empty<String>();
+        String[] EndVoiceLabels => Array.Empty<String>();
+
         /// <summary>The composer's submit control.</summary>
         String SendLabel { get; }
 

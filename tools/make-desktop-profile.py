@@ -20,15 +20,15 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "src/Products/VizhiDesktop/package/profiles/DefaultProfile70.lp5"
 DONOR = OUT  # tracked desktop geometry; never depend on generated terminal product packages
 
-# Adaptive-profile identity. Rotated once for the mode-aware layout: the updater installs this as
+# Adaptive-profile identity. Rotated for native Voice: the updater installs this as
 # an additional profile and RETAINS the user-selected default and earlier profile, so existing user customization is never overwritten.
 # Never regenerate for ordinary updates or Options+ will accumulate duplicate profiles.
-GUID = "6CA374714642475581835B05D0E6F7AC"
+GUID = "390FE86F17D84EC6B4920C7A5C3F37FA"
 EVERYDAY_GUID = "A4B07D949FB2461B941D80BEB3D77A28"
 EVERYDAY_OUT = OUT.parent.parent / "optional-profiles/VizhiDesktop-Everyday.lp5"
 APP = "@_vizhidesktop"
 DISPLAY = "Vizhi Desktop"
-PROFILE_DISPLAY = "Vizhi Adaptive 2"
+PROFILE_DISPLAY = "Vizhi Adaptive 3"
 PLUGIN = "VizhiDesktop"
 BUNDLE = "com.openai.codex"
 DESCRIPTION = "Conversations, app controls, and nine adaptive workflow favorites for ChatGPT and Codex."
@@ -68,7 +68,7 @@ PAGE_ONE = [
     act("DesktopContextCommand", "primary"),     # 5  ┘ Search in ChatGPT · Changes in Codex
     act("DesktopApprovalCommand", "approve"),     # 6  ┐
     act("DesktopApprovalCommand", "deny"),        # 7  │ the bottom row answers
-    act("DesktopVoiceCommand"),                   # 8  ┘
+    act("DesktopVoiceChatCommand"),               # 8  ┘ native spoken conversation
 ]
 
 # Page 2 · the session controls — the appendix's "Actions" page.
@@ -156,9 +156,9 @@ def build_profile(out, guid, display_name, home) -> None:
     # Cosmetic preview has the home-page controls; live faces are rendered by the plugin.
     labels = ["Conversation 1", "Conversation 2", "Conversation 3", "All Chats", "New Chat",
               "Search / Changes"] + (["Voice Draft · DRAFT", "Send", "Stop"] if home == EVERYDAY_HOME
-                                      else ["Approve", "Deny", "Voice · SEND"])
+                                      else ["Approve", "Deny", "Voice Chat · TALK"])
     icons = ["all_chats", "all_chats", "all_chats", "all_chats", "new_claude", "explore"] + (
-        ["voice_draft", "enter", "stop"] if home == EVERYDAY_HOME else ["yes_idle", "no_idle", "voice"])
+        ["voice_draft", "enter", "stop"] if home == EVERYDAY_HOME else ["yes_idle", "no_idle", "voice_chat"])
     icon_dir = ROOT / "src/Products/VizhiDesktop/Resources/desktop_icons"
     def icon_bytes(icon):
         path = icon_dir / f"{icon}.png"

@@ -77,14 +77,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             switch (actionParameter)
             {
                 case Stop:
-                    // Press-time truth: a different ChatGPT/Codex window may have become focused
-                    // since the keypad face last refreshed.
-                    if (!auto.Status().StopPresent)
-                    {
-                        PluginLog.Info("DesktopControlCommand(stop): nothing running — ignored");
-                        return;
-                    }
-                    auto.Press(app.StopLabels, out _);
+                    // Resolve and press in one invocation. "Stop voice chat" must NEVER match.
+                    auto.PressExact(app.StopLabels);
                     break;
 
                 case NewChat:

@@ -57,7 +57,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             // One door for every voice key. Whether this press starts, stops, or is refused — and
             // where a stopped capture's transcript is routed — is the engine's call, not this key's.
             _fail.Clear();
-            BridgeManager.Instance.ToggleVoice(VoiceIntent.DesktopDraft);
+            DesktopServices.VoiceActions.RequestDictation(VoiceIntent.DesktopDraft, BridgeManager.Instance.Voice,
+                intent => BridgeManager.Instance.ToggleVoice(intent), out var feedback);
+            if (feedback != null) { _fail.Show(feedback); }
             PluginLog.Info($"DesktopVoiceDraftCommand: recording={_face.IsActive}");
         }
 

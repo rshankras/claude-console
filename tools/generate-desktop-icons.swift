@@ -51,9 +51,10 @@ for file in files {
 }
 
 // Desktop-only symbols share the designer pack's 43-unit geometry. --ux-only avoids touching
-// the established PNG set while iterating these four additions.
+// the established PNG set while iterating these additions.
 for (svg, name) in [("DesktopStop", "stop"), ("DesktopSwitchMode", "switch_mode"),
-                    ("DesktopWriting", "writing"), ("DesktopCopy", "copy")] {
+                    ("DesktopWriting", "writing"), ("DesktopCopy", "copy"),
+                    ("DesktopVoiceChat", "voice_chat")] {
     let path = root.appendingPathComponent("assets/designer-icons/White/\(svg).svg")
     let text = try String(contentsOf: path, encoding: .utf8).replacingOccurrences(of: "white", with: "#8593F8")
     guard let data = text.data(using: .utf8), let image = NSImage(data: data) else { fatalError("Invalid SVG: \(svg)") }

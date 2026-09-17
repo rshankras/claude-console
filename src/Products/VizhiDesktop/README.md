@@ -23,9 +23,11 @@ product. *(Not an OpenAI product; ChatGPT and Codex are trademarks of OpenAI.)*
 **Preview, macOS package only.** The core Accessibility mechanism is verified end to end on a live app:
 reading the approval card unfocused, pressing Allow/Deny with another app frontmost and no focus
 theft, writing and submitting the composer, and switching the app between its ChatGPT and Codex
-modes — all while the app sat in the background. Version **0.11.0** adds the Adaptive 2 and Everyday layouts, guarded Send, explicit DRAFT/SEND
-faces, and optional conversation labels. These additions and the voice-runtime repair still need
-a macOS hardware regression pass. Copy Answer remains unavailable pending a verified assistant-response selector. A fail-closed Windows UI
+modes — all while the app sat in the background. Version **0.12.0** adds native Voice Chat and the
+Adaptive 3 layout. Voice uses documented exact button labels and enables only when those controls
+are observed. Native start/end, first-use setup, and microphone behavior still need a live hardware
+pass; automated validation uses synthetic app states and does not record audio. Copy Answer remains
+unavailable pending a verified assistant-response selector. A fail-closed Windows UI
 Automation foundation exists, but application-identity reconnaissance and live validation have
 not been run, so Windows packaging remains deliberately disabled.
 
@@ -77,7 +79,7 @@ stay stable while the sidebar reorders. The middle row is **All Chats · New Cha
 ChatGPT and **All Chats · New Chat · Changes** in Codex. Changes becomes **No Changes** and is disabled
 until the focused Codex task exposes a diff. All Chats opens a paged folder containing every
 conversation the focused window makes visible; press one to jump. The bottom row answers the one
-that's waiting: **Approve · Deny · Voice**. Idle approval glyphs are grey; pending requests add a risk badge.
+that's waiting: **Approve · Deny · Voice Chat**. Idle approval glyphs are grey; pending requests add a risk badge.
 The approval row keeps its position when app modes change.
 
 **Page 2 · Controls.** The top row is always **Mode · Stop · Voice Draft**. Mode shows the
@@ -103,8 +105,8 @@ need to be supplied. Your existing workflow JSON retains its own submission choi
 3. Read and edit the transcript in the app. Press **Send** when it is ready.
 4. Use **Stop** to interrupt a running response. Its square icon is distinct from navigation.
 
-**Voice · SEND**, on the standard home page, sends the transcript when you stop dictating.
-It is speech-to-text, not native Voice Chat. Workflows marked SEND also submit immediately;
+**Dictate & Send** remains an optional action and keeps working in older profiles. It sends the
+transcript when you stop dictating. Workflows marked SEND also submit immediately;
 DRAFT workflows wait for your edit. These keys address the window targeted when the operation
 runs, so keep the intended conversation open through transcription. Existing draft text blocks
 insertion; move or finish that draft before starting another workflow or dictation.
@@ -115,11 +117,36 @@ is present, on ambiguous/incomplete surfaces, or if its window/composer/draft ch
 validation. **No Draft** means no eligible draft; **Not Sent** means the guarded operation failed.
 This cannot be treated as an atomic app API: live multi-window testing remains required.
 
+## Talk with native Voice
+
+Native Voice is the app's live spoken conversation. ChatGPT manages its microphone, audio,
+account, and permissions; this key does not start the offline transcription helper or require
+an API key. Voice is supported in Chat, Work, and Codex subject to availability, including existing
+Codex tasks as that capability rolls out. See the [official Voice documentation](https://learn.chatgpt.com/docs/features/voice).
+
+1. Open the chat or task you want to discuss, then press **Voice Chat · TALK** on Adaptive 3.
+2. Complete any first-use voice setup or microphone permission prompts in ChatGPT. **Check App**
+   means the key requested a transition; it is not a claim that recording started.
+3. When the app exposes its stop-voice control, the key becomes **End Voice · ACTIVE**. Press it
+   to end the session. ACTIVE describes the session, not whether its microphone is muted.
+4. **Stop** on Controls continues to interrupt a task; it does not end the voice conversation.
+
+**No Voice** means this window exposes no unambiguous supported voice control. Check feature
+availability and the app's Voice settings. There is no guessed keyboard shortcut fallback.
+Only the focused/main app window is addressed; return to the window with the voice session to
+end it. A changed or ambiguous state refuses the press instead of toggling the opposite action.
+
+The plugin serializes its native and dictation keys: local capture/transcription blocks native
+start, and an observed active native session blocks a new local dictation. Existing local capture
+can always be stopped. These checks cannot coordinate atomically with voice started outside Vizhi
+or in another app window. Mute/unmute and long-press gestures are deferred until verified.
+
 ## Choose a layout
 
-- **Vizhi Adaptive 2** keeps Approve · Deny · Voice on the home page. It is the packaged default
-  for new installations. Updates preserve the currently selected profile; choose Adaptive 2 in
+- **Vizhi Adaptive 3** keeps Approve · Deny and adds native Voice Chat on the home page. It is the packaged default
+  for new installations. Updates preserve the currently selected profile; choose Adaptive 3 in
   Options+ to adopt the new layout.
+- Earlier **Vizhi Adaptive 2** and customized profiles are retained with their existing assignments.
 - **Vizhi Everyday** replaces only the home approval row with **Voice Draft · Send · Stop**.
   Voice Draft is the dictation-to-draft action. The other two pages are the same. Import
   [VizhiDesktop-Everyday.lp5](package/optional-profiles/VizhiDesktop-Everyday.lp5) explicitly in

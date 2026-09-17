@@ -78,6 +78,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("Allow once", args);
             Assert.Contains("--deny", args);
             Assert.Contains("--stop", args);
+            Assert.Contains("--voice-start", args);
+            Assert.Contains("--voice-end", args);
             Assert.Contains("--attention", args);
             Assert.Contains("needs attention", args);
             Assert.Contains("--mode-prefix", args);

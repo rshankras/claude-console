@@ -24,6 +24,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// </summary>
         Boolean Press(String[] labels, out String matched);
 
+        /// <summary>Press one enabled button with an exact label; ambiguous matches fail closed.</summary>
+        Boolean PressExact(String[] labels) => false;
+
+        /// <summary>Request a specific native voice transition, never a blind toggle.</summary>
+        Boolean SetVoiceChat(Boolean active, out String error) { error = "unsupported"; return false; }
+
         /// <summary>Open one exact, unambiguous sidebar title. Unsupported helpers fail closed.</summary>
         Boolean PressConversation(String title) => false;
 

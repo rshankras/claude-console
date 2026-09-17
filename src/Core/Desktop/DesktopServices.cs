@@ -18,6 +18,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public static IDesktopAppAdapter App { get; private set; }
         public static IDesktopAutomation Automation { get; private set; }
         public static DesktopMonitor Monitor { get; private set; }
+        public static DesktopVoiceActions VoiceActions { get; private set; }
 
         public static Boolean Declared => App != null && Automation != null && Monitor != null;
 
@@ -26,6 +27,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             App = app ?? throw new ArgumentNullException(nameof(app));
             Automation = automation ?? throw new ArgumentNullException(nameof(automation));
             Monitor = monitor ?? throw new ArgumentNullException(nameof(monitor));
+            VoiceActions = new DesktopVoiceActions(automation);
         }
     }
 }

@@ -71,6 +71,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 }
             }
             AddContextLabels(args);
+            AddVoiceLabels(args);
             args.AddRange(new[] { "--send-label", _app.SendLabel });
 
             // 2.5s budget: the walk measured ~130ms end-to-end; the margin covers a cold
@@ -80,6 +81,29 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         public Boolean Press(String[] labels, out String matched) =>
             this.PressGuarded(labels, expectCard: null, out matched, out _);
+
+        public Boolean PressExact(String[] labels)
+        {
+            if (labels?.Length is not > 0) { return false; }
+            var args = new List<String> { "press-exact", "--app", _app.BundleId };
+            AddEach(args, "--label", labels);
+            return TryParseOk(this.Runner(args, 4000), out _);
+        }
+
+        public Boolean SetVoiceChat(Boolean active, out String error)
+        {
+            if (_app.StartVoiceLabels.Length == 0 || _app.EndVoiceLabels.Length == 0)
+            {
+                error = "unsupported";
+                return false;
+            }
+            var args = new List<String> { "voice", "--app", _app.BundleId,
+                "--action", active ? "start" : "end" };
+            AddVoiceLabels(args);
+            var json = this.Runner(args, 4000);
+            error = TryParseOk(json, out _) ? null : Describe(json);
+            return error == null;
+        }
 
         public Boolean PressGuarded(String[] labels, String expectCard, out String matched, out String error)
         {
@@ -229,6 +253,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             AddEach(args, "--pull-requests", _app.ControlLabels(DesktopControl.PullRequests));
             AddEach(args, "--explore", _app.ControlLabels(DesktopControl.Explore));
             AddEach(args, "--quick-chat", _app.ControlLabels(DesktopControl.QuickChat));
+        }
+
+        private void AddVoiceLabels(List<String> args)
+        {
+            AddEach(args, "--voice-start", _app.StartVoiceLabels);
+            AddEach(args, "--voice-end", _app.EndVoiceLabels);
         }
 
         private static Boolean TryParseOk(String json, out JsonElement root)

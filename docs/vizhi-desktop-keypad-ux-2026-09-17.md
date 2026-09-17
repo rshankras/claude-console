@@ -4,6 +4,10 @@ Date: 2026-09-17
 Branch: `integrate/vizhi-desktop-main`  
 Status: Version 0.11.0 installed locally on 2026-09-17; Adaptive 2 selected. End-to-end app interaction and physical keypad validation remain pending.
 
+Native Voice revision: see [the 0.12.0 plan and validation record](vizhi-desktop-native-voice-2026-09-17.md).
+It supersedes the earlier Voice Chat exploration decision and changes the next default profile's
+home voice position; the historical 0.11.0 layout and installation record below are retained.
+
 ## Recommendation
 
 Retain the existing three-page structure and improve clarity and behavior before making a major layout change:

@@ -23,7 +23,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         private String StartupLabel => BridgeManager.Instance.Voice.StartupLabel(VoiceIntent.Desktop);
 
         public DesktopVoiceCommand()
-            : base(displayName: "Voice", description: "Speak a prompt — press to start, press again to send it to the app", groupName: "Agent")
+            : base(displayName: "Dictate & Send", description: "Speak a prompt — press to start, press again to send it to the app", groupName: "Agent")
         {
             this.SetWidget(true);
             _face = new ListeningFace(() => this.ActionImageChanged());
@@ -63,7 +63,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             // One door for every voice key. Whether this press starts, stops, or is refused — and
             // where a stopped capture's transcript is routed — is the engine's call, not this key's.
             _fail.Clear();
-            BridgeManager.Instance.ToggleVoice(VoiceIntent.Desktop);
+            DesktopServices.VoiceActions.RequestDictation(VoiceIntent.Desktop, BridgeManager.Instance.Voice,
+                intent => BridgeManager.Instance.ToggleVoice(intent), out var feedback);
+            if (feedback != null) { _fail.Show(feedback); }
             PluginLog.Info($"DesktopVoiceCommand: recording={_face.IsActive}");
         }
 
@@ -71,7 +73,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
             KeyImage.RenderIntentTile(imageSize,
-                StartupLabel ?? (_face.IsActive ? "Listening" : _fail.IsActive ? _fail.Text : "Voice"),
+                StartupLabel ?? (_face.IsActive ? "Listening" : _fail.IsActive ? _fail.Text : "Dictate"),
                 _face.IsActive ? _face.Icon : "voice",
                 _fail.IsActive && !_face.IsActive ? "CHECK APP" : "SEND");
     }

@@ -3,6 +3,17 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [0.12.0] — Vizhi Desktop — 2026-09-17
+
+- Add native **Voice Chat / End Voice**, driven by exact observed app buttons. Unsupported or
+  ambiguous controls remain unavailable; live native-voice validation is still pending.
+- Add **Vizhi Adaptive 3**, with native Voice at home bottom-right. Keep Voice Draft and Send on
+  Controls, preserve all nine workflows, and retain older profiles and the user's selected default.
+- Keep offline **Dictate & Send** as an optional action. Coordinate native and local voice key
+  requests to avoid overlapping capture when the target window's native session is observable.
+- Match task **Stop** exactly so it cannot press **Stop voice chat** or report voice as task activity.
+- Preserve the Everyday profile's **Voice Draft / Send / Stop** row.
+
 ## [2.2.3] — 2026-09-16
 
 Claude Console and Vizhi for Codex compile the same engine, so the work done for Vizhi 1.6.1

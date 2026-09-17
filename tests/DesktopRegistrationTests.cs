@@ -257,7 +257,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // Bottom row: Approve / Deny / Voice.
             Assert.EndsWith("DesktopApprovalCommand___approve", pageOne[6]);
             Assert.EndsWith("DesktopApprovalCommand___deny", pageOne[7]);
-            Assert.EndsWith("DesktopVoiceCommand", pageOne[8]);
+            Assert.EndsWith("DesktopVoiceChatCommand", pageOne[8]);
+            Assert.Equal("Vizhi Adaptive 3", (String)profile["displayName"]);
+            Assert.NotEqual("6CA374714642475581835B05D0E6F7AC", (String)profile["name"]);
 
             // Actions: stable controls first, then four mode-aware positions.
             var pageTwo = pages[1]["controls"].AsArray()

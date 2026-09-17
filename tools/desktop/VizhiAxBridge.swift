@@ -97,7 +97,7 @@ func forceAccessibility(_ appEl: AXUIElement) {
 
 if verb == "help" || verb == "--help" {
     print("""
-    VizhiAxBridge <status|inspect|press|write|send|focus> --app <bundle-id> [verb args]  (see source header)
+    VizhiAxBridge <status|inspect|press|press-exact|voice|write|send|focus> --app <bundle-id> [verb args]  (see source header)
     """)
     exit(0)
 }
@@ -185,6 +185,45 @@ func firstPressable(matching labels: [String], in nodes: [Node]) -> Node? {
     }
 }
 
+// Exact button identity is mandatory for native voice and task Stop. In particular, neither
+// a chat title containing a label nor a longer button label may be used as a fallback.
+func exactButtons(matching labels: [String], in nodes: [Node]) -> [Node] {
+    let names = labels.filter { !$0.isEmpty }
+    return nodes.indices.compactMap { i in
+        let node = nodes[i]
+        guard node.role == "AXButton", names.contains(node.text) else { return nil }
+        // Sidebar conversation rows can themselves be AXButtons with arbitrary user titles.
+        // Their nested pin/archive controls distinguish them from a leaf action button.
+        var j = i + 1
+        while j < nodes.count && nodes[j].depth > node.depth {
+            if nodes[j].pressable { return nil }
+            j += 1
+        }
+        return node
+    }
+}
+
+func uniqueEnabledButton(matching labels: [String], in nodes: [Node]) -> Node? {
+    let matches = exactButtons(matching: labels, in: nodes)
+    guard matches.count == 1, matches[0].pressable,
+          (attr(matches[0].el, kAXEnabledAttribute as String) as? Bool) == true else { return nil }
+    return matches[0]
+}
+
+func voiceState(nodes: [Node], start: [String], end: [String]) -> String {
+    guard !start.isEmpty, !end.isEmpty else { return "unavailable" }
+    let endings = exactButtons(matching: end, in: nodes)
+    // Even a disabled End button is evidence of a session. It must block starting another.
+    if !endings.isEmpty { return endings.count == 1 ? "active" : "unavailable" }
+    return uniqueEnabledButton(matching: start, in: nodes) != nil ? "ready" : "unavailable"
+}
+
+func voiceTarget(action: String, nodes: [Node], start: [String], end: [String]) -> Node? {
+    guard ["start", "end"].contains(action),
+          voiceState(nodes: nodes, start: start, end: end) == (action == "start" ? "ready" : "active") else { return nil }
+    return uniqueEnabledButton(matching: action == "start" ? start : end, in: nodes)
+}
+
 // Send is never a substring search over the entire window. Require exactly one composer,
 // a non-empty draft, and an enabled exact Send button in a shared local container. The
 // window/web area are too broad to establish that relationship. Unknown layouts fail closed.
@@ -213,7 +252,7 @@ func sendTarget(in nodes: [Node]) -> Node? {
     guard composers.count == 1,
           let draft = str(composers[0].el, kAXValueAttribute as String),
           !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          firstPressable(matching: argValues("--stop"), in: nodes) == nil,
+          exactButtons(matching: argValues("--stop"), in: nodes).isEmpty,
           firstPressable(matching: argValues("--approve"), in: nodes) == nil else { return nil }
     return composerSendTarget(nodes: nodes, label: argValue("--send-label") ?? "") {
         (attr($0.el, kAXEnabledAttribute as String) as? Bool) == true
@@ -290,7 +329,7 @@ case "status":
 
     let approve = firstPressable(matching: argValues("--approve"), in: nodes)
     let deny = firstPressable(matching: argValues("--deny"), in: nodes)
-    let stop = firstPressable(matching: argValues("--stop"), in: nodes)
+    let stop = exactButtons(matching: argValues("--stop"), in: nodes).first
 
     func present(_ argument: String) -> Bool {
         firstPressable(matching: argValues(argument), in: nodes) != nil
@@ -376,6 +415,7 @@ case "status":
         "approvalPresent": approve != nil,
         "denyPresent": deny != nil,
         "stopPresent": stop != nil,
+        "voiceChat": voiceState(nodes: nodes, start: argValues("--voice-start"), end: argValues("--voice-end")),
         "canSend": sendTarget(in: nodes) != nil,
         // No verified assistant-message ownership selector in this adapter yet. In particular,
         // the last arbitrary "Copy message" button can belong to the user or an older answer.
@@ -395,7 +435,7 @@ case "status":
         "conversations": conversations,
     ], code: 0)
 
-case "press":
+case "press", "press-exact":
     let labels = argValues("--label")
     if labels.isEmpty { fail("no --label given", 4) }
     if !waitForWebContent(seconds: 2) { fail("surface-unavailable", 5) }
@@ -413,6 +453,8 @@ case "press":
         let matches = conversationMatches(title: labels[0], marker: marker, nodes: pressScan)
         if matches.count > 1 { fail("ambiguous-conversation", 4) }
         candidate = matches.first
+    } else if verb == "press-exact" {
+        candidate = uniqueEnabledButton(matching: labels, in: pressScan)
     } else {
         candidate = firstPressable(matching: labels, in: pressScan)
     }
@@ -438,6 +480,30 @@ case "press":
     let rc = AXUIElementPerformAction(target.el, kAXPressAction as CFString)
     if rc != .success { fail("press-failed rc=\(rc.rawValue)", 5) }
     emit(["matched": target.text, "frontBefore": before, "frontAfter": frontmostName()], code: 0)
+
+case "voice":
+    let action = argValue("--action") ?? ""
+    guard ["start", "end"].contains(action) else { fail("invalid-voice-action", 4) }
+    let starts = argValues("--voice-start")
+    let ends = argValues("--voice-end")
+    if !waitForWebContent(seconds: 2) { fail("surface-unavailable", 5) }
+    let initial = scanWindows()
+    guard initial.webArea, sameOperationWindow(),
+          let target = voiceTarget(action: action, nodes: initial.nodes, start: starts, end: ends) else {
+        fail("voice-state-changed", 6)
+    }
+    let title = str(operationWindows[0], kAXTitleAttribute as String)
+    let latest = scanWindows()
+    guard latest.webArea, sameOperationWindow(),
+          str(operationWindows[0], kAXTitleAttribute as String) == title,
+          let confirmed = voiceTarget(action: action, nodes: latest.nodes, start: starts, end: ends),
+          CFEqual(target.el, confirmed.el) else { fail("voice-state-changed", 6) }
+    guard AXUIElementPerformAction(confirmed.el, kAXPressAction as CFString) == .success else {
+        fail("voice-press-failed", 5)
+    }
+    // Request accepted is all we know. Setup dialogs, connection failure, or user cancellation
+    // can follow; only subsequent status observations may render an active session.
+    emit(["requested": action], code: 0)
 
 case "send":
     if !waitForWebContent(seconds: 2) { fail("surface-unavailable", 5) }

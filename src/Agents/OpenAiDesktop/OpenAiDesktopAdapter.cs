@@ -7,8 +7,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     /// the ChatGPT app's bundle id names Codex), ONE app carrying both surfaces, ChatGPT and
     /// Codex, behind a mode switcher.
     ///
-    /// Every string below is UI copy read off the LIVE app during the 2026-08-24 spike sitting
-    /// (spikes/desktop-plugin/README.md → "Sitting completed"), not guessed from docs. The card
+    /// Original labels were read off the LIVE app during the 2026-08-24 spike sitting
+    /// (spikes/desktop-plugin/README.md → "Sitting completed"). Native Voice labels are documented
+    /// candidates (see below); availability requires observing the actual exact buttons. The card
     /// labels matched Claude Desktop's exactly (Deny / Allow once), which is what makes a shared
     /// engine plausible; the attention marker is the sidebar toggle's relabel, the single
     /// cheapest honest "the app wants you" signal we found.
@@ -40,6 +41,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public String[] DenyLabels => new[] { "Deny" };
 
         public String[] StopLabels => new[] { "Stop" };
+
+        // Official UI labels, 2026-09-17: https://learn.chatgpt.com/docs/features/voice
+        // Not yet verified as live AX labels. No substring or hotkey fallback: missing or
+        // ambiguous controls leave Voice unavailable. These apply to ChatGPT AND Codex.
+        public String[] StartVoiceLabels => new[] { "Start voice chat", "Start new voice chat" };
+        public String[] EndVoiceLabels => new[] { "Stop voice chat" };
 
         public String SendLabel => "Send";
 

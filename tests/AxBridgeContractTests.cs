@@ -21,6 +21,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("\"status\"")]
         [InlineData("\"press\"")]
         [InlineData("\"write\"")]
+        [InlineData("\"voice\"")]
         [InlineData("\"focus\"")]
         public void The_verbs_exist(String verb)
         {
@@ -50,6 +51,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("--label")]
         [InlineData("--text")]
         [InlineData("--send-label")]
+        [InlineData("--voice-start")]
+        [InlineData("--voice-end")]
+        [InlineData("--action")]
         [InlineData("--expect-near")]
         public void The_argument_names_match_what_the_client_sends(String arg)
         {
@@ -62,6 +66,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("approvalPresent")]
         [InlineData("denyPresent")]
         [InlineData("stopPresent")]
+        [InlineData("voiceChat")]
         [InlineData("cardText")]
         [InlineData("mode")]
         [InlineData("conversations")]
