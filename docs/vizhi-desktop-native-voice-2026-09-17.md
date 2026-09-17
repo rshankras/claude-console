@@ -2,10 +2,10 @@
 
 Branch: `integrate/vizhi-desktop-main`. Current correction: **0.12.3 / Vizhi Adaptive 3**.
 
-Status: **0.12.2 installed locally** with Adaptive 3 selected. The user confirmed **No Voice**
-remained after 0.12.1; that installed DLL and helper matched the package. Native recognition and
-direct draft insertion remain unresolved. Version 0.12.2 adds draft recovery and progress feedback.
-Version 0.12.3 adds a confirmed shortcut path; its plan and verification are below.
+Status: **0.12.3 installed locally** with Adaptive 3 selected and **Control–Shift–V** configured.
+The service log confirms the shortcut path is enabled. Live keypad start/stop awaits a user test.
+AX voice recognition and direct draft insertion remain unresolved; the new shortcut bypasses
+voice-button recognition, while 0.12.2's clipboard recovery remains available for failed drafts.
 
 ## 0.12.3 confirmed Voice Chat shortcut
 
@@ -44,6 +44,17 @@ helper compiles and signs. Tests cover unknown AX state, configuration validatio
 press, repeat suppression, local-capture exclusion, failure without fallback, and fixed-PID routing
 across a simulated focus change. No live events were posted to ChatGPT; the Computer Use restriction
 was respected. Live start/stop remains a user acceptance check after installation.
+
+Installation: package built from `405756b`, verified, installed, and loaded by Logi Plugin Service
+at **15:53:32** on 2026-09-17. The same service log confirms **Voice Chat uses configured shortcut**.
+The installed DLL and runtime helper match the archive. All **28 application/profile files** are
+unchanged; Adaptive 3 remains selected. The local shortcut file contains the screenshot-confirmed
+Control–Shift–V binding. Backup/receipt: `~/.claude/claude-console/backups/vizhi-desktop/20260917-155324/`.
+
+Manual acceptance: keep ChatGPT frontmost, press home bottom-right **Voice Chat / TOGGLE** once,
+confirm native Voice opens, then press again after at least 1.2 seconds and confirm it ends. Check
+that a default-profile copy of the key reports **Open App** with another app frontmost. No live
+start/stop or microphone interaction is claimed by the package and dispatch tests.
 
 ## Historical 0.12.0 design
 

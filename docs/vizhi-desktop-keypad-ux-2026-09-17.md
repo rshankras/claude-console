@@ -2,12 +2,12 @@
 
 Date: 2026-09-17  
 Branch: `integrate/vizhi-desktop-main`  
-Current status: Version 0.12.2 installed locally on 2026-09-17; Adaptive 3 selected in application
-configuration. The user confirmed native Voice detection still fails and a transcribed Voice Draft
-did not reach the composer. Version 0.12.2 adds progress feedback and manual clipboard recovery.
-The 0.11.0 / Adaptive 2 record below is historical; app compatibility remains unresolved.
-The user's settings screenshot now confirms Control–Shift–V toggles Voice Chat. Version 0.12.3
-adds this as an opt-in local shortcut, with **Voice Chat / TOGGLE** in the existing home position.
+Current status: Version 0.12.3 installed locally on 2026-09-17; Adaptive 3 selected in application
+configuration. Control–Shift–V, confirmed in the user's app settings screenshot, is configured for
+**Voice Chat / TOGGLE** in the existing home position. The service confirms this path is enabled;
+live keypad start/stop awaits a user test. AX voice detection and direct draft insertion remain
+unresolved; Voice Draft retains 0.12.2's progress feedback and clipboard recovery.
+The 0.11.0 / Adaptive 2 record below is historical.
 
 Native Voice revision: see [the 0.12.0 plan and validation record](vizhi-desktop-native-voice-2026-09-17.md).
 It supersedes the earlier Voice Chat exploration decision and changes the next default profile's
