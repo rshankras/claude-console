@@ -2,7 +2,7 @@
 
 Branch: `integrate/vizhi-desktop-main`. Current correction: **0.12.1 / Vizhi Adaptive 3**.
 
-Status: implemented and installed locally. Plugin load and profile selection are verified;
+Status: 0.12.1 installed locally. Plugin load and profile selection are verified;
 native audio interaction and visual keypad validation remain pending.
 
 ## Decision and revised plan
@@ -117,3 +117,10 @@ masking names, repeated labels on one button, unrelated Close, and the prior tar
 Desktop/AX C# tests pass (217 tests), and the complete Swift helper compiles and signs successfully.
 Live recognition and the active session's end label remain to be confirmed by the user; Computer Use
 refuses access to the ChatGPT app, so no alternate live AX inspection was performed.
+
+The 0.12.1 package was built from `c3fae66`, verified, installed, and loaded by Logi Plugin Service
+at 15:12 on 2026-09-17. Runtime helper and DLL match the package. All 28 application/profile files
+are unchanged, and Adaptive 3 remains selected. Backup and receipt:
+`~/.claude/claude-console/backups/vizhi-desktop/20260917-151159/`.
+The user has been asked to confirm the live key label after this update; recognition is not yet
+reported as resolved.
