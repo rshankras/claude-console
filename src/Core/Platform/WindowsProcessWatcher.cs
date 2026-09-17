@@ -92,6 +92,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
         }
 
+        /// <summary>
+        /// Return only the arguments passed to an interpreter, excluding argv[0]. The interpreter's
+        /// own install path is not evidence about the script it is running: Codex App's bundled
+        /// node.exe lives under an OpenAI\Codex runtime directory, which used to satisfy the broad
+        /// "\\codex" marker even when its only argument was an unrelated server.mjs.
+        /// </summary>
+        private static String InterpreterArguments(String commandLine)
+        {
+            if (String.IsNullOrWhiteSpace(commandLine))
+            {
+                return String.Empty;
+            }
+
+            var cmd = commandLine.TrimStart();
+            if (cmd[0] == '"')
+            {
+                var closingQuote = cmd.IndexOf('"', 1);
+                return closingQuote < 0 ? String.Empty : cmd.Substring(closingQuote + 1).TrimStart();
+            }
+
+            var firstWhitespace = cmd.IndexOfAny(new[] { ' ', '\t', '\r', '\n' });
+            return firstWhitespace < 0 ? String.Empty : cmd.Substring(firstWhitespace + 1).TrimStart();
+        }
+
         // Claude Desktop is Electron AND its executable is also called claude.exe, so the name alone
         // cannot tell the two apart. Its renderer/GPU/utility children carry --type=, but the MAIN
         // process carries no switch at all — only its install location distinguishes it. Both known
@@ -208,18 +232,47 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             // The native CLI: <agent>.exe. Case-insensitive on purpose — Windows filesystems are —
             // and the desktop-app collision that forces case-sensitivity on macOS is handled here
             // by the command-line exclusions above instead.
-            if (CliNames(matcher).Contains(p.Name, StringComparer.OrdinalIgnoreCase))
+            var name = RunningImageName(p.Name);
+            if (CliNames(matcher).Contains(name, StringComparer.OrdinalIgnoreCase))
             {
+                // Codex App launches long-lived `codex sandbox ...` workers. They share the
+                // CLI image name but have no interactive session. Match the first argument
+                // exactly, never a word in a prompt, project path, or sandbox configuration.
+                var arguments = InterpreterArguments(cmd);
+                var closingQuote = arguments.StartsWith("\"", StringComparison.Ordinal) ? arguments.IndexOf('"', 1) : -1;
+                var firstArgument = closingQuote > 0
+                    ? arguments.Substring(1, closingQuote - 1)
+                    : arguments.Split(new[] { ' ', '\t', '\r', '\n' }, 2)[0];
+                if (matcher.NonSessionSubcommands.Contains(firstArgument, StringComparer.Ordinal))
+                {
+                    return false;
+                }
                 return true;
             }
 
             // An npm/bun install: an interpreter running the agent's CLI script.
-            if (Interpreters.Contains(p.Name))
+            if (Interpreters.Contains(name))
             {
-                return CliMarkers(matcher).Any(m => cmd.Contains(m, StringComparison.OrdinalIgnoreCase));
+                var arguments = InterpreterArguments(cmd);
+                return CliMarkers(matcher).Any(m => arguments.Contains(m, StringComparison.OrdinalIgnoreCase));
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// A process's name as it was launched, even after an in-place update renamed the running
+        /// image. Claude Code updates itself while sessions run; Windows cannot overwrite a running
+        /// executable, so the updater renames it — claude.exe becomes claude.exe.old.1789090133131
+        /// and any enumeration that reads the CURRENT image name reports that. WMI reports the
+        /// creation-time name, which is why this scan kept finding the session on 2026-09-11 while
+        /// the hook exe, which asks .NET, lost it — see claude-console-hook's IsExe. Same rule on
+        /// both sides, so they can never disagree about what a Claude process is.
+        /// </summary>
+        internal static String RunningImageName(String name)
+        {
+            var at = name.IndexOf(".exe.", StringComparison.OrdinalIgnoreCase);
+            return at > 0 ? name.Substring(0, at + 4) : name;
         }
     }
 }

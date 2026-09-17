@@ -100,6 +100,31 @@ chmod u+wx "$OUT/$CLI_BASE"
 process "$OUT/$CLI_BASE"
 echo ">>> bundled:$copied $CLI_BASE"
 
+# The compute backends. ggml 0.15+ is a DYNAMIC-BACKEND build: libggml.dylib is only a registry,
+# and CPU/Metal/BLAS live in separate .so files it dlopens at runtime. dlopen leaves no trace in
+# the Mach-O load commands, so the closure walk above cannot see them — which is how the bundle
+# shipped with ZERO backends and aborted on GGML_ASSERT(device) for every user without Homebrew,
+# while working perfectly here, where libggml's compiled-in search path still resolves (#24).
+# They have to be copied explicitly. ggml_backend_load_best searches the directory of the running
+# EXECUTABLE, so a flat bundle finds them with no environment variable set.
+BACKEND_DIR="${GGML_BACKEND_SRC:-$(brew --prefix ggml 2>/dev/null || echo /opt/homebrew/opt/ggml)/libexec}"
+backends=""
+if [ -d "$BACKEND_DIR" ]; then
+  for so in "$BACKEND_DIR"/*.so; do
+    [ -e "$so" ] || continue
+    b="$(basename "$so")"
+    cp -L "$so" "$OUT/$b"
+    chmod u+w "$OUT/$b"
+    backends="$backends $b"
+    process "$OUT/$b"   # each backend has its own closure — the CPU ones pull in libomp
+  done
+fi
+if [ -z "$backends" ]; then
+  echo "warn: no ggml backends in $BACKEND_DIR — only correct if this ggml is a static build." >&2
+  echo "      The transcription smoke test below is what actually decides." >&2
+fi
+echo ">>> backends:$backends"
+
 # Rewrite install names + rpaths so everything resolves from its own directory, then re-sign.
 relocate() {
   local f="$1" isdylib="$2" dep base
@@ -113,11 +138,17 @@ relocate() {
     install_name_tool -change "$dep" "@rpath/$base" "$f"
   done < <(deps_of "$f")
   install_name_tool -add_rpath "@loader_path" "$f" 2>/dev/null || true
-  # The main executable carries the Metal entitlements; the dylibs don't need them.
-  if [ "$isdylib" = "1" ]; then sign_macho "$f"; else sign_macho "$f" ent; fi
+  # The main executable carries the Metal entitlements; nothing it loads needs its own, since
+  # entitlements belong to the process. A backend gets no -id (it is dlopened by path, never
+  # linked) but it IS signed: under the hardened runtime an unsigned dlopen is refused.
+  case "$isdylib" in
+    0) sign_macho "$f" ent ;;
+    *) sign_macho "$f" ;;
+  esac
 }
 
 for base in $copied; do relocate "$OUT/$base" 1; done
+for base in $backends; do relocate "$OUT/$base" so; done
 relocate "$OUT/$CLI_BASE" 0
 
 # Bundle the MIT licenses for the redistributed binaries.
@@ -128,14 +159,19 @@ GG_LIC="$(ls -d /opt/homebrew/Cellar/ggml/*/LICENSE 2>/dev/null | head -1 || tru
 
 # Verify no Homebrew paths leaked into the relocated closure.
 echo ">>> verifying no residual Homebrew references"
-if otool -L "$OUT/$CLI_BASE" "$OUT"/*.dylib | grep -q "/opt/homebrew"; then
+if [ -n "$backends" ]; then
+  refs="$(otool -L "$OUT/$CLI_BASE" "$OUT"/*.dylib "$OUT"/*.so)"
+else
+  refs="$(otool -L "$OUT/$CLI_BASE" "$OUT"/*.dylib)"
+fi
+if printf '%s\n' "$refs" | grep -q "/opt/homebrew"; then
   echo "error: residual /opt/homebrew references remain:" >&2
-  otool -L "$OUT/$CLI_BASE" "$OUT"/*.dylib | grep "/opt/homebrew" >&2
+  printf '%s\n' "$refs" | grep "/opt/homebrew" >&2
   exit 1
 fi
 
-# Smoke test 1: launch with Homebrew off PATH; catches eagerly loaded dependency failures.
-echo ">>> smoke test (Homebrew not on PATH)"
+# Smoke test 1: launch with Homebrew off PATH; if dyld can't resolve the closure it says so on stderr.
+echo ">>> smoke test 1: dyld closure (Homebrew not on PATH)"
 err="$(PATH=/usr/bin:/bin "$OUT/$CLI_BASE" --help 2>&1 >/dev/null || true)"
 case "$err" in
   *"Library not loaded"*|*"image not found"*|*"Symbol not found"*|*"dyld"*)
@@ -144,26 +180,50 @@ case "$err" in
     exit 1 ;;
 esac
 
-# Smoke test 2: process a real WAV with the model. Some whisper backends are loaded only when
-# transcription begins, so --help can pass while the first recording fails. Release packaging
-# requires the marker produced here; a bundle that was never exercised cannot ship.
+# Smoke test 2: transcribe for real, on a machine pretending to have no Homebrew.
+#
+# The sandbox is the whole point, and it is not belt-and-braces. ggml loads its compute backends
+# by dlopen at runtime, and falls back to the path Homebrew's build compiled in. On THIS machine
+# that path exists, so a bundle carrying no backends at all transcribes perfectly — which is
+# precisely how a broken bundle passed CI and shipped (#24). Denying the Homebrew prefix is what
+# makes this test able to fail. Asserting that a backend was loaded FROM THE BUNDLE is what makes
+# it able to fail for the right reason.
 SMOKE_MODEL="${WHISPER_SMOKE_MODEL:-$HOME/.claude/claude-console/whisper/ggml-base.en.bin}"
 SMOKE_MARKER="$OUT/TRANSCRIPTION_SMOKE_OK"
 rm -f "$SMOKE_MARKER"
-if [ -f "$SMOKE_MODEL" ]; then
-  SMOKE_WAV="$OUT/.whisper-smoke.wav"
-  /usr/bin/perl -e '$n=32000; print pack("A4VA4A4VvvVVvvA4V", "RIFF", 36+$n, "WAVE", "fmt ", 16, 1, 1, 16000, 32000, 2, 16, "data", $n), "\0" x $n' > "$SMOKE_WAV"
-  echo ">>> transcription smoke test"
-  if ! PATH=/usr/bin:/bin "$OUT/$CLI_BASE" -m "$SMOKE_MODEL" -f "$SMOKE_WAV" -nt >/dev/null 2>"$OUT/.whisper-smoke.err"; then
-    echo "error: whisper bundle could not transcribe a real WAV:" >&2
-    tail -40 "$OUT/.whisper-smoke.err" >&2
-    rm -f "$SMOKE_WAV" "$OUT/.whisper-smoke.err"
+if [ ! -f "$SMOKE_MODEL" ]; then
+  echo "warning: no speech model at $SMOKE_MODEL — transcription smoke SKIPPED." >&2
+  echo "         Set WHISPER_SMOKE_MODEL. Release packaging will refuse this bundle." >&2
+else
+  echo ">>> smoke test 2: real transcription, Homebrew unreachable"
+  TMPD="$(mktemp -d)"
+  trap 'rm -rf "$TMPD"' EXIT
+  # 1 second of 16 kHz mono silence. Silence is enough: a missing backend aborts at registration,
+  # before a single sample is read.
+  /usr/bin/perl -e '$n=32000; print pack("A4VA4A4VvvVVvvA4V", "RIFF", 36+$n, "WAVE", "fmt ", 16, 1, 1, 16000, 32000, 2, 16, "data", $n), "\0" x $n' > "$TMPD/smoke.wav"
+  BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
+  printf '%s\n' '(version 1)' '(allow default)' \
+    "(deny file-read* (subpath \"$BREW_PREFIX\"))" > "$TMPD/no-brew.sb"
+
+  smoke_rc=0
+  /usr/bin/sandbox-exec -f "$TMPD/no-brew.sb" "$OUT/$CLI_BASE" \
+    -m "$SMOKE_MODEL" -f "$TMPD/smoke.wav" -nt >/dev/null 2>"$TMPD/smoke.err" || smoke_rc=$?
+
+  if [ "$smoke_rc" -ne 0 ]; then
+    echo "error: the bundle cannot transcribe on a machine without Homebrew (exit $smoke_rc)." >&2
+    echo "       This is the #24 failure: no compute backend registered." >&2
+    tail -25 "$TMPD/smoke.err" >&2
     exit 1
   fi
-  rm -f "$SMOKE_WAV" "$OUT/.whisper-smoke.err"
-  printf 'model=%s\n' "$(basename "$SMOKE_MODEL")" > "$SMOKE_MARKER"
-else
-  echo "warning: transcription smoke skipped; set WHISPER_SMOKE_MODEL (release packaging will refuse this bundle)" >&2
+  # Loaded, but from where? If ggml found a backend outside $OUT the bundle is still not standalone.
+  if ! grep -q "load_backend: loaded .* from $OUT/" "$TMPD/smoke.err"; then
+    echo "error: transcription succeeded but no backend was loaded from the bundle." >&2
+    echo "       ggml resolved its compute backend somewhere else — the bundle is not self-contained." >&2
+    grep -i "load_backend\|search path" "$TMPD/smoke.err" >&2 || true
+    exit 1
+  fi
+  grep -o "load_backend: loaded [A-Za-z]* backend" "$TMPD/smoke.err" | sed 's/^/    /'
+  printf 'model=%s\nbackends=%s\n' "$(basename "$SMOKE_MODEL")" "$backends" > "$SMOKE_MARKER"
 fi
 
 echo "✅ self-contained whisper-cli -> $OUT"

@@ -4,6 +4,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System.IO;
 
     using Loupedeck.ClaudeConsolePlugin.Platform;
+    using Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration;
 
     using Xunit;
 

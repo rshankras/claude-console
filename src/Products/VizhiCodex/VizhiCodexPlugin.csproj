@@ -11,7 +11,7 @@
          crash-disable marker (Logs/plugin_crashes/) by assembly version; if this stays
          1.0.0.0 forever, any one load-crash disables the plugin permanently. Bumping it
          per release lets a new build dodge a stale marker. -->
-    <Version>1.5.3</Version>
+    <Version>1.6.1</Version>
 
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -71,6 +71,18 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\Core\Resources\**\*.png">
       <Link>Resources\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </EmbeddedResource>
+    <!-- Same approved glyph geometry as Claude Console, tinted to the Codex/ChatGPT identity
+         blue. KeyImage keeps state-semantic art (Yes/No, warnings and listening) shared. -->
+    <EmbeddedResource Include="Resources\icons_codex\*.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The SDK's static plugin declaration (see ClaudeConsolePlugin.csproj, #63). Both products
+         share the Loupedeck.ClaudeConsolePlugin namespace, so the logical name is the same; the
+         file differs only in the product display name (the inert parser sentinel is shared). -->
+    <EmbeddedResource Include="PluginConfiguration.xml">
+      <LogicalName>Loupedeck.ClaudeConsolePlugin.PluginConfiguration.xml</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

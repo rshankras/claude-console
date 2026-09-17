@@ -3,6 +3,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System;
 
     using Loupedeck.ClaudeConsolePlugin.Desktop;
+    using Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration;
 
     /// <summary>
     /// Vizhi Desktop — the same engine as the terminal products, driving the OpenAI DESKTOP app
@@ -36,7 +37,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         public VizhiDesktopPlugin()
         {
-            PluginLog.Init(this.Log);
+            PluginLog.Init(this.Log, "Vizhi Desktop");
             PluginResources.Init(this.Assembly);
 
             // Before any action is constructed — actions resolve IPC paths and DesktopServices.
@@ -83,19 +84,19 @@ namespace Loupedeck.ClaudeConsolePlugin
             // Sweep orphans first, then register-or-heal — same sequence and same reasons as
             // the terminal products (an orphaned registration steals activation and looks like
             // THIS plugin being broken).
-            Platform.RegistrationCleanup.RemoveOrphans(
-                Platform.RegistrationHeal.ApplicationsRoot(),
+            RegistrationCleanup.RemoveOrphans(
+                RegistrationHeal.ApplicationsRoot(),
                 Platform.PluginPaths.PluginsRoot,
                 "VizhiDesktop");
 
             var windowsProcess = OperatingSystem.IsWindows() ? _app.WindowsProcessNames[0] : null;
-            if (!Platform.SelfRegistration.RegisterIfMissing(windowsProcess))
+            if (!SelfRegistration.RegisterIfMissing(windowsProcess))
             {
                 // Marketplace installs can retain an older ApplicationInfo timestamp even after
                 // correctly adopting it. The shared timestamp heuristic would then restart LPS
                 // during a healthy install. Desktop still self-registers a genuinely missing
                 // sideload entry above, but never restarts merely because timestamps differ.
-                Platform.RegistrationHeal.HealIfNeeded(automaticRestartAllowed: false);
+                RegistrationHeal.HealIfNeeded(automaticRestartAllowed: false);
             }
 
             PluginLog.Info("VizhiDesktopPlugin: Loaded — driving the ChatGPT/Codex desktop app");

@@ -121,13 +121,33 @@ if [ -n "$TTY_KEY" ]; then
   check_eq   "payload is stored verbatim" "$PERM_PAYLOAD" "$(cat "$PENDING" 2>/dev/null)"
   check_eq   "pending file is owner-only (600)" "600" "$(mode_of "$PENDING")"
 
-  # A stale pending file would leave a red badge lit after the command already ran, so any
-  # non-permission event must clear it.
+  # A bare "waiting" must NOT clear the payload: a permission menu fires PermissionRequest and then
+  # a plain Notification (arg "waiting", no payload) ~6s later while the SAME menu is up. Deleting
+  # it there darkened a live approval badge and blinded the Yes/No keys (#21/#51 retest regression).
+  printf '{}' | bash "$ACTIVITY_HOOK" waiting >/dev/null 2>&1
+  if [ -f "$PENDING" ]; then
+    ok "a bare waiting event leaves the pending payload intact"
+    check_eq "payload still verbatim after waiting" "$PERM_PAYLOAD" "$(cat "$PENDING" 2>/dev/null)"
+  else
+    bad "a bare waiting event leaves the pending payload intact" "the delayed Notification erased it"
+  fi
+
+  # ...but a genuine move-on (busy = a new turn / a tool completing, done = turn ended) clears it,
+  # or a stale red badge would linger after the command it described has already run.
   printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
   if [ -f "$PENDING" ]; then
-    bad "moving on clears the pending payload" "pending file survived a busy event"
+    bad "moving on (busy) clears the pending payload" "pending file survived a busy event"
   else
-    ok "moving on clears the pending payload"
+    ok "moving on (busy) clears the pending payload"
+  fi
+
+  # And done clears it too — re-arm, then Stop.
+  printf '%s' "$PERM_PAYLOAD" | bash "$ACTIVITY_HOOK" permission >/dev/null 2>&1
+  printf '{}' | bash "$ACTIVITY_HOOK" done >/dev/null 2>&1
+  if [ -f "$PENDING" ]; then
+    bad "moving on (done) clears the pending payload" "pending file survived a done event"
+  else
+    ok "moving on (done) clears the pending payload"
   fi
 fi
 
@@ -141,6 +161,125 @@ if [ -d "$HOSTILE" ] && [ ! -O "$HOSTILE" ]; then
 else
   ok "creates and owns its root, or bails"
 fi
+
+# --- uninstall.sh --unwire: surgical, and only ours (#31) ------------------------------------------
+# HOME is already the temp root, so this never touches the real settings.json.
+echo
+echo "uninstall.sh --unwire"
+UNINSTALL="$REPO/scripts/uninstall.sh"
+mkdir -p "$HOME/.claude/claude-console"
+cat > "$HOME/.claude/settings.json" <<'JSON'
+{
+  "model": "opus",
+  "statusLine": { "type": "command", "command": "bash /tmp/x/.claude/claude-console/scripts/statusline-handler.sh" },
+  "hooks": {
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "bash /tmp/x/.claude/claude-console/scripts/activity-hook.sh busy" } ] } ],
+    "PostToolUse": [ { "matcher": "*", "hooks": [
+      { "type": "command", "command": "bash /tmp/x/.claude/claude-console/scripts/activity-hook.sh busy" },
+      { "type": "command", "command": "echo user-hook" } ] } ],
+    "SessionStart": [ { "hooks": [ { "type": "command", "command": "echo mine" } ] } ]
+  }
+}
+JSON
+printf 'my-status --flag' > "$HOME/.claude/claude-console/statusline-chain"
+
+# A dry run of the full cleanup must report the wiring and change nothing.
+BEFORE_SUM="$(cksum < "$HOME/.claude/settings.json")"
+DRY_OUT="$(bash "$UNINSTALL" --dry-run 2>&1)"
+check_eq "dry run reports the wiring it would remove" "1" "$(printf '%s' "$DRY_OUT" | grep -c 'would remove 2 claude-console hook')"
+check_eq "dry run changes nothing" "$BEFORE_SUM" "$(cksum < "$HOME/.claude/settings.json")"
+
+bash "$UNINSTALL" --unwire >/dev/null 2>&1
+check_eq "--unwire exits 0" "0" "$?"
+j() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(eval(sys.argv[2]))" "$HOME/.claude/settings.json" "$1" 2>/dev/null; }
+check_eq "our statusLine is replaced by the chained original" "my-status --flag" "$(j "d['statusLine']['command']")"
+check_eq "no claude-console reference survives" "0" "$(grep -c 'claude-console' "$HOME/.claude/settings.json")"
+check_eq "the event we owned outright is gone" "False" "$(j "'UserPromptSubmit' in d['hooks']")"
+check_eq "the user's hook sharing our entry survives, alone" "['echo user-hook']" "$(j "[h['command'] for h in d['hooks']['PostToolUse'][0]['hooks']]")"
+check_eq "the user's own event survives" "echo mine" "$(j "d['hooks']['SessionStart'][0]['hooks'][0]['command']")"
+check_eq "unrelated settings survive" "opus" "$(j "d['model']")"
+check_file "a rolling backup was written first" "$HOME/.claude/settings.json.claude-console.bak"
+check_eq "the backup is the pre-unwire state" "1" "$(grep -c 'statusline-handler' "$HOME/.claude/settings.json.claude-console.bak")"
+check_file "the Off marker is set, so no later load wires it back" "$HOME/.claude/claude-console/no-autowire"
+AFTER_SUM="$(cksum < "$HOME/.claude/settings.json")"
+bash "$UNINSTALL" --unwire >/dev/null 2>&1
+check_eq "a second --unwire is a no-op" "$AFTER_SUM" "$(cksum < "$HOME/.claude/settings.json")"
+
+# --- liveness (#73): the hooks unwire themselves once the plugin is gone ------------------------
+# An Options+ uninstall removes the plugin folder and nothing else, so the hooks kept running
+# with nothing to read them. The plugin writes its installed location to plugin-home on every
+# load; a hook that finds that place missing records nothing, and once it has been missing for
+# over a minute across two runs, runs the surgical unwire itself. One miss is not enough: an
+# Options+ update replaces the folder, and the service restarts on its own.
+echo
+echo "liveness (#73)"
+RUNTIME_HOME="$HOME/.claude/claude-console"
+mkdir -p "$RUNTIME_HOME/scripts"
+cp "$UNINSTALL" "$RUNTIME_HOME/scripts/uninstall.sh"   # what the plugin installs beside the hooks
+rm -f "$RUNTIME_HOME/no-autowire" "$RUNTIME_HOME/plugin-missing-since" "$RUNTIME_HOME/unwired-after-uninstall"
+PLUGIN_DIR="$ROOT/Plugins/ClaudeConsole"
+mkdir -p "$PLUGIN_DIR"
+printf '%s' "$PLUGIN_DIR" > "$RUNTIME_HOME/plugin-home"
+ACT="$CLAUDE_CONSOLE_IPC_ROOT/activity/shared.json"
+SES="$CLAUDE_CONSOLE_IPC_ROOT/sessions/shared.json"
+present() { [ -f "$1" ] && echo 1 || echo 0; }
+
+rm -f "$ACT"
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
+check_file "plugin present: the hook records as before" "$ACT"
+check_eq   "plugin present: no missing-since note" "0" "$(present "$RUNTIME_HOME/plugin-missing-since")"
+
+rmdir "$PLUGIN_DIR"
+rm -f "$ACT" "$SES"
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1; RC=$?
+check_eq "plugin gone: the first run exits 0" "0" "$RC"
+check_eq "plugin gone: the first run records nothing" "0" "$(present "$ACT")"
+check_eq "plugin gone: the first run leaves a missing-since note" "1" \
+         "$(grep -cE '^[0-9]+$' "$RUNTIME_HOME/plugin-missing-since" 2>/dev/null)"
+
+# Under a minute: still wired, still silent (an update replaces the folder for a few seconds).
+cat > "$HOME/.claude/settings.json" <<'JSON'
+{
+  "statusLine": { "type": "command", "command": "[ ! -f \"/x/statusline-handler.sh\" ] || bash \"/x/statusline-handler.sh\"" },
+  "hooks": {
+    "Stop": [ { "hooks": [
+      { "type": "command", "command": "[ ! -f \"/x/activity-hook.sh\" ] || bash \"/x/activity-hook.sh\" done" },
+      { "type": "command", "command": "echo user-hook — keep me" } ] } ]
+  }
+}
+JSON
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
+check_eq "plugin gone under a minute: still wired" "1" "$(grep -c 'activity-hook.sh' "$HOME/.claude/settings.json")"
+check_eq "plugin gone under a minute: records nothing" "0" "$(present "$ACT")"
+
+# Over a minute across two runs: unwired, surgically, and that run records nothing either.
+printf '%s' "$(( $(date +%s) - 120 ))" > "$RUNTIME_HOME/plugin-missing-since"
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1; RC=$?
+check_eq   "plugin gone over a minute: exits 0" "0" "$RC"
+check_eq   "plugin gone over a minute: our wiring is taken out" "0" \
+           "$(grep -c 'activity-hook.sh\|statusline-handler.sh' "$HOME/.claude/settings.json")"
+check_eq   "plugin gone over a minute: the user's hook survives, unescaped (#72)" "1" \
+           "$(grep -c 'echo user-hook — keep me' "$HOME/.claude/settings.json")"
+check_file "plugin gone over a minute: the Off marker is set" "$RUNTIME_HOME/no-autowire"
+check_file "plugin gone over a minute: a breadcrumb says when" "$RUNTIME_HOME/unwired-after-uninstall"
+check_eq   "plugin gone over a minute: the note is cleared" "0" "$(present "$RUNTIME_HOME/plugin-missing-since")"
+check_eq   "plugin gone over a minute: records nothing" "0" "$(present "$ACT")"
+
+# The status line runs the same check.
+printf '%s' "$(date +%s)" > "$RUNTIME_HOME/plugin-missing-since"
+printf '%s' "$SESSION_JSON" | bash "$STATUSLINE" >/dev/null 2>&1
+check_eq "statusline: plugin gone records nothing" "0" "$(present "$SES")"
+
+# The folder comes back (an update finished): the note clears and recording resumes.
+mkdir -p "$PLUGIN_DIR"
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
+check_file "plugin back: recording resumes" "$ACT"
+check_eq   "plugin back: the note is cleared" "0" "$(present "$RUNTIME_HOME/plugin-missing-since")"
+
+# No plugin-home at all (a runtime home from before this check): nothing changes.
+rm -f "$RUNTIME_HOME/plugin-home" "$ACT"
+printf '{}' | bash "$ACTIVITY_HOOK" busy >/dev/null 2>&1
+check_file "no plugin-home file: the hook behaves as before" "$ACT"
 
 echo
 printf 'bridge scripts: %d passed, %d failed\n' "$PASS" "$FAIL"

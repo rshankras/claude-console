@@ -26,10 +26,40 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         public Int32? CtxPercent { get; init; }
 
         /// <summary>
+        /// The file this agent appends to as a turn progresses, when it exposes one — Claude Code's
+        /// `transcript_path`, Codex's rollout file. Null when the agent reports none.
+        ///
+        /// It exists here because a turn that is INTERRUPTED fires no lifecycle hook (#30): the only
+        /// exit from "busy" is the agent saying so, and on Esc it never does. A file that grows while
+        /// the agent works is the one signal that separates a stuck session from a slow one, which an
+        /// age threshold cannot do — a long tool call and a dead turn look identical by age alone.
+        /// </summary>
+        public String TranscriptPath { get; init; }
+
+        /// <summary>
+        /// Last time the transport actually observed the transcript grow, as Unix seconds. Some
+        /// Windows filesystems do not advance LastWriteTime for Codex's open rollout handle, so a
+        /// transport-provided observation is more authoritative than file metadata when present.
+        /// </summary>
+        public Int64? TranscriptActivityTs { get; init; }
+
+        /// <summary>
         /// busy | waiting | done — or null when the agent reports activity somewhere else and the
         /// caller should keep looking (Claude Code writes it to a separate activity file).
         /// </summary>
         public String Activity { get; init; }
+
+        /// <summary>
+        /// When <see cref="Activity"/> was reported, as Unix seconds. Agents that keep activity in
+        /// a separate document leave this null; the caller reads that document's timestamp instead.
+        /// </summary>
+        public Int64? ActivityTs { get; init; }
+
+        /// <summary>
+        /// True when interrupting a turn appends an abort record to the transcript. In that case a
+        /// post-Escape transcript write corroborates the interrupt instead of disproving it.
+        /// </summary>
+        public Boolean TranscriptWritesOnInterrupt { get; init; }
 
         /// <summary>Set only while an approval is pending; null means "not reported here".</summary>
         public String PendingTool { get; init; }

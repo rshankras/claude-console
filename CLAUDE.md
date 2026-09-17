@@ -63,13 +63,23 @@ from a product, decide which kind of gap you are looking at; only the first is p
 action in between, and an action reads the agent to decide which keys to add and the product slug
 to resolve its IPC paths. Declaring late builds the keys against no agent.
 
-**Products must not share on-disk namespaces.** IPC root, `@_` registration, profile GUID,
-runtime home. Two consoles sharing an IPC root would reap each other's sessions, since the grid
-deletes state for sessions whose process it cannot see.
+**Products must not share on-disk namespaces.** IPC root, runtime home, profile GUID. Two consoles
+sharing an IPC root would reap each other's sessions, since the grid deletes state for sessions
+whose process it cannot see.
 
-**Registration identity comes from the packaged profile**, never a literal — `ApplicationInfo.json`
-carries it. Key bindings inside a profile are `<PluginShortName>___<Type>___<param>`, so a profile
-copied between products must have that prefix rewritten or every key silently does nothing.
+**The plugins are universal (`HasNoApplication`) and ship no profile.** Decided with Logitech on
+2026-08-28 (#23). There is no application registration to write, heal, or sweep — the whole
+`SelfRegistration`/`RegistrationHeal`/`RegistrationCleanup` family was deleted, and with it a class
+of reinstall and uninstall defects (#20 #34 #45). **Each product still has an EMPTY
+`ClientApplication` subclass, and must keep it**: the service refuses to load an assembly without
+one ("Cannot load plugin", then disabled, no reason logged) — Spotify's universal plugin carries
+one that overrides nothing. `UniversalPluginTests` pins the shape. The layouts are DOWNLOADS in `profiles/`, each a
+profile for Terminal's own Options+ entry that lists our plugin in `additionalNativePluginNames`;
+`tools/make-codex-profile.py` and `tools/windows/make-windows-profile.sh` derive the other two from
+`ClaudeConsole-Keypad.lp5`. Key bindings inside a profile are `<PluginShortName>___<Type>___<param>`,
+so a profile copied between products must have that prefix rewritten — and the plugin list updated —
+or every key silently does nothing. Never reintroduce `HasApplication`: with an empty bundle name it
+crashes the service, and with a real one it recreates every problem above.
 
 **Codex trusts hooks by hash** and re-prompts when one changes. The installed command and the
 launcher's contents are part of the install contract: keep the launcher stable and put churn in

@@ -2,7 +2,7 @@
 
 Draft text for the Logitech Marketplace submission form
 ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)) for **Vizhi
-for Codex 1.5.3**. Same structure and field limits as Claude Console's
+for Codex 1.6.1**. Same structure and field limits as Claude Console's
 [marketplace-listing.md](marketplace-listing.md); process and packaging live in
 [SUBMISSION.md](../SUBMISSION.md).
 
@@ -20,14 +20,21 @@ Read out of the uploaded `.lplug4`; the form fills them itself. To change any, e
 | Name | Vizhi for Codex |
 | Author | S.Ravi Shankar |
 | Operating system | macOS, Windows (from `pluginFolderMac` + `pluginFolderWin`) |
-| Version | 1.5.3 |
-| Content licence | MIT — https://opensource.org/licenses/MIT |
-| Support | https://github.com/rshankras/claude-console/issues |
-| Homepage | https://github.com/rshankras/claude-console |
+| Version | 1.6.1 |
+| Content licence | Proprietary — https://vizhi.dev/eula/ (changed 2026-09-09 ahead of closing the source) |
+| Support | https://vizhi.dev/faq/ |
+| Homepage | https://vizhi.dev/vizhi-codex/ |
 | Copyright | Copyright © 2026 S.Ravi Shankar. All rights reserved. |
 
-> The repository is named `claude-console` because one engine builds both plugins; its front page
-> says so and links to this product's own README. If a reviewer asks, that is the answer.
+> All user-facing links point at vizhi.dev as of 2026-09-09: the source repository is meant to be
+> closed, so nothing a user can reach may point at github.com (#68). One engine builds both plugins;
+> the product pages on vizhi.dev say so.
+>
+> **Caveat as of 2026-09-16:** `claude-console` is still public, and the 1.6.1 package is published
+> as a release on it. Closing that repository would 404 the release download — the same failure as
+> #68/#71, when every card button broke for a week. The Marketplace is the real distribution channel
+> and the layouts are already served from vizhi.dev, so the exposure is the release link alone.
+> Decide before closing the repo whether the package also needs a home on vizhi.dev.
 
 ## Teaser card description — limit 120 characters
 
@@ -54,54 +61,79 @@ Markdown supported: **bold**, *cursive*, `-` lists, `1.` lists, `[links](url)`, 
 - **Screenshot** — capture a region into the conversation
 - **Git** — commit, push, PR
 
-Install one console plugin per machine.
+Coexists with Claude Console.
 ```
 
 ## Release notes — limit 1000 characters
 
 First Marketplace release for this product, so written as an introduction rather than a
-changelog. No version heading — the page shows the version from the package. **977 characters** (23 spare):
+changelog. No version heading — the page shows the version from the package. **986 characters**
+(14 spare). The approval line carried a `(macOS)` qualifier until 1.6.1; Codex's Windows hook now
+writes the same envelope, and risk classification has never been OS-gated, so the keys light on
+both platforms:
 
 ```markdown
-First Marketplace release. Vizhi for Codex turns the MX Creative Keypad's nine LCD keys into a control surface for OpenAI's Codex CLI, on macOS and Windows.
+First Marketplace release. Vizhi for Codex makes the MX Creative Keypad a control surface for OpenAI Codex CLI on macOS and Windows.
 
 - **A key per session** — run up to 3 Codex sessions, each key showing its project, state & context; press one to focus it
-- **Answer Codex** — Yes/No and menu navigation from the keypad; keys light amber when Codex asks approval, red when the pending command is risky (macOS)
-- **One-press prompts** — Fix Bug, Write Tests, Review & more, fully customizable
+- **Answer Codex** — Yes/No and menu navigation; approval keys light amber or red when Codex reports risk
+- **One-press prompts** — Fix Bug, Write Tests, Review & more, customizable
 - **Screenshot** — capture a screen region into the running conversation
-- **Git & /review** — commit, diff, push, PR, and Codex's own review picker
+- **Native Codex controls** — Plan, Agent, Fork, Skills, Status, Resume and Review
+- **Git** — commit, diff, push and PR
 - **Offline voice** — dictate a prompt or jump to a project by speaking its name; local transcription, no cloud
+- **Safer targeting** — stable session pins and identity-based Terminal tab switching
 
-**Install only one console plugin per machine** — this and Claude Console both bind the terminal, and only one can be active.
-
-Setup is automatic: the plugin registers itself and imports the layout.
+Setup: install, then import `VizhiCodex-Keypad.lp5` on macOS or `VizhiCodex-Windows.lp5` on Windows. The universal plugin can coexist with Claude Console.
 ```
 
 ## Notes for the reviewer / support answers
 
 Things a QA reviewer is likely to hit, with the honest answer ready:
 
-- **Two plugins, one terminal.** If Claude Console is already installed on the test machine, one
-  of the two will be unreachable — the plugin service activates a single plugin per application.
-  This is why the release notes lead with it. Test on a machine with only one installed.
+- **Two plugins can coexist.** Vizhi and Claude Console are universal plugins and claim no
+  application. Their downloadable layouts use distinct identities and can both be imported.
 - **The keys need Codex running in a terminal.** No sessions, no live keys — by design, and the
   keypad says so rather than inventing state.
 - **macOS asks for permissions**, once each: Accessibility (typing into Terminal), Microphone
   (voice), Screen Recording (screenshot).
-- **macOS also asks Codex to trust the plugin's hooks** — run `/hooks` inside Codex and approve.
+- **Codex asks you to trust the plugin's hooks on both platforms** — run `/hooks` and approve.
   That is Codex's own security model; the plugin can't and shouldn't bypass it.
-- **Windows has one deliberate gap**: approval lighting is unavailable, because Codex's hook
-  runner does not spawn processes on that platform (upstream; see
-  [the spike](spike-windows-codex-hooks.md)). State comes from Codex's own session transcript
-  instead. The capability is declared absent rather than faked.
+- **Windows uses official hooks plus rollout fallback.** `commandWindows` carries exact lifecycle
+  and approval state; Codex's session transcript keeps basic state alive if a hook is missed.
+- **With more than one session running, Yes/No refuse until a session key is pressed.** That is
+  deliberate, not a broken key: the keypad will not guess which session an approval belongs to,
+  because answering the wrong one runs or cancels the wrong command. The keys beep and a card
+  explains it once. Press a session key first, then Yes or No. With a single session and no
+  selection ever made, the keys answer it directly.
+- **The screenshot picker switches the keypad to its default profile** while the overlay is open,
+  so Vizhi's Escape key is off screen. Press Escape on the keyboard: the picker closes and the
+  Vizhi profile returns by itself. Known issue, accepted for this release.
+- **The Windows helper executables are unsigned.** Smart App Control or an organization policy can
+  block them, and the symptom is keys that beep while nothing types. A reviewer who hits this on
+  Windows is seeing a code-signing gap, not a broken plugin. macOS is unaffected: the voice helper is
+  Developer ID signed, notarized and stapled, and re-verified after packing. Stated in the GitHub
+  release notes and at <https://vizhi.dev/vizhi-codex/#windows>.
 - **Not affiliated with OpenAI.** "Codex" is OpenAI's product; the listing and README both say so.
 
 ## Before submitting — checklist
 
-- [x] Package contains exactly one DLL, no `PluginApi.dll` (what got Claude Console 2.0.0
-      rejected). Verify: `unzip -l VizhiCodex_<ver>.lplug4 | grep '\.dll'`
+- [x] Exactly one **plugin** DLL and no `PluginApi.dll` or its host closure (what got Claude
+      Console 2.0.0 rejected). A bare `grep '\.dll'` is no longer a useful check: since the Windows
+      whisper runtime started shipping, the package legitimately carries twelve more under
+      `bin/voice/whisper-bin-win/`. Verify the three things that actually matter:
+      ```bash
+      unzip -l VizhiCodex_<ver>.lplug4 | grep -c 'PluginApi.dll'                 # 0
+      unzip -l VizhiCodex_<ver>.lplug4 | grep -cE ' bin/[A-Za-z]+Plugin\.dll$'   # 1
+      unzip -l VizhiCodex_<ver>.lplug4 | grep -cE 'ExCSS|Svg\.|Newtonsoft|YamlDotNet'  # 0
+      ```
 - [x] `PRIVACY.md` and `EULA.md` cover this product and both platforms
 - [x] Repo front page names this product and links to its README
 - [x] Fresh-install test passed (register → import layout → keys live)
-- [ ] Screenshots/artwork for the listing page
+- [x] Screenshots/artwork — keypad photo at <https://vizhi.dev/assets/codex-keypad@2x.jpg>, page 1
+      mid-session with a pending approval
+- [x] Released and tagged: `vizhi-codex/v1.6.1`, package sha `70e6408ea216…`. Do **not** submit the
+      earlier `ef35c7d765ea…` build sitting in the same folder; it predates the help-URL fix
 - [ ] EULA reviewed by counsel (open item in SUBMISSION.md)
+- [ ] Decide how the unsigned Windows helpers are handled: sign them, or submit with the limitation
+      disclosed as above

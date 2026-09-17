@@ -44,9 +44,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         String[] ProcessNames { get; }
 
         /// <summary>
-        /// Namespace for everything this agent owns on disk: the IPC root (/tmp/&lt;name&gt;),
-        /// the runtime home (~/.&lt;name&gt;), and the Options+ registration (@_&lt;name&gt;).
-        /// Two consoles installed side by side must never share one of these.
+        /// Namespace for everything this agent owns on disk: the IPC root (/tmp/&lt;name&gt;) and
+        /// the runtime home (~/.&lt;name&gt;). Two consoles installed side by side must never share
+        /// one of these. (It used to name an Options+ registration too; universal plugins have none.)
         /// </summary>
         String ProductSlug { get; }
 
@@ -101,5 +101,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         /// <summary>Resume the most recent previous session.</summary>
         ResumeLast,
+
+        /// <summary>Enter the agent's planning workflow.</summary>
+        Plan,
+
+        /// <summary>Inspect or switch the active subagent thread.</summary>
+        Agent,
+
+        /// <summary>Branch the current conversation into a new session.</summary>
+        Fork,
+
+        /// <summary>Browse the agent's installed skills.</summary>
+        Skills,
+
+        /// <summary>Show the current session configuration and usage.</summary>
+        SessionStatus,
     }
 }

@@ -24,17 +24,43 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Versioning;
+using System.Runtime.InteropServices;
 
 internal static class Program
 {
     private static Int32 Main(String[] args)
     {
-        // FIRST, before anything that could hang, throw, or depend on the spawn environment:
-        // prove we were launched at all. Windows hardware reported hooks "exited with code 1"
+        // FIRST — literally before file I/O, process enumeration, console inspection, or any other
+        // work — arm the lifetime bound. The first #57 fix wrote its entry breadcrumb before this;
+        // a blocked append to the shared log would therefore hang outside the very watchdog meant
+        // to contain every hang. If a watchdog thread cannot be created, fail closed and leave: a
+        // dropped status update is safe, an unbounded hook is not.
+        if (!StartWatchdog(args.Length > 0 && args[0] == "codex" ? 2 : WatchdogSeconds))
+        {
+            return 0;
+        }
+
+        // The Codex limit is 2 s, below its shortest configured deadline (3 s for
+        // SessionEnd), with margin for shell/runtime startup. The timer begins at Main;
+        // a shell or runtime that stalls before Main remains outside this bound.
+        // Now prove we were launched. Windows hardware reported hooks "exited with code 1"
         // while the exe's every internal path was already guarded — the remaining question is
         // whether codex ever spawns the process. This line is the answer: if hook-invoked.log
         // is silent while codex reports failures, the exe was never the patient.
         EntryBreadcrumb(args);
+
+        // The watchdog makes it impossible for this process to outlive its usefulness. Logitech QA's
+        // 2.2.0 retest found ~15 claude-console-hook processes left behind after one terminal
+        // session had been opened and closed following a reboot, and the machine froze until the
+        // plugin service was shut down (#57). Every path below that could block — a stdin that
+        // never reaches EOF, a PowerShell cold start after boot, a chained status line — is now
+        // bounded, but the watchdog is what makes the guarantee: after WatchdogSeconds this
+        // process exits whatever it is doing. A hook that has not finished by then has nothing
+        // left to write, and a dropped status update is survivable; an unbounded process is not.
+        if (TooManyOfUs())
+        {
+            return 0;
+        }
 
         // A hook must never break the user's session. Any failure is silent and non-zero at worst;
         // Claude Code keeps going either way.
@@ -90,6 +116,89 @@ internal static class Program
         }
     }
 
+    /// <summary>Longer than any healthy hook run (tens of milliseconds) by two orders of magnitude.</summary>
+    private const Int32 WatchdogSeconds = 8;
+
+    /// <summary>
+    /// More live copies of this exe than any healthy session produces. A hook is spawned per
+    /// event and lives for milliseconds; a count above this means they are stuck, and one more
+    /// stuck copy helps nobody. Checked once, after the watchdog is armed.
+    /// </summary>
+    private const Int32 MaxConcurrentHooks = 8;
+
+    /// <summary>
+    /// A background thread that ends the process after <see cref="WatchdogSeconds"/> regardless
+    /// of what the main thread is blocked on (#57). Background so it never keeps the process
+    /// alive itself; exit code 0 so a hook that timed out does not surface as a hook error in the
+    /// user's session. There is deliberately no logging before Environment.Exit here: synchronous
+    /// diagnostics can themselves block, which would defeat the only thread that guarantees
+    /// termination. EntryBreadcrumb already records which verb started.
+    /// </summary>
+    private static Boolean StartWatchdog(Int32 seconds)
+    {
+        try
+        {
+            var t = new Thread(() =>
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(seconds));
+                Environment.Exit(0);
+            })
+            { IsBackground = true, Name = "claude-console-hook watchdog" };
+            t.Start();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Refuse to add to a pile-up: see <see cref="MaxConcurrentHooks"/>.</summary>
+    private static Boolean TooManyOfUs()
+    {
+        try
+        {
+            var name = Path.GetFileNameWithoutExtension(Environment.ProcessPath) ?? "claude-console-hook";
+            var count = Process.GetProcessesByName(name).Length;
+            if (count <= MaxConcurrentHooks)
+            {
+                return false;
+            }
+
+            Breadcrumb($"{count} copies of {name} are running (cap {MaxConcurrentHooks}) — not adding to the pile");
+            return true;
+        }
+        catch
+        {
+            return false;   // if the count itself fails, run normally: the watchdog still bounds us
+        }
+    }
+
+    /// <summary>A line in the breadcrumb log beside the exe (same file as EntryBreadcrumb).</summary>
+    private static void Breadcrumb(String message)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(Environment.ProcessPath);
+            if (dir == null)
+            {
+                return;
+            }
+
+            var path = Path.Combine(dir, "hook-invoked.log");
+            if (File.Exists(path) && new FileInfo(path).Length > 256 * 1024)
+            {
+                return;
+            }
+
+            File.AppendAllText(path, $"{DateTime.UtcNow:o} {message}{Environment.NewLine}");
+        }
+        catch
+        {
+            // Diagnostics must never become the failure they exist to explain.
+        }
+    }
+
     private static Int32 Usage()
     {
         Console.Error.WriteLine("usage: claude-console-hook statusline | activity <state> | codex <event> | selftest");
@@ -112,7 +221,10 @@ internal static class Program
 
     private static Int32 Statusline()
     {
-        var json = Console.In.ReadToEnd();
+        // Bounded, like the codex path: a stdin that never reaches EOF is the simplest way for
+        // this process to live forever (#57). Claude writes the JSON and closes the pipe at once,
+        // so 1.5 s is generous; on timeout there is nothing to write and the exe exits clean.
+        var json = ReadStdinBounded(1500);
         if (String.IsNullOrWhiteSpace(json))
         {
             return 0;
@@ -152,10 +264,18 @@ internal static class Program
         Directory.CreateDirectory(ActivityDir);
 
         var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        // The STATE the plugin reads is busy | waiting | done; "permission" is an argv verb, not a
+        // state. scripts/activity-hook.sh translates it ("STATE=waiting") before writing, and this
+        // exe did not — so on Windows a permission prompt landed as state "permission", which the
+        // plugin's pending-approval check (SessionRegistry.ApplyPendingApproval) and its routing
+        // fallback (BridgeManager.RoutingTty, "exactly one session waiting") never match. Every
+        // Yes/No press was "no pending approval on (no target)", and voice found no target either,
+        // while the pending payload sat correctly on disk (Logitech QA, 2.2.1 Windows retest item 2).
+        var word = state == "permission" ? "waiting" : state;
         // Built by hand, not JsonSerializer: reflection serialization is the one thing in this
         // exe that publish-trimming can break, and the payload is two fields. Escaping still
         // matters — state arrives via argv and lands in a file the plugin parses as JSON.
-        var payload = $"{{\"state\":\"{JsonEscape(state)}\",\"ts\":{ts}}}";
+        var payload = $"{{\"state\":\"{JsonEscape(word)}\",\"ts\":{ts}}}";
 
         if (key != null)
         {
@@ -164,23 +284,29 @@ internal static class Program
         WriteAtomic(Path.Combine(ActivityDir, SharedName + ".json"), payload);
 
         // "permission" carries the tool name and its input — that payload is what lets the plugin
-        // tell a routine approval from `git push --force` (RiskClassifier). Any other state means
-        // the moment has passed, so the pending file is cleared.
+        // tell a routine approval from `git push --force` (RiskClassifier).
+        //
+        // Clear the pending file ONLY on busy/done, never on a bare "waiting". A permission menu
+        // fires PermissionRequest (arrives here as "permission" WITH a payload) and then a plain
+        // Notification the CLI delays ~6s ("waiting", no payload, same menu still up). Deleting the
+        // payload on that second event darkened a live approval badge and blinded the Yes/No keys
+        // to a menu they were about to answer (#21/#51). Mirror scripts/activity-hook.sh exactly.
         var pending = key != null ? Path.Combine(ActivityDir, "pending-" + key + ".json") : null;
         if (pending != null)
         {
             if (state == "permission")
             {
-                var stdin = Console.IsInputRedirected ? Console.In.ReadToEnd() : "";
+                var stdin = ReadStdinBounded(1500);   // bounded: see Statusline (#57)
                 if (!String.IsNullOrWhiteSpace(stdin))
                 {
                     WriteAtomic(pending, stdin);
                 }
             }
-            else
+            else if (state == "busy" || state == "done")
             {
                 try { File.Delete(pending); } catch { /* best effort */ }
             }
+            // "waiting" with no payload: leave any existing pending file intact — the menu is up.
         }
 
         return 0;
@@ -301,6 +427,50 @@ internal static class Program
         Console.WriteLine($"  sessions     {SessionsDir}");
         Console.WriteLine($"  session key  {SessionKey() ?? "(no Claude process found in this process's ancestry)"}");
         Console.WriteLine();
+        // The walk itself, hop by hop: "(no Claude process found)" on its own says nothing about
+        // WHERE the climb stopped, and that is the whole question when the live keys show
+        // defaults — a parent lookup that fails, a process the matcher does not recognise, or a
+        // chain deeper than the cap.
+        Console.WriteLine("  ancestry (the climb SessionKey performs):");
+        if (OperatingSystem.IsWindows())
+        {
+            // What a by-name lookup sees, for contrast: it misses a Claude that was renamed by an
+            // in-place update, which the climb below must not.
+            try
+            {
+                var byName = Process.GetProcessesByName("claude").Select(p => p.Id).ToArray();
+                Console.WriteLine($"    Process.GetProcessesByName(\"claude\"): {(byName.Length == 0 ? "none" : String.Join(", ", byName))}");
+            }
+            catch { /* diagnostics only */ }
+
+            var pid = Environment.ProcessId;
+            for (var hop = 0; hop < 8; hop++)
+            {
+                String name;
+                Boolean isClaude;
+                try
+                {
+                    using var proc = Process.GetProcessById(pid);
+                    name = proc.ProcessName;
+                    isClaude = IsClaude(proc);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"    hop {hop}: pid {pid} — cannot open: {ex.GetType().Name}: {ex.Message}");
+                    break;
+                }
+
+                var viaKernel = ParentViaNtQuery(pid);
+                var parent = viaKernel > 0 ? viaKernel : ParentOf(pid);
+                Console.WriteLine($"    hop {hop}: pid {pid} {name}{(isClaude ? "  <- CLAUDE, key minted here" : "")}  parent {parent}{(viaKernel > 0 ? "" : " (kernel lookup failed; PowerShell fallback)")}");
+                if (isClaude || parent <= 0 || parent == pid)
+                {
+                    break;
+                }
+                pid = parent;
+            }
+        }
+        Console.WriteLine();
         Console.WriteLine("Run this from INSIDE a Claude Code session — the key above must match the");
         Console.WriteLine("one `claude-console-inject selftest` prints for that same session.");
         return 0;
@@ -343,7 +513,9 @@ internal static class Program
                     best = $"pid-{proc.Id}-{proc.StartTime.ToUniversalTime().Ticks}";
                 }
 
-                var parent = ParentOf(pid);
+                // Codex has a 3 s SessionEnd deadline. Never start PowerShell while
+                // climbing this chain; denied/exited ancestors end the lookup.
+                var parent = ParentViaNtQuery(pid);
                 if (parent <= 0 || parent == pid)
                 {
                     break;
@@ -408,14 +580,14 @@ internal static class Program
         }
 
         // The native installer: claude.exe. Unambiguous by name, and the cheap common case.
-        if (name.Equals("claude", StringComparison.OrdinalIgnoreCase))
+        if (IsExe(name, "claude"))
         {
             return true;
         }
 
         // An npm/bun install runs the CLI under an interpreter — only then do we pay for a
         // command-line lookup.
-        if (name is not ("node" or "bun" or "deno" or "npx"))
+        if (!(IsExe(name, "node") || IsExe(name, "bun") || IsExe(name, "deno") || IsExe(name, "npx")))
         {
             return false;
         }
@@ -427,6 +599,21 @@ internal static class Program
                 cmd.Contains(@"\claude", StringComparison.OrdinalIgnoreCase) ||
                 cmd.Contains("/claude", StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// Does a process name mean this executable? Normally "claude"; but Claude Code updates
+    /// itself IN PLACE while sessions are running, and Windows cannot overwrite a running
+    /// image, so the updater renames it — the running session's image becomes
+    /// claude.exe.old.1789090133131 and .NET reports THAT as its ProcessName (the ".exe"
+    /// strip only applies when .exe is the last extension). Found 2026-09-11 on a session that
+    /// had been up since the previous evening: from the 06:58 auto-update onward every hook
+    /// climbed straight past its own Claude, wrote only the shared fallback, and Yes/No answered
+    /// "no pending approval" for a session the plugin had pinned and named. WMI still reports the
+    /// creation-time name, which is why the plugin's own discovery never noticed.
+    /// </summary>
+    internal static Boolean IsExe(String processName, String exe) =>
+        processName.Equals(exe, StringComparison.OrdinalIgnoreCase) ||
+        processName.StartsWith(exe + ".exe.", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The codex twin of IsClaude — mirrors AgentProcessMatcher.CodexCli the way IsClaude mirrors
@@ -445,17 +632,17 @@ internal static class Program
             return false;
         }
 
-        if (name.Equals("codex", StringComparison.OrdinalIgnoreCase))
+        if (IsExe(name, "codex"))
         {
             return true;
         }
 
-        if (name is not ("node" or "bun" or "deno" or "npx"))
+        if (!(IsExe(name, "node") || IsExe(name, "bun") || IsExe(name, "deno") || IsExe(name, "npx")))
         {
             return false;
         }
 
-        var cmd = CommandLineOf(proc.Id);
+        var cmd = WindowsHookProcessQuery.CommandLineViaNtQuery(proc.Id);
         return cmd != null &&
                (cmd.Contains(@"\@openai\codex", StringComparison.OrdinalIgnoreCase) ||
                 cmd.Contains("/@openai/codex", StringComparison.OrdinalIgnoreCase) ||
@@ -498,12 +685,14 @@ internal static class Program
     [SupportedOSPlatform("windows")]
     private static Int32 ParentViaNtQuery(Int32 pid)
     {
+        var handle = IntPtr.Zero;
         try
         {
-            using var proc = Process.GetProcessById(pid);
+            handle = OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+            if (handle == IntPtr.Zero) { return 0; }
             var info = new ProcessBasicInformation();
             var status = NtQueryInformationProcess(
-                proc.Handle, 0, ref info, System.Runtime.InteropServices.Marshal.SizeOf<ProcessBasicInformation>(), out _);
+                handle, 0, ref info, Marshal.SizeOf<ProcessBasicInformation>(), out _);
 
             return status == 0 ? (Int32)info.InheritedFromUniqueProcessId : 0;
         }
@@ -512,7 +701,17 @@ internal static class Program
             // Access denied or the process exited mid-walk — let the caller fall back.
             return 0;
         }
+        finally
+        {
+            if (handle != IntPtr.Zero) { CloseHandle(handle); }
+        }
     }
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr OpenProcess(UInt32 access, Boolean inherit, Int32 pid);
+
+    [DllImport("kernel32.dll")]
+    private static extern Boolean CloseHandle(IntPtr handle);
 
     [SupportedOSPlatform("windows")]
     private static String? CommandLineOf(Int32 pid) => Wmic($"CommandLine from Win32_Process where ProcessId={pid}");
@@ -544,12 +743,18 @@ internal static class Program
                 return null;
             }
 
-            var outp = p.StandardOutput.ReadToEnd();
+            // The 4 s limit only means something if the read does not block first: ReadToEnd()
+            // returns when PowerShell closes its stdout, i.e. when it exits — so the old order
+            // (read, then wait) waited for a PowerShell cold start however long it took, per hop,
+            // per hook. Right after a reboot that is the pile-up QA saw (#57). Read in the
+            // background, wait with the limit, and kill what has not answered.
+            var output = p.StandardOutput.ReadToEndAsync();
             if (!p.WaitForExit(4000))
             {
                 try { p.Kill(entireProcessTree: true); } catch { /* gone */ }
                 return null;
             }
+            var outp = output.Wait(500) ? output.Result : "";
             return String.IsNullOrWhiteSpace(outp) ? null : outp.Trim();
         }
         catch
@@ -616,13 +821,39 @@ internal static class Program
             {
                 return;
             }
-            p.StandardInput.Write(stdin);
-            p.StandardInput.Close();
-            p.WaitForExit(4000);
+
+            var exited = false;
+            try
+            {
+                // A child that never reads stdin can fill the pipe and block Write forever. Bound
+                // the write separately from the process wait; the finally below kills the whole
+                // tree after any timeout or exception, so our watchdog cannot leave cmd.exe behind.
+                var write = p.StandardInput.WriteAsync(stdin);
+                if (!write.Wait(2000))
+                {
+                    return;
+                }
+                p.StandardInput.Close();
+                exited = p.WaitForExit(2000);
+            }
+            finally
+            {
+                if (!exited)
+                {
+                    KillTree(p);
+                }
+            }
         }
         catch
         {
             // The user's own status line failing must not take ours down with it.
         }
+    }
+
+    private static void KillTree(Process process)
+    {
+        // A child does not necessarily die when this hook exits. Kill the command tree so a stuck
+        // chained status line cannot replace the hook pile-up with orphaned cmd.exe processes.
+        try { process.Kill(entireProcessTree: true); } catch { /* gone */ }
     }
 }

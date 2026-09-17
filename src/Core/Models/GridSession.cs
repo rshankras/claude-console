@@ -32,6 +32,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         // running agent's own name when a session has not reported a project yet.
         public String Project { get; set; }
 
+        /// <summary>
+        /// The file this session's agent appends to during a turn, when it reports one (#30). Held
+        /// here so a caller can reach it WITHOUT re-reading and re-parsing the session's state file:
+        /// the grid has already done both by the time anyone asks.
+        /// </summary>
+        public String TranscriptPath { get; set; }
+
         /// <summary>"busy" | "waiting" | "ready" — from the activity hooks.</summary>
         public String State { get; set; } = "ready";
 
@@ -62,10 +69,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         /// <summary>How much attention the pending approval deserves. See RiskClassifier.</summary>
         public ApprovalRisk Risk { get; set; } = ApprovalRisk.None;
 
+        // Transport fact: do not infer this from whether a pending file happens to exist now.
+        internal Boolean ApprovalInSessionState { get; set; }
+
         /// <summary>
         /// Fields that change what the key LOOKS like. Compared to decide whether to repaint, so a
         /// heartbeat-only update (UpdatedAt moving) doesn't churn the LCD every poll.
         /// </summary>
-        public String VisualKey => $"{this.SessionKey}|{this.Project}|{this.State}|{this.CtxPercent}|{this.Risk}";
+        public String VisualKey => $"{this.SessionKey}|{this.Project}|{this.State}|{this.CtxPercent}|{this.Risk}|{this.IsProvisional}";
     }
 }

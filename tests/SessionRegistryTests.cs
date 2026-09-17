@@ -48,17 +48,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         private SessionRegistry NewRegistry() => new SessionRegistry(_sessionsDir, _activityDir, _registryFile) { Agent = new Agents.ClaudeCodeAdapter() };
 
+        private SessionRegistry NewCodexRegistry() =>
+            new SessionRegistry(_sessionsDir, _activityDir, _registryFile) { Agent = new Agents.CodexCliAdapter() };
+
         private String StateFor(String tty) => Path.Combine(_sessionsDir, tty + ".json");
         private String ActivityFor(String tty) => Path.Combine(_activityDir, tty + ".json");
 
         // --- fixtures -------------------------------------------------------------------------
 
-        private void WriteSession(String tty, String projectDir, Int32 ctxPercent, DateTime? updatedAt = null)
+        private void WriteSession(String tty, String projectDir, Int32 ctxPercent, DateTime? updatedAt = null, String transcriptPath = null)
         {
             var state = new
             {
                 session_id = "sid-" + tty,
                 session_name = "name-" + tty,
+                transcript_path = transcriptPath,
                 workspace = new { project_dir = projectDir, current_dir = projectDir },
                 context_window = new { used_percentage = ctxPercent, context_window_size = 1000000, total_input_tokens = 0 },
             };
@@ -75,6 +79,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             File.WriteAllText(
                 this.ActivityFor(tty),
                 JsonSerializer.Serialize(new { state, ts = ts ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds() }));
+        }
+
+        private void WriteCodexSession(
+            String tty,
+            String activityEvent,
+            Int64 ts,
+            String transcriptPath,
+            Int64? transcriptActivityTs = null)
+        {
+            File.WriteAllText(
+                this.StateFor(tty),
+                JsonSerializer.Serialize(new
+                {
+                    schema = 1,
+                    agent = "codex-cli",
+                    @event = activityEvent,
+                    ts,
+                    payload = new
+                    {
+                        session_id = "sid-" + tty,
+                        cwd = "/Users/x/proj",
+                        transcript_path = transcriptPath,
+                        transcript_activity_ts = transcriptActivityTs,
+                    },
+                }));
         }
 
         private SessionRegistry RefreshedWith(params String[] liveTtys)
@@ -148,6 +177,41 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Answered_codex_approval_stays_cleared_until_a_new_event_arrives()
+        {
+            var path = this.StateFor("ttys002");
+            var approval = """
+                {"schema":1,"agent":"codex-cli","event":"PermissionRequest","ts":1,
+                 "payload":{"session_id":"sid","cwd":"/Users/x/project","tool_name":"Bash",
+                 "tool_input":{"command":"touch /Users/x/Desktop/test.txt"}}}
+                """;
+            File.WriteAllText(path, approval);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(-5));
+
+            var registry = this.NewCodexRegistry();
+            registry.Refresh(new HashSet<String> { "ttys002" });
+            Assert.Equal("Bash", registry.SlotSession(1).PendingTool);
+
+            Assert.True(registry.ClearPendingApproval("ttys002"));
+            Assert.Null(registry.SlotSession(1).PendingTool);
+            Assert.Equal(ApprovalRisk.None, registry.SlotSession(1).Risk);
+            Assert.Equal("ready", registry.SlotSession(1).State);
+
+            // The stale PermissionRequest is still the newest hook document. Polling it again must
+            // not resurrect Allow? or the Yes badge after the user has already answered it.
+            registry.Refresh(new HashSet<String> { "ttys002" });
+            Assert.Null(registry.SlotSession(1).PendingTool);
+            Assert.Equal("ready", registry.SlotSession(1).State);
+
+            // A later write is a genuinely new request, even if its command text is identical.
+            File.WriteAllText(path, approval.Replace("\"ts\":1", "\"ts\":2"));
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(5));
+            registry.Refresh(new HashSet<String> { "ttys002" });
+            Assert.Equal("Bash", registry.SlotSession(1).PendingTool);
+            Assert.Equal("waiting", registry.SlotSession(1).State);
+        }
+
+        [Fact]
         public void A_session_stuck_on_busy_settles_back_to_ready()
         {
             // The Stop hook can be missed if a session is killed. A key stuck on "Working" forever
@@ -156,6 +220,98 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             WriteActivity("ttys001", "busy", DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 600);
 
             Assert.Equal("ready", RefreshedWith("ttys001").SlotSession(1).State);
+        }
+
+        [Fact]
+        public void An_interrupted_turn_clears_even_though_no_hook_fired()
+        {
+            // #30 end to end. Esc mid-turn fires NO hook, so "busy" is simply the last thing anyone
+            // wrote and its timestamp stops moving with it. The transcript stopped growing at the
+            // same moment, which is the evidence that the turn is over.
+            var transcript = this.TranscriptAged(seconds: 120);
+            WriteSession("ttys001", "/Users/x/proj", 10, transcriptPath: transcript);
+            WriteActivity("ttys001", "busy", DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 120);
+
+            Assert.Equal("ready", RefreshedWith("ttys001").SlotSession(1).State);
+        }
+
+        [Fact]
+        public void A_long_tool_call_keeps_working_even_when_the_hooks_have_gone_quiet()
+        {
+            // The other half, and the reason a plain timeout was rejected. The hooks last fired ten
+            // minutes ago, but the transcript moved a moment ago — the agent is still working, and
+            // the 45s age check this replaces would have cleared the key out from under it.
+            var transcript = this.TranscriptAged(seconds: 1);
+            WriteSession("ttys001", "/Users/x/proj", 10, transcriptPath: transcript);
+            WriteActivity("ttys001", "busy", DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 600);
+
+            Assert.Equal("busy", RefreshedWith("ttys001").SlotSession(1).State);
+        }
+
+        [Fact]
+        public void A_codex_turn_interrupted_from_the_keypad_clears_without_task_complete()
+        {
+            // Codex stores activity in the session envelope itself. Before this regression fix its
+            // non-null Activity bypassed ActivityStall, so task_started + Esc stayed busy forever
+            // when Codex emitted no task_complete/Stop event.
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            // Codex appends turn_aborted after Escape, so the transcript is newer than the keypress.
+            // That write confirms termination; it must not be mistaken for continued work.
+            var transcript = this.TranscriptAged(seconds: 1);
+            WriteCodexSession("ttys001", "UserPromptSubmit", now - 30, transcript);
+
+            var clock = now - 10;
+            var registry = this.NewCodexRegistry();
+            registry.NowUnix = () => clock;
+            registry.NoteInterrupt("ttys001");
+            clock = now;
+            registry.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));
+
+            Assert.Equal("ready", registry.SlotSession(1).State);
+        }
+
+        [Fact]
+        public void A_codex_turn_with_a_newer_activity_event_after_escape_remains_busy()
+        {
+            // Escape can dismiss a menu instead of stopping the turn. A newer lifecycle event is
+            // stronger evidence than transcript movement and proves Codex continued.
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var transcript = this.TranscriptAged(seconds: 1);
+            WriteCodexSession("ttys001", "PostToolUse", now - 1, transcript);
+
+            var clock = now - 10;
+            var registry = this.NewCodexRegistry();
+            registry.NowUnix = () => clock;
+            registry.NoteInterrupt("ttys001");
+            clock = now;
+            registry.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));
+
+            Assert.Equal("busy", registry.SlotSession(1).State);
+        }
+
+        [Fact]
+        public void Codex_rollout_observation_beats_a_frozen_windows_last_write_time()
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var transcript = this.TranscriptAged(seconds: 600);
+            WriteCodexSession(
+                "ttys001", "UserPromptSubmit", now - 600, transcript,
+                transcriptActivityTs: now - 1);
+
+            var registry = this.NewCodexRegistry();
+            registry.NowUnix = () => now;
+            registry.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));
+
+            Assert.Equal("busy", registry.SlotSession(1).State);
+        }
+
+        // A transcript file whose last write was `seconds` ago, in this test's own temp root.
+        private String TranscriptAged(Int32 seconds)
+        {
+            var path = Path.Combine(_root, "transcript-" + Guid.NewGuid().ToString("N") + ".jsonl");
+            File.WriteAllText(path, "{}");
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddSeconds(-seconds));
+            return path;
         }
 
         [Fact]
@@ -359,6 +515,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("/", null)]
         [InlineData("", null)]
         [InlineData(null, null)]
+        // A rollout carries the cwd of the machine that wrote it, so both separators must split on
+        // either OS — Path.GetFileName only knows the host's, and left the whole Windows path as
+        // the label when a Mac read a Windows-authored transcript.
+        [InlineData(@"C:\demo\repos\presskit", "presskit")]
+        [InlineData(@"C:\demo\repos\presskit\", "presskit")]
+        [InlineData(@"\\server\share\stage", "stage")]
+        [InlineData("presskit", "presskit")]
+        [InlineData(@"\", null)]
         public void Project_name_is_the_directory_basename(String dir, String expected)
         {
             Assert.Equal(expected, SessionRegistry.ProjectName(dir));

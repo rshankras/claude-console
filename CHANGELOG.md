@@ -3,6 +3,402 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.2.3] — 2026-09-16
+
+Claude Console and Vizhi for Codex compile the same engine, so the work done for Vizhi 1.6.1
+reaches this product too. Nothing here is a new feature; these are the shared changes a 2.2.2
+rebuild would otherwise have picked up unannounced. The keypad's faces, colours and key names
+are deliberately unchanged from 2.2.2 — each product now declares its own identity, so Vizhi's
+blue and its relabelled keys stay with Vizhi.
+
+### Fixed
+- **Go to Project handles a path containing an apostrophe.** The shell command was spliced into
+  AppleScript with a broken single-quote escape, so a folder like `Ravi's Apps` produced a
+  malformed command. The command is now passed as an argument instead of being interpolated.
+- **A reused terminal tab no longer inherits the previous session's project name.** macOS hands
+  out `ttys000` again as tabs close and open, and a session with no name of its own yet could
+  show the last occupant's.
+- **The Context key shows a dash until the session reports.** It previously read `0%` before the
+  first status line, which is indistinguishable from a genuinely empty context window and is the
+  kind of invented value the key is supposed to refuse.
+- **The release scripts fail on a bad signature instead of reporting success.** `spctl` and
+  `stapler` were tolerated with `|| true`, so a rejected helper could still reach the green
+  success line (#66). The packaged helper is now extracted and re-verified after packing.
+
+### Changed
+- **An empty `prompts.json` array now removes every prompt key**, rather than reseeding the
+  twelve defaults. Writing `[]` meant "no keys" and got the opposite; there was previously no way
+  to express removal at all. Delete the file to restore the defaults. Logged when it happens,
+  since keys vanishing otherwise reads as a broken plugin.
+- **Windows session discovery matches an interpreter's arguments, not its install path.** A
+  bundled `node.exe` living under an agent's own directory could otherwise be mistaken for a
+  session of that agent.
+- **Log lines carry the product name**, so two consoles writing to one log can be told apart.
+- The voice helper's microphone permission string no longer names a single product. It reaches
+  an installed helper only when the helper is re-signed.
+
+## Vizhi for Codex [1.6.1] — 2026-09-15
+
+### Known issues
+- **The screenshot picker switches the keypad to its default profile** and hides Vizhi's Escape
+  key while the overlay is open. Pressing Escape on the keyboard dismisses the picker and
+  restores the Vizhi profile. Accepted for this release rather than fixed.
+
+### Fixed
+- **A rollout lifecycle edge could discard a live approval.** The hook owns `PermissionRequest`
+  and can write it between two polls; a `task_started` read afterwards then overwrote it with
+  Busy, turning the amber key grey with nothing left to re-emit it. A plugin reload during a
+  pending approval hit this every time. Only a terminal edge, a newer approval, or the code-mode
+  output that resolves the approval may now clear a waiting session.
+- **Updating no longer reports working hooks as untrusted.** Hook trust was proved by a
+  `transport` field that the launcher had only just started writing, so every envelope written by
+  an earlier version read as untrusted — permanently if the launcher rewrite failed. The launcher
+  no longer carries the tag, and the reader infers it from absence, since the rollout fallback is
+  the only writer that stamps one.
+
+### Changed
+- **Voice now shows `Setting up` during its first packaged-runtime check.** The check and any required
+  Whisper bundle copy run off the keypad thread; recording starts only after setup finishes, and
+  extra voice-key presses during setup are refused instead of stopping a recorder that is not ready.
+- **Screenshot now carries its own Windows runtime.** The capture helper no longer assumes that
+  Options+'s private .NET runtime is globally discoverable, so it can open the snipping overlay on
+  machines without a separate .NET Desktop installation.
+- **Each product now declares its own identity.** The keypad's identity colours, icon set and
+  failure-word hold are named by the plugin rather than chosen inside the shared engine, so the
+  two products can look different without either one moving the other's keys.
+
+## [2.2.2] — 2026-09-13
+
+Answers to Logitech QA's retest of 2.2.1 — macOS (8 September; #71–#73) and Windows (#74–#80) —
+plus what three Windows device passes and the review of those fixes turned up on the way.
+Verified on the keypad on macOS (12 September) and Windows (10–12 September); run sheets in
+`docs/windows-qa-2.2.1.md` and `docs/windows-qa-2.2.2.md`. The package is 16.5 MiB, down from
+21.3 MiB.
+
+### From the device passes and the review (10–12 September)
+- Reduce package size by sharing one self-contained Windows runtime across typing, tab focus,
+  voice capture, and screenshots. The hook retains its separate executable and watchdog.
+  The speech model continues to download on first use.
+
+- Known issue ([#88](https://github.com/rshankras/claude-console/issues/88), P3): Windows
+  session switching can fail for manually renamed Terminal tabs. Clear the custom tab name
+  to restore automatic titles. Failed focus leaves session routing unchanged.
+- Windows status and activity hooks use an encoded PowerShell launcher that survives Git Bash
+  argument conversion. Existing owned commands are upgraded while preserving unrelated settings.
+- Settings edits and macOS uninstall cleanup retain the original text of untouched values,
+  including inline foreign hooks, comments, spacing, line endings, and UTF-8 BOMs. Removing
+  plugin hooks no longer reformats the user's whole settings file.
+- Windows session focus refuses an ambiguous title when identity verification fails, instead
+  of selecting the first matching tab and reporting success.
+- Windows voice keys show **Starting** until the microphone is ready. A second press during
+  startup cancels and stops the helper before another capture can start. The recording face
+  appears only after the helper acknowledges microphone readiness.
+
+- The Model key now keeps the same brain icon for every model. Model-specific colors and their
+  live-state repaint subscriptions were removed; pressing the key still opens the model picker.
+- Windows creates the plugin's runtime home (`~/.claude/claude-console/`) on load, as macOS
+  already did, so turning live status on with your own status line in place always records the
+  chain file that restores it when you turn live status off. Found by running the C# suite on
+  Windows, which is now green there as well as on macOS.
+- **Windows: New Claude, New Claude (Window) and New Tab start in your home folder** (#85).
+  Windows Terminal's default profile has no starting directory, so a tab the plugin opened
+  inherited the plugin service's own folder under Program Files; the keypad then named the
+  session "LogiPluginService". The plugin now passes your home directory, which is what the
+  terminal uses when you open a tab yourself. Go to Project was unaffected — it always named
+  the project's folder.
+- **Yes/No find the one session with a prompt up even when another session sits idle.** With
+  nothing pinned, the answer keys fall back to the single session waiting on you. A session idle
+  at its prompt for a minute counts as waiting too, so one prompt plus one idle session left the
+  keys with no target — on Windows, which has no frontmost tab to break the tie, that was any
+  second session (Logitech's "Mode B"). A pending approval now outranks an idle prompt; two
+  pending approvals still refuse to guess.
+- **Windows says "Turned on", not "Restart Claude", after live status is switched on** (#58).
+  Running sessions pick the new hooks and status line up by themselves on Windows exactly as on
+  macOS — measured on two days on sessions started hours earlier, including the approval hook. The
+  restart wording had been kept on the strength of QA's 2.2.0 report, which was #74 in disguise.
+- **Windows: a session survives a Claude Code auto-update.** Claude Code updates itself in place
+  while sessions run; Windows cannot overwrite a running program, so the updater renames it
+  (`claude.exe.old.<stamp>`) and the running session carries that name from then on. The hook
+  exe matched the name `claude` only, so from the update onward every hook in an already-running
+  session wrote only the shared fallback: Cost/Context showed the last writer's numbers, no
+  approval ever attached to the session, and Yes/No answered "no pending approval" on a session
+  the plugin had pinned and named. Found on 2026-09-11 on a session up since the evening before,
+  with the 06:58 auto-update as the cut-over. The hook and the plugin's discovery now apply one
+  rule for a renamed running image; `claude-console-hook selftest` prints the ancestry walk hop
+  by hop so this class of miss is visible in the field.
+
+### Retest review follow-up
+- Windows screenshot and tab-focus helpers no longer need the .NET Desktop Runtime at all, so
+  they start on clean installations without a separate runtime download. The screenshot helper
+  reads the clipboard through Win32 and takes the snipping overlay's own PNG; the tab-focus
+  helper drives UI Automation through COM. Both are now self-contained and trimmed like the
+  other helpers, about 12 MB each instead of 68 MB. The executable-only staging step rejects
+  publish output that leaves runtime dependencies out.
+- Go to Project preserves carrier words that belong to a project name: "go to open source kit"
+  prefers `open-source-kit` over `source-kit`. Equally good folders produce No match instead of
+  depending on discovery order.
+- Windows destructive-command warnings recognize every `-Recurse` and unambiguous `-Force`
+  abbreviation, including `-Recu` and `-Recurs`.
+- macOS cleanup serializes settings edits and recovery-data removal across processes, uses a
+  unique temporary file, and retains recovery data after errors or lock contention. Hooks only
+  record successful uninstall cleanup and retry failed attempts.
+
+### Fixed — Windows
+- **Yes/No answer again** (#74, Windows retest item 2 — every press was discarded as "no pending
+  approval on (no target)"). The Windows hook exe wrote the PermissionRequest hook's argv verb,
+  `permission`, as the session's state; the plugin only ever recognises `waiting`, which is the word
+  the bash hook translates to on macOS. So on Windows no session ever counted as waiting: the
+  pending payload sat correctly on disk beside it and was never read (a pinned session "yields no
+  pending approval"), and the routing fallback "exactly one session waiting" could never fire (an
+  un-pinned press found "no target"). Discovery, pinning and the status data all worked, which is
+  why it looked like a routing defect. The exe now translates like the bash hook and the plugin
+  normalises the word whichever hook wrote it; the slot key reads **Allow?** while a menu is up
+  instead of **Complete**. Nothing had asserted the word; `ActivityWordTests` does now.
+- **Voice refusals show their reason on the key** (#76, item 6). The three Windows refusals in
+  `StartVoiceCapture` — no helper exe, no `whisper-cli.exe`, speech model not ready — were a log
+  line and a beep; macOS already put **Model loading** on the key. They now go through the same
+  path: **No helper**, **No whisper**, **Model loading**.
+
+### Fixed
+- **A dictation that cannot be typed says so** (#75, item 6). The transcript path discarded the
+  platform's injection outcome, so a dictation with no target session — nothing pinned, no single
+  obvious session — was transcribed and dropped with a WARN line, indistinguishable on the device
+  from one that landed (QA: three delivered while pinned, four of five lost after un-pinning). The
+  pressed key now reads **No target**, or **Not typed** when the session was known but the
+  keystrokes did not land, and the log keeps the words. `VoiceDeliveryTests`.
+- **The speech model download is announced** (#76). One Options+ card when the 142 MB one-time
+  download starts (the key says Model loading until it finishes; press again afterwards), one when
+  it is ready, one when it fails with the reason. Before, the first voice press on a fresh install
+  started a multi-minute download with a log line as the only notice, and a failed download
+  silently restarted on the next press.
+- **Go to Project matches names that contain carrier words, and says when it matched nothing**
+  (#77, item 8). Carrier words ("go to", "open the … project") are now dropped whole-word off the
+  edges of the phrase only; folder names are never stripped. The old blind substring `Replace` ran
+  over both — "the" ate the middle of `theme`, "open" the front of `openai`, and "claude" was cut
+  out of every `claude-*` folder, so a project called `claude` could not be reached at all. Both
+  readings of the phrase are scored and the best wins, so "go to project claude code" reaches
+  `claude-code` over `vscode-ext`. No match now reads **No match** on the key, the log prints the
+  phrase as compared (QA read the raw phrase in the old line as proof nothing was stripped), and
+  the first miss per load posts an Options+ card naming the candidates' source and the
+  `project-roots` file, which until now was named only in that log line.
+
+### Fixed — macOS
+- **A settings.json write hands the file back the way it was found** (#72, retest finding B).
+  The plugin parses the whole document and serialises it again, and the default writer made that
+  visible: every quote, ampersand, apostrophe, angle bracket and non-ASCII character came back as
+  a `\uXXXX` escape and the trailing newline was gone — valid JSON, functionally identical, and a
+  whole-file diff for anyone who keeps `~/.claude` in git, applied to entries the plugin does not
+  own (on QA's machine, another plugin's ten hooks), on every write including the on-load
+  migration 2.2.1 added. Reproduced against the shipped 2.2.1: one write turned an em dash inside
+  the user's own permission description into `—`. The writer now uses the relaxed encoder,
+  and reads the indentation, line ending, trailing newline and byte-order mark off the file and
+  writes them back as found; a file that does not exist yet gets Claude Code's own shape. The
+  cleanup script's `--unwire` had the same defect for non-ASCII text and is fixed the same way.
+- **The hooks take themselves out after an Options+ uninstall** (#73, retest finding C; #55).
+  Options+ removes the plugin folder and nothing else — the SDK gives a plugin no uninstall
+  moment — so the five hooks and the status line kept running against a plugin that was gone,
+  recording every prompt and permission request with nothing left to read them, at three
+  status-line runs a second, and 2.2.1's guard only helped once the runtime folder was deleted
+  too. The hooks can see what the plugin cannot. On every load the plugin now records where it is
+  installed (the package folder under the service's Plugins directory, or the dev `.link`) in
+  `~/.claude/claude-console/plugin-home`; a hook that finds that place missing records nothing,
+  and once it has been missing for over a minute across two runs it runs the surgical unwire
+  itself (rolling backup, your own entries untouched, the Off marker set) and leaves an
+  `unwired-after-uninstall` breadcrumb. One miss is not enough on purpose: an Options+ update
+  replaces the folder for a few seconds, and the service restarts on its own — QA's suggested
+  unwire-on-Unload would have switched live status off on every one of those. The runtime home
+  (voice helper, speech model) is left for `uninstall.sh`, which the plugin still installs.
+  macOS only for now; the Windows shim keeps the 2.2.1 behaviour (#55).
+
+### Changed
+- **The card button link works again** (#71, retest finding A; #68). The repository it points
+  at is public again as of 9 September; nothing in the package changed.
+- **Every user-facing link points at vizhi.dev, and the licence is the EULA.** The three card
+  buttons baked into the plugin (how to undo the settings edit, the Windows Terminal rule, voice),
+  both packages' homepage, support and licence fields, and the README's download and support
+  links now open vizhi.dev — its product pages and FAQ carry the same content the README sections
+  did. Nothing a user can reach points at the source repository any more: it went private on
+  2 September and every card button was a 404 for a week (#68, #71), and it will be closed for
+  good. With that, the MIT licence file is gone and the packages declare the
+  [EULA](https://vizhi.dev/eula/) as their licence; whisper.cpp and the Whisper model stay MIT and
+  ship their licence texts. The vizhi.dev anchors the plugin uses are frozen — a rename needs a
+  redirect first — and `CC_CHECK_LINKS=1` makes the test suite fetch them.
+- **The Windows Terminal notice no longer claims Yes/No and voice "still work here"** (#61,
+  Windows retest item 16). QA caught it mid-way through a run in which neither did. It now says
+  they do not need Windows Terminal but do need a target session, and to pin a session slot if a
+  press is refused.
+
+## [2.2.1] — 2026-09-04
+
+Answers to Logitech QA's retest of 2.2.0 (1 September).
+
+### Fixed
+- **The voice helper is replaced when the package carries a newer one** (#59, retest bug D). It
+  never was: macOS does not let another app write inside a signed app bundle that has been
+  launched and granted a permission — the system said so ("LogiPluginService was prevented from
+  modifying apps on your Mac") while the plugin logged "installing voice helper" and moved on. The
+  install now renames the old bundle aside and creates the new one, which macOS allows; a copy that
+  fails puts the old bundle back; failure to remove quarantine does the same; and the install path
+  reports the exit code and error of every tool it runs instead of logging success unconditionally.
+
+- **A leftover hook no longer errors on every turn** (#55, retest bug B). An Options+ uninstall
+  removes the plugin and nothing else — the SDK gives a plugin no uninstall moment — so the five
+  hooks and the status line stay in `~/.claude/settings.json` pointing into
+  `~/.claude/claude-console/`, on macOS as on Windows. A user who then deleted that folder got
+  "Stop hook error occurred" on every turn. On both platforms each command now checks that its
+  script or exe exists before running it, so a leftover entry is a silent no-op. On load, commands
+  already recognisably ours are migrated from the 2.2.0 form through the normal rolling-backup
+  writer; no wiring is added and user commands are untouched. The Turn on dialog and README still
+  explain how to remove the wiring before uninstalling because Options+ cannot clean it up.
+- **The shipped PDB no longer names the build machine** (#62). The 2.2.0 symbol file carried the
+  author's worktree path twice — in the document paths of the engine's sources, which sit outside
+  the folder the Release PathMap covered, and in a Source Link map pointing at a repository that
+  is now private. Every source root is now mapped to `/_/`, Source Link is off, and the release
+  script's leak check reads the PDB as well as the DLL.
+- **Both whisper bundles are packed the same way** (#64). 2.2.0 stripped the transcription smoke
+  marker from the Windows bundle but shipped the macOS one, which QA read as the smoke test having
+  run for Mac only. Neither marker ships now, and the release script prints when each bundle last
+  transcribed instead. The runtime comparison only looks at packaged files, so a marker left in
+  the runtime home by an earlier install changes nothing.
+- **The service no longer warns about `PluginConfiguration.xml`** (#63). The SDK looks for a static
+  plugin declaration embedded in every plugin and logged two WARN lines per load when it found
+  none. A first fix embedded the required shape but left `<actions>` empty; a fresh packaged install
+  proved the parser merely replaced the old warnings with two `Action tags not found` warnings.
+  Every real action is dynamic, so each product now declares one uniquely named compatibility
+  command with `deviceType="0"` (None). It satisfies the legacy parser but is unavailable on every
+  real device, is absent from the layout, and cannot collide with a runtime action. The 2.2.0 retest
+  response claimed a load with zero WARN lines; that was wrong, and QA was right to say so.
+- **Release builds cannot reuse a resource-less intermediate DLL.** The packer now clears both
+  `bin/Release` and `obj/Release`, then refuses the artifact unless the actual DLL being packed
+  contains `PluginConfiguration.xml`, a common icon, and the product-specific bridge script. This
+  closes the incremental-build path that could silently undo #63 and omit every embedded asset.
+
+### Fixed — Windows (code change; not yet run on Windows hardware)
+- **Hook processes can no longer pile up** (#57, retest bug A). QA found around fifteen
+  `claude-console-hook` processes left behind after one session following a reboot, and the
+  machine froze until the plugin service was stopped. The hook now ends itself after eight
+  seconds whatever it is blocked on; the watchdog is armed before even diagnostic file I/O and
+  fails closed if its thread cannot start. It bounds every read of its input, bounds the PowerShell
+  lookup it falls back to when the kernel cannot name a parent process (the old code read that
+  output before applying its time limit, so a slow PowerShell start after boot held every hook
+  open), refuses to run above eight concurrent copies (below QA's approximately fifteen-process
+  freeze), and kills a timed-out chained status-line command with its descendants. The watchdog
+  deliberately performs no synchronous logging before exit. Built here, contract-tested and
+  cross-published, awaiting a Windows retest.
+
+### Changed
+- **Yes / No say when they cannot work** (#58, retest item 2). The answer keys see a permission
+  prompt only through the `PermissionRequest` hook, which is part of the opt-in live-status wiring;
+  with it off they looked ready, beeped, and did nothing at a real prompt. They now read
+  **Set up** / **Off** on a grey tile, keeping the check and cross, and the first press posts a
+  card in Options+ naming the key that turns live status on. Every session key's state bar reads
+  **Set up** / **Status off** while the wiring is off, instead of a frozen **Complete** or
+  **Waiting** — nothing can update a session's state without the hooks, so nothing the bar could
+  say would be current.
+- **Both answer keys show a pending approval, and a No press clears it** (#60, retest bug C). An approval clears itself when
+  the tool runs and the next hook fires; a rejection fires no hook, so the Yes dot and the
+  session's **Allow?** bar stayed lit until that session's next prompt. The answer key now clears
+  the captured payload itself the moment its keystroke lands, and leaves it — and says so — if the
+  keystroke did not. Both Yes and No now show the amber pending cue; for a destructive request Yes
+  turns red while No remains amber because rejecting does not authorize the command.
+- **"Restart Claude" only where a restart is needed.** On macOS a running Claude Code session
+  picks the new hooks and status line up by itself (measured 2026-09-02 on Claude Code 2.1.258:
+  status line one second after *Turn on*, the approval hook three minutes later, no restart), so
+  the face after *Turn on* reads **Turned on** and the Options+ card no longer sends you to start a
+  new session. Windows keeps the restart wording: QA saw the keys stay inert there until Claude Code
+  was restarted, and the cause is not yet known.
+
+## [2.2.0] — 2026-08-30
+
+The Logitech QA retest release. Twenty-five findings were filed against 2.0.1; this release
+answers the ones that were ours to answer, changes one thing about what the plugin *is* — and
+carries the keypad design Logitech's designers drew for it.
+
+### Added
+- **The Logitech design.** Every action icon is now the designer's glyph in one copper monochrome
+  (Claude's identity colour); colour is reserved for state. **Session keys** are a full-surface
+  face: the project name on black with a state bar along the bottom — *Thinking* / *Waiting* /
+  *Allow?* / *Complete* — highlighted for the pinned session, grey for the rest. **Yes / No** are
+  full green / red tiles with a circled check / × and the label inside; the approval badge stays on
+  Yes only. The **Voice** key is now called **Dictate**. The importable layouts (`ClaudeConsole-
+  Keypad.lp5`, `-Windows.lp5`) carry the approved first page — Session 1·2·3 / Clear · No · Yes /
+  Esc · Tab · Dictate — with the approval keys deliberately off the Esc slot.
+- **Screenshot key** (Core) — capture a region with the system picker and hand the image to the
+  *current* conversation, unsent, so you add the question. It has been in the plugin since 2.1.0
+  and undocumented until now; first use asks for Screen Recording.
+
+### Changed
+- **Live status is opt-in.** The plugin no longer edits `~/.claude/settings.json` on load. The
+  Cost / Context / Activity keys read *Set up* until you turn them on — by pressing one of them:
+  the first press flashes *Press again*, posts a card in Options+ and, on macOS, opens a dialog
+  mid-screen stating the exact change (five hooks and a status line, your entries kept, the file
+  backed up first) with *Not now* / *Turn on* — it edits nothing; *Turn on*, or a second press
+  within 15 s, does it. To turn it off, hold a live key: the mirror
+  dialog (*Keep* / *Turn off*), or a second long press within 15 s, takes exactly those entries
+  back out and the keys read *Off*. Nothing to drag: the keys are the switch. Existing installs are already wired and simply load as
+  enabled. Logitech QA asked for a prompt before user config is modified, and the SDK has neither
+  a dialog nor a plugin settings page (#31), so the press is the prompt.
+- **The plugin is universal.** No application binding, no packaged profile (`HasNoApplication`),
+  at Logitech's request. The keypad layout is now a download — `ClaudeConsole-Keypad.lp5` (and
+  `-Windows.lp5`) from the release — imported once onto Terminal's own Options+ entry. This removes
+  the self-registration and repair machinery that produced the "icon vanished after reinstall" and
+  "nothing appeared after first install" failures outright, and lets Claude Console and Vizhi for
+  Codex be installed together.
+- **A Marketplace install no longer forces a service restart** (P0). The heal that did so fired on
+  every healthy install because the installer writes the registration before the payload.
+- **Text injection works on non-US keyboard layouts** (P0): typing goes by key code, not character.
+- **The No key rejects** (P0): both answer keys used to type text into the approval menu.
+- **The session pin releases**: display keys follow your eyes, answer keys follow the pin, and
+  pressing the pinned session again lets go.
+- **A busy turn that was interrupted no longer shows an hourglass forever**: the plugin watches
+  the transcript, not just the hooks — and a keypad Esc clears it in seconds.
+- **Subprocess timeouts say how often and how long**, and back off instead of retrying a stalled
+  machine every tick.
+- **Sessions in a terminal the keys cannot drive no longer take a Session key.** Only Terminal.app
+  sessions are shown; one in iTerm2, cmux or an editor's terminal used to occupy a slot whose press
+  did nothing, and six of them could crowd out every real session. Each skipped session is named
+  once in the plugin log.
+
+### Fixed
+- **Voice works from a package install.** 2.0.1 shipped a whisper bundle with no compute backends;
+  it aborted on every machine without Homebrew while passing every check on the build machine. The
+  bundle now carries them, the release script refuses one that has not transcribed, and a broken
+  bundle already on disk is replaced on the next update.
+- **A failed dictation says so**: a denied microphone, a silent room, a missing model or helper each
+  put two words on the key — "Mic denied", "No speech", … — with a beep, instead of quietly typing
+  nothing. Whisper's noise labels ("(gunshot)") are no longer treated as speech and matched to a
+  project name.
+- **Go to Project finds projects anywhere**, not only under `~/Work`; the release binary no longer
+  embeds the build machine's paths.
+- Idle sessions no longer borrow another session's cost or wear the approval badge; an idle session
+  keeps its name and its state file.
+- The key-redraw storm (~11/s) is gone; redraws happen when something changed.
+- The icon converter wrote to a directory that no longer existed and reported success.
+- `uninstall.sh` ships with the plugin and lives outside the package, so it is there after an
+  uninstall; the README's recovery instructions name the installed paths.
+
+### Fixed — Windows (verified on the MX keypad, 2026-08-30)
+- **Voice ships.** No package had ever carried the Windows whisper bundle, so packaged voice could
+  not work (#47). The release script now refuses to pack without a bundle that has transcribed on
+  Windows.
+- **No and Esc reach Claude Code.** The inject helper sent every named key without its character,
+  and Node's console reader identifies Escape by exactly that — so Yes answered approvals while No
+  and Esc did nothing, and the log claimed otherwise. Windows' own version of the No-key defect.
+- **A navigation press with no Windows Terminal window is refused, with the reason** (#33): it
+  beeps and posts a "Windows Terminal required" card once per load instead of issuing a `wt`
+  command that quietly acts on nothing — or on whatever window happens to exist.
+- Known, not yet fixed: an Options+ uninstall on Windows leaves the live-status hooks in
+  `settings.json` and there is no cleanup script there yet (#55) — turn live status off before
+  uninstalling.
+
+## [2.1.0] — 2026-08-21
+
+One repository, two products. The engine (`src/Core`), the agents (`src/Agents`) and the thin
+products (`src/Products`) were separated so that Claude Console and **Vizhi for Codex** build from
+the same core with one adapter each. Codex on Windows gained a hookless state transport (the
+rollout transcript), a working Screenshot key, per-session keys, and focus by tab identity.
+No user-facing change for Claude Console on macOS.
+
 ## [2.0.1] — 2026-08-13
 
 ### Changed

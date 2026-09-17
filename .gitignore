@@ -419,6 +419,9 @@ AuthKey_*
 # Windows inject helper build output
 tools/windows/**/bin/
 tools/windows/**/obj/
+# Windows helper publish output. pack-release.sh republishes every exe on each release and
+# nothing reads a tracked copy; committed ones only went stale (focus/shot sat at the #83 stubs).
+tools/windows/**/publish-*/
 
 # Local feasibility spikes / throwaway tests — personal, never committed
 spikes/

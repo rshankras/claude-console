@@ -39,6 +39,22 @@ let transcriptPath = argValue("--transcript") ?? "/tmp/claude-console-voice-tran
 let stopFlag = argValue("--stopflag") ?? "/tmp/claude-console-voice.stop"
 let maxSec = Double(argValue("--maxsec") ?? "30") ?? 30
 
+// Every failure writes a sidecar next to the transcript path, and the plugin reads it before it
+// looks for a transcript. This is defined FIRST, ahead of the permission check, because the
+// commonest failure of all — a Microphone grant never given — used to exit with status 2 before the sidecar
+// writer existed. That failure wrote its reason to stderr, which for a process launched detached
+// via `open` is nowhere: not the plugin log, not a file. Reported from the field as "voice
+// functionality is still not working", with no way for anyone to learn why (#18).
+//
+// Discarding whisper's stderr and exiting 0 without reading terminationStatus had the same effect
+// one stage later — a hard crash produced exactly what silence produces, an empty transcript (#24).
+let surfacedErrorPath = transcriptPath + ".error"
+func fail(_ message: String, _ code: Int32) -> Never {
+    try? message.write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
+    log(message)
+    exit(code)
+}
+
 func findWhisper() -> String? {
     if let w = argValue("--whisper") { return w }
     // Prefer the self-contained bundle (no Homebrew needed); fall back to a system install.
@@ -52,8 +68,10 @@ func findWhisper() -> String? {
 
 let fm = FileManager.default
 
-// Fresh start: clear any stale transcript so the plugin never types a previous result.
+// Fresh start: clear any stale transcript so the plugin never types a previous result, and any
+// stale sidecar so a previous failure is never reported as this run's.
 try? fm.removeItem(atPath: transcriptPath)
+try? fm.removeItem(atPath: surfacedErrorPath)
 try? fm.removeItem(atPath: stopFlag)
 
 // 1) Microphone permission — this triggers the TCC prompt (attributed to THIS bundle).
@@ -62,8 +80,7 @@ var granted = false
 AVCaptureDevice.requestAccess(for: .audio) { ok in granted = ok; sem.signal() }
 sem.wait()
 if !granted {
-    log("microphone permission DENIED")
-    exit(2)
+    fail("microphone permission denied — allow ClaudeVoiceHelper in System Settings › Privacy & Security › Microphone", 2)
 }
 log("microphone permission granted")
 
@@ -80,13 +97,11 @@ let settings: [String: Any] = [
 ]
 
 guard let recorder = try? AVAudioRecorder(url: url, settings: settings) else {
-    log("failed to create AVAudioRecorder")
-    exit(3)
+    fail("failed to create AVAudioRecorder", 3)
 }
 recorder.isMeteringEnabled = true
 guard recorder.record() else {
-    log("recorder.record() returned false")
-    exit(3)
+    fail("recorder.record() returned false — is an input device connected?", 3)
 }
 NSSound(named: "Tink")?.play()  // audible "speak now" cue (also the product's recording-started feedback)
 log("recording -> \(outWav)  (touch \(stopFlag) to stop, max \(maxSec)s)")
@@ -105,30 +120,25 @@ let attrs = try? fm.attributesOfItem(atPath: outWav)
 let size = (attrs?[.size] as? Int) ?? 0
 log(String(format: "recorded %.1fs, %d bytes", dur, size))
 
-// 4) Transcribe with whisper.cpp. Preserve stderr and status: a missing backend must be reported
-// to the plugin, never disguised as a successful empty transcript.
-let surfacedErrorPath = transcriptPath + ".error"
+// 4) Transcribe with whisper.cpp. stdout = transcription. Failures go through fail() above.
+
 guard let whisper = findWhisper() else {
-    try? "whisper-cli not found".write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
-    log("whisper-cli not found — install with: brew install whisper-cpp")
-    exit(4)
+    fail("whisper-cli not found — the voice bundle is missing or incomplete", 4)
 }
 guard fm.fileExists(atPath: modelPath) else {
-    try? "speech model not found at \(modelPath)".write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
-    log("model not found at \(modelPath)")
-    exit(5)
+    fail("speech model not found at \(modelPath)", 5)
 }
 
 let p = Process()
 p.executableURL = URL(fileURLWithPath: whisper)
 p.arguments = ["-m", modelPath, "-f", outWav, "-nt"]
 let outPipe = Pipe()
+// Capture stderr to a file rather than a Pipe: whisper is chatty, and a pipe nobody drains while
+// we block on readDataToEndOfFile() of stdout would deadlock once its buffer filled.
 let whisperErrorPath = transcriptPath + ".whisper-stderr"
 fm.createFile(atPath: whisperErrorPath, contents: nil)
 guard let whisperError = FileHandle(forWritingAtPath: whisperErrorPath) else {
-    try? "cannot capture whisper diagnostics".write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
-    log("cannot create whisper stderr file")
-    exit(6)
+    fail("cannot capture whisper diagnostics at \(whisperErrorPath)", 6)
 }
 p.standardOutput = outPipe
 p.standardError = whisperError
@@ -136,26 +146,23 @@ do {
     try p.run()
 } catch {
     try? whisperError.close()
-    try? "whisper launch failed: \(error)".write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
-    log("whisper launch failed: \(error)")
-    exit(6)
+    try? fm.removeItem(atPath: whisperErrorPath)
+    fail("whisper launch failed: \(error)", 6)
 }
 let data = outPipe.fileHandleForReading.readDataToEndOfFile()
 p.waitUntilExit()
 try? whisperError.close()
-let stderr = (try? String(contentsOfFile: whisperErrorPath, encoding: .utf8)) ?? ""
+let whisperStderr = (try? String(contentsOfFile: whisperErrorPath, encoding: .utf8)) ?? ""
 try? fm.removeItem(atPath: whisperErrorPath)
 
+// A crash (GGML_ASSERT aborts with SIGABRT -> 134) must not look like a quiet room.
 guard p.terminationStatus == 0 else {
-    let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-    let message = detail.isEmpty
-        ? "whisper-cli exited with status \(p.terminationStatus)"
-        : "whisper-cli exited with status \(p.terminationStatus): \(detail.suffix(1200))"
-    try? message.write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
-    log(message)
-    exit(7)
+    let detail = whisperStderr.trimmingCharacters(in: .whitespacesAndNewlines)
+    fail(detail.isEmpty
+            ? "whisper-cli exited with status \(p.terminationStatus)"
+            : "whisper-cli exited with status \(p.terminationStatus): \(detail.suffix(1200))",
+         7)
 }
-
 try? fm.removeItem(atPath: surfacedErrorPath)
 
 var text = String(data: data, encoding: .utf8) ?? ""

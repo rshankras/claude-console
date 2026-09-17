@@ -31,6 +31,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         public String[] ScriptHints { get; init; } = Array.Empty<String>();
 
+        /// <summary>Native CLI subcommands that run helpers rather than interactive sessions.</summary>
+        public String[] NonSessionSubcommands { get; init; } = Array.Empty<String>();
+
         /// <summary>
         /// Matches nothing. The default everywhere in Core, because the engine must not name an
         /// agent: defaulting to a real one means an undeclared product silently adopts that agent's
@@ -54,6 +57,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             ExeNames = new[] { "codex" },
             ScriptHints = new[] { "/@openai/codex/", "/.codex/" },
+            NonSessionSubcommands = new[] { "sandbox" },
         };
     }
 }

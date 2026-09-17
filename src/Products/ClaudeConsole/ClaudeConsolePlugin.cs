@@ -1,6 +1,8 @@
 namespace Loupedeck.ClaudeConsolePlugin
 {
     using System;
+    using System.Diagnostics;
+    using System.Threading;
 
     using Loupedeck.ClaudeConsolePlugin.Agents;
 
@@ -26,7 +28,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         public ClaudeConsolePlugin()
         {
-            PluginLog.Init(this.Log);
+            PluginLog.Init(this.Log, "Claude Console");
             PluginResources.Init(this.Assembly);
 
             // Declared HERE, not in Load(): the SDK constructs every action in between, and an
@@ -35,6 +37,110 @@ namespace Loupedeck.ClaudeConsolePlugin
             var agent = new ClaudeCodeAdapter();
             IpcPaths.UseProduct(agent.ProductSlug);
             BridgeManager.Instance.Agent = agent;
+
+            // The engine composes what the user should be told about an edit to their settings; only
+            // this class can put it in front of them (Options+'s message centre, with a link) — #31.
+            BridgeManager.Instance.Notify = (status, message, url, title) =>
+            {
+                try
+                {
+                    if (message == null)
+                    {
+                        this.OnPluginStatusChanged(status, String.Empty);
+                    }
+                    else
+                    {
+                        this.OnPluginStatusChanged(status, message, url, title);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "ClaudeConsolePlugin: could not post the plugin status");
+                }
+            };
+
+            // The system-notification half of the same seam (#31): a press on the keypad deserves a
+            // reply where the user is looking, not only inside Options+. The SDK's ShowBalloonTip
+            // shows NOTHING on macOS (device, 2026-08-29 13:52), so there it goes through
+            // Notification Center via osascript; the SDK call is kept for Windows, where the name
+            // is native. Fire-and-forget: a notification must never hold up a key press.
+            BridgeManager.Instance.Toast = (title, text) =>
+            {
+                try
+                {
+                    if (OperatingSystem.IsMacOS())
+                    {
+                        ShowMacNotification(title, text);
+                    }
+                    else
+                    {
+                        this.NativeGui.ShowBalloonTip(text, title, BalloonTipIcon.Info);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "ClaudeConsolePlugin: could not show the notification");
+                }
+            };
+
+            // The yes/no half (#31): a dialog centred on screen with the change spelled out and a
+            // way to say no — the prompt QA asked for. macOS only; osascript through System Events
+            // brings it to the front from a background service (verified 2026-08-29). Windows has
+            // no dialog here yet, so it keeps the two-step press.
+            BridgeManager.Instance.Prompt = OperatingSystem.IsMacOS() ? AskMacDialog : null;
+        }
+
+        // AppleScript string literal: backslashes and double quotes escaped.
+        private static String AppleScriptString(String s) =>
+            "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+
+        private static void ShowMacNotification(String title, String text)
+        {
+            var script = $"display notification {AppleScriptString(text)} with title {AppleScriptString(title)}";
+            var psi = new ProcessStartInfo("/usr/bin/osascript") { UseShellExecute = false, CreateNoWindow = true };
+            psi.ArgumentList.Add("-e");
+            psi.ArgumentList.Add(script);
+            using var p = Process.Start(psi);   // not awaited on purpose
+        }
+
+        // true = the yes button, false = the no button (the cancel button: osascript exits non-zero),
+        // null = gave up after the timeout, or cancelled by a key press (the dialog is killed).
+        private static Boolean? AskMacDialog(String title, String text, String yes, String no, Int32 timeoutSeconds, CancellationToken cancel)
+        {
+            var script =
+                "tell application \"System Events\" to display dialog " + AppleScriptString(text) +
+                " with title " + AppleScriptString(title) +
+                " buttons {" + AppleScriptString(no) + ", " + AppleScriptString(yes) + "}" +
+                " default button " + AppleScriptString(yes) + " cancel button " + AppleScriptString(no) +
+                $" giving up after {timeoutSeconds}";
+            var psi = new ProcessStartInfo("/usr/bin/osascript")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add("-e");
+            psi.ArgumentList.Add(script);
+
+            using var p = Process.Start(psi);
+            using var closeOnCancel = cancel.Register(() => { try { p.Kill(); } catch { /* already gone */ } });
+            var output = p.StandardOutput.ReadToEnd();
+            p.WaitForExit();
+
+            if (cancel.IsCancellationRequested)
+            {
+                return null;
+            }
+            if (p.ExitCode != 0)
+            {
+                return false;   // the no button is the cancel button: osascript exits with -128
+            }
+            if (output.Contains("gave up:true", StringComparison.Ordinal))
+            {
+                return null;
+            }
+            return output.Contains("button returned:" + yes, StringComparison.Ordinal);
         }
 
         public override void Load()
@@ -46,27 +152,17 @@ namespace Loupedeck.ClaudeConsolePlugin
             // All actions are auto-discovered; we just start the IPC bridge.
             BridgeManager.Instance.StartPolling();
 
-            // Self-install the status-line + activity scripts and wire them into ~/.claude/settings.json
-            // so the live keys (Cost / Context / Activity) work with zero user setup. Idempotent, runs
-            // on a background thread, and takes effect on the user's next Claude Code session.
+            // Self-install the status-line + activity scripts (the plugin's own folder), honour an Off
+            // marker, and read what settings.json says about the live keys. It never edits that file:
+            // the user does, by pressing Enable Live Status (#31). Background thread, idempotent.
             BridgeManager.Instance.EnsureBridgeAutoWired();
 
-            // The application registration (icon in Options+, auto-imported layout) is ours to
-            // manage: a sideloaded install never CREATES it (clean machine: nothing appears), and
-            // a reinstall drops an existing one from the service's live list while disk stays
-            // correct. Create it from the packaged profile when it's missing entirely, otherwise
-            // heal the reinstall desync — either path schedules one service restart.
-            // Sweep orphans first: an entry whose plugin was uninstalled still holds the terminal
-            // and shows a keypad of unresolvable keys, which looks like THIS plugin being broken.
-            Platform.RegistrationCleanup.RemoveOrphans(
-                Platform.RegistrationHeal.ApplicationsRoot(),
-                Platform.PluginPaths.PluginsRoot,
-                "ClaudeConsole");
-
-            if (!Platform.SelfRegistration.RegisterIfMissing())
-            {
-                Platform.RegistrationHeal.HealIfNeeded();
-            }
+            // No application registration to write, heal, or sweep: this is a universal plugin
+            // (HasNoApplication in the package yaml), decided with Logitech on 2026-08-28 (#23).
+            // The keypad layout is a profile the user imports or builds, on Options+'s own entry
+            // for Terminal — not something the package carries. Everything that used to happen here
+            // (SelfRegistration, RegistrationHeal, RegistrationCleanup, and the service restarts they
+            // scheduled) existed only to manage an entry this plugin no longer has.
 
             PluginLog.Info("ClaudeConsolePlugin: Loaded — actions auto-discovered; bridge polling started");
         }

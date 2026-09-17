@@ -129,8 +129,13 @@ does not survive switching to Terminal. The registration document has no priorit
 `defaultProfileName`, `isEnabled` — nothing else), so there is no hook for "Terminal, but running
 Codex".
 
-Registration itself is fine: `@_claudeconsole` and `@_codexconsole` coexist on disk, each with its
-own profile, and neither disturbs the other. It is *activation* that is exclusive.
+> **Superseded 2026-08-28 (#23).** Both plugins are universal now — `HasNoApplication`, no
+> registration, no packaged profile — so there is no activation to be exclusive about and the two
+> products can be installed together. The rest of this section and the next are kept as the
+> record of why the binding was a problem; nothing in them describes the shipping code.
+
+Registration itself was fine: `@_claudeconsole` and `@_codexconsole` coexisted on disk, each with
+its own profile, and neither disturbed the other. It was *activation* that was exclusive.
 
 **This does not overturn shipping two products.** The constraint only affects someone running both
 agents, which is a minority; for a single-agent user the other plugin isn't installed and nothing
@@ -151,61 +156,7 @@ and the hook already stamps `agent` into every file. What is missing is a per-se
 Everything else must still be namespaced per product: IPC root, `@_` registration, profile GUIDs,
 package name, crash-marker assembly version, `~/.<product>/` runtime home.
 
-## The desktop app is a third PRODUCT, not a third adapter — RECON 2026-08-24
-
-**What the target actually is** (this Mac, verified on disk, not from docs):
-
-| | |
-|---|---|
-| App | `/Applications/ChatGPT.app` — display name **ChatGPT** |
-| Bundle id | **`com.openai.codex`** (the ChatGPT app's id *is* `com.openai.codex`) |
-| Version | `26.814.41407`, `LSMinimumSystemVersion` 13.0 |
-| Shape | Electron — `Contents/Resources/app.asar`, `Codex Framework.framework` |
-| Deep link | `codex://` (plus `http`/`https`) — the analogue of `claude://resume` |
-| Bundled CLI | `Contents/Resources/codex`, a 203 MB arm64 Mach-O |
-
-**Separate product. Three reasons, in order of weight.**
-
-**1. The coexistence constraint that bit the terminal pair does not apply here.** Activation is
-exclusive *per application bundle*: Claude Console and Vizhi for Codex collide because both claim
-`com.apple.Terminal`. A desktop product claims `com.openai.codex`, a bundle nothing else claims —
-so it activates when ChatGPT is frontmost and stays out of the way when Terminal is. This is the
-first product in the family that can be installed **alongside** another with no "install one"
-warning in the listing. That is an argument for a separate package, not against it.
-
-**2. It is not an `IAgentAdapter`.** Read the contract: `CliCommand`, `ProcessNames`,
-`ProcessMatcher`, `ParseSessionState(json)`, `SlashCommand(verb)`. Every member presumes a CLI
-process per session, a hook writing state files into an IPC root, and a prompt that accepts typed
-slash commands. The desktop app has none of them — one process, N conversations inside one window,
-no hook interface, no verb to type. Forcing it through this seam would make both terminal adapters
-answer desktop questions, and would invite exactly the fiction rule 1 forbids.
-
-**3. What it needs is a third seam: the SURFACE.** `IPlatformBridge` hides the OS.
-`IAgentAdapter` hides the agent. Neither hides *terminal vs GUI*, and that is the axis this
-product moves along. Its verbs are the spike's four mechanisms — AX press on a named control,
-global hotkey, menu accelerator, `codex://` deep link — none of which is typing into a TTY.
-
-**The keypad it earns is smaller, and the listing must say so.** No hooks means no telemetry:
-Cost, Context, Model and Activity have nothing to render, so those keys hide under the same rule
-that hides Cost on Codex CLI. What survives is the half that matters most — approve/deny (the
-safety property D2 already proved on Claude Desktop), conversation switching, new chat, voice,
-deep-link resume.
-
-**Matcher collision — RESOLVED on macOS, verified live 2026-08-24.** The desktop app does spawn
-its bundled CLI (observed: `Contents/Resources/codex -c features.code_mode_host=true app-server`),
-and its basename is an exact `ExeNames = ["codex"]` match — but discovery never sees it:
-`AgentProcessWatcher.Parse` drops any row whose TTY is `??` *before* the name match
-(`src/Core/AgentProcessWatcher.cs:68`), and the desktop-spawned process runs with no controlling
-terminal (`ps -o tty=` → `??`, confirmed against the live pid). The same filter that keeps
-daemons off the grid keeps the desktop app off it. Windows still needs its analogue confirmed on
-the laptop: the console-attach step should filter a console-less `codex.exe` identically, but
-that is an assumption until W-run day.
-
-**Still to certify:** the AX spike against `com.openai.codex`. `spikes/desktop-plugin/probe.swift`
-now takes `--app <bundle-id>`, so D0–D5 re-run unchanged against this target. Claude Desktop's D2
-pass is strong prior evidence (same Electron/Chromium AX mechanism), not a substitute for the run.
-
-## Uninstall leaves the registration behind
+## Uninstall leaves the registration behind (historical — no registration since 2.2.0)
 
 Uninstalling through Options+ removes the PLUGIN and nothing else. A sideloaded install never gets
 an application entry from the service, so the plugin writes one itself — and that entry survives.

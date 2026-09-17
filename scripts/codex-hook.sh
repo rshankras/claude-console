@@ -46,14 +46,23 @@ mkdir -p "$SESSIONS" 2>/dev/null || emit_and_exit
 [ -O "$ROOT" ] || emit_and_exit
 chmod 700 "$ROOT" 2>/dev/null
 
-# The session key is the terminal, because that is what the keypad can focus and type into — and
-# Codex's payload never carries one. This hook is a child of `codex`, so it inherits codex's
-# controlling terminal and can simply read its own: no walking the parent chain.
-TTY="$(ps -o tty= -p $$ 2>/dev/null | tr -d ' \t')"
-case "$TTY" in
-    ''|'??'|'?') TTY="shared" ;;          # not attached to a terminal (codex exec, CI)
-    *) TTY="$(basename "$TTY")" ;;        # "ttys003", matching the macOS session key format
-esac
+# Session keys must identify the terminal the keypad can focus, not the hook subprocess.
+# Like Claude Console's activity/statusline hooks, walk a bounded parent chain: Codex can
+# detach its hook (and intermediate shells) from the controlling terminal. Checking only $$
+# then writes every session into shared.json and loses Thinking/approval state on the grid.
+TTY="shared"
+pid=$$
+for _ in 1 2 3 4 5 6; do
+    t="$(ps -o tty= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+    case "$t" in
+        ''|'?'|'??') ;;
+        *) TTY="${t##*/}"; break ;;
+    esac
+    parent="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+    case "$parent" in ''|*[!0-9]*) break ;; esac
+    { [ "$parent" -le 1 ] || [ "$parent" = "$pid" ]; } && break
+    pid="$parent"
+done
 
 TS="$(date +%s)"
 

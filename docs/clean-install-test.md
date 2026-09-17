@@ -7,6 +7,10 @@ macOS user account** (or on another Mac) before each release.
 > Your everyday account is **not** a valid test bed: it already has the plugin loaded and
 > your own key assignments, and the shipped `.lp5` shares a profile GUID with your existing
 > Terminal profile, so importing it there would collide.
+>
+> Since 2.2.0 the plugin is **universal**: it registers no application and ships no layout. So the
+> correct result of step 2 is a keypad showing *nothing new* and an Options+ strip with *no* Claude
+> Console icon — the actions appear only in the action panel until step 3 gives them keys.
 
 ## What you need
 - `ClaudeConsole_<ver>.lplug4` — from [Releases](https://github.com/rshankras/claude-console/releases) (or a `dotnet build`).
@@ -40,7 +44,9 @@ macOS user account** (or on another Mac) before each release.
 ### 3. Import the layout
 - Logi Options+ → MX Creative Keypad → profile menu (the `⋯` / profile dropdown) →
   **Import Profile** → choose `ClaudeConsole-Keypad.lp5`.
-- It imports as **“Claude Console — Keypad,”** bound to Terminal, with the keys populated.
+- It imports as a **Terminal** profile with the keys populated. Terminal appears in the
+  application strip (it is Terminal's entry, not the plugin's) and the layout shows when
+  Terminal.app is frontmost.
 
 ### 4. Grant permissions (fresh per account)
 - **Accessibility** → Privacy & Security → Accessibility → enable **Logi Plugin Service**.
@@ -51,11 +57,18 @@ macOS user account** (or on another Mac) before each release.
 - Run `claude`, press a prompt key (e.g. *Fix Bug*) → it types the prompt and submits.
 - **Voice** key → *Tink* → speak → press again → transcribed into the terminal.
 - **Answer** keys (Up/Down/Return, Yes/No) drive a Claude prompt.
-- **Live status (auto-wired):** on first load the plugin wires the status-line + activity
-  [bridge](../README.md#the-live-status-bridge) into that account's `~/.claude/settings.json`
-  itself (backup at `~/.claude/settings.json.claude-console.bak`). It takes effect on the **next**
-  Claude Code session — start a fresh `claude` and confirm the Model / Cost / Context / Activity
-  keys show live data.
+- **Live status (opt-in, #31):** the Cost / Context / Activity keys read **Set up**, and that
+  account's `~/.claude/settings.json` is **unchanged** by the install (check it, or note that it
+  does not exist). Press Cost once: it flashes *Press again*, a dialog opens mid-screen (*Not now* / *Turn on*)
+  naming the exact change, and a card appears in Options+; click **Not now** — the file is still
+  unchanged and the flash clears. Press Cost once more and click **Turn on** (or press Cost again
+  within 15 s): a notification and a card confirm the edit, the keys read **Turned on**, and
+  `~/.claude/settings.json` now holds five hooks + a `statusLine` (backup at
+  `~/.claude/settings.json.claude-console.bak`).
+  In the session that was already running, confirm the Model / Cost / Context / Activity keys show
+  live data within a few seconds — no restart is needed on either platform since 2.2.2 (#58).
+  Hold Cost (a long press) and click **Turn off**: the keys read **Off** and the file carries none
+  of the plugin's entries.
 
 ### 6. Cleanup
 - Log back into your main account; optionally delete the test account.
@@ -63,7 +76,8 @@ macOS user account** (or on another Mac) before each release.
   existing Terminal profile.
 
 ## Pass criteria
-- ✅ Package installs and **loads clean**
+- ✅ Package installs and **loads clean**, with **no** application entry and **nothing** on the keypad
 - ✅ **Import** produces the full layout on the keypad
 - ✅ prompt / voice / answer keys fire with Terminal focused
-- ✅ live keys auto-wire and show data on a second `claude` session
+- ✅ install leaves `~/.claude/settings.json` untouched; one press on a live key, *Not now*, or a late second press changes nothing
+- ✅ *Turn on* in the dialog or two presses within 15 s wire it and say so; live keys show data on the next `claude` session; a long press (*Turn off*) takes it out

@@ -3,6 +3,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System;
 
     using Loupedeck.ClaudeConsolePlugin.Platform;
+    using Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration;
 
     using Xunit;
 

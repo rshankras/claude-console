@@ -41,6 +41,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             public String Name => "fake";
             public Boolean IsSupported => true;
+            public Boolean SettingsApplyLive { get; set; } = true;
 
             public List<(String Session, String Text, Boolean Enter)> Texts { get; } = new();
             public List<(String Session, KeyStroke Key)> Keys { get; } = new();
@@ -53,6 +54,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             public HashSet<String> SessionsToReport { get; set; }
             public String FrontmostToReport { get; set; }
             public InjectionOutcome Outcome { get; set; } = InjectionOutcome.Ok;
+            public Boolean FocusSucceeds { get; set; } = true;
 
             public HashSet<String> DiscoverSessions() => this.SessionsToReport;
             public String QueryFrontmostSession() => this.FrontmostToReport;
@@ -76,6 +78,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }
 
             public void FocusSession(String sessionId) => this.Focused.Add(sessionId);
+            public Boolean TryFocusSession(String sessionId)
+            {
+                this.FocusSession(sessionId);
+                return this.FocusSucceeds;
+            }
             public void Navigate(TerminalAction action) => this.Navigations.Add(action);
             public void LaunchClaudeInProject(String projectDir) => this.Launches.Add(projectDir);
             public void Alert() => this.Alerts++;
@@ -140,11 +147,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var (bridge, fake) = Rig("ttys003");
 
-            bridge.InjectKey(KeyStroke.Escape);
+            var outcome = bridge.InjectKey(KeyStroke.Escape);
 
             var call = Assert.Single(fake.Keys);
             Assert.Equal("ttys003", call.Session);
             Assert.Equal(KeyStroke.Escape, call.Key);
+            Assert.Equal(InjectionOutcome.Ok, outcome);
         }
 
         [Fact]
@@ -256,6 +264,48 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.SelectSlot(1);
 
             Assert.Equal("ttys011", Assert.Single(fake.Focused));
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Failed_slot_focus_preserves_the_previous_routing_and_persisted_selection(Boolean alreadyPinned)
+        {
+            var fake = new FakePlatformBridge();
+            var bridge = new BridgeManager(fake) { Grid = this.NewGrid() };
+            bridge.Grid.Refresh(new HashSet<String> { "ttys011", "ttys012" });
+            bridge.ActiveTty = bridge.Grid.SlotSession(1).SessionKey;
+            if (alreadyPinned) { bridge.SelectSlot(1); }
+            var pinned = bridge.PinnedTty;
+            var focused = bridge.Grid.FocusedSession;
+            var active = bridge.ActiveTty;
+            var routing = bridge.RoutingTty();
+            String notice = null;
+            bridge.Notify = (_, message, _, _) => notice = message;
+            fake.FocusSucceeds = false;
+
+            bridge.SelectSlot(2);
+
+            Assert.Equal(pinned, bridge.PinnedTty);
+            Assert.Equal(focused, bridge.Grid.FocusedSession);
+            Assert.Equal(active, bridge.ActiveTty);
+            Assert.Equal(routing, bridge.RoutingTty());
+            Assert.Contains("previous selection is unchanged", notice);
+        }
+
+        [Fact]
+        public void Failed_focus_of_the_pinned_slot_does_not_release_its_pin()
+        {
+            var fake = new FakePlatformBridge();
+            var bridge = new BridgeManager(fake) { Grid = this.NewGrid() };
+            bridge.Grid.Refresh(new HashSet<String> { "ttys011" });
+            bridge.SelectSlot(1);
+            fake.FocusSucceeds = false;
+
+            bridge.SelectSlot(1);
+
+            Assert.Equal("ttys011", bridge.PinnedTty);
+            Assert.Equal("ttys011", bridge.Grid.FocusedSession);
         }
 
         // ---------------------------------------------------------------------------------------

@@ -23,7 +23,12 @@ APP="$HOME_DIR/ClaudeVoiceHelper.app"
 WBIN="$HOME_DIR/whisper-bin"
 
 # --- preflight ------------------------------------------------------------------------------------
-security find-identity -v -p codesigning | grep -q "$SIGN_IDENTITY" \
+# Capture, THEN grep. This file runs under pipefail, and `cmd | grep -q` is a race under pipefail:
+# grep -q exits on the first match and closes the pipe, the producer dies of SIGPIPE, and the
+# pipeline reports failure — a signed file read as unsigned. It fired on the first backend of an
+# otherwise clean 2.2.0 release round and stopped the script one step from done.
+identities="$(security find-identity -v -p codesigning)"
+grep -q "$SIGN_IDENTITY" <<<"$identities" \
   || { echo "error: signing identity not found: $SIGN_IDENTITY" >&2; exit 1; }
 [ -f "$HELPER_ENTITLEMENTS" ] || { echo "error: entitlements missing: $HELPER_ENTITLEMENTS" >&2; exit 1; }
 xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1 \
@@ -59,12 +64,34 @@ fi
 
 # --- 4) verify ------------------------------------------------------------------------------------
 echo ">>> verifying helper signature + Gatekeeper assessment"
+# These are release gates, not diagnostic decoration. `codesign -d` only prints metadata and
+# spctl/stapler were previously tolerated with `|| true`, so a rejected helper could still produce
+# the script's green success line (#66).
+codesign --verify --deep --strict --verbose=4 "$APP"
+spctl --assess --type execute --verbose=4 "$APP"
+xcrun stapler validate "$APP"
 codesign -dvvv "$APP" 2>&1 | grep -E "Authority|TeamIdentifier|Identifier=|Runtime|flags" || true
-spctl -a -vvv -t exec "$APP" 2>&1 || true
-xcrun stapler validate "$APP" 2>&1 || true
 if [ -d "$WBIN" ]; then
   echo ">>> verifying whisper-cli signature"
   codesign -dvvv "$WBIN/whisper-cli" 2>&1 | grep -E "Authority|TeamIdentifier|Runtime" || true
+  # The compute backends are dlopened, so Gatekeeper meets them at RUNTIME rather than at launch:
+  # an ad-hoc leftover here is a voice failure on the user's machine, not a notarization error
+  # here. Verify each one really carries the Developer ID (#24).
+  for so in "$WBIN"/*.so; do
+    [ -e "$so" ] || continue
+    # Same pipefail trap as the preflight: capture first, grep second. And say WHICH check failed —
+    # "not signed" covered both an invalid signature and a wrong identity, and the pipefail race.
+    if ! codesign -v "$so" 2>/dev/null; then
+      echo "error: $(basename "$so") has an invalid signature" >&2
+      exit 1
+    fi
+    details="$(codesign -dvvv "$so" 2>&1)"
+    if ! grep -q "$SIGN_IDENTITY" <<<"$details"; then
+      echo "error: $(basename "$so") is not signed with $SIGN_IDENTITY" >&2
+      exit 1
+    fi
+  done
+  echo ">>> ggml backends signed: $(ls "$WBIN"/*.so 2>/dev/null | wc -l | tr -d ' ')"
 fi
 
 echo "✅ Developer-ID signed + notarized. Helper stapled."

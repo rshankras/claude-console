@@ -17,7 +17,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-internal static class Program
+internal static class InjectProgram
 {
     private const Int32 ExitOk = 0;
     private const Int32 ExitSessionMissing = 2;
@@ -26,7 +26,7 @@ internal static class Program
 
     private const Int32 ErrorAccessDenied = 5;
 
-    private static Int32 Main(String[] args)
+    internal static Int32 Main(String[] args)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -136,8 +136,20 @@ internal static class Program
             return ExitFailed;
         }
 
+        // A named key must carry the character a physical press puts in UnicodeChar. Node's
+        // console reader (libuv) recognises Escape, Return and Tab by that character and only
+        // falls back to the virtual-key code for keys that have none (arrows, paging). With '\0'
+        // here, Escape reached the console and was dropped unread: Return still worked, so the
+        // Yes key answered approvals while No — and the Esc key — did nothing (device, 2026-08-30).
+        var ch = vk switch
+        {
+            VkEscape => '\x1b',
+            VkReturn => '\r',
+            VkTab => '\t',
+            _ => '\0',
+        };
         var records = new List<INPUT_RECORD>();
-        AppendKey(records, vk, '\0', ModifiersFrom(opts.GetValueOrDefault("--mods")));
+        AppendKey(records, vk, ch, ModifiersFrom(opts.GetValueOrDefault("--mods")));
         return Deliver(opts, new List<(List<INPUT_RECORD>, Int32)> { (records, 0) });
     }
 
@@ -273,8 +285,21 @@ internal static class Program
         // Verify the target IS the session we were told to type into, before attaching to anything.
         // Windows recycles PIDs: without this, a stale session key could attach to an unrelated
         // process that inherited the number and type into it. This is the guard.
-        if (Int64.TryParse(opts.GetValueOrDefault("--start-ticks"), NumberStyles.None, CultureInfo.InvariantCulture, out var expectedTicks)
-            && expectedTicks > 0)
+        if (!Int64.TryParse(opts.GetValueOrDefault("--start-ticks"), NumberStyles.None, CultureInfo.InvariantCulture, out var expectedTicks)
+            || expectedTicks <= 0)
+        {
+            Console.Error.WriteLine("missing or invalid --start-ticks");
+            return ExitSessionMissing;
+        }
+
+        using var inputLock = SessionInputLock.TryAcquire(pid, expectedTicks);
+        if (inputLock == null)
+        {
+            Console.Error.WriteLine("input busy or previous delivery interrupted; nothing sent");
+            return ExitFailed;
+        }
+
+        // Revalidate AFTER waiting: a queued request must never attach to a reused process.
         {
             if (!VerifyStartTime(pid, expectedTicks, out var why))
             {

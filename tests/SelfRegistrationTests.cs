@@ -7,6 +7,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System.Text.Json.Nodes;
 
     using Loupedeck.ClaudeConsolePlugin.Platform;
+    using Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration;
 
     using Xunit;
 

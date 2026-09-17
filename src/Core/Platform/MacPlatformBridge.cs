@@ -15,8 +15,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
     internal sealed class MacPlatformBridge : IPlatformBridge
     {
         public String Name => "macOS";
+        private readonly Dictionary<String, String> _sessionDirectories = new();
+        public IReadOnlyDictionary<String, String> SessionDirectories => _sessionDirectories;
+        internal Func<Int32, String> ProcessDirectoryReader { get; set; } = MacProcessDirectory.Read;
 
         public Boolean IsSupported => OperatingSystem.IsMacOS();
+
+        // Measured, not assumed — see IPlatformBridge.SettingsApplyLive (#58, 2026-09-02).
+        public Boolean SettingsApplyLive => true;
 
         // WHAT counts as a session, supplied at construction. The bridge never learns which agent
         // this describes — that is the whole point of keeping the two seams orthogonal. Defaults to
@@ -91,7 +97,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         private String NewAgentTabScript() =>
             "tell application \"Terminal\"\n" +
             "  activate\n" +
-            "  tell application \"System Events\" to keystroke \"t\" using command down\n" +
+            "  tell application \"System Events\" to key code 17 using command down\n" +
             "  delay 0.5\n" +
             "  do script \"" + this._cliCommand + "\" in front window\n" +
             "end tell";
@@ -111,6 +117,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // Test seam for the process scan: lets the tests feed captured `ps` output.
         internal Func<String> PsRunner { get; set; }
 
+        // Skip-window for the frontmost probe after it overruns (#46). Instance state, and the poll
+        // loop is non-overlapping, so it needs no locking.
+        private readonly ProbeBackoff _frontmostBackoff = new ProbeBackoff();
+
         // ------------------------------------------------------------------------------------------
         // Discovery
         // ------------------------------------------------------------------------------------------
@@ -127,8 +137,58 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
 
             var output = this.RunCapture("/bin/ps", new List<String> { "-axo", "pid=,ppid=,tty=,command=" }, 5000);
-            return output == null ? null : AgentProcessWatcher.TtysFrom(output, this._matcher);
+            if (output == null)
+            {
+                return null;
+            }
+
+            var found = AgentProcessWatcher.Discover(output, this._matcher, this.DrivableOwner);
+            _sessionDirectories.Clear();
+            // Codex may omit SessionStart until its first prompt. Ask the live process for cwd;
+            // no directory scan, extra ps, or external command is needed.
+            if (_cliCommand == "codex")
+            {
+                foreach (var row in AgentProcessWatcher.Parse(output, _matcher))
+                {
+                    if (found.Ttys.Contains(row.Tty) && Int32.TryParse(row.Pid, out var pid))
+                    {
+                        var directory = ProcessDirectoryReader(pid);
+                        if (!String.IsNullOrWhiteSpace(directory)) { _sessionDirectories[row.Tty] = directory; }
+                    }
+                }
+            }
+
+
+            // Say WHY a session is missing from the keys — once per session, not per poll (#27).
+            // Before #29 an iTerm2 or cmux session took a slot, the press pinned a TTY the keys could
+            // not reach, and the log said nothing at all.
+            foreach (var s in found.Skipped)
+            {
+                if (this._reportedUndrivable.Add(s.Tty + "|" + (s.Owner ?? "?")))
+                {
+                    PluginLog.Warning(s.Owner == null
+                        ? $"MacPlatformBridge: session on {s.Tty} is not shown — no terminal application in its ancestry (tmux, screen or ssh?), so the keys cannot reach it"
+                        : $"MacPlatformBridge: session on {s.Tty} is not shown — it runs in {s.Owner}, which the keys cannot drive (Terminal.app only; #29)");
+                }
+            }
+
+            return found.Ttys;
         }
+
+        /// <summary>
+        /// Which terminal application's sessions the keys can actually reach (#29). Every action key
+        /// finds the tab by TTY and types through Terminal.app's AppleScript, so today that is exactly
+        /// one application. iTerm2 exposes a `tty` on each session too and is the obvious second
+        /// driver; Ghostty, Warp and editor-integrated terminals expose nothing addressable by TTY,
+        /// so a session in them can only ever be a key that does nothing. Settable so tests can
+        /// switch the filter off (null) or supply their own.
+        /// </summary>
+        internal Func<String, Boolean> DrivableOwner { get; set; } = IsTerminalApp;
+
+        internal static Boolean IsTerminalApp(String ownerCommand) =>
+            ownerCommand != null && ownerCommand.Contains("/Terminal.app/Contents/MacOS/Terminal", StringComparison.Ordinal);
+
+        private readonly HashSet<String> _reportedUndrivable = new HashSet<String>(StringComparer.Ordinal);
 
         /// <summary>
         /// The TTY (e.g. "ttys003") of the frontmost Terminal tab, or null if Terminal isn't the
@@ -151,7 +211,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 "  end tell\n" +
                 "end if\n" +
                 "return \"\"";
-            return NormalizeTty(this.RunOsascriptCapture(new List<String> { "-e", script }));
+            // #46: an overrun means the machine is not answering Apple Events, and the next probe
+            // would ask the same stalled machine the same question — blocking the non-overlapping
+            // poll loop for another full 2000ms to do it. Skip a few opportunities instead. An EMPTY
+            // answer is not a failure and must not back off: it just means Terminal isn't frontmost.
+            if (this._frontmostBackoff.ShouldSkip())
+            {
+                return null;
+            }
+
+            var raw = this.RunOsascriptCapture(new List<String> { "-e", script }, out var timedOut);
+            if (timedOut)
+            {
+                this._frontmostBackoff.RecordTimeout();
+                return null;
+            }
+
+            this._frontmostBackoff.RecordSuccess();
+            return NormalizeTty(raw);
         }
 
         /// <summary>"/dev/ttys003" (osascript) -> "ttys003"; "ttys003" (ps) stays "ttys003".</summary>
@@ -180,6 +257,46 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// transcript can't break (or extend) the script. Newlines are flattened to spaces so a
         /// multi-line transcript doesn't submit early.
         /// </summary>
+        /// <summary>
+        /// Deliver the text (argv item 2) through the clipboard rather than System Events'
+        /// `keystroke`.
+        ///
+        /// WHY. `keystroke` does not send characters — it asks macOS to press the keys that WOULD
+        /// PRODUCE those characters under the CURRENT input source. On a non-US layout the terminal
+        /// therefore receives something else entirely, silently: reproduced on hardware 2026-08-27
+        /// with the Russian layout selected, where "the quick brown fox 123" arrived as
+        /// "ффф ффффф ффффф ффф 123" — every letter collapsed to ф, digits and spaces intact. Every
+        /// text-carrying action was affected: prompts, git, slash commands, voice transcripts and
+        /// the Yes/No badges (QA retest of 2.0.1, finding 4; #22).
+        ///
+        /// A clipboard paste carries the characters themselves, so it is layout-independent and
+        /// Unicode-safe — the same path a human uses. The text still travels as an osascript
+        /// ARGUMENT, never interpolated into the script source, so quotes and backslashes in a
+        /// transcript still cannot break out.
+        ///
+        /// The clipboard is saved and restored as a RECORD, which preserves every flavour the user
+        /// had (an image, styled text) rather than flattening it to a string. Both halves are
+        /// wrapped in try blocks: failing to save must not stop the injection, and failing to
+        /// restore must not fail an injection that has already landed.
+        ///
+        /// The delay before restoring is not optional — Terminal reads the pasteboard when Cmd+V is
+        /// handled, so restoring too early pastes the OLD clipboard.
+        /// </summary>
+        private const String PasteTextBody =
+            "set savedClipboard to missing value\n" +
+            "try\n" +
+            "  set savedClipboard to (the clipboard as record)\n" +
+            "end try\n" +
+            "set the clipboard to (item 2 of argv)\n" +
+            "delay 0.05\n" +
+            "tell application \"System Events\" to key code 9 using command down\n" +   // Cmd+V
+            "delay 0.2\n" +
+            "if savedClipboard is not missing value then\n" +
+            "  try\n" +
+            "    set the clipboard to savedClipboard\n" +
+            "  end try\n" +
+            "end if\n";
+
         public InjectionOutcome InjectText(String sessionKey, String text, Boolean pressEnter)
         {
             if (String.IsNullOrEmpty(text))
@@ -193,7 +310,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             }
 
             var flattened = text.Replace("\r", " ").Replace("\n", " ");
-            var body = "tell application \"System Events\" to keystroke (item 2 of argv)\n";
+            var body = PasteTextBody;
             if (pressEnter)
             {
                 // A leading "/" opens Claude Code's slash-command autocomplete. Pressing Return
@@ -331,7 +448,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             var script = action switch
             {
                 TerminalAction.Activate => "tell application \"Terminal\" to activate",
-                TerminalAction.NewTab => ActivateThen + "keystroke \"t\" using {command down}",           // Cmd+T
+                TerminalAction.NewTab => ActivateThen + "key code 17 using {command down}",                // Cmd+T (key code, not "t" — see KeyCodeT)
                 TerminalAction.NewClaudeTab => this.NewAgentTabScript(),
                 TerminalAction.NextTab => ActivateThen + "key code 48 using {control down}",              // Ctrl+Tab
                 TerminalAction.PreviousTab => ActivateThen + "key code 48 using {control down, shift down}",
@@ -348,7 +465,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         }
 
         /// <summary>
-        /// cd into the project and run claude. Smart about where:
+        /// cd into the project and run the configured agent. Smart about where:
         ///   • no Terminal window open      → open one and run there
         ///   • front tab is an IDLE shell   → reuse it (this is the "empty terminal" case)
         ///   • front tab is BUSY (claude/cmd running) → open a NEW tab, so we never type into a
@@ -362,8 +479,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return;
             }
 
-            // Single-quote the path for the shell so spaces are safe (project paths have no quotes).
-            this.LaunchShellCommand("cd '" + projectDir + "' && " + this._cliCommand);
+            this.LaunchShellCommand("cd " + ShellQuote(projectDir) + " && " + this._cliCommand);
         }
 
         // The busy-aware launch shared by LaunchClaudeInProject and LaunchAgentSession: reuse an
@@ -375,27 +491,35 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return;
             }
 
+            // Pass the command as an osascript argument instead of interpolating it into the
+            // AppleScript source. Project names may legitimately contain quotes or backslashes.
             var script =
+                "on run argv\n" +
+                "set shellCommand to item 1 of argv\n" +
                 "tell application \"Terminal\"\n" +
                 "  activate\n" +
                 "  if (count of windows) is 0 then\n" +
-                "    do script \"" + cmd + "\"\n" +
+                "    do script shellCommand\n" +
                 "  else\n" +
                 "    set isIdle to false\n" +
                 "    try\n" +
                 "      set isIdle to (busy of selected tab of front window is false)\n" +
                 "    end try\n" +
                 "    if isIdle then\n" +
-                "      do script \"" + cmd + "\" in front window\n" +   // reuses the idle tab (NOT 'selected tab of' — that form no-ops)
+                "      do script shellCommand in front window\n" +   // reuses the idle tab (NOT 'selected tab of' — that form no-ops)
                 "    else\n" +
-                "      tell application \"System Events\" to keystroke \"t\" using command down\n" +
+                "      tell application \"System Events\" to key code 17 using command down\n" +
                 "      delay 0.5\n" +
-                "      do script \"" + cmd + "\" in front window\n" +
+                "      do script shellCommand in front window\n" +
                 "    end if\n" +
                 "  end if\n" +
-                "end tell";
-            this.RunAppleScript(script);
+                "end tell\n" +
+                "end run";
+            this.RunOsascriptCore(new List<String> { "-e", script, cmd }, 15000, wantOutput: false);
         }
+
+        private static String ShellQuote(String value) =>
+            "'" + (value ?? String.Empty).Replace("'", "'\"'\"'") + "'";
 
         /// <summary>
         /// `screencapture -i`: the system's own region/window picker (the Shift+Cmd+4 gesture).
@@ -426,9 +550,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             var quoted = new List<String>();
             foreach (var arg in extraArgs ?? Array.Empty<String>())
             {
-                // Single-quote for the shell, the same discipline LaunchClaudeInProject applies to
-                // its path; embedded quotes get the standard '\'' splice.
-                quoted.Add("'" + arg.Replace("'", "'\''") + "'");
+                quoted.Add(ShellQuote(arg));
             }
 
             this.LaunchShellCommand(this._cliCommand + " " + String.Join(" ", quoted));
@@ -459,20 +581,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // Bounded subprocess plumbing
         // ------------------------------------------------------------------------------------------
 
-        private String RunOsascriptCore(List<String> args, Int32 timeoutMs, Boolean wantOutput)
+        private String RunOsascriptCore(List<String> args, Int32 timeoutMs, Boolean wantOutput) =>
+            this.RunOsascriptCore(args, timeoutMs, wantOutput, out _);
+
+        private String RunOsascriptCore(List<String> args, Int32 timeoutMs, Boolean wantOutput, out Boolean timedOut)
         {
             var runner = this.OsascriptRunner;
             if (runner != null)
             {
+                // A stubbed runner stands in for the OS and cannot overrun a budget it never waits on.
+                // The backoff POLICY is covered directly by ProbeBackoffTests; this line is the seam,
+                // not the behaviour.
+                timedOut = false;
                 return runner(args, timeoutMs, wantOutput);
             }
 
-            return BoundedProcess.Run("osascript", args, timeoutMs, wantOutput);
+            return BoundedProcess.Run("osascript", args, timeoutMs, wantOutput, out timedOut);
         }
 
         // Like a fire-and-forget osascript but returns stdout (trimmed) — for querying state (e.g.
         // the frontmost Terminal tab's TTY) on the poll timer, so it uses a short, snappy timeout.
-        private String RunOsascriptCapture(List<String> args) => this.RunOsascriptCore(args, 2000, wantOutput: true);
+        private String RunOsascriptCapture(List<String> args, out Boolean timedOut) =>
+            this.RunOsascriptCore(args, 2000, wantOutput: true, out timedOut);
 
         // Run a plain capture-only subprocess (the `ps` session scan) under the same hard-timeout
         // discipline as osascript.

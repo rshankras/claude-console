@@ -10,7 +10,7 @@
          crash-disable marker (Logs/plugin_crashes/) by assembly version; if this stays
          1.0.0.0 forever, any one load-crash disables the plugin permanently. Bumping it
          per release lets a new build dodge a stale marker. -->
-    <Version>2.1.0</Version>
+    <Version>2.2.3</Version>
 
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -67,16 +67,36 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The SDK's static plugin declaration, looked up at load as an embedded resource named
+         <plugin class namespace>.PluginConfiguration.xml — Logitech's own Spotify plugin embeds
+         Loupedeck.SpotifyPlugin.PluginConfiguration.xml. Every real action here is built at
+         runtime. The legacy parser nevertheless warns when <actions> is empty, so the file carries
+         one uniquely named command restricted to deviceType 0 (None). That inert sentinel cannot
+         appear on a supported device or collide with a dynamic action; keep its layout empty (#63). -->
+    <EmbeddedResource Include="PluginConfiguration.xml">
+      <LogicalName>Loupedeck.ClaudeConsolePlugin.PluginConfiguration.xml</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Live-status bridge scripts embedded in the DLL so the plugin can self-install them to
-         ~/.claude/claude-console/scripts/ and auto-wire settings.json on first run
-         (BridgeManager.EnsureBridgeAutoWired). Embedding keeps ONE copy (the repo scripts/) as the
-         source of truth and works for both dev and release builds with no packaging step.
+         ~/.claude/claude-console/scripts/ on every load (BridgeManager.EnsureBridgeAutoWired);
+         settings.json is edited only when the user presses Enable Live Status (#31). Embedding
+         keeps ONE copy (the repo scripts/) as the source of truth and works for both dev and
+         release builds with no packaging step.
          LogicalName is what Assembly.GetManifestResourceStream() looks up. -->
     <EmbeddedResource Include="..\..\..\scripts\statusline-handler.sh">
       <LogicalName>ClaudeConsole.statusline-handler.sh</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="..\..\..\scripts\activity-hook.sh">
       <LogicalName>ClaudeConsole.activity-hook.sh</LogicalName>
+    </EmbeddedResource>
+    <!-- The cleanup script (#45). The package directory is DELETED on uninstall, so a script shipped
+         only there is gone at the exact moment it is needed. The runtime home survives an uninstall,
+         so it goes there by the same route as the bridge scripts
+         (BridgeManager.EnsureRecoveryScriptsInstalled). -->
+    <EmbeddedResource Include="..\..\..\scripts\uninstall.sh">
+      <LogicalName>ClaudeConsole.uninstall.sh</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

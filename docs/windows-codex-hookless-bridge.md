@@ -1,5 +1,9 @@
 # Windows Codex: hook-free Logitech state bridge
 
+> Historical decision for Codex 0.148. Superseded on 2026-09-01: current Codex documents and
+> implements Windows command hooks through `commandWindows`. Vizhi now uses hooks for exact
+> lifecycle/approval state and retains this rollout bridge as a recovery fallback.
+
 ## Decision
 
 Do not use Codex lifecycle hooks as the Windows state transport. On the tested Windows setup,

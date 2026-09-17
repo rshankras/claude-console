@@ -37,6 +37,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// </summary>
         Boolean IsSupported { get; }
 
+        /// <summary>
+        /// Whether a Claude Code session that is ALREADY RUNNING picks up an edit to the user's
+        /// settings file — the hooks and status line the live keys depend on — without being
+        /// restarted. Decides the wording after Turn on: "Turned on" where the keys come alive on
+        /// the session's next activity, "Restart Claude" where they do not (#58).
+        ///
+        /// Verified true on macOS on 2026-09-02 (Claude Code 2.1.258): a session started with no
+        /// hooks wrote its status line one second after Turn on, and its PermissionRequest hook
+        /// fired three minutes later, with no restart. Verified true on Windows on 2026-09-10 and
+        /// 2026-09-11 (Claude Code 2.1.267/268): sessions started hours earlier reported within
+        /// 5–37 s of the write and their PermissionRequest hook fired minutes later, no restart.
+        /// Logitech QA's Windows report of "nothing until Claude Code is restarted" (retest item 2)
+        /// was #74 — the hook wrote a word the plugin never read — not a settings-reload difference.
+        /// Both platforms therefore say "Turned on"; the property stays on the seam because a
+        /// future platform (or agent) may well need the restart wording.
+        /// </summary>
+        Boolean SettingsApplyLive { get; }
+
         // ------------------------------------------------------------------------------------
         // Discovery
         // ------------------------------------------------------------------------------------
@@ -47,6 +65,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// transient failure must never reap live sessions).
         /// </summary>
         HashSet<String> DiscoverSessions();
+
+        // Optional directory hints from the same process discovery pass, never activity evidence.
+        IReadOnlyDictionary<String, String> SessionDirectories => null;
 
         /// <summary>
         /// The session id of the terminal tab the user is looking at, or null when the terminal
@@ -80,6 +101,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// <summary>Bring a specific session's tab to the front.</summary>
         void FocusSession(String sessionKey);
 
+        /// <summary>
+        /// Focus before committing a slot selection. Backends with a focus-result contract
+        /// override this to reject unresolved targets; legacy backends retain their focus flow.
+        /// </summary>
+        Boolean TryFocusSession(String sessionKey)
+        {
+            this.FocusSession(sessionKey);
+            return true;
+        }
+
         /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
         void Navigate(TerminalAction action);
 
@@ -97,6 +128,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// plugin service, the same shape as voice's Microphone grant.
         /// </summary>
         Boolean CaptureScreenshotInteractive(String outputPath);
+
+        /// <summary>Cancel this product's active capture; true means Escape was consumed.</summary>
+        Boolean TryCancelScreenshot() => false;
 
         /// <summary>
         /// Open a terminal and start the agent CLI with <paramref name="extraArgs"/> appended —

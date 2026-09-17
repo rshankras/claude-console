@@ -61,6 +61,46 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Codex_apps_internal_node_runtime_is_not_a_cli_session()
+        {
+            // Captured from Codex App on Windows. The executable path contains "Codex", but the
+            // process is an MCP server, not an interpreter running the Codex CLI. Matching argv[0]
+            // gave this process a phantom session key alongside two real terminal sessions.
+            var appServer = Proc(22768, "node.exe",
+                @"""C:\Users\sahan\AppData\Local\OpenAI\Codex\runtimes\cua_node\415ffebf3d576e9b\bin\node.exe"" ./server.mjs");
+
+            Assert.False(WindowsProcessWatcher.IsAgentSession(appServer, AgentProcessMatcher.CodexCli));
+        }
+
+        [Theory]
+        [InlineData("sandbox -c default_permissions=node_repl -- node.exe kernel.js", false)]
+        [InlineData("\"sandbox\" -- node.exe trusted-worker.js", false)]
+        [InlineData("", true)]
+        [InlineData("resume session-id", true)]
+        [InlineData("--sandbox workspace-write", true)]
+        [InlineData("\"sandbox project needs fixing\"", true)]
+        [InlineData("resume sandbox", true)]
+        public void Codex_sandbox_workers_are_not_interactive_sessions(String arguments, Boolean expected)
+        {
+            var process = Proc(16916, "codex.exe",
+                "\"C:\\Users\\Test User\\AppData\\Local\\OpenAI\\Codex\\bin\\version\\codex.exe\" " + arguments);
+            Assert.Equal(expected, WindowsProcessWatcher.IsAgentSession(process, AgentProcessMatcher.CodexCli));
+        }
+
+        [Fact]
+        public void Two_terminals_and_two_sandbox_workers_produce_only_two_session_keys()
+        {
+            var first = Proc(19268, "codex.exe", "codex.exe", 23832);
+            var second = Proc(1860, "codex.exe", "codex.exe resume session-id", 11700);
+            var worker = Proc(16916, "codex.exe", "codex.exe sandbox -c default_permissions=node_repl -- node.exe kernel.js", 22424);
+            var trustedWorker = Proc(21104, "codex.exe", "codex.exe sandbox -- node.exe trusted-worker.js", 22424);
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { first, second, worker, trustedWorker }, AgentProcessMatcher.CodexCli);
+            Assert.Equal(2, sessions.Count);
+            Assert.Contains(WindowsProcessWatcher.SessionKeyFor(first), sessions);
+            Assert.Contains(WindowsProcessWatcher.SessionKeyFor(second), sessions);
+        }
+
+        [Fact]
         public void A_claude_session_is_invisible_to_the_codex_matcher()
         {
             Assert.False(WindowsProcessWatcher.IsAgentSession(NativeCli(1234), AgentProcessMatcher.CodexCli));
@@ -195,6 +235,29 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Single(sessions);
             Assert.Contains("pid-1234-", sessions.Single());
+        }
+
+        [Theory]
+        [InlineData("claude.exe.old.1789090133131")]   // what Claude Code's in-place updater leaves a running session named
+        [InlineData("CLAUDE.EXE.old.1")]
+        public void A_claude_renamed_by_an_in_place_update_is_still_a_session(String name)
+        {
+            // 2026-09-11: a session up since the previous evening was renamed by the 06:58
+            // auto-update. WMI kept reporting the creation-time name so this scan never noticed,
+            // but the hook exe reads the live image name and stopped minting the session's key.
+            // Both sides now apply the same rule, pinned here and in WindowsHookContractTests.
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { Proc(1234, name, cmd: "claude --resume abc") }, AgentProcessMatcher.ClaudeCode);
+
+            Assert.Single(sessions);
+            Assert.Equal("claude.exe", WindowsProcessWatcher.RunningImageName(name).ToLowerInvariant());
+        }
+
+        [Fact]
+        public void An_ordinary_name_is_left_alone()
+        {
+            Assert.Equal("claude", WindowsProcessWatcher.RunningImageName("claude"));
+            Assert.Equal("claude.exe", WindowsProcessWatcher.RunningImageName("claude.exe"));
+            Assert.Equal("node.exe", WindowsProcessWatcher.RunningImageName("node.exe"));
         }
 
         [Fact]
@@ -465,6 +528,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var runs = new List<List<String>>();
             var bridge = new WindowsPlatformBridge(AgentProcessMatcher.ClaudeCode)
             {
+                // Both gestures deliberately target the existing window. The production guard
+                // added for #33 must be satisfied here before the injected runner can be reached.
+                TerminalWindowProbe = () => true,
                 TerminalRunner = (exe, args) => { runs.Add(args); return true; },
             };
 

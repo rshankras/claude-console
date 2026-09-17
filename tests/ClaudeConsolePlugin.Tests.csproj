@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><Compile Remove="fixtures/**/*.cs" /></ItemGroup>
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -46,11 +47,18 @@
          write the dev .link into the LIVE Logi plugin directory as a side effect — which the
          SkipPluginLink dance existed to prevent. -->
     <Compile Include="..\src\Core\**\*.cs" />
+    <Compile Include="..\tools\windows\ClaudeConsoleFocus\TabSelection.cs" />
+    <Compile Include="..\tools\windows\ClaudeConsoleInject\SessionInputLock.cs" />
+    <Compile Include="..\tools\windows\ClaudeConsoleHook\WindowsHookProcessQuery.cs" />
     <Compile Include="..\src\Agents\**\*.cs" />
     <!-- Each product's application binding. The desktop Plugin declaration is included too:
          its HasNoApplication flag decides whether Options+ ever consults that binding. -->
     <Compile Include="..\src\Products\*\*Application.cs" />
     <Compile Include="..\src\Products\VizhiDesktop\VizhiDesktopPlugin.cs" />
+    <!-- Desktop-owned registration (see the header in those files). The product glob above
+         deliberately compiles only *Application.cs; this is the one product folder whose
+         logic the suite must cover, because nothing else in the engine exercises it. -->
+    <Compile Include="..\src\Products\VizhiDesktop\Registration\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

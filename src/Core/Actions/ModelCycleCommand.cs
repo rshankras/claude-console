@@ -5,32 +5,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
     using Loupedeck.ClaudeConsolePlugin.Agents;
 
     /// <summary>
-    /// "Model" key (group "Core"). Live-displays the CURRENT model as a colour-coded brain (read
-    /// from the status line) and, on press, sends "/model" to open Claude Code's built-in model
-    /// picker — navigate it with the Answer Up/Down/Return keys. Replaces the old direct
-    /// Opus/Sonnet/Haiku keys: the picker is always current (no hardcoded model list) and there's
-    /// no cycle-index drift. (Class name is historical — it used to cycle opus/sonnet/haiku; kept
-    /// as-is so existing key bindings survive the behaviour change.)
+    /// Model picker with a fixed brain icon. The historical class name is retained so existing
+    /// key bindings keep working. Press to open the agent model picker; navigate with Up/Down/Return.
     /// </summary>
     public class ModelCycleCommand : PluginDynamicCommand
     {
         private readonly BridgeManager _bridge;
-        private String _displayName = "Model";
 
         public ModelCycleCommand()
-            : base(displayName: "Model", description: "Current model; press to open the /model picker", groupName: "Core")
+            : base(displayName: "Model", description: "Open the /model picker", groupName: "Core")
         {
             _bridge = BridgeManager.Instance;
-
-            _bridge.OnStateChanged += (state) =>
-            {
-                if (state.Model?.DisplayName != null)
-                {
-                    // Shorten "Opus 4.8 (1M context)" -> "Opus" so it fits the key.
-                    _displayName = state.Model.DisplayName.Split(' ')[0];
-                    this.ActionImageChanged();
-                }
-            };
         }
 
         protected override void RunCommand(String actionParameter)
@@ -46,20 +31,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             PluginLog.Info("ModelCycleCommand: opened /model picker");
         }
 
-        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
-        {
-            // Static "Model" label — the brain icon's colour (set in GetCommandImage from the live
-            // model) is what tells you which model you're on.
-            return "Model";
-        }
+        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
+            "Model";
 
-        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
-        {
-            // Brain tinted to the CURRENT model's colour; falls back to the neutral brain until the
-            // live model is known.
-            var key = (_displayName ?? "").ToLowerInvariant();
-            var icon = key == "opus" || key == "sonnet" || key == "haiku" ? $"brain_{key}" : "brain";
-            return KeyImage.Render(imageSize, "Model", KeyImage.Purple, icon);
-        }
+        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
+            KeyImage.Render(imageSize, "Model", KeyImage.Purple, "brain");
     }
 }

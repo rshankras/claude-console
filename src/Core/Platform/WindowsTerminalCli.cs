@@ -68,6 +68,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         }
 
         /// <summary>
+        /// Where a tab opened WITHOUT a project starts. Windows Terminal's default profile leaves
+        /// `startingDirectory` unset, and then a tab opened through `wt new-tab` inherits the
+        /// working directory of whoever ran wt — which, from LogiPluginService, is
+        /// C:\Program Files\Logi\LogiPluginService. So New Claude started sessions there, the
+        /// keypad named them "LogiPluginService", and Claude Code offered to work in the plugin
+        /// service's install folder (#85; seen as slot 2 on the 2.2.2 device pass). The home
+        /// directory is what the terminal itself uses when the user opens a tab by hand. Settable
+        /// for tests.
+        /// </summary>
+        internal static String StartingDirectory { get; set; } =
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        /// <summary>
         /// Arguments for a navigation gesture, or null when Windows Terminal cannot express it.
         ///
         /// `wt` has no "previous tab" verb — only `focus-tab -n/-p` (next/previous) and
@@ -80,13 +93,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             // and re-focus the tab it already has.
             TerminalAction.Activate => new List<String> { "-w", "0", "focus-tab" },
 
-            TerminalAction.NewTab => new List<String> { "-w", "0", "new-tab" },
-            TerminalAction.NewClaudeTab => new List<String> { "-w", "0", "new-tab", ClaudeCommand() },
+            TerminalAction.NewTab => new List<String> { "-w", "0", "new-tab", "-d", StartingDirectory },
+            TerminalAction.NewClaudeTab => new List<String> { "-w", "0", "new-tab", "-d", StartingDirectory, ClaudeCommand() },
             TerminalAction.NextTab => new List<String> { "-w", "0", "focus-tab", "-n" },
             TerminalAction.PreviousTab => new List<String> { "-w", "0", "focus-tab", "-p" },
 
             // A NEW window: "-w new" is the documented spelling for "don't reuse".
-            TerminalAction.NewClaudeWindow => new List<String> { "-w", "new", "new-tab", ClaudeCommand() },
+            TerminalAction.NewClaudeWindow => new List<String> { "-w", "new", "new-tab", "-d", StartingDirectory, ClaudeCommand() },
 
             // Cycling WINDOWS is an OS-level gesture, not a terminal one — wt.exe cannot do it.
             // Callers degrade rather than sending something that would do the wrong thing.

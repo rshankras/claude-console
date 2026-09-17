@@ -26,6 +26,11 @@ namespace Loupedeck.ClaudeConsolePlugin
     ///     installed, so those forms are matched on the script argument via the matcher's hints.
     ///   • A candidate whose parent is also a candidate is dropped, keeping one row per tab even
     ///     when a session spawns a nested claude process.
+    ///   • A candidate is ELIGIBLE only if the terminal application that owns its TTY is one the
+    ///     keys can drive (#29). The owner is found by walking the parent chain — the same `ps`
+    ///     listing has every process, so `claude → zsh → login → Terminal.app` costs nothing extra.
+    ///     Six cmux sessions once filled every slot on QA's machine, so the two Terminal.app sessions
+    ///     could never get a key; the press pinned an unreachable TTY and nothing was logged.
     /// </summary>
     internal static class AgentProcessWatcher
     {
@@ -88,9 +93,102 @@ namespace Loupedeck.ClaudeConsolePlugin
             return candidates.Where(c => !pids.Contains(c.ParentPid)).ToList();
         }
 
-        /// <summary>The distinct TTYs running Claude Code, e.g. { "ttys000", "ttys003" }.</summary>
+        /// <summary>The distinct TTYs running Claude Code, e.g. { "ttys000", "ttys003" }. No eligibility filter.</summary>
         internal static HashSet<String> TtysFrom(String psOutput, AgentProcessMatcher matcher = null) =>
             new HashSet<String>(Parse(psOutput, matcher).Select(r => r.Tty), StringComparer.Ordinal);
+
+        /// <summary>A session the keys cannot reach, and why — for the log, once.</summary>
+        internal sealed class SkippedSession
+        {
+            public String Tty;
+            /// <summary>The owning application's name ("iTerm", "cmux", "Visual Studio Code"), or null
+            /// when no application was found in the ancestry — tmux, screen and ssh all end at launchd.</summary>
+            public String Owner;
+        }
+
+        internal sealed class Discovery
+        {
+            public HashSet<String> Ttys = new HashSet<String>(StringComparer.Ordinal);
+            public List<SkippedSession> Skipped = new List<SkippedSession>();
+        }
+
+        /// <summary>
+        /// The TTYs running the agent WHOSE OWNING TERMINAL the keys can drive, plus the ones they
+        /// cannot, named (#29). <paramref name="drivableOwner"/> is given the owning application's
+        /// full command line and decides; null means "no filter" — every session is eligible, as
+        /// before, which is what a platform without terminal-app ancestry (Windows) wants.
+        /// </summary>
+        internal static Discovery Discover(String psOutput, AgentProcessMatcher matcher, Func<String, Boolean> drivableOwner)
+        {
+            var result = new Discovery();
+            if (drivableOwner == null)
+            {
+                result.Ttys = TtysFrom(psOutput, matcher);
+                return result;
+            }
+
+            // Every row, so a candidate's ancestry can be walked without a second `ps`.
+            var table = new Dictionary<String, (String Ppid, String Command)>(StringComparer.Ordinal);
+            foreach (var line in (psOutput ?? String.Empty).Split('\n'))
+            {
+                var m = Row.Match(line.Trim());
+                if (m.Success)
+                {
+                    table[m.Groups[1].Value] = (m.Groups[2].Value, m.Groups[4].Value);
+                }
+            }
+
+            foreach (var candidate in Parse(psOutput, matcher))
+            {
+                var owner = OwningApp(candidate.Pid, table);
+                if (owner != null && drivableOwner(owner))
+                {
+                    result.Ttys.Add(candidate.Tty);
+                }
+                else
+                {
+                    result.Skipped.Add(new SkippedSession { Tty = candidate.Tty, Owner = owner == null ? null : AppName(owner) });
+                }
+            }
+
+            return result;
+        }
+
+        // The command line of the first ancestor that is an application bundle's binary, or null.
+        // Bounded and cycle-safe: a hostile or truncated listing must not spin the poll thread.
+        private static String OwningApp(String pid, Dictionary<String, (String Ppid, String Command)> table)
+        {
+            var seen = new HashSet<String>(StringComparer.Ordinal);
+            var cur = pid;
+            for (var hop = 0; hop < 64 && seen.Add(cur) && table.TryGetValue(cur, out var row); hop++)
+            {
+                if (IsAppBinary(row.Command))
+                {
+                    return row.Command;
+                }
+
+                cur = row.Ppid;
+            }
+
+            return null;
+        }
+
+        /// <summary>"/Applications/iTerm.app/Contents/MacOS/iTerm2 …" → true. A shell, login, tmux or ssh → false.</summary>
+        internal static Boolean IsAppBinary(String command) =>
+            command != null && command.Contains(".app/Contents/MacOS/", StringComparison.Ordinal);
+
+        /// <summary>"/Applications/Visual Studio Code.app/Contents/MacOS/Electron" → "Visual Studio Code".</summary>
+        internal static String AppName(String command)
+        {
+            var end = command.IndexOf(".app/", StringComparison.Ordinal);
+            if (end < 0)
+            {
+                return command;
+            }
+
+            var start = command.LastIndexOf('/', end);
+            return command.Substring(start + 1, end - start - 1);
+        }
 
         // True for `codex …`, `/usr/local/bin/claude …`, `node …/claude-code/cli.js`, and friends.
         internal static Boolean IsAgentCommand(String command, AgentProcessMatcher matcher = null)

@@ -19,6 +19,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class SessionTargetingTests : IDisposable
     {
+        /// <summary>
+        /// The routed-session bar is product identity, and the engine's default is the colour
+        /// Claude Console shipped. A product that wants its own says so from its constructor; the
+        /// engine never picks by agent name, so Vizhi's blue cannot follow Claude Console into a
+        /// rebuild. Restores the default afterwards — KeyImage is static for the process.
+        /// </summary>
+        [Fact]
+        public void Selected_session_bar_is_the_products_to_declare_and_defaults_to_Claudes()
+        {
+            Assert.Equal(KeyImage.SelectionOrange, KeyImage.SessionBar);
+
+            var codexBlue = new BitmapColor(0x81, 0xA8, 0xED);
+            try
+            {
+                KeyImage.UseIdentityColors(codexBlue, codexBlue);
+                Assert.Equal(codexBlue, KeyImage.SessionBar);
+            }
+            finally
+            {
+                KeyImage.UseIdentityColors(new BitmapColor(0x60, 0xA5, 0xFA), KeyImage.SelectionOrange);
+            }
+
+            Assert.Equal(KeyImage.SelectionOrange, KeyImage.SessionBar);
+        }
+
         private readonly String _root =
             Path.Combine(Path.GetTempPath(), "cc-target-" + Guid.NewGuid().ToString("N"));
 
@@ -55,6 +80,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             }));
 
+        // What the PermissionRequest hook leaves beside a waiting session: the captured payload.
+        private void WritePending(String tty, String tool, String command) =>
+            File.WriteAllText(Path.Combine(_activityDir, "pending-" + tty + ".json"), JsonSerializer.Serialize(new
+            {
+                tool_name = tool,
+                tool_input = new { command },
+            }));
+
         // A bridge whose grid is rooted in this test's temp dir, populated from the given live TTYs.
         private BridgeManager BridgeWith(params String[] liveTtys)
         {
@@ -72,7 +105,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.ActiveTty = "ttys002";
 
-            Assert.Equal("ttys002", bridge.TargetTty());
+            Assert.Equal("ttys002", bridge.RoutingTty());
         }
 
         [Fact]
@@ -85,7 +118,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.ActiveTty = null;
 
-            Assert.Equal("ttys004", bridge.TargetTty());
+            Assert.Equal("ttys004", bridge.RoutingTty());
         }
 
         [Fact]
@@ -100,7 +133,43 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.ActiveTty = "ttys009";   // some other, non-Claude tab
 
-            Assert.Equal("ttys002", bridge.TargetTty());
+            Assert.Equal("ttys002", bridge.RoutingTty());
+        }
+
+        [Fact]
+        public void A_pending_approval_outranks_a_session_idling_at_its_prompt()
+        {
+            // Both are "waiting": one has a permission menu up (the hook captured the payload), the
+            // other has sat idle at its prompt for a minute (the Notification hook, no payload —
+            // #51). Only the first is something Yes/No can answer. Counting both as "waiting" left
+            // the answer keys with "(no target)" whenever a second session idled — on Windows,
+            // where no frontmost tab breaks the tie, that was every second session (QA's Mode B).
+            WriteSession("ttys001", "alpha");
+            WriteSession("ttys002", "beta");
+            WriteActivity("ttys001", "waiting");
+            WriteActivity("ttys002", "waiting");
+            WritePending("ttys002", "Bash", "git status");
+            var bridge = BridgeWith("ttys001", "ttys002");
+
+            bridge.ActiveTty = null;   // Windows: no frontmost tab is ever known
+
+            Assert.Equal("ttys002", bridge.RoutingTty());
+        }
+
+        [Fact]
+        public void Does_not_guess_when_two_sessions_both_have_approvals_pending()
+        {
+            WriteSession("ttys001", "alpha");
+            WriteSession("ttys002", "beta");
+            WriteActivity("ttys001", "waiting");
+            WriteActivity("ttys002", "waiting");
+            WritePending("ttys001", "Bash", "git status");
+            WritePending("ttys002", "Bash", "npm test");
+            var bridge = BridgeWith("ttys001", "ttys002");
+
+            bridge.ActiveTty = null;
+
+            Assert.Null(bridge.RoutingTty());
         }
 
         [Fact]
@@ -116,7 +185,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.ActiveTty = "ttys009";
 
-            Assert.Equal("ttys009", bridge.TargetTty());
+            Assert.Equal("ttys009", bridge.RoutingTty());
         }
 
         [Fact]
@@ -132,7 +201,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.SelectSlot(2);
 
-            Assert.Equal("ttys002", bridge.TargetTty());
+            Assert.Equal("ttys002", bridge.RoutingTty());
         }
 
         [Fact]
@@ -150,7 +219,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.SelectSlot(2);
             bridge.ActiveTty = "ttys001";   // poll: you are now looking at session 1's tab
 
-            Assert.Equal("ttys002", bridge.TargetTty());
+            Assert.Equal("ttys002", bridge.RoutingTty());
         }
 
         [Fact]
@@ -168,7 +237,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.SelectSlot(2);
             bridge.ActiveTty = "ttys009";   // Terminal isn't frontmost at all
 
-            Assert.Equal("ttys002", bridge.TargetTty());
+            Assert.Equal("ttys002", bridge.RoutingTty());
         }
 
         [Fact]
@@ -201,7 +270,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.SelectSlot(2);
             bridge.SelectSlot(1);
 
-            Assert.Equal("ttys001", bridge.TargetTty());
+            Assert.Equal("ttys001", bridge.RoutingTty());
         }
 
         [Fact]
@@ -220,7 +289,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             File.Delete(Path.Combine(_sessionsDir, "ttys002.json"));
             grid.Refresh(new HashSet<String>(new[] { "ttys001" }, StringComparer.Ordinal));   // tab closed
 
-            Assert.Equal("ttys001", bridge.TargetTty());
+            Assert.Equal("ttys001", bridge.RoutingTty());
             Assert.Null(bridge.PinnedTty);
             Assert.Null(grid.FocusedSession);
         }
@@ -258,7 +327,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             bridge.SelectSlot(5);   // nothing in slot 5
 
             Assert.Equal(0, calls);
-            Assert.Equal("ttys001", bridge.TargetTty());
+            Assert.Equal("ttys001", bridge.RoutingTty());
         }
 
         [Fact]

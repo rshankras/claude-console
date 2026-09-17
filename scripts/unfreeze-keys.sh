@@ -23,7 +23,9 @@ BACKUP="$HOME/Desktop/claude-console-ict-backup-$(date +%Y%m%d-%H%M%S)"
 ICTS=()
 while IFS= read -r line; do
   [ -n "$line" ] && ICTS+=("$line")
-done < <(find "$APPS" -path "*@_claudeconsole*/ActionIcons/*" -name '*ClaudeConsole*.ict' 2>/dev/null || true)
+# Any application's profile: the plugin is universal, so its keys live on whatever profile the user
+# put them on — usually Options+'s own entry for Terminal — and the .ict name carries the plugin.
+done < <(find "$APPS" -path "*/ActionIcons/*" -name '*ClaudeConsole*.ict' 2>/dev/null || true)
 
 if [ "${#ICTS[@]}" -eq 0 ]; then
   echo "✅ No frozen keys: no ClaudeConsole icon customizations found."

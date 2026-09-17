@@ -16,11 +16,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class WindowsTerminalTests
     {
+        [Theory]
+        [InlineData(0, true)]
+        [InlineData(4, false)]
+        [InlineData(2, false)]
+        [InlineData(5, false)]
+        [InlineData(null, false)]
+        public void Only_verified_tab_focus_allows_the_slot_selection_to_commit(Int32? exitCode, Boolean expected)
+        {
+            var (bridge, _) = Rig();
+            bridge.FocusRunner = _ => exitCode;
+            Assert.Equal(expected, bridge.TryFocusSession(FocusKey));
+        }
+
         private static (WindowsPlatformBridge Bridge, List<List<String>> Runs) Rig()
         {
             var runs = new List<List<String>>();
             var bridge = new WindowsPlatformBridge
             {
+                TerminalWindowProbe = () => true,
                 TerminalRunner = (exe, args) =>
                 {
                     Assert.Equal("wt.exe", exe);
@@ -29,6 +43,119 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 },
             };
             return (bridge, runs);
+        }
+
+        [Fact]
+        public void No_running_terminal_blocks_existing_window_actions_and_reports_the_failure()
+        {
+            var runs = 0;
+            var notices = new List<String>();
+            var bridge = new WindowsPlatformBridge
+            {
+                TerminalWindowProbe = () => false,
+                TerminalRunner = (_, _) => { runs++; return true; },
+                TerminalUnavailable = notices.Add,
+            };
+
+            bridge.Navigate(TerminalAction.NewTab);
+
+            Assert.Equal(0, runs);
+            Assert.Single(notices);
+            Assert.Contains("no Windows Terminal window", notices[0]);
+        }
+
+        [Fact]
+        public void A_new_terminal_window_can_be_created_when_none_exists_yet()
+        {
+            var runs = new List<List<String>>();
+            var bridge = new WindowsPlatformBridge
+            {
+                TerminalWindowProbe = () => false,
+                TerminalRunner = (exe, args) => { runs.Add(args); return true; },
+                TerminalUnavailable = _ => throw new Xunit.Sdk.XunitException("must not report unavailable"),
+            };
+
+            bridge.Navigate(TerminalAction.NewClaudeWindow);
+
+            Assert.Single(runs);
+            Assert.Equal(new[] { "-w", "new" }, runs[0].Take(2));
+        }
+
+        [Fact]
+        public void A_failed_wt_command_is_reported_instead_of_becoming_a_silent_keypress()
+        {
+            var notices = new List<String>();
+            var bridge = new WindowsPlatformBridge
+            {
+                TerminalWindowProbe = () => true,
+                TerminalRunner = (_, _) => false,
+                TerminalUnavailable = notices.Add,
+            };
+
+            bridge.Navigate(TerminalAction.NextTab);
+
+            Assert.Single(notices);
+            Assert.Contains("could not deliver", notices[0]);
+        }
+
+        [Fact]
+        public void Bridge_manager_turns_a_terminal_failure_into_an_options_notice()
+        {
+            PluginStatus? status = null;
+            String message = null;
+            String url = null;
+            var platform = new WindowsPlatformBridge
+            {
+                TerminalWindowProbe = () => false,
+                TerminalRunner = (_, _) => throw new Xunit.Sdk.XunitException("must fail before launch"),
+                HelperPath = null,
+            };
+            var manager = new BridgeManager(platform)
+            {
+                Notify = (s, m, u, _) => { status = s; message = m; url = u; },
+            };
+
+            manager.Navigate(TerminalAction.NewTab);
+
+            Assert.Equal(PluginStatus.Warning, status);
+            Assert.Contains("open Windows Terminal window", message);
+            Assert.Equal(BridgeNotice.WindowsTerminalUrl, url);
+        }
+
+        [Fact]
+        public void Project_and_agent_launches_also_refuse_without_an_existing_terminal()
+        {
+            var runs = 0;
+            var notices = new List<String>();
+            var bridge = new WindowsPlatformBridge
+            {
+                TerminalWindowProbe = () => false,
+                TerminalRunner = (_, _) => { runs++; return true; },
+                TerminalUnavailable = notices.Add,
+            };
+
+            bridge.LaunchClaudeInProject(@"C:\dev\project");
+            bridge.LaunchAgentSession(new[] { "-i", @"C:\tmp\shot.png" });
+
+            Assert.Equal(0, runs);
+            Assert.Equal(2, notices.Count);
+        }
+
+        [Fact]
+        public void A_session_focus_fallback_reports_when_no_terminal_window_exists()
+        {
+            var notices = new List<String>();
+            var bridge = new WindowsPlatformBridge
+            {
+                FocusRunner = _ => 2,
+                TerminalWindowProbe = () => false,
+                TerminalRunner = (_, _) => throw new Xunit.Sdk.XunitException("must fail before wt"),
+                TerminalUnavailable = notices.Add,
+            };
+
+            bridge.FocusSession(FocusKey);
+
+            Assert.Single(notices);
         }
 
         // ---------------------------------------------------------------------------------------
@@ -96,6 +223,47 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 WindowsTerminalCli.FileExists = previous;
             }
+        }
+
+        [Theory]
+        [InlineData(TerminalAction.NewTab)]
+        [InlineData(TerminalAction.NewClaudeTab)]
+        [InlineData(TerminalAction.NewClaudeWindow)]
+        public void A_tab_opened_without_a_project_starts_in_the_home_directory_not_the_services(TerminalAction action)
+        {
+            // #85: Windows Terminal's default profile leaves startingDirectory unset, so a tab
+            // opened through `wt new-tab` inherits the working directory of the process that ran
+            // wt — from LogiPluginService, C:\Program Files\Logi\LogiPluginService. New Claude
+            // started sessions there and the keypad named them "LogiPluginService" (2.2.2 device
+            // pass, slot 2). The home directory is what the terminal uses for a tab the user opens
+            // by hand.
+            var previous = WindowsTerminalCli.StartingDirectory;
+            try
+            {
+                WindowsTerminalCli.StartingDirectory = @"C:\Users\me";
+                var args = WindowsTerminalCli.ArgsFor(action);
+
+                var at = args.IndexOf("-d");
+                Assert.True(at > 0 && at + 1 < args.Count, "-d <directory> must be present");
+                Assert.Equal(@"C:\Users\me", args[at + 1]);
+                Assert.Equal("new-tab", args[at - 1]);   // an option of the new-tab subcommand, not of wt itself
+            }
+            finally
+            {
+                WindowsTerminalCli.StartingDirectory = previous;
+            }
+
+            // The default is the profile, never the service's own folder.
+            Assert.Equal(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), WindowsTerminalCli.StartingDirectory);
+        }
+
+        [Fact]
+        public void A_project_launch_keeps_the_projects_own_directory()
+        {
+            var args = WindowsTerminalCli.LaunchClaudeArgs(@"C:\dev\proj");
+
+            Assert.Equal(@"C:\dev\proj", args[args.IndexOf("-d") + 1]);
+            Assert.DoesNotContain(WindowsTerminalCli.StartingDirectory, args);
         }
 
         [Fact]
