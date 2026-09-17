@@ -40,7 +40,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var (label, icon) = Face();
-            return KeyImage.RenderDesktop(imageSize, label, icon);
+            return KeyImage.Render(imageSize, label, KeyImage.Blue, icon);
         }
 
         private static (String label, String icon) Face()

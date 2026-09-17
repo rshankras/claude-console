@@ -190,8 +190,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             var mode = DesktopServices.Declared ? DesktopServices.Monitor.Current.Mode : "";
             var icon = this.Resolve(actionParameter, mode)?.Icon ?? "status";
-            return KeyImage.RenderDesktop(
-                imageSize, this.GetCommandDisplayName(actionParameter, imageSize), icon);
+            return KeyImage.Render(
+                imageSize, this.GetCommandDisplayName(actionParameter, imageSize), KeyImage.Blue, icon);
         }
 
         private WorkflowDef Resolve(String actionParameter, String mode)

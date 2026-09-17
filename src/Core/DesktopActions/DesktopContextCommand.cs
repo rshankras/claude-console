@@ -91,7 +91,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             var face = FaceFor(actionParameter, state.Mode, state.AvailableControls);
-            return KeyImage.RenderDesktop(imageSize, face.Label, face.Icon);
+            return KeyImage.Render(imageSize, face.Label, KeyImage.Blue, face.Icon);
         }
 
         internal static Face FaceFor(String slot, String mode, DesktopControl available)

@@ -61,7 +61,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
             _face.IsActive
-                ? KeyImage.RenderDesktop(imageSize, "Listening", _face.Icon)
-                : KeyImage.RenderDesktop(imageSize, "Voice", "voice");
+                ? KeyImage.Render(imageSize, "Listening", KeyImage.Blue, _face.Icon)
+                : KeyImage.Render(imageSize, "Voice", KeyImage.Blue, "voice");
     }
 }

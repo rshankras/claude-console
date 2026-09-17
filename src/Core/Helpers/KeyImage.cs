@@ -254,6 +254,145 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>A full-canvas black action face used by the other Answer-command widgets.</summary>
+        /// <summary>
+        /// An action face with the approval badge in the corner — for a product whose approval
+        /// keys are icons rather than the Yes/No decision tiles. Without a pending approval it is
+        /// exactly <see cref="Render"/>; the icon resolves through the product's identity folder.
+        /// </summary>
+        public static BitmapImage RenderWithApprovalBadge(
+            PluginImageSize imageSize, String label, BitmapColor accent, String icon, ApprovalRisk risk)
+        {
+            if (risk == ApprovalRisk.None)
+            {
+                return Render(imageSize, label, accent, icon);
+            }
+
+            using (var bitmap = new BitmapBuilder(imageSize))
+            {
+                bitmap.Clear(Background);
+
+                var drewIcon = false;
+                if (!String.IsNullOrEmpty(icon))
+                {
+                    try
+                    {
+                        var img = PluginResources.ReadImage(IconResource(icon));
+                        var s = (Int32)(Math.Min(bitmap.Width, bitmap.Height) * 0.82);
+                        bitmap.DrawImage(img, (bitmap.Width - s) / 2, (bitmap.Height - s) / 2, s, s);
+                        drewIcon = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        PluginLog.Verbose(ex, $"KeyImage: icon '{icon}' failed to load — falling back to text");
+                    }
+                }
+                if (!drewIcon)
+                {
+                    bitmap.DrawText(label ?? "");
+                }
+
+                DrawApprovalBadge(bitmap, risk);
+                return bitmap.ToImage();
+            }
+        }
+
+        /// <summary>
+        /// A full-surface conversation card: the conversation title occupies the upper 75% and
+        /// the live state is written inside a flush colour bar across the bottom 25% — the same
+        /// split as <see cref="RenderSessionSlot"/>, but a chat title is a sentence, not a folder
+        /// name, so it wraps onto up to three lines instead of being cut.
+        ///
+        /// This deliberately bypasses Options+' inset icon canvas and static label strip. A
+        /// conversation is live information, not an icon: its identity and state must remain one
+        /// glanceable unit and update together when the desktop sidebar changes.
+        /// </summary>
+        public static BitmapImage RenderConversationSlot(
+            PluginImageSize imageSize, String title, String stateWord,
+            BitmapColor barColor, Boolean darkText)
+        {
+            using (var bitmap = ButtonCanvas(imageSize))
+            {
+                bitmap.Clear(Background);
+
+                if (String.IsNullOrWhiteSpace(title) || String.IsNullOrWhiteSpace(stateWord))
+                {
+                    return bitmap.ToImage();
+                }
+
+                var w = bitmap.Width;
+                var h = bitmap.Height;
+                var scale = Math.Min(w, h) / 96f;
+                var pad = Math.Max(2, (Int32)(4 * scale));
+                var titleH = (Int32)(h * 0.75f);
+
+                // Use the whole title region. One/two-line names get larger type; long titles can
+                // take three balanced lines instead of leaving black space while ellipsising early.
+                var lines = WrapConversationTitle(title, 12, 3);
+                var fontSize = (Int32)((lines.Length switch { 1 => 18, 2 => 16, _ => 15 }) * scale);
+                var lineH = (Int32)((lines.Length switch { 1 => 22, 2 => 21, _ => 18 }) * scale);
+                var top = Math.Max(0, (titleH - (lines.Length * lineH)) / 2);
+                for (var i = 0; i < lines.Length; i++)
+                {
+                    bitmap.DrawText(
+                        lines[i], pad, top + (i * lineH), w - (2 * pad), lineH,
+                        White, fontSize: fontSize);
+                }
+
+                var barY = titleH;
+                var barH = h - barY;
+                bitmap.FillRectangle(0, barY, w, barH, barColor);
+                bitmap.DrawText(
+                    stateWord, 0, barY, w, barH,
+                    darkText ? Dark : White,
+                    fontSize: (Int32)(14 * scale));
+
+                return bitmap.ToImage();
+            }
+        }
+
+        /// <summary>Word-wrap a conversation title into at most <paramref name="maxLines"/> lines.</summary>
+        internal static String[] WrapConversationTitle(String value, Int32 maxLength, Int32 maxLines)
+        {
+            if (String.IsNullOrWhiteSpace(value) || maxLength < 2 || maxLines < 1)
+            {
+                return Array.Empty<String>();
+            }
+
+            var remaining = String.Join(" ", value.Trim().Split(
+                new[] { ' ', '\t', '\r', '\n' },
+                StringSplitOptions.RemoveEmptyEntries));
+            var lines = new System.Collections.Generic.List<String>();
+
+            while (!String.IsNullOrEmpty(remaining) && lines.Count < maxLines)
+            {
+                if (remaining.Length <= maxLength)
+                {
+                    lines.Add(remaining);
+                    break;
+                }
+
+                if (lines.Count == maxLines - 1)
+                {
+                    lines.Add(remaining.Substring(0, maxLength - 1).TrimEnd() + "…");
+                    break;
+                }
+
+                // Include the boundary character in the search: "Find planned" is exactly 12
+                // characters and the following space is the ideal cut, not the earlier one.
+                var window = remaining.Substring(0, Math.Min(remaining.Length, maxLength + 1));
+                var breakAt = window.LastIndexOf(' ');
+                if (breakAt <= 0 || breakAt > maxLength)
+                {
+                    breakAt = maxLength;
+                }
+
+                lines.Add(remaining.Substring(0, breakAt).TrimEnd());
+                remaining = remaining.Substring(breakAt).TrimStart();
+            }
+
+            return lines.ToArray();
+        }
+
         public static BitmapImage RenderWidgetAction(PluginImageSize imageSize, String label, String icon)
         {
             using (var bitmap = ButtonCanvas(imageSize))

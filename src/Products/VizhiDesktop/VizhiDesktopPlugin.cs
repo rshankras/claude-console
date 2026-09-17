@@ -35,10 +35,22 @@ namespace Loupedeck.ClaudeConsolePlugin
         private readonly DesktopMonitor _monitor;
         private readonly IDesktopAppAdapter _app;
 
+        /// <summary>
+        /// Vizhi Desktop drives the same OpenAI app as Vizhi for Codex, through the desktop
+        /// surface instead of the terminal: one product family, one colour. Declared here, never
+        /// in Core — the engine draws state and must not know whose keypad it is.
+        /// </summary>
+        private static readonly BitmapColor CodexBlue = new BitmapColor(0x81, 0xA8, 0xED);
+
         public VizhiDesktopPlugin()
         {
             PluginLog.Init(this.Log, "Vizhi Desktop");
             PluginResources.Init(this.Assembly);
+            // Identity through the engine's seams, like the other two products: every action icon
+            // resolves under desktop_icons, state-semantic art stays shared, and the bracket and
+            // routed-session bar take the family colour.
+            KeyImage.UseIdentityIconFolder("desktop_icons");
+            KeyImage.UseIdentityColors(CodexBlue, CodexBlue);
 
             // Before any action is constructed — actions resolve IPC paths and DesktopServices.
             IpcPaths.UseProduct("vizhi-desktop");

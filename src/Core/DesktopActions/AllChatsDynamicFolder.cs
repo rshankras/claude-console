@@ -68,7 +68,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         public override String GetButtonDisplayName(PluginImageSize imageSize) => "All Chats";
 
         public override BitmapImage GetButtonImage(PluginImageSize imageSize) =>
-            KeyImage.RenderDesktop(imageSize, "All Chats", "all_chats");
+            KeyImage.Render(imageSize, "All Chats", KeyImage.Blue, "all_chats");
 
         public override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
             TryDecodeTitle(actionParameter, out var title) ? Trim(title) : "Unavailable";
@@ -77,25 +77,21 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             if (!TryDecodeTitle(actionParameter, out var title))
             {
-                return KeyImage.RenderSessionSlot(imageSize, null, null, selected: false);
+                return KeyImage.RenderConversationSlot(imageSize, null, null, KeyImage.Gray, darkText: false);
             }
 
             var conversation = VisibleConversations(CurrentConversations())
                 .FirstOrDefault(c => String.Equals(c.Title, title, StringComparison.Ordinal));
             if (conversation == null)
             {
-                return KeyImage.RenderSessionSlot(imageSize, null, null, selected: false);
+                return KeyImage.RenderConversationSlot(imageSize, null, null, KeyImage.Gray, darkText: false);
             }
 
-            var (icon, risk) = conversation.State switch
-            {
-                ConversationState.Awaiting => ("waiting", ApprovalRisk.Normal),
-                ConversationState.Unread => ("done", ApprovalRisk.None),
-                ConversationState.Running => ("busy0", ApprovalRisk.None),
-                _ => ((String)null, ApprovalRisk.None),
-            };
-
-            return KeyImage.RenderSessionSlot(imageSize, icon, null, selected: false, risk);
+            // The same card the page-1 conversation keys draw, so a chat looks the same on both
+            // surfaces: title wrapped in the top 75%, state word in the bar. FaceFor already yields
+            // exactly those inputs; the old icon-plus-badge face was the pre-redesign session look.
+            var (word, color, darkText) = DesktopConversationCommand.FaceFor(conversation.State);
+            return KeyImage.RenderConversationSlot(imageSize, Trim(title), word, color, darkText);
         }
 
         public override void RunCommand(String actionParameter)
