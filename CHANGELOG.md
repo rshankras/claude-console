@@ -3,6 +3,14 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [0.12.1] — Vizhi Desktop — 2026-09-17
+
+- Match complete button labels independent of capitalization and whitespace. The user-reported
+  **Start Voice Chat** tooltip differs from the documentation's sentence case.
+- Read button title, description, help, and label together so a short icon title or AX value
+  cannot hide the action name. Continue refusing generic Close/× controls and ambiguous matches.
+- Preserve the Adaptive 3 and Everyday profiles without changing their identities or bindings.
+
 ## [0.12.0] — Vizhi Desktop — 2026-09-17
 
 - Add native **Voice Chat / End Voice**, driven by exact observed app buttons. Unsupported or

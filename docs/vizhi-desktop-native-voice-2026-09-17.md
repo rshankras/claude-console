@@ -1,6 +1,6 @@
 # Vizhi Desktop native Voice — 2026-09-17
 
-Branch: `integrate/vizhi-desktop-main`. Target: **0.12.0 / Vizhi Adaptive 3**.
+Branch: `integrate/vizhi-desktop-main`. Current correction: **0.12.1 / Vizhi Adaptive 3**.
 
 Status: implemented and installed locally. Plugin load and profile selection are verified;
 native audio interaction and visual keypad validation remain pending.
@@ -98,3 +98,22 @@ generation without ending Voice, and both dictation variants still work when Voi
 - Backup and receipt: `~/.claude/claude-console/backups/vizhi-desktop/20260917-142110/`.
 - Options+ Computer Use timed out. Installation and selection were checked through the service log
   and configuration; this is not a claim of visual verification or successful native voice capture.
+
+## 0.12.1 detection correction
+
+The user reported **No Voice / Check App** despite Voice being available and supplied a screenshot
+of the Voice interface plus the exact tooltip **Start Voice Chat**. The 0.12.0 matcher was
+case-sensitive and used the first nonempty accessibility text field. It therefore rejected the
+reported capitalization and could miss a help/description label hidden behind an icon title or
+value. This is a code-level compatibility defect; the screenshot alone does not reveal AX attributes.
+
+The correction compares complete button labels after normalizing case and whitespace, and reads
+title, description, help, and label together. AXValue is excluded from action identity. Generic
+Close/× controls, substring matches, parent/sidebar buttons, duplicates, and disabled actions remain
+ineligible. The layout and profile GUIDs are unchanged.
+
+Synthetic regressions cover the user-supplied capitalization, each semantic label field, values
+masking names, repeated labels on one button, unrelated Close, and the prior targeting guards.
+Desktop/AX C# tests pass (217 tests), and the complete Swift helper compiles and signs successfully.
+Live recognition and the active session's end label remain to be confirmed by the user; Computer Use
+refuses access to the ChatGPT app, so no alternate live AX inspection was performed.

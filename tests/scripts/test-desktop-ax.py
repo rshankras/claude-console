@@ -29,6 +29,7 @@ struct FakeElement {
     let children: [FakeElement]
     var value: String? = nil
     var enabled: Bool? = true
+    var attributes: [String: String] = [:]
 }
 typealias AXUIElement = FakeElement
 let kAXRoleAttribute = "AXRole"
@@ -37,7 +38,13 @@ let MAX_DEPTH = 40
 let MAX_NODES = 1500
 let kAXValueAttribute = "AXValue"
 let kAXEnabledAttribute = "AXEnabled"
-func str(_ el: FakeElement, _ name: String) -> String? { name == kAXValueAttribute ? el.value : el.role }
+let kAXTitleAttribute = "AXTitle"
+let kAXDescriptionAttribute = "AXDescription"
+func str(_ el: FakeElement, _ name: String) -> String? {
+    if name == kAXValueAttribute { return el.value }
+    if name == kAXRoleAttribute { return el.role }
+    return el.attributes[name]
+}
 func attr(_ el: FakeElement, _ name: String) -> Any? { el.enabled }
 let arguments = ["--send-label": ["Send"], "--stop": ["Stop"], "--approve": ["Allow"]]
 func argValues(_ name: String) -> [String] { arguments[name] ?? [] }
@@ -51,6 +58,7 @@ struct Node {
     let text: String
     let pressable: Bool
     let depth: Int
+    var labels: [String] = []
 }
 let original = FakeElement(role: "AXWebArea", text: "original composer", children: [])
 let other = FakeElement(role: "AXWebArea", text: "other draft", children: [])
@@ -58,13 +66,14 @@ var focusedWindows = [original]
 func targetWindows() -> [AXUIElement] { focusedWindows }
 '''
 fixture += next(line for line in source.splitlines() if line.startswith('let operationWindows =')) + '\n'
+fixture += function('buttonLabels') + '\n' + function('normalizedButtonLabel') + '\n'
 fixture += function('scanWindows') + '\n'
 fixture += function('conversationMatches') + '\n' + function('conversationState')
 fixture += '\n' + '\n'.join(function(n) for n in ['firstPressable', 'exactButtons', 'uniqueEnabledButton',
     'voiceState', 'voiceTarget', 'composerSendTarget', 'sendTarget'])
 fixture += '''
 func row(_ text: String, _ depth: Int = 0) -> Node {
-    Node(el: original, role: "AXButton", text: text, pressable: true, depth: depth)
+    Node(el: original, role: "AXButton", text: text, pressable: true, depth: depth, labels: [text])
 }
 // Simulate the focus change during the write's settle interval. Re-scanning for Send
 // must still return the original tree, never the other window's draft.
@@ -87,9 +96,10 @@ for baseline in [1, 2] {
     assert(conversationState(state: "unread", images: baseline + 1, baseline: baseline) == "unread")
 }
 assert(conversationState(state: "idle", images: 3, baseline: nil) == "idle")
-func node(_ role: String, _ text: String, _ depth: Int, enabled: Bool? = true, value: String? = nil) -> Node {
+func node(_ role: String, _ text: String, _ depth: Int, enabled: Bool? = true, value: String? = nil,
+          labels: [String]? = nil) -> Node {
     Node(el: FakeElement(role: role, text: text, children: [], value: value, enabled: enabled),
-         role: role, text: text, pressable: role == "AXButton", depth: depth)
+         role: role, text: text, pressable: role == "AXButton", depth: depth, labels: labels ?? [text])
 }
 let web = node("AXWebArea", "", 0)
 let group = node("AXGroup", "", 1)
@@ -134,6 +144,28 @@ assert(target("start", [endVoice]) == nil)
 assert(target("start", [startVoice, endVoice]) == nil)
 assert(target("end", [startVoice]) == nil)
 assert(target("toggle", [startVoice]) == nil)
+// Icon/title/value must not shadow the action name in description/help. This executes the
+// production attribute reader as well as the matcher; fixture names do not claim live labels.
+for attribute in [kAXTitleAttribute, kAXDescriptionAttribute, "AXHelp", "AXLabel"] {
+    let icon = FakeElement(role: "AXButton", text: "×", children: [], value: "0",
+        attributes: [attribute: "Stop voice chat"])
+    let labels = buttonLabels(icon)
+    assert(labels == ["Stop voice chat"])
+    assert(state([node("AXButton", "×", 1, labels: labels)]) == "active")
+    assert(target("end", [node("AXButton", "0", 1, labels: labels)]) != nil)
+}
+assert(state([node("AXButton", "icon", 1, labels: ["START  VOICE\\nCHAT"])]) == "ready")
+// Exact tooltip supplied by the user for this installed ChatGPT build.
+assert(state([node("AXButton", "Start Voice Chat", 1)]) == "ready")
+assert(state([node("AXButton", "icon", 1, labels: ["Start Voice Chat"])]) == "ready")
+assert(target("start", [node("AXButton", "icon", 1, labels: ["Start Voice Chat"])]) != nil)
+assert(state([node("AXButton", "Stop voice chat", 1, labels: [])]) == "unavailable")
+assert(state([node("AXButton", "×", 1, labels: ["Close"])]) == "unavailable")
+assert(state([node("AXButton", "×", 1, labels: ["Learn how to Stop voice chat"])]) == "unavailable")
+let valueOnly = FakeElement(role: "AXButton", text: "", children: [], value: "Start voice chat")
+assert(buttonLabels(valueOnly).isEmpty)
+let repeatedLabel = node("AXButton", "icon", 1, labels: ["Stop voice chat", "Stop voice chat"])
+assert(target("end", [repeatedLabel]) != nil) // one control with two matching attributes is unique
 // A conversation named exactly like a control still has nested sidebar actions; ignore it.
 let pin = node("AXButton", "Pin chat", 2)
 assert(state([startVoice, pin]) == "unavailable")

@@ -87,6 +87,20 @@ func displayText(_ el: AXUIElement) -> String {
     return ""
 }
 
+// An icon button can expose a short title/value and put its actual action name in its
+// description or help attribute. Keep these names together instead of letting displayText's
+// first nonempty value hide the only meaningful label. AXValue is not an action name.
+func buttonLabels(_ el: AXUIElement) -> [String] {
+    [kAXTitleAttribute, kAXDescriptionAttribute, "AXHelp", "AXLabel"].compactMap {
+        guard let value = str(el, $0), !value.isEmpty else { return nil }
+        return value
+    }
+}
+
+func normalizedButtonLabel(_ label: String) -> String {
+    label.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").lowercased()
+}
+
 // Chromium builds no AX tree until an assistive client asks; re-assert on every invocation.
 func forceAccessibility(_ appEl: AXUIElement) {
     AXUIElementSetAttributeValue(appEl, "AXManualAccessibility" as CFString, kCFBooleanTrue)
@@ -123,6 +137,7 @@ struct Node {
     let text: String
     let pressable: Bool
     let depth: Int      // DFS depth — what lets a flat scan recover subtree boundaries
+    var labels: [String] = []
 }
 
 // The app can have ChatGPT and Codex windows open at once. Scope every read and press to the
@@ -156,7 +171,8 @@ func scanWindows() -> (nodes: [Node], webArea: Bool) {
         let role = str(el, kAXRoleAttribute as String) ?? "?"
         if role == "AXWebArea" { webArea = true }
         nodes.append(Node(el: el, role: role, text: displayText(el),
-                          pressable: actionNames(el).contains(kAXPressAction as String), depth: depth))
+                          pressable: actionNames(el).contains(kAXPressAction as String), depth: depth,
+                          labels: role == "AXButton" ? buttonLabels(el) : []))
         for c in children(el) { rec(c, depth + 1) }
     }
     for w in operationWindows { rec(w, 0) }
@@ -188,10 +204,13 @@ func firstPressable(matching labels: [String], in nodes: [Node]) -> Node? {
 // Exact button identity is mandatory for native voice and task Stop. In particular, neither
 // a chat title containing a label nor a longer button label may be used as a fallback.
 func exactButtons(matching labels: [String], in nodes: [Node]) -> [Node] {
-    let names = labels.filter { !$0.isEmpty }
+    let names = Set(labels.map(normalizedButtonLabel).filter { !$0.isEmpty })
     return nodes.indices.compactMap { i in
         let node = nodes[i]
-        guard node.role == "AXButton", names.contains(node.text) else { return nil }
+        // Full semantic labels only: case/whitespace are presentation differences; substrings,
+        // arbitrary Close/X buttons, and text from descendants are not alternative selectors.
+        guard node.role == "AXButton",
+              node.labels.contains(where: { names.contains(normalizedButtonLabel($0)) }) else { return nil }
         // Sidebar conversation rows can themselves be AXButtons with arbitrary user titles.
         // Their nested pin/archive controls distinguish them from a leaf action button.
         var j = i + 1

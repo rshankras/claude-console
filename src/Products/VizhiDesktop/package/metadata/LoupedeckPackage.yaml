@@ -18,7 +18,7 @@ description: Mode-aware physical controls for the ChatGPT / Codex desktop app on
 pluginFileName: VizhiDesktopPlugin.dll
 
 # Plugin version.
-version: 0.12.0
+version: 0.12.1
 
 # Author of the plugin. The author can be a company or an individual developer.
 author: S.Ravi Shankar
