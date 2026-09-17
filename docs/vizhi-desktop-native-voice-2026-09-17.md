@@ -2,6 +2,9 @@
 
 Branch: `integrate/vizhi-desktop-main`. Target: **0.12.0 / Vizhi Adaptive 3**.
 
+Status: implemented and installed locally. Plugin load and profile selection are verified;
+native audio interaction and visual keypad validation remain pending.
+
 ## Decision and revised plan
 
 Add native Voice as a separate app-owned action. The current offline Dictate & Send and Voice
@@ -81,3 +84,17 @@ With the intended window open, check new-chat and existing-task voice availabili
 Start Voice, complete setup if needed, verify End Voice appears, and end from the keypad. Repeat
 with app-side end, a disabled control, and a switch between app windows. Verify task Stop interrupts
 generation without ending Voice, and both dictation variants still work when Voice is inactive.
+
+## Local installation record
+
+- Package: `VizhiDesktop_0_12_0.lplug4`, built from implementation commit `f49765f`.
+- Logi Plugin Service restarted and logged **VizhiDesktop 0.12.0** loaded successfully.
+- Installed DLL, helper, and default profile match the verified package. The runtime helper was
+  refreshed and its hash matches the packaged helper.
+- **Vizhi Adaptive 3**, profile `390FE86F17D84EC6B4920C7A5C3F37FA`, is selected in the installed
+  application's configuration. This explicit local adoption is separate from the package updater,
+  which continues preserving other users' selected defaults.
+- All **20 original profile files** remain byte-for-byte unchanged, including Adaptive 2 and Everyday.
+- Backup and receipt: `~/.claude/claude-console/backups/vizhi-desktop/20260917-142110/`.
+- Options+ Computer Use timed out. Installation and selection were checked through the service log
+  and configuration; this is not a claim of visual verification or successful native voice capture.
