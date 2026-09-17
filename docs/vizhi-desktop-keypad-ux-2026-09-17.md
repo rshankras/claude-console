@@ -2,7 +2,7 @@
 
 Date: 2026-09-17  
 Branch: `integrate/vizhi-desktop-main`  
-Current status: Version 0.12.1 installed locally on 2026-09-17; Adaptive 3 selected in application
+Current status: Version 0.12.2 installed locally on 2026-09-17; Adaptive 3 selected in application
 configuration. The user confirmed native Voice detection still fails and a transcribed Voice Draft
 did not reach the composer. Version 0.12.2 adds progress feedback and manual clipboard recovery.
 The 0.11.0 / Adaptive 2 record below is historical; app compatibility remains unresolved.

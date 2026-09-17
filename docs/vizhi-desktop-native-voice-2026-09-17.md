@@ -2,9 +2,9 @@
 
 Branch: `integrate/vizhi-desktop-main`. Current correction: **0.12.2 / Vizhi Adaptive 3**.
 
-Status: 0.12.1 installed locally; the user confirmed **No Voice** remains. The installed DLL and
-helper match the package, so this is not a stale install. Native recognition and direct draft
-insertion remain unresolved. Version 0.12.2 adds draft recovery and progress feedback.
+Status: **0.12.2 installed locally** with Adaptive 3 selected. The user confirmed **No Voice**
+remained after 0.12.1; that installed DLL and helper matched the package. Native recognition and
+direct draft insertion remain unresolved. Version 0.12.2 adds draft recovery and progress feedback.
 
 ## Decision and revised plan
 
@@ -151,3 +151,10 @@ delivery, auto-send exclusion, copy failure, Unicode preservation, private-file 
 transcription phase's original-intent ownership. Clipboard transport was tested with a fake process
 runner; no live pasteboard or ChatGPT interaction was performed. One pre-existing xUnit1031 warning
 remains. This is a recovery path, not a verified fix for the app's Accessibility compatibility.
+
+The 0.12.2 package was built from `91562f7` and passed the package/resource/signature checks.
+Logi Plugin Service recorded version **0.12.2** loaded at **15:28:43** on 2026-09-17. The installed
+DLL and runtime AX helper match the archive; all **28 application/profile files** are unchanged,
+and Adaptive 3 remains selected. No recording helper was active at the service restart.
+Backup and installation receipt: `~/.claude/claude-console/backups/vizhi-desktop/20260917-152835/`.
+Live clipboard recovery and composer interaction still require a user attempt.
