@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Rebuild Vizhi Desktop's two 3x3 profiles from its tracked profile structure.
+"""Rebuild Vizhi Home (two pages) and the optional Adaptive 3 profile.
 
 Each binding names VizhiDesktop; identity agrees in all four package documents. The default
-retains approvals, and Everyday is an explicit import outside the auto-import profiles folder.
+retains the Flow controls; Adaptive 3 is an explicit import outside auto-import profiles.
 The existing profile supplies only hardware geometry and service-owned dial bindings. Preview
 metadata is rebuilt with desktop labels and glyphs. Outputs have deterministic ZIP timestamps.
 
 Usage: python3 tools/make-desktop-profile.py
 """
 
+import copy
 import base64
 import io
 import json
@@ -20,18 +21,18 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "src/Products/VizhiDesktop/package/profiles/DefaultProfile70.lp5"
 DONOR = OUT  # tracked desktop geometry; never depend on generated terminal product packages
 
-# Adaptive-profile identity. Rotated for native Voice: the updater installs this as
+# Home identity, rotated for the two-page redesign: the updater installs this as
 # an additional profile and RETAINS the user-selected default and earlier profile, so existing user customization is never overwritten.
 # Never regenerate for ordinary updates or Options+ will accumulate duplicate profiles.
-GUID = "390FE86F17D84EC6B4920C7A5C3F37FA"
-EVERYDAY_GUID = "A4B07D949FB2461B941D80BEB3D77A28"
-EVERYDAY_OUT = OUT.parent.parent / "optional-profiles/VizhiDesktop-Everyday.lp5"
+GUID = "A8B982E4103C4F99A4C75070AF60A6E4"
+EVERYDAY_GUID = "390FE86F17D84EC6B4920C7A5C3F37FA"
+EVERYDAY_OUT = OUT.parent.parent / "optional-profiles/VizhiDesktop-Adaptive3.lp5"
 APP = "@_vizhidesktop"
 DISPLAY = "Vizhi Desktop"
-PROFILE_DISPLAY = "Vizhi Adaptive 3"
+PROFILE_DISPLAY = "Vizhi Home"
 PLUGIN = "VizhiDesktop"
 BUNDLE = "com.openai.codex"
-DESCRIPTION = "Conversations, app controls, and nine adaptive workflow favorites for ChatGPT and Codex."
+DESCRIPTION = "Conversations, controls, adaptive workflows, and source capture for ChatGPT and Codex."
 
 NS = "Loupedeck.ClaudeConsolePlugin.DesktopActions"
 
@@ -65,7 +66,7 @@ PAGE_ONE = [
     act("DesktopConversationCommand", "3"),       # 2  ┘ state faces, press to jump
     folder("AllChatsDynamicFolder"),              # 3  ┐ overflow: every AX-visible conversation
     act("DesktopControlCommand", "new_chat"),    # 4  │ start work; status already lives in cards
-    act("DesktopContextCommand", "primary"),     # 5  ┘ Search in ChatGPT · Changes in Codex
+    act("DesktopNavigateCommand", "find"),              # 5  ┘ Find Chat in ChatGPT · Changes in Codex
     act("DesktopApprovalCommand", "approve"),     # 6  ┐
     act("DesktopApprovalCommand", "deny"),        # 7  │ the bottom row answers
     act("DesktopVoiceChatCommand"),               # 8  ┘ native spoken conversation
@@ -96,9 +97,33 @@ EVERYDAY_HOME = PAGE_ONE[:6] + [
 ]
 
 
-def build_profile(out, guid, display_name, home) -> None:
-    with zipfile.ZipFile(DONOR) as donor:
-        entries = {i.filename: donor.read(i.filename) for i in donor.infolist() if not i.is_dir()}
+FLOW_ACTIONS = [
+    act("DesktopControlCommand", "mode"),
+    act("DesktopApprovalCommand", "approve"),
+    act("DesktopApprovalCommand", "deny"),
+    act("DesktopVoiceChatCommand"),
+    act("DesktopContextCommand", "files"),
+    folder("DesktopMoreDynamicFolder"),
+    act("DesktopWorkflowCommand", "slot_1"),
+    act("DesktopWorkflowCommand", "slot_4"),
+    act("DesktopWorkflowCommand", "slot_9"),
+]
+
+
+CONTEXT_PAGE = [act("DesktopCaptureCommand", p) for p in ["selection", "clipboard", "screenshot"]] + [
+    act("DesktopWorkflowCommand", "draft_reply"), act("DesktopVoiceDraftCommand"), act("DesktopComposerCommand", "send")
+] + [act("DesktopCaptureCommand", p) for p in ["copy", "return", "paste"]]
+
+
+HOME = PAGE_ONE[:5] + [act("DesktopCaptureCommand", "screenshot")] + [
+    act("DesktopVoiceDraftCommand"), act("DesktopComposerCommand", "send_stop"), act("DesktopVoiceChatCommand")]
+TOOLS = [
+    act("DesktopControlCommand", "mode"), act("DesktopToolsCommand", "approve"), act("DesktopToolsCommand", "deny"),
+    folder("DesktopFilesDynamicFolder"), act("DesktopCaptureCommand", "clipboard"), act("DesktopNavigateCommand", "search"),
+    act("DesktopCaptureCommand", "copy"), folder("DesktopSavedPromptsDynamicFolder"), folder("DesktopMoreDynamicFolder")]
+
+def build_profile(out, guid, display_name, home, entries, controls=PAGE_TWO) -> None:
+    entries = dict(entries)
 
     # --- ProfileInfo.json: identity + a single rebuilt page ---
     profile = json.loads(entries["ProfileInfo.json"])
@@ -112,12 +137,14 @@ def build_profile(out, guid, display_name, home) -> None:
     for mode in profile["layout"]["layoutModes"]:
         for ws in mode["workspaces"]:
             pages = ws["pressPages"]
-            layout_pages = [("Conversations", home), ("Controls", PAGE_TWO), ("Workflows", PAGE_THREE)]
+            layout_pages = [("Home", home), ("Tools", controls)] if guid == GUID else [
+                ("Conversations", home), ("Controls", controls), ("Workflows", PAGE_THREE)]
             if len(pages) < len(layout_pages):
                 sys.exit(f"donor has fewer than {len(layout_pages)} press pages — wrong donor?")
             kept = []
             for page, (name, bindings) in zip(pages, layout_pages):
                 page["displayName"] = name
+                if name == "Context": page["name"] = "C90F7D5A589245FDA7DF634B9DAD39AE"
                 if len(page["controls"]) != len(bindings):
                     sys.exit(f"donor page has {len(page['controls'])} controls, expected {len(bindings)}")
                 for control, binding in zip(page["controls"], bindings):
@@ -154,11 +181,11 @@ def build_profile(out, guid, display_name, home) -> None:
         {"additionalPluginNames": [PLUGIN]}).encode()
 
     # Cosmetic preview has the home-page controls; live faces are rendered by the plugin.
-    labels = ["Conversation 1", "Conversation 2", "Conversation 3", "All Chats", "New Chat",
-              "Search / Changes"] + (["Voice Draft · DRAFT", "Send", "Stop"] if home == EVERYDAY_HOME
+    labels = ["Conversation 1", "Conversation 2", "Conversation 3", "Chats", "New Chat",
+              "Screenshot" if guid == GUID else "Find Chat / View Changes"] + (["Dictate · DRAFT", "Send / Stop", "Voice Chat · TALK"] if guid == GUID
                                       else ["Approve", "Deny", "Voice Chat · TALK"])
-    icons = ["all_chats", "all_chats", "all_chats", "all_chats", "new_claude", "explore"] + (
-        ["voice_draft", "enter", "stop"] if home == EVERYDAY_HOME else ["yes_idle", "no_idle", "voice_chat"])
+    icons = ["all_chats", "all_chats", "all_chats", "all_chats", "new_chat", "screenshot" if guid == GUID else "search"] + (
+        ["voice_draft", "send", "voice_chat"] if guid == GUID else ["yes_idle", "no_idle", "voice_chat"])
     icon_dir = ROOT / "src/Products/VizhiDesktop/Resources/desktop_icons"
     def icon_bytes(icon):
         path = icon_dir / f"{icon}.png"
@@ -181,13 +208,18 @@ def build_profile(out, guid, display_name, home) -> None:
             z.writestr(zipfile.ZipInfo(name, date_time=(2026, 9, 17, 0, 0, 0)), data)
     out.write_bytes(buf.getvalue())
 
-    bound = sum(1 for b in home + PAGE_TWO + PAGE_THREE if b)
-    print(f"wrote {out.relative_to(ROOT)}: 3 pages, {bound} bound keys, GUID {guid}")
+    page_count = 2 if guid == GUID else 3
+    bound = page_count * 9
+    print(f"wrote {out.relative_to(ROOT)}: {page_count} pages, {bound} bound keys, GUID {guid}")
 
 
 def main() -> None:
-    build_profile(OUT, GUID, PROFILE_DISPLAY, PAGE_ONE)
-    build_profile(EVERYDAY_OUT, EVERYDAY_GUID, "Vizhi Everyday", EVERYDAY_HOME)
+    # Read once before replacing either output. A two-page default still needs the old
+    # three-page geometry when regenerating the optional layout on a subsequent invocation.
+    with zipfile.ZipFile(EVERYDAY_OUT if EVERYDAY_OUT.exists() else DONOR) as donor:
+        entries = {i.filename: donor.read(i.filename) for i in donor.infolist() if not i.is_dir()}
+    build_profile(OUT, GUID, PROFILE_DISPLAY, HOME, entries, TOOLS)
+    build_profile(EVERYDAY_OUT, EVERYDAY_GUID, "Vizhi Adaptive 3", PAGE_ONE, entries)
 
 
 if __name__ == "__main__":

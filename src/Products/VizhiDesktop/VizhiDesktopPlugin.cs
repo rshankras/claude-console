@@ -34,6 +34,9 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         private readonly DesktopMonitor _monitor;
         private readonly IDesktopAppAdapter _app;
+        private readonly DesktopLifetime _lifetime;
+        private readonly DesktopActionRunner _actions;
+        private readonly DesktopSearchVoiceModel _searchVoice;
 
         /// <summary>
         /// Vizhi Desktop drives the same OpenAI app as Vizhi for Codex, through the desktop
@@ -61,20 +64,31 @@ namespace Loupedeck.ClaudeConsolePlugin
                 : new MacDesktopAutomation(_app, DesktopVoiceShortcut.Load(DesktopVoiceShortcut.ConfigPath));
             _monitor = new DesktopMonitor(automation);
             DesktopServices.Declare(_app, automation, _monitor);
+            _lifetime = DesktopServices.Lifetime;
+            _actions = DesktopServices.Actions;
+            _searchVoice = DesktopServices.SearchVoice;
+            if (automation is MacDesktopAutomation mac) mac.IsEnabled = () => _lifetime.Active;
 
             // The voice keys are aimed at the app's composer, not a terminal. The engine keeps
             // capture, routing and the named failure faces; the product only says where the words
             // go. A draft is brought forward so it can be read before it is sent.
-            BridgeManager.Instance.TranscriptSink = (text, send) =>
+            var bridge = BridgeManager.Instance;
+            var recovery = DesktopServices.DraftRecovery;
+            var workflow = DesktopServices.WorkflowVoice;
+            _lifetime.Bind(() =>
             {
-                if (!automation.WriteComposer(text, send, out var error))
-                {
-                    return error ?? "the composer did not accept the text";
-                }
-                if (!send) { automation.FocusApp(); }
-                return null;
-            };
-            BridgeManager.Instance.DraftClipboardFallback = DesktopDraftClipboard.Copy;
+                bridge.TranscriptSink = (text, send) => _lifetime.Active
+                    ? DesktopTranscriptDelivery.Write(automation, text, send, recovery.NotifyReady) : "Cancelled";
+                bridge.DraftRecoverySink = recovery.Retain;
+                bridge.VoiceModelOverride = intent =>
+                    DesktopSearchVoiceModel.AppliesTo(intent, OperatingSystem.IsMacOS())
+                        ? (true, _searchVoice.EnsureReady() ? _searchVoice.ModelPath : null)
+                        : (false, null);
+                bridge.SearchAudioHasSignal = DesktopSearchAudio.HasSignal;
+                bridge.DesktopCaptureAllowed = _lifetime.CaptureGuard();
+            }, bridge.ClearDesktopRouting);
+            DesktopServices.OnVoiceFailed(workflow.Fail);
+            DesktopServices.OnSearchVoiceChanged(this.SearchVoiceChanged);
 
             // Same family as Vizhi for Codex, same hold: a failure word is an instruction, held
             // long enough to read and act on.
@@ -89,6 +103,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
+            _lifetime.Start();
+            _actions.Start();
             BridgeManager.Instance.PluginAssemblyFilePath = this.AssemblyFilePath;
 
             if (OperatingSystem.IsWindows() && !WindowsDesktopAutomation.IsPackaged)
@@ -109,9 +125,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             // have it from tools/desktop/build.sh). Voice installs itself lazily on first press.
             DesktopRuntime.EnsureInstalled(this.AssemblyFilePath);
 
-            if (DesktopServices.Automation.HasVoiceShortcut)
+            // Prepare Speak Query once on load. The download contains only local inference
+            // weights, never audio. The keypad and Options+ show progress; no microphone opens.
+            if (OperatingSystem.IsMacOS())
             {
-                PluginLog.Info("VizhiDesktopPlugin: Voice Chat uses configured shortcut");
+                _searchVoice.EnsureReady();
+                this.SearchVoiceChanged();
             }
 
             _monitor.Start();
@@ -137,9 +156,32 @@ namespace Loupedeck.ClaudeConsolePlugin
             PluginLog.Info("VizhiDesktopPlugin: Loaded — driving the ChatGPT/Codex desktop app");
         }
 
+        private void SearchVoiceChanged()
+        {
+            var model = _searchVoice.Status;
+            try
+            {
+                if (model.Phase == SpeechModelPhase.Ready)
+                {
+                    if (DesktopServices.Search.Feedback == VoiceFailure.ModelLoading)
+                        DesktopServices.Search.ShowFeedback(null);
+                    this.OnPluginStatusChanged(Loupedeck.PluginStatus.Normal, String.Empty);
+                }
+                else
+                    this.OnPluginStatusChanged(Loupedeck.PluginStatus.Warning,
+                        model.Phase == SpeechModelPhase.Failed
+                            ? "Speak Query download failed. Press Speak Query to retry."
+                            : $"Preparing Speak Query (574 MB, one time): {model.Footer}");
+            }
+            catch (Exception ex) { PluginLog.Warning(ex, "VizhiDesktopPlugin: voice model status unavailable"); }
+        }
+
         public override void Unload()
         {
+            _actions.Stop();
             _monitor.Stop();
+            _lifetime.Stop();
+            _searchVoice.Suspend();
             PluginLog.Info("VizhiDesktopPlugin: Unloaded");
         }
     }

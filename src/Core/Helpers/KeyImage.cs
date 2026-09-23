@@ -120,7 +120,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                         // other open line icons. Keep their render box smaller so Clear, Esc and Tab
                         // read as one balanced group on the physical keypad.
                         var compactUtilityIcon = icon == "clear" || icon == "esc" || icon == "tab";
-                        var iconShare = compactUtilityIcon ? 0.70 : 0.82;
+                        // A folder opener still uses the SDK's inset icon+caption layout. Its
+                        // outline should have the same optical size as our full-key controls.
+                        var compactDesktopFolder = _identityIconFolder == "desktop_icons" && icon == "all_chats";
+                        var iconShare = compactDesktopFolder ? 0.62 : compactUtilityIcon ? 0.70 : 0.82;
                         var s = (Int32)(Math.Min(w, h) * iconShare);
                         bitmap.DrawImage(img, (w - s) / 2, (h - s) / 2, s, s);
                         return bitmap.ToImage();
@@ -296,6 +299,15 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
         }
 
+        public static BitmapImage RenderApprovalTile(PluginImageSize size, String label, String icon, String status, ApprovalRisk risk)
+        {
+            using var face = RenderIntentTile(size, label, icon, status);
+            using var bitmap = ButtonCanvas(size);
+            bitmap.DrawImage(face, 0, 0, bitmap.Width, bitmap.Height);
+            DrawApprovalBadge(bitmap, risk);
+            return bitmap.ToImage();
+        }
+
         /// <summary>A full-key action with a readable title and explicit DRAFT/SEND intent strip.</summary>
         public static BitmapImage RenderIntentTile(
             PluginImageSize imageSize, String label, String icon, String intent)
@@ -323,60 +335,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             bitmap.FillRectangle(0, barY, w, h - barY, Gray);
             bitmap.DrawText(intent ?? "", 0, barY, w, h - barY, White, fontSize: (Int32)(11 * scale));
             return bitmap.ToImage();
-        }
-
-        /// <summary>
-        /// A full-surface conversation card: the conversation title occupies the upper 75% and
-        /// the live state is written inside a flush colour bar across the bottom 25% — the same
-        /// split as <see cref="RenderSessionSlot"/>, but a chat title is a sentence, not a folder
-        /// name, so it wraps onto up to three lines instead of being cut.
-        ///
-        /// This deliberately bypasses Options+' inset icon canvas and static label strip. A
-        /// conversation is live information, not an icon: its identity and state must remain one
-        /// glanceable unit and update together when the desktop sidebar changes.
-        /// </summary>
-        public static BitmapImage RenderConversationSlot(
-            PluginImageSize imageSize, String title, String stateWord,
-            BitmapColor barColor, Boolean darkText)
-        {
-            using (var bitmap = ButtonCanvas(imageSize))
-            {
-                bitmap.Clear(Background);
-
-                if (String.IsNullOrWhiteSpace(title) || String.IsNullOrWhiteSpace(stateWord))
-                {
-                    return bitmap.ToImage();
-                }
-
-                var w = bitmap.Width;
-                var h = bitmap.Height;
-                var scale = Math.Min(w, h) / 96f;
-                var pad = Math.Max(2, (Int32)(4 * scale));
-                var titleH = (Int32)(h * 0.75f);
-
-                // Use the whole title region. One/two-line names get larger type; long titles can
-                // take three balanced lines instead of leaving black space while ellipsising early.
-                var lines = WrapConversationTitle(title, 12, 3);
-                var fontSize = (Int32)((lines.Length switch { 1 => 18, 2 => 16, _ => 15 }) * scale);
-                var lineH = (Int32)((lines.Length switch { 1 => 22, 2 => 21, _ => 18 }) * scale);
-                var top = Math.Max(0, (titleH - (lines.Length * lineH)) / 2);
-                for (var i = 0; i < lines.Length; i++)
-                {
-                    bitmap.DrawText(
-                        lines[i], pad, top + (i * lineH), w - (2 * pad), lineH,
-                        White, fontSize: fontSize);
-                }
-
-                var barY = titleH;
-                var barH = h - barY;
-                bitmap.FillRectangle(0, barY, w, barH, barColor);
-                bitmap.DrawText(
-                    stateWord, 0, barY, w, barH,
-                    darkText ? Dark : White,
-                    fontSize: (Int32)(14 * scale));
-
-                return bitmap.ToImage();
-            }
         }
 
         /// <summary>Word-wrap a conversation title into at most <paramref name="maxLines"/> lines.</summary>
@@ -446,6 +404,42 @@ namespace Loupedeck.ClaudeConsolePlugin
                 bitmap.DrawText(label, 0, labelY, w, h - labelY, White, fontSize: (Int32)(14 * scale));
                 return bitmap.ToImage();
             }
+        }
+
+        /// <summary>Desktop controls keep their identity; availability is a separate, quiet line.</summary>
+        public static BitmapImage RenderControlTile(PluginImageSize imageSize, String label, String icon,
+            Boolean enabled = true, String status = null)
+        {
+            using var bitmap = ButtonCanvas(imageSize);
+            bitmap.Clear(Background);
+            var w = bitmap.Width;
+            var h = bitmap.Height;
+            var scale = Math.Min(w, h) / 96f;
+            var size = (Int32)(Math.Min(w, h) * 0.54f);
+            try
+            {
+                var glyph = PluginResources.ReadImage(IconResource(icon + (enabled ? "" : "_idle")));
+                bitmap.DrawImage(glyph, (w - size) / 2, (Int32)(h * 0.04f), size, size);
+            }
+            catch (Exception ex) { PluginLog.Verbose(ex, $"KeyImage: control glyph '{icon}' unavailable"); }
+
+            var lines = WrapConversationTitle(label ?? "", 13, 2);
+            var lineH = Math.Max(1, (Int32)(15 * scale));
+            var hasStatus = !String.IsNullOrEmpty(status);
+            var labelY = (Int32)(h * 0.58f);
+            var labelH = (Int32)(h * 0.27f); // reserve status space so the name never jumps when availability changes
+            var top = labelY + Math.Max(0, (labelH - lines.Length * lineH) / 2);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                bitmap.DrawText(lines[i], 2, top + i * lineH, w - 4, lineH, White, fontSize: (Int32)(13 * scale));
+            }
+            if (hasStatus)
+            {
+                var statusY = (Int32)(h * 0.85f);
+                bitmap.DrawText(status, 1, statusY, w - 2, h - statusY,
+                    new BitmapColor(0xAA, 0xAA, 0xB0), fontSize: (Int32)(11 * scale));
+            }
+            return bitmap.ToImage();
         }
 
         private static BitmapBuilder ButtonCanvas(PluginImageSize imageSize)

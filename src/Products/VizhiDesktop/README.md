@@ -20,22 +20,70 @@ product. *(Not an OpenAI product; ChatGPT and Codex are trademarks of OpenAI.)*
 
 ## Status
 
-**Preview, macOS package only.** The core Accessibility mechanism is verified end to end on a live app:
-reading the approval card unfocused, pressing Allow/Deny with another app frontmost and no focus
-theft, writing and submitting the composer, and switching the app between its ChatGPT and Codex
-modes — all while the app sat in the background. Version **0.12.0** adds native Voice Chat and the
-Adaptive 3 layout. Voice uses documented exact button labels and enables only when those controls
-are observed. Native start/end, first-use setup, and microphone behavior still need a live hardware
-pass; automated validation uses synthetic app states and does not record audio. The user's current
-app still reports **No Voice** after 0.12.1, and Voice Draft transcription has succeeded while
-composer insertion failed. Version **0.12.2** adds clipboard recovery for refused drafts; it does
-not claim to repair native Voice detection or direct insertion. Version **0.12.3** adds an
-explicitly configured Voice Chat shortcut that works independently of AX button detection;
-the user's screenshot confirms Control–Shift–V toggles Voice Chat. Live keypad start/stop still
-requires user validation. Copy Answer remains
-unavailable pending a verified assistant-response selector. A fail-closed Windows UI
-Automation foundation exists, but application-identity reconnaissance and live validation have
-not been run, so Windows packaging remains deliberately disabled.
+**Preview, macOS package only. Version 0.17.17 groups code review in Tasks:** two pages, Home and Tools.
+Screenshot is the middle-right Home key in both modes. Find Chat remains middle-right on Tools in ChatGPT; Codex uses Tools → Tasks → View Changes.
+Only the stock Tools navigation binding and untouched review label migrate, with backups.
+Custom assignments and the optional Adaptive 3 layout are preserved.
+Spoken workflows now show **Your request** first, then a shorter labeled task instruction.
+Debug investigates before fixing and can report no bug found. Unchanged stock recipes upgrade
+with a settings backup; custom recipes remain intact. The speak → finish → review → Send
+interaction is unchanged. See the [spoken prompt notes](../../../docs/vizhi-desktop-spoken-prompts-2026-09-22.md).
+Copy Reply now identifies the conversation separately from other web-content areas such as
+diff previews. It refuses two identifiable conversations and excludes auxiliary Copy controls.
+See the [multiple-area copy correction](../../../docs/vizhi-desktop-copy-webareas-2026-09-22.md).
+The opt-in, expiring [Copy Reply diagnostics](../../../docs/vizhi-desktop-copy-diagnostic-2026-09-22.md)
+remain off by default.
+All Mac composer text entry now uses one whole-text insertion path, including older
+Dictate & Send assignments and recovery. It verifies the result and preserves clipboard
+contents when a native paste is needed. The old 20-character typing fallback is removed.
+See the [whole-text implementation and verification notes](../../../docs/vizhi-desktop-whole-text-2026-09-22.md).
+The owner confirmed Screenshot → Explain fails with `composer-selection-changed` on 0.17.2.
+The rich-text editor can expose a generated placeholder through both value and range APIs.
+Version 0.17.3 uses native end-of-input navigation for this case and verifies the inserted
+instruction without replacing the composer. Controlled GUI verification and owner acceptance
+are tracked in the [attachment insertion notes](../../../docs/vizhi-desktop-attachment-caret-2026-09-22.md).
+The owner confirmed the 0.17.3 Screenshot → Explain insertion fix and the Compare/Plan workflow.
+A subsequent Codex Dictate failure exposed missing mode-specific input hints in the adapter.
+Version 0.17.4 adds the installed app's exact Chat, Codex, Plan and Goal hints to the shared
+insertion path. See the [Codex dictation notes](../../../docs/vizhi-desktop-codex-dictation-2026-09-22.md).
+Attach Files now lists recent Downloads on the keypad. Select files and press Attach; Browse
+opens the app's picker for files elsewhere. Paste into Chat accepts copied text, images, or files.
+Existing input is preserved. Summarize and Explain use supplied material and prepare a draft
+for review instead of rejecting it as an existing draft.
+Home keeps Screenshot in the same position in both modes. Tools keeps Attach Files and
+Paste into Chat, with Find Chat in ChatGPT and Copy Reply below. Codex approvals remain at the top; its task prompts are
+under Tasks. Clear Added and source-less Return are absent from default menus.
+The stability changes from 0.16.1 move slow work off keypad callbacks, limit background polling, and clean up
+subscriptions and timers on unload. See the [stability notes](../../../docs/vizhi-desktop-stability-2026-09-21.md).
+The Tools middle key is now **Paste into Chat**: copied text appears immediately in the input,
+below any existing draft. Home **Dictate** appends spoken instructions without duplicating the
+email or sending it. Review the completed draft, then press **Send**. The key shows **Pasted**
+only after insertion is confirmed. See [the workflow and implementation notes](../../../docs/vizhi-desktop-paste-into-chat-2026-09-21.md).
+Send uses an upward arrow in a circle, with a dimmed version for an empty composer. The same
+Home key shows the square Stop control during a response.
+Copy Reply is intended to copy the latest completed answer with one tap, preserving native clipboard formatting.
+Version 0.15.13 removes a confirmed false refusal when the window contains multiple text areas.
+Copy targets the response action without requiring a unique composer; write/send guards remain separate.
+Version 0.15.13 also recognizes separately wrapped response controls by requiring Copy
+and two response actions to occupy one compact horizontal row. Rate response and its
+selected-feedback labels are recognized. Copy Reply was confirmed working by the owner
+in the real ChatGPT app using the MX keypad on 2026-09-20.
+It shows Wait during activity, dims when no answer is available, and confirms Copied after readback.
+Voice Chat uses a waveform in a circle matching Send's size, stroke and colour. Dictate uses a
+simple microphone to distinguish speaking into a draft from a live spoken conversation.
+The macOS reader recognizes the installed app's Working status label and aria-current
+selection marker. Both were missing from the earlier reader; the native fixture now reproduces
+those semantics with AXSelected false.
+Visible task activity now updates the conversation tile when the app identifies one unique
+selected conversation. Missing or ambiguous selection never assigns that activity to a guessed key.
+The conversation reader now accepts explicit Thinking / Complete sidebar badges, including
+named images and accessibility descriptions. Current-app compatibility still needs hardware
+acceptance; a status label inside a response is not attributed to a sidebar chat by guesswork.
+Home retains three direct conversation keys and puts **Dictate · Send/Stop · Voice Chat** in the
+bottom row. Native Voice Chat is still the app's own voice feature. Dictate always prepares text
+for review, including with captured sources; it never becomes a Send button. The owner confirmed
+automatic draft insertion in 0.12.13. New layout/dispatch coverage uses unit tests and the native
+fixture; physical keypad and live app acceptance remain owner-run. Windows packaging is disabled.
 
 ## Setup — the part that matters
 
@@ -45,7 +93,7 @@ is only active while its application is in front — and the whole idea here is 
 while you are somewhere else.
 
 **So the first thing to do after installing is place four keys on your default profile**, which is
-active no matter what you are looking at:
+active when an application-specific profile does not override it:
 
 | Key | What it gives you |
 |---|---|
@@ -77,52 +125,162 @@ put, while contextual keys follow the mode of the focused ChatGPT window. If a C
 a Codex window are both open, the frontmost one wins. An unavailable control says so and does
 nothing rather than searching another window.
 
-**Page 1 · Conversations — the home page.** Three large, readable keys are your three most recent
-conversations. Each card keeps the title in its upper area and reports **Ready**, **Thinking**,
-**Allow?**, or **Complete** in a coloured bar below it. Complete means ChatGPT marked the finished
-result unread; a conversation already open when it finishes returns directly to Ready. Positions
-stay stable while the sidebar reorders. The middle row is **All Chats · New Chat · Search** in
-ChatGPT and **All Chats · New Chat · Changes** in Codex. Changes becomes **No Changes** and is disabled
-until the focused Codex task exposes a diff. All Chats opens a paged folder containing every
-conversation the focused window makes visible; press one to jump. The bottom row answers the one
-that's waiting: **Approve · Deny · Voice Chat**. Idle approval glyphs are grey; pending requests add a risk badge.
-The approval row keeps its position when app modes change.
+**Vizhi Home** is the default packaged layout. Earlier profiles remain available.
 
-**Page 2 · Controls.** The top row is always **Mode · Stop · Voice Draft**. Mode shows the
-current mode with switching arrows; pressing it selects the other mode. The remaining verified
-controls adapt by mode: **Projects · Plugins · Scheduled · Explore** in ChatGPT and
-**Permissions · Attach Files · Pull Requests · Quick Chat** in Codex. The final two positions are
-**Send** and **Copy Answer / Changes**. Copy Answer currently reads **No Answer**: this release
-does not have a verified way to distinguish the latest assistant response from other Copy buttons.
+| Page | Top row | Middle row | Bottom row |
+|---|---|---|---|
+| Home — ChatGPT | Recent chat 1 · 2 · 3 | Chats · New Chat · Screenshot | Dictate · Send/Stop · Voice Chat |
+| Home — Codex | Recent task 1 · 2 · 3 | Chats · New Task · Screenshot | Dictate · Send/Stop · Voice Chat |
+| Tools — ChatGPT | Mode · — · — | Attach Files · Paste into Chat · Find Chat | Copy Reply · Prompts · More |
+| Tools — Codex | Mode · Approve · Deny | Attach Files · Paste into Chat · — | Copy Reply · Tasks · More |
 
-**Page 3 · Workflows.** The nine stable positions become general conversation workflows in
-ChatGPT (**Summarize, Explain, Rewrite, Draft, Compare, Research, Brainstorm, Plan, Continue**) and
-development workflows in Codex (**Review PR, Debug, Refactor, Write Tests, Explain Diff, Fix CI,
-Security, Update Dependencies, Continue**). Workflows missing a target are drafts: Vizhi fills the
-composer and brings the app forward for editing instead of sending an incomplete request. Each
-key has a **DRAFT** or **SEND** strip; existing composer text is preserved and the workflow shows
-**Draft Exists**. New Codex defaults draft Review PR, Debug, and Refactor because their targets
-need to be supplied. Your existing workflow JSON retains its own submission choices.
+The two pages stay in place across mode changes. Dictate and Send/Stop keep their physical
+positions; native Voice Chat moves directly onto Home. The Mode key names the current mode and
+shows **TO CODEX** or **TO CHATGPT**. Approve/Deny retain their old Actions-page positions on Tools,
+including the request guard, risk badge and second confirmation for a high-risk request.
+
+**Send/Stop:** the key shows Send when an existing draft can be submitted, Stop while a response
+is running, and a disabled state when neither action is available. It executes the displayed verb:
+a Stop press cannot turn into Send when a response ends just before the tap. Rapid duplicate taps
+are suppressed. Stopping a response never invokes the native Voice Chat stop control.
+
+**Prompts** in ChatGPT keeps its nine configurable favorites. The default Codex **Tasks** menu is:
+
+| Top row | Middle row | Bottom row |
+|---|---|---|
+| View Changes · Review Code · Run Tests | Debug · Refactor · Explain Diff | Fix CI · Security · — |
+
+**More** holds Continue, Update Deps, optional Review PR / Write Tests, and available occasional app navigation.
+Custom task content and order are retained; custom layouts may use host paging. Continue and
+Update Deps are available from More using their configured slots. ChatGPT’s Continue stays in Prompts. Source clearing appears only when explicitly staged
+sources exist. See the [Tasks menu notes](../../../docs/vizhi-desktop-tasks-menu-2026-09-23.md).
+Find Chat opens the query input: use Speak Query, or tap the query tile to focus typing/retry.
+Results are selectable on the keypad. NO MATCHES YET differs from unavailable search.
+Chats lists recent conversations exposed by the app, not guaranteed complete account history.
+
+ChatGPT workflows: **Summarize, Explain, Rewrite, Draft Reply, Compare, Research, Brainstorm,
+Plan, Continue**. Codex workflows: **Review Code, Debug, Refactor, Run Tests, Explain Diff,
+Fix CI, Security, Update Deps, Continue**. Review Code checks the uncommitted diff; Run Tests
+runs existing tests. Review PR and Write Tests are available from More.
+
+**SPEAK workflows:** Draft Reply, Rewrite, Compare, Research, Debug, Refactor, Fix CI and Review PR.
+Tap the workflow, speak the needed scope, and tap again to finish. Vizhi composes and inserts the
+complete brief automatically. The same key becomes **Send Draft / REVIEW FIRST**: review the
+app's input, then tap to submit. Home's Send also submits and resets the workflow key.
+No blank template is inserted before dictation. Window/editor/mode and any exposed selected chat
+are pinned before recording; changes refuse delivery and retain the complete brief for retry.
+The app must expose those accessibility signals; the native fixture cannot establish live app
+compatibility. Failed insertion shows **Insert Draft / HOLD TO DISCARD**, with the same tap retry
+and hold discard behavior as Voice Draft. Plain Dictate remains available for freeform input.
+
+**SEND** workflows with an empty composer submit their clearly scoped request immediately.
+With existing input or staged sources they preserve that material and prepare an unsent draft;
+the same key becomes Send Draft. Summarize, Explain, Brainstorm, Plan, and Continue have
+source-specific instructions. A source task does not silently summarize the earlier conversation.
+Success shows **Sent / REQUEST SENT**: actual progress belongs to the conversation state and
+results in the app. Fix CI now collects a run/branch brief; Update Deps and Write Tests prepare
+reviewable editing requests. Tools → Tasks → View Changes opens the diff while the keypad stays in Tasks; repeated taps leave the panel open. Opened means the panel was confirmed; Not available means no app-owned review route is exposed; Couldn’t open means a supported opening could not be confirmed. Review Code asks Codex for findings.
+Codex mode alone does not establish Git Review availability. Website previews and site-building
+conversations may have no Review surface. View Changes stays dimmed with **Not available**
+for these contexts; it does not send a guessed keyboard shortcut or claim there are no changes.
+A real Review panel remains available even when its diff is empty. Review controls in an embedded
+website cannot enable the app command. See the [Review availability notes](../../../docs/vizhi-desktop-review-availability-2026-09-23.md).
+App-control requests show Requested unless completion is observed. Mode switching verifies
+the destination. Native Voice Chat shows End Voice when its active state is observable.
+
+On upgrade, only unchanged stock workflow slots migrate to the new defaults. Sibling
+`.before-flow` and `.before-0.17` files preserve the original JSON during their respective upgrades, and customized prompts/slots and metadata stay
+intact. Reordered or shortened collections are left in place. Set `Input` to `voice` and include
+`{brief}` in a custom template to opt into the spoken flow. `Submit: false` without voice input
+retains the ordinary draft-and-edit behavior. Example configurations ship under `examples/`.
+
+## Attach documents without the keyboard
+
+1. Open the intended chat, then **Tools → Attach Files**.
+2. Tap one or more files from recent **Downloads**. SELECTED marks each choice; tap again to undo.
+3. Press **Attach N**. Verified attachment returns to Tools; no message is sent.
+4. Choose **Prompts → Summarize** or **Compare**, or return Home and Dictate an instruction.
+   Review the input and explicitly Send.
+
+The list reads Downloads only when opened or refreshed: up to 18 recent eligible regular files
+from a bounded scan of 2,048 entries. There is no background indexing. Files must be nonempty,
+not symlinks, and at most 50 MiB each; one operation permits eight files / 100 MiB total. The app
+may impose its own type or upload limits. Browse opens its normal picker for other locations.
+A changed file/chat refuses attachment. Check Files means acknowledgment was uncertain; the
+same open picker cannot retry that paste. Inspect the composer before making a new selection.
+Files with conflicting exposed names can be refused to avoid falsely acknowledging an old item.
+
+**Paste into Chat** also handles files copied in Finder and image clipboard data. File/image
+payloads take precedence over filename/description text. Clipboard images are saved privately
+as PNGs; the operation restores the clipboard unless a newer copy supersedes it.
+
+## Reply to a customer using source material
+
+1. In the email, highlight the customer's text and copy it with **⌘C**.
+2. Open the intended ChatGPT conversation. Press the physical right paging button to reach
+   **Tools**, then tap its middle **Paste into Chat** key. The email appears immediately;
+   **Pasted** confirms insertion. Existing input is preserved.
+3. Return to **Home → Dictate**. Say “Draft a polite reply confirming Friday delivery,” then tap
+   again to finish. Your instruction appears below the email. Review, then press **Send**.
+4. After the answer finishes, go to **Tools → Copy Reply**. No selection is needed.
+5. Return to your email, paste the copied reply, review it, and send it yourself.
+
+**Use Selection** on the optional **System → Ask ChatGPT** page still stages highlighted text
+and records its source window. With that route, Dictate inserts the instruction and staged
+sources together, and **Return to App → Paste Reply** can insert the copied answer into the
+empty reply field you select. Clipboard text imported while inside ChatGPT has no known source;
+use your usual app switch to return to the email.
+
+**Home → Screenshot** opens the macOS region picker. Choose a region, or press Escape to cancel.
+The screenshot attaches immediately to the chat you started from, preserving existing input.
+The key shows **Select Area → Attaching → Attached**. Type your instruction or use **Dictate**,
+then review the thumbnail and press **Send**. Dictate does not attach the same image again.
+Switching chats or modes during capture refuses the attachment. **Check Image** means the app's
+attachment acknowledgement could not be verified: inspect the composer before capturing again.
+Remove unwanted thumbnails in ChatGPT; **Clear Added** only clears explicitly staged sources.
+The first screenshot may require Screen Recording access for the Logi service/helper.
+Actual attachment accessibility varies by app version and needs live testing.
+
+Up to eight sources (50,000 text characters total) can be staged. Source counts appear on capture
+keys. Captures do not submit messages. A failed capture does not reuse old clipboard contents;
+previously staged sources remain until used or cleared. Source text and the retained reply stay
+in memory; screenshots are private files under `~/.claude/claude-console/desktop-captures/`.
+Clear Sources clears staging only, not files, clipboard contents or text already in an app.
+
+**System access:** this installation adds an Ask ChatGPT page without replacing existing System
+keys. The reusable `tools/install-desktop-context-page.py` installer accepts the explicit selected
+System `ProfileInfo.json`; the plugin never changes System at startup. App-specific keypad profiles
+can take priority over System. Assign **Vizhi Desktop → Context → Ask ChatGPT** to those profiles
+if needed. Returning uses the originally captured source window; a closed/replaced window reports
+Source Closed. Paste Reply requires the original app and the empty field you explicitly selected.
 
 ## Start with one draft
 
-1. Open the intended conversation and go to **Controls**.
-2. Press **Voice Draft · DRAFT**, speak, then press it again to finish dictation. The key shows
-   **PRESS TO STOP** while recording and **Transcribing · WAIT** while processing.
-3. Read and edit the transcript in the app. If **Paste Draft · CMD+V** appears, insertion was not
-   confirmed and the transcript was copied to your clipboard. Check for any text already inserted,
-   click the intended composer, and paste with **Cmd+V** as needed. This replaces your previous
-   clipboard contents. Press **Send** when the draft is ready.
+1. Open the intended conversation and go to **Home**.
+2. Press **Dictate**, speak, then press it again to finish. **Listening · TAP TO FINISH**
+   indicates recording; **Preparing · WAIT** indicates processing.
+3. Your words appear in the input, below any existing draft. Read and edit them, then press
+   **Send** on the keypad. Another Dictate press adds more detail without submitting.
+   Insertion can temporarily use the clipboard for native paste and restores its contents,
+   unless you copied something newer. If **Insert Draft · HOLD TO DISCARD** appears, the
+   transcript is retained in memory. **Tap** to retry against the original chat and draft,
+   or **hold** until **Discarded** appears to forget the retained recording. Discarding
+   does not clear text already in the app. If the chat or draft changed during recording,
+   insertion is refused. Retries never overwrite another draft or send automatically.
+   The retained draft otherwise lasts until insertion or plugin restart. Releasing a hold
+   never retries insertion or starts another recording.
 4. Use **Stop** to interrupt a running response. Its square icon is distinct from navigation.
 
 **Dictate & Send** remains an optional action and keeps working in older profiles. It sends the
 transcript when you stop dictating. Workflows marked SEND also submit immediately;
 DRAFT workflows wait for your edit. These keys address the window targeted when the operation
-runs, so keep the intended conversation open through transcription. Existing draft text blocks
-insertion; move or finish that draft before starting another workflow or dictation.
+runs, so keep the intended conversation open through transcription. Home Dictate and spoken saved workflows preserve existing input. Fixed prompts and the optional
+Dictate & Send action retain their existing empty-composer requirements.
 Voice Draft errors stay visible until your next attempt. **Not typed** means insertion failed and
-clipboard recovery did not succeed; **No speech** means no usable transcript was produced. The
-clipboard fallback applies only to Voice Draft, never to Dictate & Send.
+draft retention did not succeed; **No speech** means no usable transcript was produced. The
+retained-draft retry applies only to Voice Draft, never to Dictate & Send. Version **0.17.6**
+replaces the old character-event fallback with complete-text insertion or one verified paste.
+Partial insertion is never followed by another full copy or automatic submission.
 
 Send does not replace text. It requires a non-empty draft, one composer, and an enabled exact
 Send control in the composer's local container. It refuses while an approval or Stop control
@@ -140,12 +298,12 @@ Codex tasks as that capability rolls out. See the [official Voice documentation]
 With the confirmed shortcut configured:
 
 1. Keep the intended ChatGPT chat or Codex task frontmost. Press **Voice Chat · TOGGLE** at the
-   bottom-right of Adaptive 3's home page to start; press again to stop.
+   bottom-right of Home to start; press again to stop.
 2. Complete any first-use setup in ChatGPT. **Requested** means the shortcut was posted, not that
    the app acknowledged it. The key stays **Voice Chat / TOGGLE** in both states.
 3. **Open App** means ChatGPT was not frontmost/running and no shortcut was sent. **Dictating**
    means finish the local Voice Draft capture first. Rapid repeat presses are suppressed.
-4. **Stop** on Controls interrupts task generation; it does not end Voice Chat.
+4. **Stop** on Home interrupts task generation; it does not end Voice Chat.
 
 The local configuration is `~/.claude/claude-console/desktop-voice-shortcut.json`:
 
@@ -170,17 +328,12 @@ starts ChatGPT dictation, but this update retains the existing offline Voice Dra
 
 ## Choose a layout
 
-- **Vizhi Adaptive 3** keeps Approve · Deny and adds native Voice Chat on the home page. It is the packaged default
-  for new installations. Updates preserve the currently selected profile; choose Adaptive 3 in
-  Options+ to adopt the new layout.
-- Earlier **Vizhi Adaptive 2** and customized profiles are retained with their existing assignments.
-- **Vizhi Everyday** replaces only the home approval row with **Voice Draft · Send · Stop**.
-  Voice Draft is the dictation-to-draft action. The other two pages are the same. Import
-  [VizhiDesktop-Everyday.lp5](package/optional-profiles/VizhiDesktop-Everyday.lp5) explicitly in
-  Options+; it is stored outside the auto-import folder and never selected automatically.
-
-Both profiles follow ChatGPT/Codex mode. Everyday is a user-selected alternative; switching
-app modes never swaps approval keys into the dictation row. Existing customized profiles are retained.
+- **Vizhi Home** ships as the two-page default: Home and mode-aware Tools.
+- **Vizhi Adaptive 3** remains an optional three-page layout with approvals on its first page.
+  Import [VizhiDesktop-Adaptive3.lp5](package/optional-profiles/VizhiDesktop-Adaptive3.lp5) explicitly.
+- Installed Flow 2, Flow, Everyday, Adaptive and customized profiles are retained. Ordinary
+  updates add the packaged layout without changing the selected profile. This user-authorized
+  redesign installation explicitly selects Vizhi Home and preserves the System source page.
 
 ## Short chat labels and workflow favorites
 
@@ -206,8 +359,8 @@ aliases fall back to the original title. Mode names and title keys are case-sens
 rewritten during upgrades. Use an explicit `submit` value when creating a favorite; older
 entries without one retain their existing send behavior.
 
-**Review Changes** and **Run Tests** are also available as separate optional actions in Options+.
-Review Changes scopes itself to uncommitted work and stops if the tree is clean. Review PR
+**Review Code** and **Run Tests** are also available as separate optional actions in Options+.
+Review Code scopes itself to uncommitted work and stops if the tree is clean. Review PR
 requires a PR identifier. Run Tests executes existing tests and reports evidence; Write Tests
 asks for new coverage. To put an optional action on the adaptive workflow page, replace one
 entry in the Codex JSON with its example from `desktop-workflow-extras.json`.

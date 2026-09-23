@@ -3,7 +3,7 @@
 #
 #   bash tests/run-all.sh
 #
-# Safe to run any time — the test project builds the plugin with SkipPluginLink=true, so it never
+# Safe to run any time — the test project compiles product sources directly, so it never
 # writes the dev .link into the live Logi plugin directory or reloads LogiPluginService.
 set -uo pipefail
 
@@ -42,6 +42,8 @@ echo
 if [ "$(uname -s)" = "Darwin" ]; then
   echo "▶ desktop package build"
   if ! python3 "$REPO/tests/scripts/test-desktop-package.py"; then STATUS=1; fi
+  echo "▶ desktop shortcut regressions"
+  if ! python3 "$REPO/tests/scripts/test-desktop-shortcut.py"; then STATUS=1; fi
   echo "▶ desktop AX regressions"
   if ! python3 "$REPO/tests/scripts/test-desktop-ax.py"; then
     STATUS=1
@@ -49,6 +51,9 @@ if [ "$(uname -s)" = "Darwin" ]; then
 fi
 
 echo
+echo "▶ desktop harness self-tests"
+if ! python3 "$REPO/tests/scripts/test-desktop-harness.py"; then STATUS=1; fi
+
 echo "▶ bridge script tests"
 if ! bash "$REPO/tests/scripts/test-bridge-scripts.sh"; then
   STATUS=1

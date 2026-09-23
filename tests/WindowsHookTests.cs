@@ -150,10 +150,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var main = source.Substring(source.IndexOf("private static Int32 Main(", StringComparison.Ordinal));
 
             var watchdog = main.IndexOf("StartWatchdog(", StringComparison.Ordinal);
-            var breadcrumb = main.IndexOf("EntryBreadcrumb(args);", StringComparison.Ordinal);
+            var processScan = main.IndexOf("TooManyOfUs()", StringComparison.Ordinal);
             var dispatch = main.IndexOf("args[0] == \"statusline\"", StringComparison.Ordinal);
             Assert.True(watchdog >= 0, "Main no longer arms the watchdog");
-            Assert.True(watchdog < breadcrumb, "the watchdog must be armed before even diagnostic file I/O");
+            Assert.True(processScan > watchdog, "the watchdog must be armed before process enumeration and failure logging");
             Assert.True(watchdog < dispatch, "the watchdog must be armed before the verb dispatch");
 
             // Background, so it can never be the thing keeping the process alive; exit 0, so a

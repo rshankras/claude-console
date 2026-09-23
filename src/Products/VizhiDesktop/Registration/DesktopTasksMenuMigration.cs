@@ -1,0 +1,48 @@
+namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
+{
+    using System;
+    using System.IO;
+    using System.Linq;
+    using System.Text.Json;
+    using System.Text.Json.Nodes;
+
+    internal static class DesktopTasksMenuMigration
+    {
+        internal const String Profile = "A8B982E4103C4F99A4C75070AF60A6E4";
+        internal const String Search = "$VizhiDesktop___Loupedeck.ClaudeConsolePlugin.DesktopActions.DesktopNavigateCommand___search";
+
+        // Retain legacy adaptive navigation assignments; only the stock Tools key changes.
+        internal static Boolean Upgrade(String applicationDirectory)
+        {
+            var file = Path.Combine(applicationDirectory, "Profiles", Profile, "ProfileInfo.json");
+            if (!File.Exists(file)) return false;
+            String temp = null;
+            try
+            {
+                var original = File.ReadAllText(file);
+                var doc = JsonNode.Parse(original);
+                if ((String)doc?["name"] != Profile || (String)doc?["nativePluginName"] != "VizhiDesktop") return false;
+                var modes = doc?["layout"]?["layoutModes"] as JsonArray;
+                var main = modes?.OfType<JsonObject>().SingleOrDefault(m => (String)m["modeName"] == "main");
+                var pages = main?["workspaces"]?[0]?["pressPages"] as JsonArray;
+                JsonNode Key(String pageName)
+                {
+                    var page = pages?.OfType<JsonObject>().SingleOrDefault(p => (String)p["displayName"] == pageName);
+                    return (page?["controls"] as JsonArray)?.OfType<JsonObject>().SingleOrDefault(c => (Int32?)c["controlId"] == 5);
+                }
+                var tools = Key("Tools");
+                if ((String)tools?["pressAction"] != DesktopHomeNavigationMigration.NewBinding) return false;
+                tools["pressAction"] = Search;
+                var backup = file + ".before-0.17.16";
+                if (!File.Exists(backup)) File.Copy(file, backup);
+                temp = file + ".tasks-" + Guid.NewGuid().ToString("N");
+                File.WriteAllText(temp, doc.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                if (File.ReadAllText(file) != original) return false;
+                File.Move(temp, file, true);
+                return true;
+            }
+            catch { PluginLog.Warning("Desktop Tasks menu migration skipped"); return false; }
+            finally { if (temp != null && File.Exists(temp)) File.Delete(temp); }
+        }
+    }
+}

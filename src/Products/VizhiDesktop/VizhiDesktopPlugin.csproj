@@ -11,7 +11,7 @@
          crash-disable marker (Logs/plugin_crashes/) by assembly version; if this stays
          1.0.0.0 forever, any one load-crash disables the plugin permanently. Bumping it
          per release lets a new build dodge a stale marker. -->
-    <Version>0.12.3</Version>
+    <Version>0.17.17</Version>
 
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -54,6 +54,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Compile against the graphics API already supplied by PluginApi's host. Never copy its
+         managed or native dependency closure into the distributable plugin. -->
+    <PackageReference Include="SkiaSharp" Version="2.88.9" IncludeAssets="compile" PrivateAssets="all" />
     <Reference Include="PluginApi">
       <HintPath>$(PluginApiDir)PluginApi.dll</HintPath>
       <!-- Host-provided at runtime; never ship it in the package (Marketplace QA requirement) -->

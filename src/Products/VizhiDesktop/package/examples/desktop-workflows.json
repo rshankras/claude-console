@@ -1,0 +1,74 @@
+[
+  {
+    "id": "review_changes",
+    "label": "Review Code",
+    "icon": "review",
+    "submit": true,
+    "prompt": "Review the current workspace's uncommitted changes. If the working tree is clean, report that and stop. Check correctness, edge cases, and security; give file:line and a concrete failure scenario for each finding. Do not edit files.",
+    "scope": "CHANGES"
+  },
+  {
+    "id": "debug",
+    "label": "Debug",
+    "icon": "fix_bug",
+    "submit": false,
+    "input": "voice",
+    "prompt": "Your request:\n{brief}\n\nDebug task:\nInvestigate using the current workspace and supplied context. If you find a bug, reproduce it, explain the cause, make the smallest fix, and verify it with an appropriate test. If no bug is found, say so. Ask if the target is unclear.",
+    "scope": "BRIEF"
+  },
+  {
+    "id": "refactor",
+    "label": "Refactor",
+    "icon": "refactor",
+    "submit": false,
+    "input": "voice",
+    "prompt": "Your request:\n{brief}\n\nRefactor task:\nRefactor the requested area for clarity without changing behavior or public APIs. Use the workspace and supplied context, ask if the target is unclear, and run relevant tests.",
+    "scope": "BRIEF"
+  },
+  {
+    "id": "run_tests",
+    "label": "Run Tests",
+    "icon": "write_tests",
+    "submit": true,
+    "prompt": "Run this project's existing relevant test suite using its documented commands. Report the command, exit status, failures, and any tests you could not run. Do not claim tests passed unless you executed them; do not write new tests or change code.",
+    "scope": "TESTS"
+  },
+  {
+    "id": "explain_diff",
+    "label": "Explain Diff",
+    "icon": "diff",
+    "prompt": "Explain the current diff — uncommitted changes if any, otherwise the last commit; state which scope you used — change by change: what each does, why it was likely needed, and anything risky or surprising a reviewer should look at twice.",
+    "scope": "DIFF"
+  },
+  {
+    "id": "fix_ci",
+    "label": "Fix CI",
+    "icon": "deploy",
+    "prompt": "Your request:\n{brief}\n\nFix CI task:\nUse the supplied context to identify the repository, branch, and failing run; ask if unclear. Investigate, reproduce locally where possible, fix the cause, and report what you verified.",
+    "scope": "RUN",
+    "input": "voice",
+    "submit": false
+  },
+  {
+    "id": "security",
+    "label": "Security",
+    "icon": "security",
+    "prompt": "Run a security pass over the recent changes: unvalidated input at trust boundaries, injection, path traversal, secrets in code or logs, unsafe temp files and permissions. Rate each finding by exploitability with the concrete attack; skip purely theoretical ones.",
+    "scope": "CHANGES"
+  },
+  {
+    "id": "update_deps",
+    "label": "Update Deps",
+    "icon": "push",
+    "prompt": "Update this project's dependencies conservatively: patch and minor versions first, read changelogs for anything breaking, update lockfiles, run the full test suite, and summarize what moved and what you deliberately held back.",
+    "scope": "DEPS",
+    "submit": false
+  },
+  {
+    "id": "continue",
+    "label": "Continue",
+    "icon": "enter",
+    "prompt": "Continue where we left off: restate in two sentences what we were doing and what remains, then proceed with the next step. If the agreed next step is unclear, ask. Do not treat this as approval of a pending permission request.",
+    "scope": "TASK"
+  }
+]

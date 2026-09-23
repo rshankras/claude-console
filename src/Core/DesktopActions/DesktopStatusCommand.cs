@@ -15,14 +15,14 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// Display-only. Working uses a static hourglass: the monitor already refreshes on material
     /// state changes, and a display key must not create a permanent LCD redraw loop off-profile.
     /// </summary>
-    public class DesktopStatusCommand : PluginDynamicCommand
+    public class DesktopStatusCommand : DesktopCommandBase
     {
         public DesktopStatusCommand()
             : base(displayName: "Activity", description: "Whether the agent is working, waiting on you, ready — or hidden", groupName: "Agent")
         {
             if (DesktopServices.Declared)
             {
-                DesktopServices.Monitor.OnChanged += _ => this.Refresh();
+                DesktopServices.OnMonitorChanged(_ => this.Refresh());
             }
         }
 
@@ -32,7 +32,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         }
 
         protected override void RunCommand(String actionParameter) =>
-            PluginLog.Info("DesktopStatusCommand: pressed (display-only)");
+            Execute();
+
+        internal static void Execute() { /* Display-only indicator. */ }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
             Face().label;
@@ -46,6 +48,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         private static (String label, String icon) Face()
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
+            return FaceFor(state);
+        }
+
+        internal static (String label, String icon) FaceFor(DesktopState state)
+        {
             return state.Activity switch
             {
                 DesktopActivity.Working => ("Working", "busy0"),

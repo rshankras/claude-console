@@ -41,6 +41,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("Deny", _app.DenyLabels);
         }
 
+        [Theory]
+        [InlineData("Work with ChatGPT")]
+        [InlineData("Ask ChatGPT")]
+        [InlineData("Do anything")]
+        [InlineData("Describe your task to generate a plan...")]
+        [InlineData("Describe your goal, define measurable outcomes for best results")]
+        public void Shared_composer_hints_cover_chat_codex_plan_and_goal(String hint)
+        {
+            Assert.Contains(hint, _app.ComposerPlaceholderLabels);
+            // Status text and incomplete matches must never become empty-draft hints.
+            Assert.DoesNotContain("Working…", _app.ComposerPlaceholderLabels);
+            Assert.DoesNotContain("Describe your task", _app.ComposerPlaceholderLabels);
+        }
+
         [Fact]
         public void No_label_grants_standing_permission()
         {

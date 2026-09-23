@@ -56,7 +56,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             }
 
             BridgeManager.Instance.SendPrompt(entry.Prompt);
-            PluginLog.Info($"GitCommand: Sent '{entry.Id}'");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)

@@ -68,10 +68,15 @@ else:
 print(f"    product       {product}")
 print(f"    yaml version  {yaml_version}")
 
-# --- never bundle PluginApi.dll ----------------------------------------------------------------
+# --- never bundle host API or graphics dependencies --------------------------------------------
+host_dependencies = {
+    "pluginapi.dll", "skiasharp.dll", "skiasharp.harfbuzz.dll", "harfbuzzsharp.dll",
+    "libskiasharp.dll", "libskiasharp.dylib", "libskiasharp.so",
+    "libharfbuzzsharp.dll", "libharfbuzzsharp.dylib", "libharfbuzzsharp.so",
+}
 for n in names:
-    if os.path.basename(n).lower() == "pluginapi.dll":
-        err(f"{n} is bundled — the host provides PluginApi.dll; Marketplace QA rejected a submission over exactly this")
+    if os.path.basename(n).lower() in host_dependencies:
+        err(f"{n} is bundled — the host provides PluginApi and its graphics dependencies")
 
 # --- version agreement: DLL FileVersion, package yaml, csproj, CHANGELOG ------------------------
 def file_version(data):

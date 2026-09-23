@@ -27,6 +27,9 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         /// <summary>Hand it to the product's transcript sink and leave it there for review.</summary>
         DesktopDraft,
+
+        /// <summary>Search query only. A separate sink is pinned when capture starts.</summary>
+        DesktopSearch,
     }
 
     internal enum VoicePhase
@@ -98,6 +101,23 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         /// <summary>Raised on every phase change, so the keys can repaint. Never raised while holding the lock.</summary>
         internal event Action Changed;
+
+        /// <summary>Closing a voice surface can stop its capture, but can never start one.</summary>
+        internal VoiceAction StopIfCapturing(VoiceIntent intent, DateTime now)
+        {
+            VoiceAction action;
+            lock (_lock)
+            {
+                if (_intent != intent) return VoiceAction.Refuse;
+                if (_phase == VoicePhase.Starting)
+                { _phase = VoicePhase.Cancelling; action = VoiceAction.Cancel; }
+                else if (_phase == VoicePhase.Recording)
+                { _phase = VoicePhase.Transcribing; _since = now; action = VoiceAction.Stop; }
+                else return VoiceAction.Refuse;
+            }
+            Changed?.Invoke();
+            return action;
+        }
 
         /// <summary>
         /// Decide what a press of the key with <paramref name="pressed"/> intent should do, and move

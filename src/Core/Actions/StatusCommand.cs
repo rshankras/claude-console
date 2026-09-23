@@ -119,7 +119,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         protected override void RunCommand(String actionParameter)
         {
             // Display-only indicator. No terminal action on press.
-            PluginLog.Info("StatusCommand: pressed (display-only)");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)

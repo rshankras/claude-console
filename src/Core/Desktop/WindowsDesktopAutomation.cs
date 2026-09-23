@@ -81,7 +81,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             }
 
             matched = ReadString(root, "matched");
-            PluginLog.Info($"WindowsDesktopAutomation.Press: “{matched}” (frontmost stayed {ReadString(root, "frontAfter")})");
             return true;
         }
 

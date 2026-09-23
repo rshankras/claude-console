@@ -11,37 +11,46 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// takes a fresh snapshot before resolving, so a mode switch between glance and thumb cannot
     /// dispatch a ChatGPT action into Codex (or the reverse).
     /// </summary>
-    public class DesktopContextCommand : PluginDynamicCommand
+    public class DesktopContextCommand : DesktopCommandBase
     {
         internal const String Primary = "primary";
         internal const String Secondary1 = "secondary_1";
         internal const String Secondary2 = "secondary_2";
         internal const String Secondary3 = "secondary_3";
         internal const String Secondary4 = "secondary_4";
+        internal const String Files = "files";
+        private readonly FailureFace _feedback;
+        private String _feedbackParameter;
 
         private static readonly IReadOnlyDictionary<String, Pair> Pairs =
             new Dictionary<String, Pair>(StringComparer.Ordinal)
             {
+                [Files] = new Pair(
+                    new Choice(DesktopControl.AttachFiles, "Attach Files", "attach"),
+                    new Choice(DesktopControl.AttachFiles, "Attach Files", "attach")),
                 [Primary] = new Pair(
-                    new Choice(DesktopControl.Search, "Search", "explore"),
-                    new Choice(DesktopControl.Changes, "Changes", "diff", "No Changes")),
+                    new Choice(DesktopControl.Search, "Search", "search"),
+                    new Choice(DesktopControl.Changes, "View Changes", "diff", "Not available")),
                 [Secondary1] = new Pair(
                     new Choice(DesktopControl.Projects, "Projects", "project"),
                     new Choice(DesktopControl.Permissions, "Permissions", "security")),
                 [Secondary2] = new Pair(
                     new Choice(DesktopControl.Plugins, "Plugins", "model"),
-                    new Choice(DesktopControl.AttachFiles, "Attach Files", "document")),
+                    new Choice(DesktopControl.AttachFiles, "Attach Files", "attach")),
                 [Secondary3] = new Pair(
-                    new Choice(DesktopControl.Scheduled, "Scheduled", "plan"),
+                    new Choice(DesktopControl.Scheduled, "Scheduled", "scheduled"),
                     new Choice(DesktopControl.PullRequests, "Pull Requests", "create_pr")),
                 [Secondary4] = new Pair(
                     new Choice(DesktopControl.Explore, "Explore", "explore"),
-                    new Choice(DesktopControl.QuickChat, "Quick Chat", "all_chats")),
+                    new Choice(DesktopControl.QuickChat, "Quick Chat", "quick_chat")),
             };
 
         public DesktopContextCommand()
             : base()
         {
+            this.SetWidget(true);
+            _feedback = new FailureFace(() => this.ActionImageChanged());
+            DesktopServices.Lifetime.OnStop(_feedback.Dispose);
             if (!DesktopServices.Declared)
             {
                 return;
@@ -53,45 +62,57 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                     .SetDescription("Changes with the focused ChatGPT/Codex mode and only acts when its target is visible");
             }
 
-            DesktopServices.Monitor.OnChanged += _ => this.ActionImageChanged();
+            DesktopServices.OnMonitorChanged(_ => this.ActionImageChanged());
         }
 
         protected override void RunCommand(String actionParameter)
+        {
+            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter));
+        }
+
+        private void RunDesktopCommand(String actionParameter)
         {
             if (!DesktopServices.Declared)
             {
                 return;
             }
 
+            _feedbackParameter = actionParameter;
+            _feedback.Show("Working");
+            _feedback.Show(Execute(actionParameter, DesktopServices.App, DesktopServices.Automation, () => this.ActionImageChanged()));
+        }
+
+        internal static String Execute(String actionParameter, IDesktopAppAdapter app,
+            IDesktopAutomation automation, Action invalidate)
+        {
             // Press-time truth, not the last rendered snapshot. The target window or mode may
             // have changed since the keypad was drawn.
-            var snapshot = DesktopServices.Automation.Status();
+            var snapshot = automation.Status();
             var face = FaceFor(actionParameter, snapshot.Mode, snapshot.AvailableControls);
             if (!face.Enabled)
             {
-                PluginLog.Info($"DesktopContextCommand({actionParameter}): {face.Label} — ignored");
-                this.ActionImageChanged();
-                return;
+                invalidate();
+                return face.Status ?? "Unavailable";
             }
+            if (face.Control == DesktopControl.Changes) return DesktopNavigateCommand.OpenChanges(automation);
 
-            var labels = DesktopServices.App.ControlLabels(face.Control);
-            if (!DesktopServices.Automation.PressInMode(labels, snapshot.Mode, out _))
+            var labels = app.ControlLabels(face.Control);
+            if (!automation.PressInMode(labels, snapshot.Mode, out _))
             {
                 PluginLog.Warning($"DesktopContextCommand({actionParameter}): '{face.Label}' disappeared before press");
+                return "Not Opened";
             }
+            return "Requested";
         }
 
-        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
-        {
-            var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
-            return FaceFor(actionParameter, state.Mode, state.AvailableControls).Label;
-        }
+        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) => "\u200B";
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             var face = FaceFor(actionParameter, state.Mode, state.AvailableControls);
-            return KeyImage.Render(imageSize, face.Label, KeyImage.Blue, face.Icon);
+            return KeyImage.RenderControlTile(imageSize, face.Label, face.Icon, face.Enabled,
+                _feedback.IsActive && _feedbackParameter == actionParameter ? _feedback.Text : face.Status);
         }
 
         internal static Face FaceFor(String slot, String mode, DesktopControl available)
@@ -118,25 +139,28 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             var enabled = choice.Control != DesktopControl.None && available.HasFlag(choice.Control);
             return new Face(
                 choice.Control,
-                enabled ? choice.Label : choice.DisabledLabel,
-                enabled ? choice.Icon : "status",
-                enabled);
+                choice.Label,
+                choice.Icon,
+                enabled,
+                enabled ? null : choice.DisabledLabel);
         }
 
         internal readonly struct Face
         {
-            public Face(DesktopControl control, String label, String icon, Boolean enabled)
+            public Face(DesktopControl control, String label, String icon, Boolean enabled, String status = null)
             {
                 this.Control = control;
                 this.Label = label;
                 this.Icon = icon;
                 this.Enabled = enabled;
+                this.Status = status;
             }
 
             public DesktopControl Control { get; }
             public String Label { get; }
             public String Icon { get; }
             public Boolean Enabled { get; }
+            public String Status { get; }
         }
 
         private readonly struct Choice

@@ -105,7 +105,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     break;
             }
 
-            PluginLog.Info($"AnswerCommand: {actionParameter}");
         }
 
         /// <summary>

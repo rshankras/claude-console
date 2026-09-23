@@ -1,0 +1,78 @@
+[
+  {
+    "id": "summarize",
+    "label": "Summarize",
+    "icon": "document",
+    "prompt": "Summarize our conversation so far: decisions, important context, unresolved questions, and the next useful action. Keep it concise and use headings only where they help.",
+    "scope": "CHAT",
+    "sourcePrompt": "Summarize the text, documents, or images supplied with this message. Preserve the key facts, decisions, and action items. If material is missing or unreadable, say so. Do not substitute a summary of earlier conversation."
+  },
+  {
+    "id": "explain",
+    "label": "Explain",
+    "icon": "explain",
+    "prompt": "Explain the topic we were discussing in plain language, including the key idea, why it matters, one concrete example, and the most common misunderstanding.",
+    "scope": "CHAT",
+    "sourcePrompt": "Explain the text, documents, or images supplied with this message in plain language. Identify the key idea, give a concrete example, and explain any visible error or confusing part. Say when material is missing or unreadable."
+  },
+  {
+    "id": "rewrite",
+    "label": "Rewrite",
+    "icon": "document",
+    "submit": false,
+    "input": "voice",
+    "prompt": "Your request:\n{brief}\n\nRewrite task:\nRewrite the supplied material while preserving its meaning and following the requested audience and tone. Ask for missing material.",
+    "scope": "BRIEF"
+  },
+  {
+    "id": "draft",
+    "label": "Draft Reply",
+    "icon": "writing",
+    "submit": false,
+    "input": "voice",
+    "prompt": "Your request:\n{brief}\n\nDraft Reply task:\nDraft a concise reply using the supplied context and requested recipient, goal, and tone. Do not invent facts or commitments. Ask for essential missing details.",
+    "scope": "BRIEF"
+  },
+  {
+    "id": "compare",
+    "label": "Compare",
+    "icon": "diff",
+    "submit": false,
+    "input": "voice",
+    "prompt": "Your request:\n{brief}\n\nCompare task:\nCompare the requested options using the supplied context. Explain the main tradeoffs and recommend an option with clear assumptions. Ask if the options are unclear.",
+    "scope": "BRIEF"
+  },
+  {
+    "id": "research",
+    "label": "Research",
+    "icon": "review_core",
+    "submit": false,
+    "input": "voice",
+    "prompt": "Your request:\n{brief}\n\nResearch task:\nResearch the requested topic using relevant supplied context. Prefer current primary sources, separate facts from inference, and provide practical conclusions with source links.",
+    "scope": "BRIEF"
+  },
+  {
+    "id": "brainstorm",
+    "label": "Brainstorm",
+    "icon": "brain",
+    "prompt": "Brainstorm useful approaches to the problem we were discussing. Give a varied shortlist, identify the strongest three, and explain the tradeoff that makes each one distinct.",
+    "scope": "CHAT",
+    "sourcePrompt": "Use the problem and context supplied with this message to brainstorm useful approaches. Give a varied shortlist, identify the strongest three, and explain their tradeoffs. Ask if the intended problem is unclear."
+  },
+  {
+    "id": "plan",
+    "label": "Plan",
+    "icon": "plan",
+    "prompt": "Turn what we have discussed into an actionable plan with ordered steps, dependencies, risks, verification points, and a clear definition of done.",
+    "scope": "CHAT",
+    "sourcePrompt": "Turn the material and goal supplied with this message into an actionable plan with ordered steps, dependencies, risks, verification points, and a definition of done. Ask if the goal is unclear."
+  },
+  {
+    "id": "continue",
+    "label": "Continue",
+    "icon": "enter",
+    "prompt": "Continue where we left off: briefly restate the current objective and what remains, then take the next useful step. If the agreed next step is unclear, ask. Do not treat this as approval of a pending permission request.",
+    "scope": "CHAT",
+    "sourcePrompt": "Use the material supplied with this message to continue the agreed task. Briefly state the next step; ask if the task or next step is unclear. Do not treat this request as permission for an unrelated action."
+  }
+]

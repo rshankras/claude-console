@@ -57,7 +57,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             if (!caps.ImageInConversation && !caps.ImageAtLaunch)
             {
-                PluginLog.Info($"ScreenshotCommand: {bridge.Agent.DisplayName} takes no images — nothing to do");
                 return;
             }
 
@@ -69,7 +68,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     var path = bridge.CaptureScreenshot();
                     if (path == null)
                     {
-                        PluginLog.Info("ScreenshotCommand: no capture (cancelled, or Screen Recording not granted)");
                         return;
                     }
 
@@ -81,12 +79,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                         bridge.InjectText(
                             $"A screenshot was captured at {path}. Inspect this image with your available image-viewing tools before continuing. ",
                             pressEnter: false);
-                        PluginLog.Info($"ScreenshotCommand: typed {path} into the conversation");
                     }
                     else
                     {
                         bridge.LaunchAgentSession("-i", path);
-                        PluginLog.Info($"ScreenshotCommand: new {bridge.Agent.DisplayName} session with {path}");
                     }
                 }
                 catch (Exception ex)

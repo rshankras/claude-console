@@ -191,8 +191,46 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         internal Func<String, Boolean, String> TranscriptSink { get; set; }
 
+        internal Func<String, String> SearchTranscriptSink { get; set; }
+        // Optional product-owned composed draft; snapshot at capture start, never at stop.
+        internal Func<String, String> DraftTranscriptSink { get; set; }
+        internal Func<Boolean> DesktopCaptureAllowed { get; set; }
+        private Func<Boolean> _desktopCaptureAllowed;
+        internal void ClearDesktopRouting()
+        {
+            TranscriptSink = null; DraftRecoverySink = null;
+            SearchTranscriptSink = null; DraftTranscriptSink = null;
+            _searchCaptureSink = null; _draftCaptureSink = null;
+            VoiceModelOverride = null; SearchAudioHasSignal = null;
+            DesktopCaptureAllowed = null; _desktopCaptureAllowed = () => false;
+        }
+        private Func<String, String> _draftCaptureSink;
+        // Product-owned voice policy. Terminal assemblies exclude Core/Desktop entirely.
+        internal Func<VoiceIntent, (Boolean Overrides, String Path)> VoiceModelOverride { get; set; }
+        internal Func<String, Boolean> SearchAudioHasSignal { get; set; }
+        private Func<String, String> _searchCaptureSink;
+
+        internal void DeliverSearchTranscript(String text, Func<String, String> sink)
+        {
+            String error;
+            try { error = sink?.Invoke(text) ?? (sink == null ? "Cancelled" : null); }
+            catch { error = "Use App"; }
+            if (error != null && error != "Cancelled")
+                this.ReportVoiceFailure(VoiceIntent.DesktopSearch, error, "Search query was not inserted");
+        }
+
+        internal void DeliverScopedDraft(String text, Func<String, String> sink)
+        {
+            if (sink == null) { this.DeliverToSink(text, submit: false); return; }
+            String error;
+            try { error = sink(text); }
+            catch { error = VoiceFailure.NotTyped; }
+            if (error != null && error != "Cancelled")
+                this.ReportVoiceFailure(VoiceIntent.DesktopDraft, error, "Composed draft delivery was not confirmed");
+        }
+
         /// <summary>Optional recovery for a desktop draft the sink refused. Never used for auto-send.</summary>
-        internal Func<String, Boolean> DraftClipboardFallback { get; set; }
+        internal Func<String, Boolean> DraftRecoverySink { get; set; }
 
         /// <summary>
         /// A dictation failed: which key's capture it was, and the words that key should show (#18).
@@ -965,7 +1003,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 _activeTty = session.SessionKey;
                 this.ClearPin();
-                PluginLog.Info($"BridgeManager: unpinned slot {slot} ({session.Project}) — keys follow the frontmost tab again");
                 return;
             }
 
@@ -974,7 +1011,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             Grid.FocusedSession = session.SessionKey;   // survives a plugin reload, like the slot assignments
             _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
             OnTargetChanged?.Invoke();
-            PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.SessionKey} ({session.Project})");
         }
 
         // Drop the pin and go back to following the frontmost tab. Called when the pinned session
@@ -986,7 +1022,6 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            PluginLog.Info($"BridgeManager: released the pin on {_pinnedTty} — keys follow the frontmost tab again");
             _pinnedTty = null;
             Grid.FocusedSession = null;
             OnTargetChanged?.Invoke();
@@ -1175,10 +1210,14 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             // Make sure the speech model is present. If it's still downloading, skip this capture
             // and say so, rather than record audio the helper can't transcribe yet.
-            if (!EnsureVoiceModel())
+            var modelOverride = this.VoiceModelOverride?.Invoke(Voice.Intent) ?? (Overrides: false, Path: (String)null);
+            var modelFile = modelOverride.Overrides ? modelOverride.Path : VoiceModelFile;
+            var modelReady = modelOverride.Overrides ? modelFile != null : EnsureVoiceModel();
+            if (!modelReady)
             {
                 this.ReportVoiceFailure(Voice.Intent, VoiceFailure.ModelLoading,
-                    "speech model not ready (downloading) — try again shortly");
+                    modelOverride.Overrides ? "speech model is being prepared — see Speak Query for progress"
+                        : "speech model not ready (downloading) — try again shortly");
                 return false;
             }
 
@@ -1190,7 +1229,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 "--out", VoiceWavFile,
                 "--stopflag", VoiceStopFile,
                 "--transcript", VoiceTranscriptFile,
-                "--model", VoiceModelFile,
+                "--model", modelFile,
             };
             // Point the helper at the self-contained whisper-cli when we've bundled it.
             if (File.Exists(BundledWhisperCli))
@@ -1199,7 +1238,6 @@ namespace Loupedeck.ClaudeConsolePlugin
                 args.Add(BundledWhisperCli);
             }
             RunDetached("open", args);
-            PluginLog.Info("BridgeManager.StartVoiceCapture: helper launched");
             return true;
         }
 
@@ -1266,7 +1304,6 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     voiceArguments.Add("--prompt");
                     voiceArguments.Add(vocabulary);
-                    PluginLog.Info($"Project voice: supplying vocabulary from {candidates.Paths.Count} discovered projects");
                 }
             }
             foreach (var argument in WindowsTools.Arguments(helper, "voice", voiceArguments)) { psi.ArgumentList.Add(argument); }
@@ -1289,7 +1326,6 @@ namespace Loupedeck.ClaudeConsolePlugin
                     if (File.Exists(VoiceReadyFile) && Voice.MarkReady(DateTime.UtcNow))
                     {
                         ready = true;
-                        PluginLog.Info("BridgeManager.StartVoiceCapture: microphone ready");
                         return true;
                     }
                     Thread.Sleep(50);
@@ -1341,7 +1377,6 @@ namespace Loupedeck.ClaudeConsolePlugin
                     return;
                 }
                 var pkgVoice = Path.Combine(pkgDir, "voice");
-                PluginLog.Verbose($"BridgeManager.EnsureVoiceRuntimeInstalled: pkgVoice={pkgVoice} exists={Directory.Exists(pkgVoice)}");
 
                 // The guard compares the TREE, not the directory. `Directory.Exists` meant a runtime
                 // copy was accepted forever once created: the 2.0.1 whisper bundle shipped without
@@ -1574,7 +1609,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         // Runs a tool to completion and reports how it went. The first version discarded the exit
-        // code and stderr, so an install that failed was logged as "installing …" and nothing else —
+        // code, so an install that failed was logged as "installing …" and nothing else —
         // QA watched a helper stay byte-for-byte the same across three presses under exactly that
         // line (#59). Returns the exit code (-1 when the process could not start).
         private static Int32 RunSync(String file, params String[] args)
@@ -1594,11 +1629,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             try
             {
                 using var p = Process.Start(psi);
-                var stderr = p.StandardError.ReadToEnd();
+                // Drain the pipe, but do not log tool output or arguments: these can contain user text.
+                _ = p.StandardError.ReadToEnd();
                 p.WaitForExit();
                 if (p.ExitCode != 0)
                 {
-                    PluginLog.Warning($"BridgeManager: {Path.GetFileName(file)} {String.Join(" ", args)} exited {p.ExitCode}: {stderr.Trim()}");
+                    PluginLog.Warning($"BridgeManager: {Path.GetFileName(file)} exited {p.ExitCode}");
                 }
                 return p.ExitCode;
             }
@@ -2570,7 +2606,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // every other voice failure, and the log keeps the words so nothing dictated is lost.
         // The desktop-surface twin of DeliverDictation: the product's sink puts the words where its
         // keys are aimed, and the SAME named failures reach the key when it cannot (#18). A sink
-        // that throws is a failure like any other; the transcript is kept in the log either way.
+        // that throws is a failure like any other; draft recovery belongs to the product.
         internal void DeliverToSink(String text, Boolean submit)
         {
             var intent = submit ? VoiceIntent.Desktop : VoiceIntent.DesktopDraft;
@@ -2578,7 +2614,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (sink == null)
             {
                 this.ReportVoiceFailure(intent, VoiceFailure.NoTarget,
-                    $"no transcript sink installed by the product. Dropped: \"{text}\"");
+                    "no transcript sink installed by the product");
                 return;
             }
 
@@ -2587,22 +2623,23 @@ namespace Loupedeck.ClaudeConsolePlugin
             catch (Exception ex) { error = ex.Message; }
             if (error != null)
             {
-                if (!submit && this.DraftClipboardFallback != null)
+                if (!submit && this.DraftRecoverySink != null)
                 {
                     try
                     {
-                        if (this.DraftClipboardFallback(text))
+                        if (this.DraftRecoverySink(text))
                         {
-                            this.ReportVoiceFailure(intent, VoiceFailure.PasteDraft,
-                                "draft insertion was not confirmed; transcript copied for manual review and paste");
+                            this.ReportVoiceFailure(intent, VoiceFailure.InsertDraft,
+                                "draft insertion was not confirmed; transcript retained for keypad retry");
                             return;
                         }
                     }
-                    catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: draft clipboard recovery failed"); }
+                    catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: draft recovery failed"); }
                 }
-                this.ReportVoiceFailure(intent, VoiceFailure.NotTyped, $"{error}. Dropped: \"{text}\"");
+                this.ReportVoiceFailure(intent, VoiceFailure.NotTyped, error);
             }
         }
+
 
         internal void DeliverDictation(String text, Boolean submit)
         {
@@ -2611,14 +2648,14 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (target == null)
             {
                 this.ReportVoiceFailure(intent, VoiceFailure.NoTarget,
-                    $"no session to type into — pin a session slot, or leave one session running. Dropped: \"{text}\"");
+                    "no session to type into — pin a session slot, or leave one session running");
                 return;
             }
 
             var outcome = _platform.InjectText(target, text, submit);
             if (outcome != InjectionOutcome.Ok)
             {
-                this.ReportVoiceFailure(intent, VoiceFailure.NotTyped, $"{outcome} for {target}. Dropped: \"{text}\"");
+                this.ReportVoiceFailure(intent, VoiceFailure.NotTyped, $"dictation delivery failed: {outcome}");
             }
         }
 
@@ -2635,6 +2672,12 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// the destination was decided by whichever key you pressed second. Dictating a prompt and
         /// pressing Go to Project to stop it would fuzzy-match your prompt to a project and open it.
         /// </summary>
+        internal void StopSearchCapture()
+        {
+            if (Voice.StopIfCapturing(VoiceIntent.DesktopSearch, DateTime.UtcNow) == VoiceAction.Stop)
+                Task.Run(() => StopVoiceCaptureThen(_ => { }));
+        }
+
         internal void ToggleVoice(VoiceIntent intent)
         {
             if (!VoiceSupported)
@@ -2647,7 +2690,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             switch (action)
             {
                 case VoiceAction.Start:
-                    PluginLog.Info($"BridgeManager.ToggleVoice: starting capture for {intent}");
+                    if (intent is VoiceIntent.Desktop or VoiceIntent.DesktopDraft or VoiceIntent.DesktopSearch)
+                        _desktopCaptureAllowed = DesktopCaptureAllowed;
+                    if (intent == VoiceIntent.DesktopSearch) { _searchCaptureSink = SearchTranscriptSink; }
+                    if (intent == VoiceIntent.DesktopDraft) { _draftCaptureSink = DraftTranscriptSink; }
                     if (OperatingSystem.IsWindows())
                     {
                         // Return to the SDK immediately so Starting can paint during a cold launch.
@@ -2672,17 +2718,21 @@ namespace Loupedeck.ClaudeConsolePlugin
                     break;
 
                 case VoiceAction.Stop:
+                    var allowed = _desktopCaptureAllowed;
                     // The STARTING key's intent, not the one just pressed.
-                    if (routed != intent)
-                    {
-                        PluginLog.Info($"BridgeManager.ToggleVoice: {intent} key stopped a {routed} capture — routing to {routed}");
-                    }
                     switch (routed)
                     {
                         case VoiceIntent.Project: this.StopVoiceCaptureForProject(); break;
                         case VoiceIntent.Draft: this.StopVoiceCapture(submit: false); break;
-                        case VoiceIntent.Desktop: this.StopVoiceCaptureThen(text => this.DeliverToSink(text, submit: true)); break;
-                        case VoiceIntent.DesktopDraft: this.StopVoiceCaptureThen(text => this.DeliverToSink(text, submit: false)); break;
+                        case VoiceIntent.Desktop: this.StopVoiceCaptureThen(text => { if (allowed?.Invoke() != false) this.DeliverToSink(text, submit: true); }); break;
+                        case VoiceIntent.DesktopDraft:
+                            var draftSink = _draftCaptureSink;
+                            this.StopVoiceCaptureThen(text => { if (allowed?.Invoke() != false) this.DeliverScopedDraft(text, draftSink); });
+                            break;
+                        case VoiceIntent.DesktopSearch:
+                            var searchSink = _searchCaptureSink;
+                            this.StopVoiceCaptureThen(text => { if (allowed?.Invoke() != false) this.DeliverSearchTranscript(text, searchSink); });
+                            break;
                         default: this.StopVoiceCapture(submit: true); break;
                     }
                     break;
@@ -2690,7 +2740,6 @@ namespace Loupedeck.ClaudeConsolePlugin
                 default:
                     // Transcribing: a result is already in flight and starting again would delete
                     // the file the waiting thread is about to read.
-                    PluginLog.Info($"BridgeManager.ToggleVoice: ignoring {intent} press — a {routed} transcript is still in flight");
                     _platform.Alert();
                     break;
             }
@@ -2773,17 +2822,32 @@ namespace Loupedeck.ClaudeConsolePlugin
                     // matched a project called SafeShot and OPENED it, and "(static)" opened
                     // StatementSense — a wrong project launched from across the room. The same text
                     // would otherwise be typed into a session by the Voice keys.
+                    if (intent == VoiceIntent.DesktopSearch && OperatingSystem.IsMacOS() && this.SearchAudioHasSignal != null)
+                    {
+                        try
+                        {
+                            if (!this.SearchAudioHasSignal(VoiceWavFile))
+                            {
+                                this.ReportVoiceFailure(intent, VoiceFailure.NoSpeech, "search recording was silent");
+                                return;
+                            }
+                        }
+                        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+                        {
+                            this.ReportVoiceFailure(intent, VoiceFailure.NoResponse, "search recording could not be validated");
+                            return;
+                        }
+                    }
                     var spoken = CleanTranscript(text);
                     if (!String.IsNullOrWhiteSpace(spoken))
                     {
-                        PluginLog.Info($"BridgeManager: transcript ({spoken.Length} chars): {spoken}");
                         try { handler(spoken); }
                         catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: transcript handler failed"); }
                     }
                     else if (!String.IsNullOrWhiteSpace(text))
                     {
                         // Nothing survived the strip: whisper heard a noise and named it.
-                        this.ReportVoiceFailure(intent, VoiceFailure.NoSpeech, $"whisper reported \"{text}\", nothing to act on");
+                        this.ReportVoiceFailure(intent, VoiceFailure.NoSpeech, "recording contained no actionable speech");
                     }
                     else
                     {
@@ -2871,7 +2935,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // Options+ — until now the only place that file was named was this log line.
                 var rootsFile = ProjectDiscovery.DefaultRootsFile(home);
                 this.ReportVoiceFailure(VoiceIntent.Project, VoiceFailure.NoMatch,
-                    $"no project matched \"{transcript}\" (compared as \"{NormalizeForMatch(transcript)}\") among "
+                    "no project matched the spoken query among "
                     + $"{candidates.Paths.Count} candidate(s) — {candidates.Source}. If your projects "
                     + $"live elsewhere, list their roots in {rootsFile}");
                 if (!_projectRootsHintShown)
@@ -2883,7 +2947,6 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
                 return;
             }
-            PluginLog.Info($"NavigateToProjectByVoice: \"{transcript}\" -> {match} (of {candidates.Paths.Count} candidates)");
             LaunchClaudeInProject(match);
         }
 

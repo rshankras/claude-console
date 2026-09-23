@@ -2,6 +2,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 {
     using System;
 
+    /// <summary>An opaque composer identity and content fingerprint; never contains draft text.</summary>
+    internal sealed class DesktopAppendTarget
+    {
+        public String Target { get; init; }
+        public String Fingerprint { get; init; }
+        public Boolean HasContent { get; init; }
+    }
+
     /// <summary>
     /// The platform half of the desktop seam: how we read and actuate a GUI app's controls.
     /// macOS implements it over the AX helper (<see cref="MacDesktopAutomation"/>); Windows uses
@@ -17,6 +25,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     {
         /// <summary>One observation of the app's UI. Never null — worst case is Unavailable.</summary>
         DesktopSnapshot Status();
+        /// <summary>Cheap process-only foreground check for passive polling; no UI traversal.</summary>
+        Boolean? IsAppFrontmost() => true;
+
+        /// <summary>Search-only operations. Unsupported platforms never fall back to the composer.</summary>
+        DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null) => new();
 
         /// <summary>
         /// Press the first control matching any of <paramref name="labels"/> WITHOUT focusing
@@ -40,6 +53,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Press a contextual destination only if the observed mode still matches.</summary>
         Boolean PressInMode(String[] labels, String mode, out String matched) { matched = null; return false; }
 
+        /// <summary>Ensure the current Codex diff panel is visible; never blindly toggle it.</summary>
+        Boolean OpenChanges(out String error) { error = "unsupported"; return false; }
+
         /// <summary>
         /// Press with the expected-card guard: <paramref name="expectCard"/> is the card text
         /// the keypad RENDERED; the press is refused ("card-changed") when the card beside the
@@ -55,10 +71,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// </summary>
         Boolean WriteComposer(String text, Boolean send, out String error);
 
+        /// <summary>Retry a retained draft; an exact, already-inserted copy counts as success.</summary>
+        Boolean RecoverDraft(String text, out String error) => WriteComposer(text, false, out error);
+
+        String PrepareDraft(String mode, Boolean requireEmpty, out String error) { error = "unsupported"; return null; }
+        Boolean WritePreparedDraft(String text, String mode, String target, Boolean retry, out String error) { error = "unsupported"; return false; }
+        Boolean WritePreparedPrompt(String text, String mode, String target, Boolean send, out String error) { error = "unsupported"; return false; }
+        Boolean SupportsAppend => false;
+        DesktopAppendTarget PrepareAppend(String mode, out String error) { error = "unsupported"; return null; }
+        Boolean AppendPreparedDraft(String text, String mode, DesktopAppendTarget target, Boolean retry, out String error) { error = "unsupported"; return false; }
+        Boolean SendPreparedDraft(String mode, String target, out String error) { error = "unsupported"; return false; }
+        /// <summary>Submit a freshly inserted preset only while its complete text is unchanged.</summary>
+        Boolean SendPreparedPrompt(String text, String mode, String target, out String error) { error = "unsupported"; return false; }
+
         /// <summary>Submit the existing draft without replacing it. Unsupported helpers fail closed.</summary>
         Boolean SendComposer(out String error) { error = "unsupported"; return false; }
 
         /// <summary>Copy only an identifiable, completed assistant answer.</summary>
+        DesktopCaptureResult Context(String action, String source = null, String text = null) => new() { Error = "unsupported" };
+        Boolean AttachPreparedImage(String path, String mode, String target, out String error) { error = "unsupported"; return false; }
+        Boolean AttachPreparedFiles(DesktopFile[] files, String mode, String target, out String error) { error = "unsupported"; return false; }
+
+        Boolean SupportsCopyAnswer => false;
         Boolean CopyAnswer(out String error) { error = "unsupported"; return false; }
 
         /// <summary>Switch the app to <paramref name="modeName"/> (switcher press, then menu pick).</summary>

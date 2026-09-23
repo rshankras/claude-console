@@ -15,17 +15,22 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// never grows a Mode key. Capability false ⇒ the parameter is never added, the honest-hide
     /// rule inherited from the terminal products.
     /// </summary>
-    public class DesktopControlCommand : PluginDynamicCommand
+    public class DesktopControlCommand : DesktopCommandBase
     {
         private const String Stop = "stop";
         private const String NewChat = "new_chat";
         private const String Mode = "mode";
         private const String Focus = "focus";
         private const String ShowDiff = "show_diff";
+        private readonly FailureFace _feedback;
+        private String _feedbackParameter;
 
         public DesktopControlCommand()
             : base()
         {
+            this.SetWidget(true);
+            _feedback = new FailureFace(() => this.ActionImageChanged());
+            DesktopServices.Lifetime.OnStop(_feedback.Dispose);
             if (!DesktopServices.Declared)
             {
                 // A product without a desktop surface compiled this by mistake; add nothing.
@@ -45,7 +50,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
             if (DesktopServices.App.ShowDiffLabels.Length > 0)
             {
-                this.AddParameter(ShowDiff, "Show Diff", "Agent")
+                this.AddParameter(ShowDiff, "View Changes", "Agent")
                     .SetDescription("Open the current task's changes/review view");
             }
 
@@ -61,29 +66,38 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             this.AddParameter(Focus, $"Show {DesktopServices.App.ShortName}", "Agent")
                 .SetDescription($"Bring {DesktopServices.App.ShortName} to the front — for when you need to look before answering");
 
-            DesktopServices.Monitor.OnChanged += _ => this.ActionImageChanged();
+            DesktopServices.OnMonitorChanged(_ => this.ActionImageChanged());
         }
 
         protected override void RunCommand(String actionParameter)
+        {
+            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter));
+        }
+
+        private void RunDesktopCommand(String actionParameter)
         {
             if (!DesktopServices.Declared)
             {
                 return;
             }
 
-            var app = DesktopServices.App;
-            var auto = DesktopServices.Automation;
+            _feedbackParameter = actionParameter;
+            _feedback.Show(actionParameter == ShowDiff ? "Opening" : "Working");
+            _feedback.Show(Execute(actionParameter, DesktopServices.App, DesktopServices.Automation));
+        }
+
+        // The SDK and the command rig use this same press handler.
+        internal static String Execute(String actionParameter, IDesktopAppAdapter app, IDesktopAutomation auto)
+        {
 
             switch (actionParameter)
             {
                 case Stop:
                     // Resolve and press in one invocation. "Stop voice chat" must NEVER match.
-                    auto.PressExact(app.StopLabels);
-                    break;
+                    return auto.PressExact(app.StopLabels) ? "Requested" : "Nothing Running";
 
                 case NewChat:
-                    auto.Press(new[] { app.NewChatLabel }, out _);
-                    break;
+                    return auto.Press(new[] { app.NewChatLabel }, out _) ? "Requested" : "Not Opened";
 
                 case Mode:
                     // Toggle to the other mode. Unknown current mode (surface just came back,
@@ -92,27 +106,24 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                     var target = app.ModeNames.FirstOrDefault(n => !String.Equals(n, current, StringComparison.Ordinal));
                     if (!app.ModeNames.Contains(current, StringComparer.Ordinal) || target == null)
                     {
-                        PluginLog.Info("DesktopControlCommand(mode): current mode unknown — ignored");
-                        return;
+                        return "Open App";
                     }
-                    auto.SwitchMode(target);
-                    break;
+                    return auto.SwitchMode(target) ? "Requested" : "Not Switched";
 
                 case ShowDiff:
-                    // The Review-surface controls exist in the tree ("Toggle file diff",
-                    // "Show files" — captured in the button inventory); first match wins and a
-                    // no-match logs rather than guesses.
-                    auto.Press(app.ShowDiffLabels, out _);
-                    break;
+                    return DesktopNavigateCommand.Execute("Codex", auto, () => { });
 
                 case Focus:
-                    auto.FocusApp();
-                    break;
+                    return auto.FocusApp() ? "Opened" : "Not Opened";
             }
+            return "Unavailable";
         }
 
-        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
+        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) => "\u200B";
+
+        private String LabelFor(String actionParameter)
         {
+            if (actionParameter == NewChat && DesktopServices.Declared && DesktopServices.Monitor.Current.Mode == "Codex") return "New Task";
             if (actionParameter == Mode && DesktopServices.Declared)
             {
                 var mode = DesktopServices.Monitor.Current.Mode;
@@ -135,17 +146,28 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
-            var label = this.GetCommandDisplayName(actionParameter, imageSize);
+            if (actionParameter == ShowDiff)
+            {
+                var face = DesktopNavigateCommand.ReviewFace(DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable);
+                return KeyImage.RenderControlTile(imageSize, face.Label, face.Icon, face.Enabled,
+                    _feedback.IsActive && _feedbackParameter == actionParameter ? _feedback.Text : face.Status);
+            }
+            var label = this.LabelFor(actionParameter);
             var icon = actionParameter switch
             {
                 Stop => "stop",
-                NewChat => "new_claude",
+                NewChat => "new_chat",
                 Mode => "switch_mode",
                 ShowDiff => "diff",
                 Focus => "terminal",
                 _ => null,
             };
-            return KeyImage.Render(imageSize, label, KeyImage.Blue, icon);
+            var status = _feedback.IsActive && _feedbackParameter == actionParameter ? _feedback.Text
+                : actionParameter == Mode ? DestinationFor(label) : null;
+            return KeyImage.RenderControlTile(imageSize, label, icon, true, status);
         }
+
+        internal static String DestinationFor(String mode) => mode switch
+        { "ChatGPT" => "TO CODEX", "Codex" => "TO CHATGPT", _ => "Open App" };
     }
 }

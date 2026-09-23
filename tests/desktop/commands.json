@@ -1,0 +1,2079 @@
+{
+  "schema": 1,
+  "commands": [
+    {
+      "id": "conversation.1",
+      "command": "DesktopConversationCommand",
+      "parameter": "1",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Conversation 1",
+      "prepare": "Show at least three distinctly named test conversations in the sidebar.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The conversation whose title is on this key opens and the app comes forward.",
+      "expectedKey": "The title stays associated with its conversation as sidebar order changes.",
+      "kind": "conversation",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "conversation.2",
+      "command": "DesktopConversationCommand",
+      "parameter": "2",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Conversation 2",
+      "prepare": "Show at least three distinctly named test conversations in the sidebar.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The conversation whose title is on this key opens and the app comes forward.",
+      "expectedKey": "The title stays associated with its conversation as sidebar order changes.",
+      "kind": "conversation",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "conversation.3",
+      "command": "DesktopConversationCommand",
+      "parameter": "3",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Conversation 3",
+      "prepare": "Show at least three distinctly named test conversations in the sidebar.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The conversation whose title is on this key opens and the app comes forward.",
+      "expectedKey": "The title stays associated with its conversation as sidebar order changes.",
+      "kind": "conversation",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "folder.*",
+      "command": "AllChatsDynamicFolder",
+      "parameter": "*",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Chats",
+      "prepare": "Have more than three test conversations visible.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The folder opens. Select each visible title, then reopen and test paging/back. Each title opens the correct conversation.",
+      "expectedKey": "Chats; app-visible recent conversations, readable titles and observed states.",
+      "kind": "folder",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "control.stop",
+      "command": "DesktopControlCommand",
+      "parameter": "stop",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Stop",
+      "prepare": "Start a harmless long response in a dedicated test chat.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The response stops. Native Voice is not toggled.",
+      "expectedKey": "The label remains accurate; Mode shows the current mode.",
+      "kind": "control",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "control.new_chat",
+      "command": "DesktopControlCommand",
+      "parameter": "new_chat",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "New Chat",
+      "prepare": "Use a disposable chat with no unsaved draft.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "A fresh chat opens.",
+      "expectedKey": "The label remains accurate; Mode shows the current mode.",
+      "kind": "control",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "control.mode",
+      "command": "DesktopControlCommand",
+      "parameter": "mode",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Switch mode",
+      "prepare": "Confirm which mode is currently active.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The other mode opens; context and workflow key labels refresh.",
+      "expectedKey": "The label remains accurate; Mode shows the current mode.",
+      "kind": "control",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "control.focus",
+      "command": "DesktopControlCommand",
+      "parameter": "focus",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Show ChatGPT",
+      "prepare": "Put another app in the foreground; manually select the Vizhi profile if needed.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "ChatGPT comes to the foreground.",
+      "expectedKey": "The label remains accurate; Mode shows the current mode.",
+      "kind": "control",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "control.show_diff",
+      "command": "DesktopControlCommand",
+      "parameter": "show_diff",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Show Diff (legacy)",
+      "prepare": "In Codex create a harmless disposable diff; in ChatGPT check absence.",
+      "action": "In Codex open Tools → Tasks → View Changes. Repeat with the panel already open, then with an unsupported task.",
+      "expectedApp": "Opens or retains the supported Review panel; does not type, send or change the clipboard. Missing controls refuse as Not available; ChatGPT refuses.",
+      "expectedKey": "The label remains accurate; Mode shows the current mode.",
+      "kind": "control",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "approval.approve",
+      "command": "DesktopApprovalCommand",
+      "parameter": "approve",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Approve",
+      "prepare": "In a disposable test workspace, prepare a routine approval request and read it before pressing. Never approve a destructive operation just to test.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "Only the displayed pending request is approved once.",
+      "expectedKey": "The pending state clears or changes to match the app. With nothing pending the key is idle.",
+      "kind": "approval",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "approval.deny",
+      "command": "DesktopApprovalCommand",
+      "parameter": "deny",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Deny",
+      "prepare": "In a disposable test workspace, prepare a routine approval request and read it before pressing. Never approve a destructive operation just to test.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "Only the displayed pending request is denied.",
+      "expectedKey": "The pending state clears or changes to match the app. With nothing pending the key is idle.",
+      "kind": "approval",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "context.primary",
+      "command": "DesktopContextCommand",
+      "parameter": "primary",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Search",
+        "Codex": "Changes"
+      },
+      "prepare": "Confirm the mode and make the named destination available in the app.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The destination named on the key opens. If it is unavailable, no unrelated action occurs.",
+      "expectedKey": "Keeps the destination name; unavailable actions have a dim icon and a separate Unavailable / No changes status.",
+      "kind": "context",
+      "smoke": true,
+      "capability": "supported",
+      "controls": {
+        "ChatGPT": "Search",
+        "Codex": "Changes"
+      }
+    },
+    {
+      "id": "context.secondary_1",
+      "command": "DesktopContextCommand",
+      "parameter": "secondary_1",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Projects",
+        "Codex": "Permissions"
+      },
+      "prepare": "Confirm the mode and make the named destination available in the app.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The destination named on the key opens. If it is unavailable, no unrelated action occurs.",
+      "expectedKey": "Keeps the destination name; unavailable actions have a dim icon and a separate Unavailable / No changes status.",
+      "kind": "context",
+      "smoke": false,
+      "capability": "supported",
+      "controls": {
+        "ChatGPT": "Projects",
+        "Codex": "Permissions"
+      }
+    },
+    {
+      "id": "context.secondary_2",
+      "command": "DesktopContextCommand",
+      "parameter": "secondary_2",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Plugins",
+        "Codex": "Attach Files"
+      },
+      "prepare": "Confirm the mode and make the named destination available in the app.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The destination named on the key opens. If it is unavailable, no unrelated action occurs.",
+      "expectedKey": "Keeps the destination name; unavailable actions have a dim icon and a separate Unavailable / No changes status.",
+      "kind": "context",
+      "smoke": false,
+      "capability": "supported",
+      "controls": {
+        "ChatGPT": "Plugins",
+        "Codex": "AttachFiles"
+      }
+    },
+    {
+      "id": "context.secondary_3",
+      "command": "DesktopContextCommand",
+      "parameter": "secondary_3",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Scheduled",
+        "Codex": "Pull Requests"
+      },
+      "prepare": "Confirm the mode and make the named destination available in the app.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The destination named on the key opens. If it is unavailable, no unrelated action occurs.",
+      "expectedKey": "Keeps the destination name; unavailable actions have a dim icon and a separate Unavailable / No changes status.",
+      "kind": "context",
+      "smoke": false,
+      "capability": "supported",
+      "controls": {
+        "ChatGPT": "Scheduled",
+        "Codex": "PullRequests"
+      }
+    },
+    {
+      "id": "context.secondary_4",
+      "command": "DesktopContextCommand",
+      "parameter": "secondary_4",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Explore",
+        "Codex": "Quick Chat"
+      },
+      "prepare": "Confirm the mode and make the named destination available in the app.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The destination named on the key opens. If it is unavailable, no unrelated action occurs.",
+      "expectedKey": "Keeps the destination name; unavailable actions have a dim icon and a separate Unavailable / No changes status.",
+      "kind": "context",
+      "smoke": false,
+      "capability": "supported",
+      "controls": {
+        "ChatGPT": "Explore",
+        "Codex": "QuickChat"
+      }
+    },
+    {
+      "id": "composer.send",
+      "command": "DesktopComposerCommand",
+      "parameter": "send",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Send Draft",
+      "prepare": "Type a unique harmless draft in a dedicated test chat.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "That existing draft is sent exactly once and is not replaced. Repeat with an empty composer: no message is sent.",
+      "expectedKey": "Keeps Send Draft as its name; separate Sent feedback on success or No draft for an empty composer.",
+      "kind": "composer",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "composer.output",
+      "command": "DesktopComposerCommand",
+      "parameter": "output",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Copy Answer (unsupported)",
+        "Codex": "Changes"
+      },
+      "prepare": "ChatGPT: complete a response. Codex: have a harmless test diff available.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "ChatGPT: no copy is attempted; Copy Answer is unsupported in this version. Codex: the Changes view opens when available.",
+      "expectedKey": "ChatGPT: Copy Answer with Unsupported underneath. Codex: View Changes, with Not available when the app exposes no review route. An empty diff is not inferred from a missing control.",
+      "kind": "composer",
+      "smoke": false,
+      "capability": "supported",
+      "capabilities": {
+        "ChatGPT": "unsupported",
+        "Codex": "supported"
+      }
+    },
+    {
+      "id": "workflow.slot_1",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "slot_1",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Summarize",
+        "Codex": "Review Code"
+      },
+      "prepare": "Use a disposable test workspace/chat with an empty composer. Review this workflow’s local configuration first; SEND starts a task.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": true,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.slot_2",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "slot_2",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Explain",
+        "Codex": "Debug"
+      },
+      "prepare": "Use a disposable test workspace/chat with an empty composer. Review this workflow’s local configuration first; SEND starts a task.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": true,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.slot_3",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "slot_3",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Rewrite",
+        "Codex": "Refactor"
+      },
+      "prepare": "Use a disposable test workspace/chat with an empty composer. Review this workflow’s local configuration first; SEND starts a task.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": true,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.slot_4",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "slot_4",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Draft Reply",
+        "Codex": "Run Tests"
+      },
+      "prepare": "Use a disposable test workspace/chat with an empty composer. Review this workflow’s local configuration first; SEND starts a task.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.slot_5",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "slot_5",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Compare",
+        "Codex": "Explain Diff"
+      },
+      "prepare": "Use a disposable test workspace/chat with an empty composer. Review this workflow’s local configuration first; SEND starts a task.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.slot_6",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "slot_6",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Research",
+        "Codex": "Fix CI"
+      },
+      "prepare": "Use a disposable test workspace/chat with an empty composer. Review this workflow’s local configuration first; SEND starts a task.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.slot_7",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "slot_7",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Brainstorm",
+        "Codex": "Security"
+      },
+      "prepare": "Use a disposable test workspace/chat with an empty composer. Review this workflow’s local configuration first; SEND starts a task.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": true,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.slot_8",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "slot_8",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Plan",
+        "Codex": "Update Deps"
+      },
+      "prepare": "Use a disposable test workspace/chat with an empty composer. Review this workflow’s local configuration first; SEND starts a task.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": true,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.slot_9",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "slot_9",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Continue",
+        "Codex": "Continue"
+      },
+      "prepare": "Use a disposable test workspace/chat with an empty composer. Review this workflow’s local configuration first; SEND starts a task.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": true,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.review_pr",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "review_pr",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Review PR",
+        "Codex": "Review PR"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.debug",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "debug",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Debug",
+        "Codex": "Debug"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.refactor",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "refactor",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Refactor",
+        "Codex": "Refactor"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.write_tests",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "write_tests",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Write Tests",
+        "Codex": "Write Tests"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.explain_diff",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "explain_diff",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Explain Diff",
+        "Codex": "Explain Diff"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": true,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.fix_ci",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "fix_ci",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Fix CI",
+        "Codex": "Fix CI"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.security",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "security",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Security",
+        "Codex": "Security"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": true,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.update_deps",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "update_deps",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Update Deps",
+        "Codex": "Update Deps"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.continue",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "continue",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Continue",
+        "Codex": "Continue"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": true,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.review_changes",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "review_changes",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Review Code",
+        "Codex": "Review Code"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": true,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.run_tests",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "run_tests",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Run Tests",
+        "Codex": "Run Tests"
+      },
+      "prepare": "Assign this optional action temporarily to a spare key; use a disposable Codex workspace and an empty composer. Review its configured brief before pressing.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": true,
+        "Codex": true
+      }
+    },
+    {
+      "id": "voice.press",
+      "command": "DesktopVoiceChatCommand",
+      "parameter": "",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Voice Chat",
+      "prepare": "ChatGPT frontmost; Voice inactive; local dictation idle. Confirm Control+Shift+V matches your app shortcut. Complete first-use Voice setup before retesting.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "Native Voice opens. Speak and confirm an audible response. Wait two seconds, press again: Voice ends. A Requested label alone is not a pass.",
+      "expectedKey": "Voice Chat / TOGGLE with temporary Requested feedback when a shortcut is configured.",
+      "kind": "voice",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "draft.press",
+      "command": "DesktopVoiceDraftCommand",
+      "parameter": "",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Dictate",
+      "prepare": "Empty composer; native Voice stopped; microphone permission and local voice runtime ready.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "Press once, speak “This is a keypad draft test”, press again. Transcript appears as an unsent draft. If Insert Draft appears, press it to retry without sending. Review the text, then press Send Draft; it should submit once. Previously copied external text must not appear or be changed. Record whether automatic insertion or retry worked.",
+      "expectedKey": "Dictate / DRAFT, Listening, then Draft Ready. Never becomes Send.",
+      "kind": "draft",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "dictate.press",
+      "command": "DesktopVoiceCommand",
+      "parameter": "",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Dictate & Send (optional)",
+      "prepare": "Assign to a spare key. Use an empty, disposable test chat; this action submits speech.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "Press once, speak a harmless test sentence, press again. The transcript is sent once. Failure never silently sends a recovered clipboard draft.",
+      "expectedKey": "Starting → Listening → Transcribing; a named failure is visible when delivery fails.",
+      "kind": "dictate",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "status.press",
+      "command": "DesktopStatusCommand",
+      "parameter": "",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Activity (optional)",
+      "prepare": "Assign to a spare key. Observe ready, generating, awaiting approval, and app-closed states.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "Pressing Activity causes no app operation.",
+      "expectedKey": "Ready / Working / Waiting / App Off tracks the app; hidden or inaccessible is not shown as Ready.",
+      "kind": "status",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "find.open",
+      "command": "DesktopNavigateCommand",
+      "parameter": "find",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Find Chat",
+        "Codex": "View Changes"
+      },
+      "kind": "find",
+      "prepare": "Use a disposable ChatGPT conversation with an existing unsent draft. Keep the app foreground. Search actions operate only inside Find Chat; Codex opens View Changes.",
+      "action": "Use the legacy adaptive Find Chat / View Changes assignment (optional Adaptive 3 profile).",
+      "expectedApp": "ChatGPT opens native search and the query page. Codex opens the Changes panel when an app-owned review route is exposed; repeated taps leave it open. A site-building/browser chat with no review route stays unchanged.",
+      "expectedKey": "Codex stays on the current keypad page: Not available without a review route, Opened after confirmation, or Couldn’t open if a supported opening fails. ChatGPT retains search cards and query status.",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "search.speak",
+      "command": "DesktopSearchCommand",
+      "parameter": "speak",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Speak Query",
+      "kind": "search",
+      "prepare": "Use a disposable ChatGPT conversation with an existing unsent draft. Keep the app foreground. Search actions operate only inside Find Chat; Codex retains Changes.",
+      "action": "Inside Find Chat, press Speak Query, speak a topic, then press again.",
+      "expectedApp": "The recognized words appear only in the search field. Results appear if accessible. In Codex the search action remains unavailable.",
+      "expectedKey": "Search cards and query status update. Unreadable search shows Use App; no composer text is replaced or sent.",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "search.type",
+      "command": "DesktopSearchCommand",
+      "parameter": "type",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Type Now",
+      "kind": "search",
+      "prepare": "Open Find Chat. Its search field is already focused; this key restores focus only if needed.",
+      "action": "Inside Find Chat, press Type Query and type a topic on the keyboard.",
+      "expectedApp": "The search field receives keyboard focus. Matching accessible conversation links appear on the keypad.",
+      "expectedKey": "Type Now / Tap to Focus. Typing is already possible after Find Chat opens.",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "search.status",
+      "command": "DesktopSearchCommand",
+      "parameter": "status",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Search query / edit",
+      "kind": "search",
+      "prepare": "Use a disposable ChatGPT conversation with an existing unsent draft. Keep the app foreground. Search actions operate only inside Find Chat; Codex retains Changes.",
+      "action": "Tap the query tile to focus typing, or to retry opening an unavailable search.",
+      "expectedApp": "The query is unchanged; accessible results refresh. No message is submitted.",
+      "expectedKey": "Spoken/typed query and result count; NO MATCHES YET differs from Open Search / TAP TO RETRY.",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "context.files",
+      "command": "DesktopContextCommand",
+      "parameter": "files",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Attach Files",
+        "Codex": "Attach Files"
+      },
+      "prepare": "Confirm the mode and make the named destination available in the app.",
+      "action": "Press the highlighted key once.",
+      "expectedApp": "The destination named on the key opens. If it is unavailable, no unrelated action occurs.",
+      "expectedKey": "Keeps the destination name; unavailable actions have a dim icon and a separate Unavailable / No changes status.",
+      "kind": "context",
+      "smoke": false,
+      "capability": "supported",
+      "controls": {
+        "ChatGPT": "AttachFiles",
+        "Codex": "AttachFiles"
+      }
+    },
+    {
+      "id": "more.open",
+      "command": "DesktopMoreDynamicFolder",
+      "parameter": "*",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "More",
+      "kind": "more",
+      "smoke": false,
+      "capability": "supported",
+      "prepare": "Open Actions in each app mode.",
+      "action": "Press More, inspect its actions and use Back.",
+      "expectedApp": "No command is executed just by opening More.",
+      "expectedKey": "Mode-specific optional tools, with no Ask ChatGPT entry inside the app."
+    },
+    {
+      "id": "context.ask",
+      "command": "AskChatGptDynamicFolder",
+      "parameter": "*",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Ask ChatGPT",
+      "prepare": "Keep a test source app in front and assign Ask ChatGPT to its profile or the System profile.",
+      "action": "Open the folder.",
+      "expectedApp": "Source app remains in front until capture. Task and capture actions are available.",
+      "expectedKey": "Task, selection, clipboard, screenshot, reply/return/paste and clear actions are reachable.",
+      "kind": "ask",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "capture.selection",
+      "command": "DesktopCaptureCommand",
+      "parameter": "selection",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Use Selection",
+      "prepare": "Use disposable source text and a test conversation. Copy Reply requires a completed latest answer; no text selection is needed. Paste Reply requires an empty field in the original source app.",
+      "action": "Press Use Selection. For Screenshot select a region or cancel.",
+      "expectedApp": "Capture stages a source and opens ChatGPT without sending. Copy uses the latest assistant response action; Return restores the source window; Paste inserts the retained answer without sending. Clear only clears staged sources.",
+      "expectedKey": "Reports the confirmed result or a specific refusal; source count follows staged content.",
+      "kind": "capture",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "capture.clipboard",
+      "command": "DesktopCaptureCommand",
+      "parameter": "clipboard",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Paste into Chat",
+      "prepare": "Copy disposable text, image data, or one or more regular files; open the intended chat.",
+      "action": "Tap Paste into Chat once; repeat once to check duplication protection.",
+      "expectedApp": "Text appends immediately; image/file payloads attach without inserting filename text. Existing input survives; no automatic Send or hidden staging.",
+      "expectedKey": "Pasting / Attaching → Pasted / Attached; Check Files on an unconfirmed attachment.",
+      "kind": "capture",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "capture.screenshot",
+      "command": "DesktopCaptureCommand",
+      "parameter": "screenshot",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Screenshot",
+      "prepare": "Open a disposable conversation with an empty or existing draft.",
+      "action": "Press Screenshot and select a region. Repeat once with Escape to cancel.",
+      "expectedApp": "The selected image appears immediately in the original chat input, preserving existing text and the clipboard. No Dictate step or automatic Send. Cancellation adds nothing.",
+      "expectedKey": "Select Area → Attaching → Attached. A changed target is refused; uncertain attachment shows Check Image.",
+      "kind": "capture",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "capture.copy",
+      "command": "DesktopCaptureCommand",
+      "parameter": "copy",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Copy Reply",
+      "prepare": "Use disposable source text and a test conversation. Copy Reply requires a completed latest answer; no text selection is needed. Paste Reply requires an empty field in the original source app.",
+      "action": "Press Copy Reply. For Screenshot select a region or cancel.",
+      "expectedApp": "Capture stages a source and opens ChatGPT without sending. Copy uses the latest assistant response action; Return restores the source window; Paste inserts the retained answer without sending. Clear only clears staged sources.",
+      "expectedKey": "Reports the confirmed result or a specific refusal; source count follows staged content.",
+      "kind": "capture",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "capture.return",
+      "command": "DesktopCaptureCommand",
+      "parameter": "return",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Return to App",
+      "prepare": "Use disposable source text and a test conversation. Copy Reply requires a completed latest answer; no text selection is needed. Paste Reply requires an empty field in the original source app.",
+      "action": "Press Return to App. For Screenshot select a region or cancel.",
+      "expectedApp": "Capture stages a source and opens ChatGPT without sending. Copy uses the latest assistant response action; Return restores the source window; Paste inserts the retained answer without sending. Clear only clears staged sources.",
+      "expectedKey": "Reports the confirmed result or a specific refusal; source count follows staged content.",
+      "kind": "capture",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "capture.paste",
+      "command": "DesktopCaptureCommand",
+      "parameter": "paste",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Paste Reply",
+      "prepare": "Use disposable source text and a test conversation. Copy Reply requires a completed latest answer; no text selection is needed. Paste Reply requires an empty field in the original source app.",
+      "action": "Press Paste Reply. For Screenshot select a region or cancel.",
+      "expectedApp": "Capture stages a source and opens ChatGPT without sending. Copy uses the latest assistant response action; Return restores the source window; Paste inserts the retained answer without sending. Clear only clears staged sources.",
+      "expectedKey": "Reports the confirmed result or a specific refusal; source count follows staged content.",
+      "kind": "capture",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "capture.clear",
+      "command": "DesktopCaptureCommand",
+      "parameter": "clear",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Clear Sources",
+      "prepare": "Use disposable source text and a test conversation. Copy Reply requires a completed latest answer; no text selection is needed. Paste Reply requires an empty field in the original source app.",
+      "action": "Press Clear Sources. For Screenshot select a region or cancel.",
+      "expectedApp": "Capture stages a source and opens ChatGPT without sending. Copy uses the latest assistant response action; Return restores the source window; Paste inserts the retained answer without sending. Clear only clears staged sources.",
+      "expectedKey": "Reports the confirmed result or a specific refusal; source count follows staged content.",
+      "kind": "capture",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "workflow.draft_reply",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "draft_reply",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Draft Reply",
+      "prepare": "Use a disposable test workspace/chat with an empty composer. Review this workflow’s local configuration first; SEND starts a task.",
+      "action": "For SPEAK: tap, speak the scope, tap to finish, review, then Send Draft. For DRAFT: review the inserted instruction and Send. A clearly scoped SEND action with an empty composer takes one tap.",
+      "expectedApp": "Existing material is preserved and receives an unsent instruction. Source-aware ChatGPT prompts use supplied text/files/images. Empty-composer SEND requests submit once; scoped editing drafts wait for Send. Named Codex actions refuse ChatGPT.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "composer.send_stop",
+      "command": "DesktopComposerCommand",
+      "parameter": "send_stop",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Send / Stop",
+      "prepare": "Type a unique harmless draft in a dedicated test chat.",
+      "action": "Review the draft and press Send; while a response runs, press the same key when it shows Stop.",
+      "expectedApp": "The displayed action is requested once. Stop never submits a waiting draft if the response already ended.",
+      "expectedKey": "Send / REVIEW FIRST or Stop / RESPONSE.",
+      "kind": "composer",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "tools.copy_approve",
+      "command": "DesktopToolsCommand",
+      "parameter": "copy_approve",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Copy Reply",
+        "Codex": "Approve"
+      },
+      "prepare": "Use disposable content and the matching app mode. For approvals show a test request; for Return capture a source first.",
+      "action": "Press the highlighted Tools key once. Also change app mode before pressing and confirm it refuses the obsolete displayed action.",
+      "expectedApp": "Only the action displayed for this mode runs. Capture never submits. Review/Tests follow configured task behavior. Approvals retain request and risk guards.",
+      "expectedKey": "The matching mode-specific label and accurate outcome.",
+      "kind": "tools",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "tools.return_deny",
+      "command": "DesktopToolsCommand",
+      "parameter": "return_deny",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Return to App",
+        "Codex": "Deny"
+      },
+      "prepare": "Use disposable content and the matching app mode. For approvals show a test request; for Return capture a source first.",
+      "action": "Press the highlighted Tools key once. Also change app mode before pressing and confirm it refuses the obsolete displayed action.",
+      "expectedApp": "Only the action displayed for this mode runs. Capture never submits. Review/Tests follow configured task behavior. Approvals retain request and risk guards.",
+      "expectedKey": "The matching mode-specific label and accurate outcome.",
+      "kind": "tools",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "tools.deny",
+      "command": "DesktopToolsCommand",
+      "parameter": "deny",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Unused key",
+        "Codex": "Deny"
+      },
+      "prepare": "Open Tools in each mode. In Codex show a disposable approval request.",
+      "action": "Tap the top-right Tools key. Also change mode after its face is drawn and before pressing.",
+      "expectedApp": "ChatGPT: no operation or helper call. Codex: deny only the displayed request, preserving the request guard and high-risk confirmation.",
+      "expectedKey": "Blank in ChatGPT; Deny in Codex. No Return to App or No Source label.",
+      "kind": "tools",
+      "smoke": true,
+      "capability": {
+        "ChatGPT": "unsupported",
+        "Codex": "supported"
+      }
+    },
+    {
+      "id": "tools.clipboard_review",
+      "command": "DesktopToolsCommand",
+      "parameter": "clipboard_review",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Paste into Chat",
+        "Codex": "Review Code"
+      },
+      "prepare": "Use disposable content and the matching app mode. For approvals show a test request; for Return capture a source first.",
+      "action": "Press the highlighted Tools key once. Also change app mode before pressing and confirm it refuses the obsolete displayed action.",
+      "expectedApp": "ChatGPT: copied text appears immediately in the composer, preserving existing text, without sending. Codex: Review Code follows configured task behavior. A mode change refuses the obsolete displayed action.",
+      "expectedKey": "The matching mode-specific label and accurate outcome.",
+      "kind": "tools",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "tools.screenshot_tests",
+      "command": "DesktopToolsCommand",
+      "parameter": "screenshot_tests",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Screenshot",
+        "Codex": "Run Tests"
+      },
+      "prepare": "Use disposable content and the matching app mode. For approvals show a test request; for Return capture a source first.",
+      "action": "Press the highlighted Tools key once. Also change app mode before pressing and confirm it refuses the obsolete displayed action.",
+      "expectedApp": "Only the action displayed for this mode runs. Capture never submits. Review/Tests follow configured task behavior. Approvals retain request and risk guards.",
+      "expectedKey": "The matching mode-specific label and accurate outcome.",
+      "kind": "tools",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "tools.clear_screenshot",
+      "command": "DesktopToolsCommand",
+      "parameter": "clear_screenshot",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Clear Added",
+        "Codex": "Screenshot"
+      },
+      "prepare": "Use disposable content and the matching app mode. For approvals show a test request; for Return capture a source first.",
+      "action": "Press the highlighted Tools key once. Also change app mode before pressing and confirm it refuses the obsolete displayed action.",
+      "expectedApp": "Only the action displayed for this mode runs. Capture never submits. Review/Tests follow configured task behavior. Approvals retain request and risk guards.",
+      "expectedKey": "The matching mode-specific label and accurate outcome.",
+      "kind": "tools",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "saved-prompts.open",
+      "command": "DesktopSavedPromptsDynamicFolder",
+      "parameter": "*",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Prompts",
+        "Codex": "Tasks"
+      },
+      "prepare": "Use the Tools page.",
+      "action": "Open Prompts/Tasks and use Back.",
+      "expectedApp": "Opening the menu makes no app changes.",
+      "expectedKey": "ChatGPT: nine existing prompts. Codex: View Changes, Review Code, Run Tests / Debug, Refactor, Explain Diff / Fix CI, Security, blank. Update Deps and Continue live in More. Custom task order is preserved, with host paging if needed.",
+      "kind": "saved-prompts",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "prepare": "Open a disposable chat, with fixture files in Downloads.",
+      "action": "Open Attach Files; select or deselect displayed files, then Attach.",
+      "expectedApp": "The exact selected files attach to the original chat; text and clipboard survive. Changed files or targets refuse; nothing sends.",
+      "expectedKey": "Readable recent filenames, selected state, Attach count, Browse and Downloads refresh.",
+      "kind": "files",
+      "smoke": true,
+      "capability": "supported",
+      "id": "files.open",
+      "command": "DesktopFilesDynamicFolder",
+      "parameter": "*",
+      "title": "Attach Files"
+    },
+    {
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "prepare": "Open a disposable chat, with fixture files in Downloads.",
+      "action": "Open Attach Files; select or deselect displayed files, then Attach.",
+      "expectedApp": "The exact selected files attach to the original chat; text and clipboard survive. Changed files or targets refuse; nothing sends.",
+      "expectedKey": "Readable recent filenames, selected state, Attach count, Browse and Downloads refresh.",
+      "kind": "file-control",
+      "smoke": false,
+      "capability": "supported",
+      "id": "files.attach",
+      "command": "DesktopFileCommand",
+      "parameter": "attach",
+      "title": "Attach selected files"
+    },
+    {
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "prepare": "Open a disposable chat, with fixture files in Downloads.",
+      "action": "Open Attach Files; select or deselect displayed files, then Attach.",
+      "expectedApp": "The exact selected files attach to the original chat; text and clipboard survive. Changed files or targets refuse; nothing sends.",
+      "expectedKey": "Readable recent filenames, selected state, Attach count, Browse and Downloads refresh.",
+      "kind": "file-control",
+      "smoke": false,
+      "capability": "supported",
+      "id": "files.browse",
+      "command": "DesktopFileCommand",
+      "parameter": "browse",
+      "title": "Browse in app"
+    },
+    {
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "prepare": "Open a disposable chat, with fixture files in Downloads.",
+      "action": "Open Attach Files; select or deselect displayed files, then Attach.",
+      "expectedApp": "The exact selected files attach to the original chat; text and clipboard survive. Changed files or targets refuse; nothing sends.",
+      "expectedKey": "Readable recent filenames, selected state, Attach count, Browse and Downloads refresh.",
+      "kind": "file-control",
+      "smoke": false,
+      "capability": "supported",
+      "id": "files.refresh",
+      "command": "DesktopFileCommand",
+      "parameter": "refresh",
+      "title": "Refresh Downloads"
+    },
+    {
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "prepare": "Open a disposable chat, with fixture files in Downloads.",
+      "action": "Open Attach Files; select or deselect displayed files, then Attach.",
+      "expectedApp": "The exact selected files attach to the original chat; text and clipboard survive. Changed files or targets refuse; nothing sends.",
+      "expectedKey": "Readable recent filenames, selected state, Attach count, Browse and Downloads refresh.",
+      "kind": "file-control",
+      "smoke": false,
+      "capability": "supported",
+      "id": "files.empty",
+      "command": "DesktopFileCommand",
+      "parameter": "empty",
+      "title": "No recent files"
+    },
+    {
+      "id": "tools.approve",
+      "command": "DesktopToolsCommand",
+      "parameter": "approve",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Unused key",
+        "Codex": "Approve"
+      },
+      "prepare": "Open Tools in each mode. In Codex show a disposable approval request.",
+      "action": "Tap top-middle Tools key for the displayed Codex approval request.",
+      "expectedApp": "ChatGPT: no operation. Codex: approve the original request, with existing identity and high-risk guards.",
+      "expectedKey": "Blank in ChatGPT; Approve in Codex.",
+      "kind": "tools",
+      "smoke": true,
+      "capability": {
+        "ChatGPT": "unsupported",
+        "Codex": "supported"
+      }
+    },
+    {
+      "id": "find.legacy",
+      "command": "FindChatDynamicFolder",
+      "parameter": "*",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Find Chat",
+        "Codex": "Find Chat (use ChatGPT)"
+      },
+      "kind": "find-legacy",
+      "prepare": "Keep ChatGPT in the foreground with a disposable conversation.",
+      "action": "Open the retained Find Chat folder binding.",
+      "expectedApp": "ChatGPT opens native search. In Codex this search-only folder closes without pressing an app control.",
+      "expectedKey": "Shows the existing search controls.",
+      "smoke": false,
+      "capability": "supported"
+    },
+    {
+      "id": "workflow.task_1",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "task_1",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Use Codex",
+        "Codex": "Review Code"
+      },
+      "prepare": "Open a disposable Codex task. This binding remains Codex-only if the app mode changes.",
+      "action": "Use this task from Tasks or More. Repeat after switching the app to ChatGPT.",
+      "expectedApp": "Codex: use the configured task in this slot with its existing speech/draft/send behavior. ChatGPT: no text, send or recording; Use Codex.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.task_2",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "task_2",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Use Codex",
+        "Codex": "Debug"
+      },
+      "prepare": "Open a disposable Codex task. This binding remains Codex-only if the app mode changes.",
+      "action": "Use this task from Tasks or More. Repeat after switching the app to ChatGPT.",
+      "expectedApp": "Codex: use the configured task in this slot with its existing speech/draft/send behavior. ChatGPT: no text, send or recording; Use Codex.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.task_3",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "task_3",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Use Codex",
+        "Codex": "Refactor"
+      },
+      "prepare": "Open a disposable Codex task. This binding remains Codex-only if the app mode changes.",
+      "action": "Use this task from Tasks or More. Repeat after switching the app to ChatGPT.",
+      "expectedApp": "Codex: use the configured task in this slot with its existing speech/draft/send behavior. ChatGPT: no text, send or recording; Use Codex.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": true,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.task_4",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "task_4",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Use Codex",
+        "Codex": "Run Tests"
+      },
+      "prepare": "Open a disposable Codex task. This binding remains Codex-only if the app mode changes.",
+      "action": "Use this task from Tasks or More. Repeat after switching the app to ChatGPT.",
+      "expectedApp": "Codex: use the configured task in this slot with its existing speech/draft/send behavior. ChatGPT: no text, send or recording; Use Codex.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.task_5",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "task_5",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Use Codex",
+        "Codex": "Explain Diff"
+      },
+      "prepare": "Open a disposable Codex task. This binding remains Codex-only if the app mode changes.",
+      "action": "Use this task from Tasks or More. Repeat after switching the app to ChatGPT.",
+      "expectedApp": "Codex: use the configured task in this slot with its existing speech/draft/send behavior. ChatGPT: no text, send or recording; Use Codex.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.task_6",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "task_6",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Use Codex",
+        "Codex": "Fix CI"
+      },
+      "prepare": "Open a disposable Codex task. This binding remains Codex-only if the app mode changes.",
+      "action": "Use this task from Tasks or More. Repeat after switching the app to ChatGPT.",
+      "expectedApp": "Codex: use the configured task in this slot with its existing speech/draft/send behavior. ChatGPT: no text, send or recording; Use Codex.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.task_7",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "task_7",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Use Codex",
+        "Codex": "Security"
+      },
+      "prepare": "Open a disposable Codex task. This binding remains Codex-only if the app mode changes.",
+      "action": "Use this task from Tasks or More. Repeat after switching the app to ChatGPT.",
+      "expectedApp": "Codex: use the configured task in this slot with its existing speech/draft/send behavior. ChatGPT: no text, send or recording; Use Codex.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": true
+      }
+    },
+    {
+      "id": "workflow.task_8",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "task_8",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Use Codex",
+        "Codex": "Update Deps"
+      },
+      "prepare": "Open a disposable Codex task. This binding remains Codex-only if the app mode changes.",
+      "action": "Use this task from Tasks or More. Repeat after switching the app to ChatGPT.",
+      "expectedApp": "Codex: use the configured task in this slot with its existing speech/draft/send behavior. ChatGPT: no text, send or recording; Use Codex.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
+      "id": "workflow.task_9",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "task_9",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Use Codex",
+        "Codex": "Continue"
+      },
+      "prepare": "Open a disposable Codex task. This binding remains Codex-only if the app mode changes.",
+      "action": "Use this task from Tasks or More. Repeat after switching the app to ChatGPT.",
+      "expectedApp": "Codex: use the configured task in this slot with its existing speech/draft/send behavior. ChatGPT: no text, send or recording; Use Codex.",
+      "expectedKey": "Scope plus SPEAK / DRAFT / SEND; source material shows INPUT · DRAFT. Sent means REQUEST SENT, not task completion. Failed insertion offers retry/discard.",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": true
+      }
+    },
+    {
+      "id": "navigation.search",
+      "command": "DesktopNavigateCommand",
+      "parameter": "search",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Find Chat",
+        "Codex": "Blank"
+      },
+      "kind": "find-chat-only",
+      "prepare": "Use a disposable ChatGPT conversation with an existing unsent draft. Keep the app foreground. Search actions operate only inside Find Chat; Codex opens View Changes.",
+      "action": "Press Tools → Find Chat in ChatGPT. In Codex this Tools position is blank.",
+      "expectedApp": "ChatGPT: opens keypad search. Codex: no action; use Tasks → View Changes.",
+      "expectedKey": "Find Chat in ChatGPT; blank in Codex.",
+      "smoke": true,
+      "capability": "supported"
+    }
+  ],
+  "manualScenarios": [
+    {
+      "id": "voice.rapid",
+      "parent": "voice.press",
+      "title": "Native Voice rapid repeat",
+      "prepare": "Voice inactive, app frontmost, local dictation idle.",
+      "action": "Press Voice Chat twice within one second.",
+      "expectedApp": "Only one toggle request takes effect; it does not immediately reverse.",
+      "expectedKey": "Requested, then Voice Chat / TOGGLE.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "voice.foreground",
+      "parent": "voice.press",
+      "title": "Voice with another app frontmost",
+      "prepare": "Put another app in front and manually select the Vizhi profile.",
+      "action": "Press Voice Chat once.",
+      "expectedApp": "Neither app starts Voice; bring ChatGPT forward and retry.",
+      "expectedKey": "Open App.",
+      "smoke": true,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "voice.conflict",
+      "parent": "voice.press",
+      "title": "Native Voice during local capture",
+      "prepare": "Start Voice Draft and verify Listening.",
+      "action": "Press Voice Chat once; finish the local capture with Voice Draft.",
+      "expectedApp": "Native Voice does not start; the original draft intent is retained.",
+      "expectedKey": "Dictating on Voice Chat; draft key continues its capture state.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "voice.app_side",
+      "parent": "voice.press",
+      "title": "App-side Voice changes",
+      "prepare": "Open Voice using the waveform control in the app.",
+      "action": "Wait for keypad refresh, then end Voice in the app.",
+      "expectedApp": "App-side changes do not start a separate local recorder.",
+      "expectedKey": "With shortcut configured the key remains Voice Chat / TOGGLE; without it observed state may show End Voice.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "draft.silence",
+      "parent": "draft.press",
+      "title": "No speech",
+      "prepare": "Native Voice off; empty composer.",
+      "action": "Start Voice Draft, remain silent briefly, then stop.",
+      "expectedApp": "No invented prompt is submitted.",
+      "expectedKey": "No Speech (or a named capture/transcription failure) is visible.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "draft.existing",
+      "parent": "draft.press",
+      "title": "Append dictation to an existing draft",
+      "prepare": "Put “KEEP THIS DRAFT” in the composer.",
+      "action": "Record a short, different draft and stop.",
+      "expectedApp": "Existing text survives and the spoken instruction appears beneath it. Nothing is sent. If the draft or chat changes during recording, no automatic insertion occurs; retained speech can be retried only against the original draft or discarded.",
+      "expectedKey": "Draft Ready after verified insertion; Insert Draft / HOLD TO DISCARD if insertion cannot be confirmed.",
+      "smoke": true,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "draft.cross_key",
+      "parent": "draft.press",
+      "title": "Original dictation intent survives",
+      "prepare": "Temporarily assign Dictate & Send to a spare key. Start recording with Voice Draft.",
+      "action": "Speak a harmless sentence, then press Dictate & Send to stop.",
+      "expectedApp": "The result remains an unsent draft; the second key does not change the starting intent.",
+      "expectedKey": "Only the starting key tracks delivery/recovery.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "draft.retry",
+      "parent": "draft.press",
+      "title": "Capture failure and retry",
+      "prepare": "Use a known unavailable input device or deny microphone permission yourself if convenient. Do not change permissions just for this test.",
+      "action": "Attempt Voice Draft; restore the prerequisite and retry.",
+      "expectedApp": "Failure is visible and a later valid capture works; no stale capture blocks retry.",
+      "expectedKey": "Named failure, then normal Starting / Listening / Transcribing on retry. Mark Blocked if you cannot safely create the failure.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "approval.changed",
+      "parent": "approval.approve",
+      "title": "Changed approval request",
+      "prepare": "Prepare a harmless pending approval in a disposable workspace.",
+      "action": "Change or dismiss the request in the app before pressing Approve.",
+      "expectedApp": "A stale card is never approved; if a new card is rendered, read it before any further press.",
+      "expectedKey": "Idle or refreshed identity/risk; no stale confirmation carries over.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "approval.high",
+      "parent": "approval.deny",
+      "title": "High-risk confirmation",
+      "prepare": "Only use a safe disposable fixture/workspace that presents a high-risk card; do not execute a destructive command.",
+      "action": "Press Deny once, then again within the confirmation window. Repeat after expiry if safe.",
+      "expectedApp": "First press arms; second denies the same card; expiry requires re-arming.",
+      "expectedKey": "Press again after the first press. Mark Blocked when a safe high-risk card is unavailable.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "context.switch",
+      "parent": "context.primary",
+      "title": "Mode changes between presses",
+      "prepare": "Start in ChatGPT with the context page visible.",
+      "action": "Switch to Codex in the app; press the context key after confirming the destination.",
+      "expectedApp": "The current mode’s destination is used; a disappeared/mismatched target is refused.",
+      "expectedKey": "Context and workflow labels repaint for the new mode.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "surface.hidden",
+      "parent": "status.press",
+      "title": "Unavailable app and recovery",
+      "prepare": "Optional Activity key assigned; finish any capture first.",
+      "action": "Close the app window, observe keys, then reopen it.",
+      "expectedApp": "Commands do not act on another app. Normal controls recover after the app surface returns.",
+      "expectedKey": "Hidden / No Signal / App Off as applicable; Ready only when observed.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "search.roundtrip",
+      "parent": "find.open",
+      "title": "Select a search result",
+      "prepare": "Open Find Chat in ChatGPT with the app foreground. Use a disposable test conversation.",
+      "action": "Type a topic in Find Chat, then tap a matching conversation card.",
+      "expectedApp": "The exact displayed conversation opens and the keypad returns home.",
+      "expectedKey": "Matching measured-title cards, readable query/status, and SDK Back/paging. Mark Blocked if search is not exposed by the app.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT"
+      ]
+    },
+    {
+      "id": "search.cancel",
+      "parent": "find.open",
+      "title": "Cancel search voice",
+      "prepare": "Open Find Chat in ChatGPT with the app foreground. Use a disposable test conversation.",
+      "action": "Start Speak Query, press Back during capture or transcription, then reopen Find Chat.",
+      "expectedApp": "Capture stops; late words do not enter the new search or the composer.",
+      "expectedKey": "Matching measured-title cards, readable query/status, and SDK Back/paging. Mark Blocked if search is not exposed by the app.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT"
+      ]
+    },
+    {
+      "id": "search.changed",
+      "parent": "find.open",
+      "title": "Change query or window during capture",
+      "prepare": "Open Find Chat in ChatGPT with the app foreground. Use a disposable test conversation.",
+      "action": "Start Speak Query; edit the query or switch the app window before ending capture.",
+      "expectedApp": "The changed destination is refused. No message draft is touched.",
+      "expectedKey": "Matching measured-title cards, readable query/status, and SDK Back/paging. Mark Blocked if search is not exposed by the app.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT"
+      ]
+    },
+    {
+      "id": "search.pages",
+      "parent": "find.open",
+      "title": "Search result pagination",
+      "prepare": "Open Find Chat in ChatGPT with the app foreground. Use a disposable test conversation.",
+      "action": "Search for a topic with more than five accessible results; browse the next page and select one.",
+      "expectedApp": "Paging stays on the chosen page when results are unchanged; exact conversation selection and Back work.",
+      "expectedKey": "Matching measured-title cards, readable query/status, and SDK Back/paging. Mark Blocked if search is not exposed by the app.",
+      "smoke": false,
+      "modes": [
+        "ChatGPT"
+      ]
+    },
+    {
+      "id": "draft.discard",
+      "parent": "draft.press",
+      "title": "Hold to discard a retained voice draft",
+      "prepare": "Keep an existing unsent draft in the app. Record different words with Voice Draft so insertion is refused and Insert Draft appears.",
+      "action": "Hold Insert Draft until Discarded appears, then release. After it returns to Voice Draft, tap once to start a fresh recording.",
+      "expectedApp": "The existing app draft is unchanged. The hold neither inserts nor sends text; releasing it does not start recording. Only the next fresh tap starts a new recording.",
+      "expectedKey": "Insert Draft / HOLD TO DISCARD → Discarded / VOICE DRAFT → Voice Draft. The next tap shows Starting / Listening.",
+      "smoke": true,
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ]
+    },
+    {
+      "id": "workflow.voice",
+      "parent": "workflow.slot_3",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Spoken workflow",
+      "prepare": "Use a disposable chat and a SPEAK workflow.",
+      "action": "Tap a SPEAK workflow, describe its target, tap again, review, then tap the displayed Send Draft.",
+      "expectedApp": "Three deliberate presses; no blank template or automatic submission.",
+      "expectedKey": "Accurate Listening / Send Draft / Insert Draft / Discarded feedback.",
+      "smoke": false
+    },
+    {
+      "id": "workflow.target",
+      "parent": "workflow.slot_3",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Workflow target changes",
+      "prepare": "Use a disposable chat and a SPEAK workflow.",
+      "action": "Start a SPEAK workflow, switch to another conversation or mode, then finish recording.",
+      "expectedApp": "No text lands in the new target; complete brief is retained for explicit retry/discard.",
+      "expectedKey": "Accurate Listening / Send Draft / Insert Draft / Discarded feedback.",
+      "smoke": false
+    },
+    {
+      "id": "workflow.recovery",
+      "parent": "workflow.slot_3",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Composed brief recovery",
+      "prepare": "Use a disposable chat and a SPEAK workflow.",
+      "action": "Arrange a refused insertion, then retry or long press the originating workflow key.",
+      "expectedApp": "Retry uses the complete composed brief; hold discards retained memory without changing app text.",
+      "expectedKey": "Accurate Listening / Send Draft / Insert Draft / Discarded feedback.",
+      "smoke": false
+    },
+    {
+      "id": "context.reply_workflow",
+      "parent": "capture.selection",
+      "modes": [
+        "ChatGPT"
+      ],
+      "title": "Customer email to reviewed reply",
+      "prepare": "Use a disposable email and an empty ChatGPT composer; select the customer message.",
+      "action": "Use Selection, Draft Reply, speak your instruction, tap to finish, review and Send Draft. Tap Copy Reply without selecting text, Return to App, select an empty reply field, then Paste Reply.",
+      "expectedApp": "Source plus instruction appear once in one reviewable draft. The latest completed answer is pasted into the empty source reply field; email is never sent.",
+      "expectedKey": "Text Added / Listening / Send Draft / Copied / Returned / Reply Inserted.",
+      "smoke": true
+    },
+    {
+      "id": "context.screenshot_workflow",
+      "parent": "capture.screenshot",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Screenshot directly into chat",
+      "prepare": "Open a disposable conversation. Include an existing typed draft and selected text in one run.",
+      "action": "Cancel one Screenshot. Capture another and inspect the thumbnail immediately, before Dictate. Add an instruction by typing or dictating, then explicitly Send. Separately change chats during capture.",
+      "expectedApp": "Capture attaches once to the pinned composer and preserves the draft. Dictate does not attach again. Cancel and a changed chat add nothing. Sending requires an explicit press.",
+      "expectedKey": "Select Area / Attaching / Attached / Cancelled / Chat Changed / Check Image.",
+      "smoke": true
+    },
+    {
+      "id": "context.system_access",
+      "parent": "capture.return",
+      "modes": [
+        "ChatGPT"
+      ],
+      "title": "System access and original source recovery",
+      "prepare": "Select the System profile Ask ChatGPT page from Mail/browser; also try an app that has its own custom keypad profile.",
+      "action": "Capture selected text, switch to ChatGPT and return. Close the original source window and retry Return. Confirm Ask ChatGPT can be assigned to an app-specific profile.",
+      "expectedApp": "Existing System bindings remain available. Return targets the original source window or reports Source Closed. Custom app profiles retain priority and may need their own Ask ChatGPT binding.",
+      "expectedKey": "Use Selection / Return to App / Source Closed; no silent selection of a different source window.",
+      "smoke": false
+    },
+    {
+      "id": "home.native_voice",
+      "parent": "voice.press",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Home native Voice Chat remains direct",
+      "prepare": "Select Vizhi Home, Home page. Check the native app voice shortcut is configured.",
+      "action": "Press bottom-right Voice Chat to start a native conversation, then press again to end. Use bottom-left Dictate separately to prepare a text draft.",
+      "expectedApp": "Native voice and local dictation remain separate. Dictate inserts an unsent draft, including when captured source material was added.",
+      "expectedKey": "Voice Chat stays bottom right; Dictate bottom left; Send/Stop bottom centre. Dictate never becomes Send.",
+      "smoke": true
+    },
+    {
+      "id": "home.send_stop_race",
+      "parent": "composer.send_stop",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Send and Stop retain the shown intent",
+      "prepare": "Use a disposable draft and conversation.",
+      "action": "Send once, then use Stop during a response. Also try near response completion and after switching modes on the Tools page.",
+      "expectedApp": "A Stop press cannot submit a new draft. Duplicate taps are suppressed. Mode changes update Tools; an obsolete mode-specific action is refused.",
+      "expectedKey": "Send and Stop share bottom centre. Other Home controls remain in position.",
+      "smoke": true
+    },
+    {
+      "id": "files.compare",
+      "parent": "files.open",
+      "modes": [
+        "ChatGPT"
+      ],
+      "title": "Choose two documents and compare",
+      "prepare": "Use two disposable, valid documents in Downloads and a disposable chat.",
+      "action": "Attach Files → select both → Attach → Prompts → Compare → speak criteria → finish → Send.",
+      "expectedApp": "Both intended files are attached once, criteria append to the same chat, and only Send submits. Back cancels selection; the response uses both documents.",
+      "expectedKey": "Readable names and selection count; Attaching then unsent brief and Send Draft.",
+      "smoke": true
+    },
+    {
+      "id": "workflow.material",
+      "parent": "workflow.slot_1",
+      "modes": [
+        "ChatGPT"
+      ],
+      "title": "Pasted content to a summary",
+      "prepare": "Copy a disposable email and open a chat with existing notes.",
+      "action": "Paste into Chat → Prompts → Summarize → review → Send.",
+      "expectedApp": "Email and notes survive; the instruction summarizes supplied material. No Draft Exists dead end and no automatic submission.",
+      "expectedKey": "INPUT · DRAFT → Send Draft; REQUEST SENT is distinct from completion.",
+      "smoke": true
+    },
+    {
+      "id": "workflow.codex_scope",
+      "parent": "workflow.run_tests",
+      "modes": [
+        "Codex"
+      ],
+      "title": "Review changes and run existing tests",
+      "prepare": "Use a disposable repository/task with known changes and tests.",
+      "action": "Confirm task/workspace → Tasks → Review Code → inspect findings/Changes → Tasks → Run Tests.",
+      "expectedApp": "Findings and actual test commands/results concern the intended task; requests do not claim completion or alter code.",
+      "expectedKey": "Task cards show observed working/waiting states. Approval acts only on the displayed request.",
+      "smoke": true
+    }
+  ]
+}

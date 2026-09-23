@@ -97,7 +97,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 case Esc:
                     if (bridge.TryCancelScreenshot())
                     {
-                        PluginLog.Info("ControlCommand: cancelled active screenshot");
                         break;
                     }
                     // Tell the grid before injecting: this is the ONE Escape that means "stop the
@@ -145,8 +144,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     SendVerb(bridge, AgentVerb.ResumeLast);
                     break;
             }
-
-            PluginLog.Info($"ControlCommand: {actionParameter}");
         }
 
         internal static void TogglePlan(BridgeManager bridge)
@@ -177,7 +174,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             var command = bridge.Agent.SlashCommand(verb);
             if (command == null)
             {
-                PluginLog.Info($"ControlCommand: {bridge.Agent.DisplayName} has no command for {verb} — ignoring");
                 return;
             }
 

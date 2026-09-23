@@ -190,7 +190,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 // "submit": false in prompts.json turns a key into a DRAFT: the prompt lands in the
                 // input box to be edited or extended, and the user sends it with Return.
                 BridgeManager.Instance.InjectText(p.Prompt, pressEnter: p.Submits);
-                PluginLog.Info($"PromptCommand: {(p.Submits ? "Sent" : "Drafted")} prompt '{p.Id}'");
             }
         }
 

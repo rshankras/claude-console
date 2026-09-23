@@ -32,6 +32,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Immediate_preset_send_requires_the_exact_complete_text_and_pinned_destination()
+        {
+            var (auto, calls) = Build("{\"ok\":false,\"error\":\"draft-changed\"}", "{\"ok\":true,\"sent\":true}");
+            const String prompt = "Literal `$text`\nதமிழ் 😀";
+            Assert.False(auto.SendPreparedPrompt(prompt, "Codex", "original-chat", out var error));
+            Assert.Equal("draft-changed", error);
+            Assert.True(auto.SendPreparedPrompt(prompt, "Codex", "original-chat", out error));
+            Assert.Null(error);
+            foreach (var call in calls)
+            {
+                Assert.Equal("send", call[0]);
+                Assert.Equal(prompt, call[call.IndexOf("--expect-text") + 1]);
+                Assert.Equal("Codex", call[call.IndexOf("--expect-mode") + 1]);
+                Assert.Equal("original-chat", call[call.IndexOf("--expect-target") + 1]);
+                Assert.Contains("--stop", call); Assert.Contains("--approve", call);
+            }
+            Assert.False(auto.SendPreparedPrompt("", "Codex", "original-chat", out _));
+            Assert.False(auto.SendPreparedPrompt(prompt, "Codex", null, out _));
+            Assert.Equal(2, calls.Count);
+        }
+
+        [Fact]
         public void Contextual_press_carries_the_observed_mode_and_refuses_mode_change()
         {
             var (auto, calls) = Build("{\"ok\":false,\"error\":\"mode-changed\"}");
@@ -86,6 +108,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("--idle-images", args);
             Assert.Contains("ChatGPT=1", args);
             Assert.Contains("Codex=2", args);
+            Assert.Contains("--state-running", args);
+            Assert.Contains("Thinking", args);
+            Assert.Contains("Working", args);
+            Assert.Contains("Unread", args);
+            Assert.Contains("Complete", args);
             Assert.Contains("--search", args);
             Assert.Contains("--changes", args);
             Assert.Contains("--projects", args);
@@ -181,11 +208,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var (auto, calls) = Build(
                 "{\"ok\":true,\"matched\":\"Switch mode, current mode: ChatGPT\"}",
-                "{\"ok\":true,\"matched\":\"Codex Build, debug, and ship\"}");
+                "{\"ok\":true,\"matched\":\"Codex Build, debug, and ship\"}",
+                "{\"ok\":true,\"surface\":true,\"mode\":\"Codex\"}");
 
             Assert.True(auto.SwitchMode("Codex"));
 
-            Assert.Equal(2, calls.Count);
+            Assert.Equal(3, calls.Count);
             Assert.Contains("Switch mode", calls[0]);
             // The DISTINCTIVE menu label, never the bare mode word — "Codex" alone would also
             // match the switcher itself and re-open the menu instead of picking.

@@ -23,6 +23,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public Boolean StopPresent { get; init; }
         public Boolean CanSend { get; init; }
         public Boolean CanCopyAnswer { get; init; }
+        public String CopyAnswerError { get; init; } = "";
         public DesktopVoiceState VoiceChat { get; init; }
         public String CardText { get; init; } = "";
         public String Mode { get; init; } = "";
@@ -83,6 +84,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                     StopPresent = ReadBool(root, "stopPresent"),
                     CanSend = ReadBool(root, "canSend"),
                     CanCopyAnswer = ReadBool(root, "canCopyAnswer"),
+                    CopyAnswerError = ReadString(root, "copyAnswerError"),
                     VoiceChat = ReadString(root, "voiceChat") switch
                     {
                         "ready" => DesktopVoiceState.Ready,

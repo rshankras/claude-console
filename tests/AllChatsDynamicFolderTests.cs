@@ -53,5 +53,35 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             Assert.True(typeof(PluginDynamicFolder).IsAssignableFrom(typeof(AllChatsDynamicFolder)));
         }
+
+        [Fact]
+        public void Folder_entries_route_to_full_key_widgets_with_no_host_caption()
+        {
+            var conversation = new DesktopConversation { Title = "தமிழ் / release___candidate" };
+            var action = ActionString.FromString(Assert.Single(AllChatsDynamicFolder.ConversationActionNames(
+                "VizhiDesktop", new[] { conversation })));
+            Assert.Equal("VizhiDesktop", action.PluginName);
+            Assert.Equal(typeof(DesktopConversationCommand).FullName, action.ActionName);
+            Assert.Same(conversation, DesktopConversationCommand.FolderConversation(action.ActionParameter, new[] { conversation }));
+
+            var widget = new DesktopConversationCommand();
+            Assert.True(widget.IsWidget);
+            Assert.True(widget.TryGetCommandDisplayName(action.ActionParameter, PluginImageSize.Width90, out var label));
+            Assert.Equal("\u200B", label); // host must not repeat the bitmap's title below it
+            Assert.Equal(PluginDynamicFolderNavigation.ButtonArea, new AllChatsDynamicFolder().GetNavigationArea(default));
+        }
+
+        [Fact]
+        public void A_folder_widget_resolves_exact_identity_after_a_sidebar_reorder()
+        {
+            var a = new DesktopConversation { Title = "A" };
+            var b = new DesktopConversation { Title = "B" };
+            var binding = AllChatsDynamicFolder.ConversationActionNames("VizhiDesktop", new[] { a, b })[1];
+            var parameter = ActionString.FromString(binding).ActionParameter;
+            Assert.Same(b, DesktopConversationCommand.FolderConversation(parameter, new[] { b, a }));
+            Assert.Null(DesktopConversationCommand.FolderConversation(parameter, new[] { a }));
+            Assert.Null(DesktopConversationCommand.FolderConversation("chat:%%%", new[] { b }));
+            Assert.Null(DesktopConversationCommand.FolderConversation("1", new[] { b }));
+        }
     }
 }

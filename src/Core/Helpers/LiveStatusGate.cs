@@ -145,7 +145,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 _bridge.Toast?.Invoke("Turn on live status?", BridgeNotice.PressAgain(_keyName, seconds));
             }
-            PluginLog.Info($"Live status: {_keyName} pressed before setup — nothing changed; Turn on, or a second press within {seconds}s, enables");
             return true;
         }
 
@@ -184,7 +183,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 _bridge.Toast?.Invoke("Turn off live status?", BridgeNotice.LongPressAgain(_keyName, seconds));
             }
-            PluginLog.Info($"Live status: {_keyName} long-pressed — nothing changed; Turn off, or a second long press within {seconds}s, disables");
         }
 
         // Caller holds _lock. Closes any open dialog, takes the flash down, and does the deed.
@@ -248,9 +246,6 @@ namespace Loupedeck.ClaudeConsolePlugin
                     _armedUntil = DateTime.MinValue;
                     _offArmedUntil = DateTime.MinValue;
                     _flash.Clear();
-                    PluginLog.Info(answer == false
-                        ? $"Live status: {_keyName} — declined in the dialog; nothing changed"
-                        : $"Live status: {_keyName} — no answer within {seconds}s; nothing changed");
                 }
             })
             { IsBackground = true, Name = "claude-live-status-prompt" }.Start();

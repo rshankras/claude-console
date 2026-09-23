@@ -42,6 +42,98 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         };
 
         [Fact]
+        public void A_verified_selected_conversation_inherits_the_visible_task_activity()
+        {
+            var sidebar = new[]
+            {
+                new DesktopConversation { Title = "Other", State = ConversationState.Idle },
+                new DesktopConversation { Title = "Text Voice draft", Selected = true, State = ConversationState.Idle },
+                new DesktopConversation { Title = "Third", State = ConversationState.Unread },
+            };
+            foreach (var approval in new[] { false, true })
+            {
+                var state = DesktopMonitor.Map(new DesktopSnapshot { SurfaceAvailable = true,
+                    StopPresent = true, ApprovalPresent = approval, Conversations = sidebar });
+                Assert.Equal(approval ? ConversationState.Awaiting : ConversationState.Running, state.Slots[1].State);
+                Assert.Equal(ConversationState.Idle, state.Slots[0].State);
+                Assert.Equal(ConversationState.Unread, state.Slots[2].State);
+                Assert.Equal(ConversationState.Idle, sidebar[1].State); // Do not mutate the raw reading.
+            }
+        }
+
+        [Theory]
+        [InlineData(false, false)]
+        [InlineData(true, true)]
+        public void Visible_activity_is_not_assigned_without_one_unambiguous_selected_conversation(Boolean first, Boolean second)
+        {
+            var state = DesktopMonitor.Map(new DesktopSnapshot { SurfaceAvailable = true, StopPresent = true,
+                Conversations = new[]
+                {
+                    new DesktopConversation { Title = "A", Selected = first },
+                    new DesktopConversation { Title = "B", Selected = second },
+                } });
+            Assert.All(state.Slots, c => Assert.Equal(ConversationState.Idle, c.State));
+            Assert.Equal("", state.ActiveTitle);
+        }
+
+        [Fact]
+        public void Duplicate_titles_cannot_borrow_the_visible_tasks_activity()
+        {
+            var state = DesktopMonitor.Map(new DesktopSnapshot { SurfaceAvailable = true,
+                StopPresent = true, ApprovalPresent = true, Conversations = new[]
+                {
+                    new DesktopConversation { Title = "Same", Selected = true },
+                    new DesktopConversation { Title = "Same" },
+                } });
+            Assert.All(state.Slots, c => Assert.Equal(ConversationState.Idle, c.State));
+            Assert.Equal("", state.ActiveTitle);
+        }
+
+        [Fact]
+        public void An_explicit_permission_badge_is_not_downgraded_by_stop_presence()
+        {
+            var state = DesktopMonitor.Map(new DesktopSnapshot { SurfaceAvailable = true, StopPresent = true,
+                Conversations = new[]
+                {
+                    new DesktopConversation { Title = "Task", Selected = true, State = ConversationState.Awaiting },
+                } });
+            Assert.Equal(ConversationState.Awaiting, state.Slots[0].State);
+        }
+
+        [Fact]
+        public void Sidebar_status_changes_refresh_each_stable_slot_even_when_global_activity_is_ready()
+        {
+            var fake = new FakeAutomation();
+            using var monitor = new DesktopMonitor(fake);
+            var changed = new List<DesktopState>();
+            monitor.OnChanged += changed.Add;
+            String json(String rows) => "{\"ok\":true,\"surface\":true,\"mode\":\"ChatGPT\",\"conversations\":[" + rows + "]}";
+            String row(String title, String state) => "{\"title\":\"" + title + "\",\"state\":\"" + state + "\"}";
+            foreach (var status in new[] { "idle", "running", "unread", "awaiting", "idle" })
+            {
+                // Reorder the sidebar after the first tick; the active chat's physical key stays put.
+                var rows = status == "running"
+                    ? row("Other", "idle") + "," + row("Text Voice draft", status) + "," + row("Third", "idle")
+                    : row("Text Voice draft", status) + "," + row("Other", "idle") + "," + row("Third", "idle");
+                fake.Next = DesktopSnapshot.Parse(json(rows));
+                monitor.PollOnce();
+            }
+            Assert.Equal(5, changed.Count);
+            Assert.Equal(new[] { ConversationState.Idle, ConversationState.Running, ConversationState.Unread,
+                ConversationState.Awaiting, ConversationState.Idle }, changed.Select(s => s.Slots[0].State));
+            Assert.All(changed, s =>
+            {
+                Assert.Equal(DesktopActivity.Ready, s.Activity);
+                Assert.Equal("Text Voice draft", s.Slots[0].Title);
+                Assert.Equal("Other", s.Slots[1].Title);
+                Assert.Equal(ConversationState.Idle, s.Slots[1].State);
+                Assert.Equal(ConversationState.Idle, s.Slots[2].State);
+            });
+            monitor.PollOnce();
+            Assert.Equal(5, changed.Count); // Identical reading does not redraw every key.
+        }
+
+        [Fact]
         public void Mode_and_draft_changes_refresh_faces_even_with_identical_titles()
         {
             var fake = new FakeAutomation();

@@ -17,6 +17,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     /// </summary>
     internal interface IDesktopAppAdapter
     {
+        String[] SearchFieldLabels => Array.Empty<String>();
+        String[] SearchResultHosts => Array.Empty<String>();
+        String[] SearchResultPaths => Array.Empty<String>();
+        /// <summary>Exact response-copy action and screen-reader speaker headings.</summary>
+        String[] CopyResponseLabels => Array.Empty<String>();
+        String[] CopyButtonLabels => Array.Empty<String>();
+        String[] CopyCompletedLabels => Array.Empty<String>();
+        String[] ResponseActionLabels => Array.Empty<String>();
+        String[] AssistantHeadingLabels => Array.Empty<String>();
+        String[] UserHeadingLabels => Array.Empty<String>();
         /// <summary>Stable id for logs, e.g. "openai-desktop".</summary>
         String Id { get; }
 
@@ -65,6 +75,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>The composer's submit control.</summary>
         String SendLabel { get; }
 
+        /// <summary>Observed empty composer prompts. Exact candidates, never arbitrary descriptions.</summary>
+        String[] ComposerPlaceholderLabels => Array.Empty<String>();
+
         /// <summary>Starts a fresh conversation.</summary>
         String NewChatLabel { get; }
 
@@ -105,11 +118,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>The literal row text meaning "finished, result unseen".</summary>
         String ConversationUnreadText { get; }
 
+        /// <summary>Exact sidebar status labels, including newer app wording.</summary>
+        String[] ConversationUnreadTexts => new[] { this.ConversationUnreadText };
+        String[] ConversationRunningTexts => Array.Empty<String>();
+
         /// <summary>Verified macOS idle row image count per mode; null disables spinner inference.</summary>
         Int32? ConversationIdleImages(String mode) => null;
 
         /// <summary>Controls that open the current task's diff/review surface. Empty hides the key.</summary>
         String[] ShowDiffLabels { get; }
+        String[] ChangesPanelLabels => Array.Empty<String>();
 
         /// <summary>
         /// Accessibility labels for a contextual control. Empty means this app cannot expose

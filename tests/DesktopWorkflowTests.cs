@@ -63,11 +63,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var defaults = DesktopWorkflowCommand.LoadWorkflows(this.ConfigPath).ToList();
 
-            Assert.False(defaults.Single(w => w.Id == "review_pr").Submits);
+            Assert.False(DesktopWorkflowCommand.ExtraWorkflows.Single(w => w.Id == "review_pr").Submits);
             Assert.False(defaults.Single(w => w.Id == "debug").Submits);
             Assert.False(defaults.Single(w => w.Id == "refactor").Submits);
             // The remaining briefs identify their scope.
-            Assert.All(defaults.Where(w => w.Id != "review_pr" && w.Id != "debug" && w.Id != "refactor"),
+            Assert.False(defaults.Single(w => w.Id == "fix_ci").Submits);
+            Assert.False(defaults.Single(w => w.Id == "update_deps").Submits);
+            Assert.All(defaults.Where(w => w.Id != "review_pr" && w.Id != "debug" && w.Id != "refactor" && w.Id != "fix_ci" && w.Id != "update_deps"),
                 w => Assert.True(w.Submits));
         }
 
@@ -108,7 +110,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var codex = DesktopWorkflowCommand.LoadWorkflows(this.ConfigPath).ToList();
 
             Assert.Equal("summarize", DesktopWorkflowCommand.WorkflowAt("ChatGPT", 1, chat, codex).Id);
-            Assert.Equal("review_pr", DesktopWorkflowCommand.WorkflowAt("Codex", 1, chat, codex).Id);
+            Assert.Equal("review_changes", DesktopWorkflowCommand.WorkflowAt("Codex", 1, chat, codex).Id);
             Assert.Null(DesktopWorkflowCommand.WorkflowAt("", 1, chat, codex));
         }
 
@@ -130,13 +132,57 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("voice_draft", legacy.Icon); // do not rewrite user configuration
         }
 
+        [Theory]
+        [InlineData("ChatGPT", "rewrite", "document", "rewrite")]
+        [InlineData("ChatGPT", "continue", "enter", "continue")]
+        [InlineData("Codex", "continue", "enter", "continue")]
+        [InlineData("ChatGPT", "rewrite", "brain", "brain")]
+        [InlineData("ChatGPT", "summarize", "document", "document")]
+        public void Semantic_icon_upgrade_preserves_configuration_and_explicit_alternatives(
+            String mode, String id, String oldIcon, String expected)
+        {
+            var workflow = new DesktopWorkflowCommand.WorkflowDef { Id = id, Icon = oldIcon, Submit = false, Prompt = "Custom text" };
+            Assert.Equal(expected, DesktopWorkflowCommand.WorkflowIcon(workflow, mode));
+            Assert.Equal(oldIcon, workflow.Icon);
+            Assert.False(workflow.Submits);
+            Assert.Equal("Custom text", workflow.Prompt);
+            Assert.True(File.Exists(Path.Combine(RepoDir("src", "Products", "VizhiDesktop", "Resources", "desktop_icons"), expected + ".png")));
+        }
+
         [Fact]
         public void Optional_review_and_test_execution_do_not_displace_favorites()
         {
-            var extras = DesktopWorkflowCommand.ExtraWorkflows;
+            var extras = DesktopWorkflowCommand.CodexDefaults;
             Assert.Contains(extras, w => w.Id == "review_changes" && w.Prompt.Contains("uncommitted"));
             Assert.Contains(extras, w => w.Id == "run_tests" && w.Prompt.Contains("Do not claim tests passed"));
             Assert.Equal(9, DesktopWorkflowCommand.LoadWorkflows(this.ConfigPath).Count());
+        }
+
+        [Fact]
+        public void Flow_upgrade_preserves_custom_slots_and_metadata_backs_up_once_and_is_idempotent()
+        {
+            var raw = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(DesktopWorkflowMigration.CodexDefaults)).AsArray();
+            raw[2]["Prompt"] = "My custom refactor scope";
+            raw[2]["Note"] = "Keep this metadata";
+            var original = raw.ToJsonString(); File.WriteAllText(ConfigPath, original);
+            var first = DesktopWorkflowCommand.LoadWorkflows(ConfigPath).ToArray();
+            Assert.Equal("review_changes", first[0].Id);
+            Assert.Equal("run_tests", first[3].Id);
+            Assert.Equal("My custom refactor scope", first[2].Prompt);
+            Assert.Contains("Keep this metadata", File.ReadAllText(ConfigPath));
+            Assert.Equal(original, File.ReadAllText(ConfigPath + ".before-flow"));
+            var upgraded = File.ReadAllText(ConfigPath);
+            DesktopWorkflowCommand.LoadWorkflows(ConfigPath).ToArray();
+            Assert.Equal(upgraded, File.ReadAllText(ConfigPath));
+            Assert.Equal(original, File.ReadAllText(ConfigPath + ".before-flow"));
+        }
+
+        [Fact]
+        public void Voice_recipe_without_brief_placeholder_is_not_registered_as_a_usable_slot()
+        {
+            Assert.All(DesktopWorkflowCommand.ChatGptDefaults.Concat(DesktopWorkflowCommand.CodexDefaults)
+                .Concat(DesktopWorkflowCommand.ExtraWorkflows).Where(w => w.RequiresSpeech),
+                w => { Assert.Contains("{brief}", w.Prompt); Assert.False(w.Submits); });
         }
 
         private static String RepoDir(params String[] parts)

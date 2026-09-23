@@ -19,13 +19,13 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// </summary>
     public sealed class AllChatsDynamicFolder : PluginDynamicFolder
     {
-        private Boolean _active;
+        private Boolean _active, _cleanupRegistered;
 
         public AllChatsDynamicFolder()
         {
             // SDK rule: constructors set metadata only. Monitor subscriptions begin in Activate.
-            this.DisplayName = "All Chats";
-            this.Description = "Open any visible ChatGPT or Codex conversation";
+            this.DisplayName = "Chats";
+            this.Description = "Recent conversations visible in the app sidebar; use Find Chat for older conversations";
             this.GroupName = "Conversations";
         }
 
@@ -39,6 +39,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 return false;
             }
 
+            if (!_cleanupRegistered)
+            {
+                DesktopServices.Lifetime.OnStop(() => Deactivate());
+                _cleanupRegistered = true;
+            }
             if (!_active)
             {
                 DesktopServices.Monitor.OnChanged += this.OnDesktopChanged;
@@ -61,66 +66,59 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         }
 
         public override IEnumerable<String> GetButtonPressActionNames(DeviceType _) =>
-            VisibleConversations(CurrentConversations())
-                .Select(c => this.CreateCommandName(EncodeTitle(c.Title)))
-                .ToArray();
+            ConversationActionNames(this.Plugin.Name, CurrentConversations());
 
-        public override String GetButtonDisplayName(PluginImageSize imageSize) => "All Chats";
+        // Folder-generated commands are not widgets: the host shrinks their image and adds a
+        // caption. Return our existing full-key widget instead, with an exact-title parameter.
+        internal static String[] ConversationActionNames(String pluginName, IReadOnlyList<DesktopConversation> conversations) =>
+            VisibleConversations(conversations).Select(c => ActionString.ToString(pluginName,
+                typeof(DesktopConversationCommand).FullName,
+                DesktopConversationCommand.FolderParameterPrefix + EncodeTitle(c.Title))).ToArray();
+
+        public override String GetButtonDisplayName(PluginImageSize imageSize) => "Chats";
 
         public override BitmapImage GetButtonImage(PluginImageSize imageSize) =>
-            KeyImage.Render(imageSize, "All Chats", KeyImage.Blue, "all_chats");
+            KeyImage.Render(imageSize, "Chats", KeyImage.Blue, "all_chats");
 
         public override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            TryDecodeTitle(actionParameter, out var title) ? Trim(DisplayTitle(title)) : "Unavailable";
+            "\u200B"; // suppress a duplicate caption even for an already-open legacy folder
 
         public override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             if (!TryDecodeTitle(actionParameter, out var title))
             {
-                return KeyImage.RenderConversationSlot(imageSize, null, null, KeyImage.Gray, darkText: false);
+                return DesktopConversationRenderer.Render(imageSize, null, null, KeyImage.Gray, darkText: false);
             }
 
             var conversation = VisibleConversations(CurrentConversations())
                 .FirstOrDefault(c => String.Equals(c.Title, title, StringComparison.Ordinal));
             if (conversation == null)
             {
-                return KeyImage.RenderConversationSlot(imageSize, null, null, KeyImage.Gray, darkText: false);
+                return DesktopConversationRenderer.Render(imageSize, null, null, KeyImage.Gray, darkText: false);
             }
 
             // The same card the page-1 conversation keys draw, so a chat looks the same on both
-            // surfaces: title wrapped in the top 75%, state word in the bar. FaceFor already yields
+            // surfaces: measured title lines with a compact state footer. FaceFor already yields
             // exactly those inputs; the old icon-plus-badge face was the pre-redesign session look.
             var (word, color, darkText) = DesktopConversationCommand.FaceFor(conversation.State);
-            return KeyImage.RenderConversationSlot(imageSize, DisplayTitle(title), word, color, darkText);
+            return DesktopConversationRenderer.Render(imageSize, DisplayTitle(title), word, color, darkText);
         }
 
         public override void RunCommand(String actionParameter)
         {
-            if (!DesktopServices.Declared || !TryDecodeTitle(actionParameter, out var title))
-            {
-                return;
-            }
+            if (!DesktopServices.Declared) { return; }
+            Execute(actionParameter, CurrentConversations(), DesktopServices.Automation,
+                () => this.Close(), () => this.ButtonActionNamesChanged());
+        }
 
-            // Re-validate identity against the latest snapshot. A stale folder button must not
-            // turn into a press on whichever conversation inherited its old position.
-            var conversation = VisibleConversations(CurrentConversations())
+        internal static void Execute(String actionParameter, IReadOnlyList<DesktopConversation> conversations,
+            IDesktopAutomation automation, Action close, Action invalidate)
+        {
+            if (!TryDecodeTitle(actionParameter, out var title)) { return; }
+            var conversation = VisibleConversations(conversations)
                 .FirstOrDefault(c => String.Equals(c.Title, title, StringComparison.Ordinal));
-            if (conversation == null)
-            {
-                PluginLog.Info($"AllChatsDynamicFolder: '{title}' is no longer visible — ignored");
-                this.ButtonActionNamesChanged();
-                return;
-            }
-
-            if (!DesktopServices.Automation.PressConversation(conversation.Title))
-            {
-                PluginLog.Warning($"AllChatsDynamicFolder: '{conversation.Title}' no longer matches — sidebar changed?");
-                return;
-            }
-
-            DesktopServices.Automation.FocusApp();
-            this.Close();
-            PluginLog.Info($"AllChatsDynamicFolder: jumped to '{conversation.Title}'");
+            if (conversation == null) { invalidate(); return; }
+            if (DesktopConversationCommand.Execute(conversation, automation)) { close(); }
         }
 
         internal static IReadOnlyList<DesktopConversation> VisibleConversations(
@@ -176,18 +174,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         private static String DisplayTitle(String title) => DesktopConversationLabels.Display(
             DesktopServices.Declared ? DesktopServices.Monitor.Current.Mode : "", title);
 
-        private static String Trim(String title) =>
-            title.Length <= 24 ? title : title.Substring(0, 23) + "…";
-
         private void OnDesktopChanged(DesktopState _)
         {
             // The list, state glyphs, or both may have changed. Dynamic folders auto-page the
             // returned actions. Explicit image invalidation keeps state changes live even when
             // membership is unchanged (Running -> Awaiting -> Unread on the same title).
-            foreach (var conversation in VisibleConversations(CurrentConversations()))
-            {
-                this.CommandImageChanged(EncodeTitle(conversation.Title));
-            }
+            // DesktopConversationCommand invalidates its widgets on the same monitor event.
             this.ButtonActionNamesChanged();
         }
     }

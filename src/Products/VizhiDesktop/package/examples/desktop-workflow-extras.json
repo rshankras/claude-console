@@ -1,16 +1,19 @@
 [
   {
-    "id": "review_changes",
-    "label": "Review Changes",
+    "id": "review_pr",
+    "label": "Review PR",
     "icon": "review",
-    "submit": true,
-    "prompt": "Review the current workspace's uncommitted changes. If the working tree is clean, report that and stop. Check correctness, edge cases, and security; give file:line and a concrete failure scenario for each finding. Do not edit files."
+    "submit": false,
+    "input": "voice",
+    "prompt": "Your request:\n{brief}\n\nReview PR task:\nReview the identified pull request; ask if its identifier is unclear. Check correctness, edge cases, and security. Give file:line and a concrete failure scenario for each finding, then recommend merge or changes. Do not edit files.",
+    "scope": "BRIEF"
   },
   {
-    "id": "run_tests",
-    "label": "Run Tests",
+    "id": "write_tests",
+    "label": "Write Tests",
     "icon": "write_tests",
-    "submit": true,
-    "prompt": "Run this project's existing relevant test suite using its documented commands. Report the command, exit status, failures, and any tests you could not run. Do not claim tests passed unless you executed them; do not write new tests or change code."
+    "prompt": "Write tests for the most recent changes — the uncommitted diff if there is one, otherwise the last commit. Use the project's test framework and conventions, cover the happy path, edge cases, and failure modes, then run the suite and fix any failures.",
+    "scope": "DIFF",
+    "submit": false
   }
 ]

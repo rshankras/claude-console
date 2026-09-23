@@ -57,7 +57,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // where a stopped capture's transcript is routed — is the engine's call, not this key's.
             _fail.Clear();
             BridgeManager.Instance.ToggleVoice(VoiceIntent.Draft);
-            PluginLog.Info($"VoiceDraftCommand: recording={_face.IsActive}");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>

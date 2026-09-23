@@ -1,6 +1,8 @@
 namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 {
     using System;
+    using System.Collections.Generic;
+    using System.Linq;
 
     using Loupedeck.ClaudeConsolePlugin.Desktop;
 
@@ -19,17 +21,18 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// renders dim and a press on it does nothing.
     ///
     /// States, in the order they out-rank each other: Awaiting (approval — the amber badge),
-    /// Unread (done, result unseen), Running (the app's spinner), idle. The first two are the
-    /// app's own words; Running is inferred from an unnamed spinner image and says so in the
-    /// adapter — a state we can't read honestly renders as idle, never as a guess.
+    /// Unread (Complete or Unread), Running (Thinking or a legacy spinner), idle. Explicit
+    /// sidebar status labels take precedence over the older unnamed-image inference.
     /// </summary>
-    public class DesktopConversationCommand : PluginDynamicCommand
+    public class DesktopConversationCommand : DesktopCommandBase
     {
         private const Int32 Slots = DesktopSlotMap.SlotCount;
+        internal const String FolderParameterPrefix = "chat:";
 
         public DesktopConversationCommand()
             : base()
         {
+            this.SetWidget(true);
             if (!DesktopServices.Declared || String.IsNullOrEmpty(DesktopServices.App.ConversationItemMarker))
             {
                 return;   // an app with no readable sidebar never grows these keys
@@ -37,48 +40,72 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
             // Conversation cards own the whole LCD surface: title above, live state bar below.
             // A normal command would be inset as an icon and receive a second static label strip.
-            this.SetWidget(true);
-
             for (var i = 1; i <= Slots; i++)
             {
                 this.AddParameter(i.ToString(), $"Conversation {i}", "Conversations")
                     .SetDescription($"Sidebar conversation #{i} (most recent first) — press to open it in the app");
             }
 
-            DesktopServices.Monitor.OnChanged += _ => this.ActionImageChanged();
+            DesktopServices.OnMonitorChanged(_ => this.ActionImageChanged());
         }
 
         private static DesktopConversation Slot(String actionParameter)
         {
-            if (!DesktopServices.Declared || !Int32.TryParse(actionParameter, out var n))
+            if (!DesktopServices.Declared)
             {
                 return null;
             }
 
             var slots = DesktopServices.Monitor.Current.Slots;
+            if (IsFolderParameter(actionParameter))
+            {
+                return FolderConversation(actionParameter, DesktopServices.Monitor.Current.Conversations);
+            }
+            if (!Int32.TryParse(actionParameter, out var n)) { return null; }
             return n >= 1 && n <= slots.Count ? slots[n - 1] : null;   // null = empty slot
         }
 
+        internal static Boolean IsFolderParameter(String parameter) =>
+            parameter?.StartsWith(FolderParameterPrefix, StringComparison.Ordinal) == true;
+
+        internal static DesktopConversation FolderConversation(String parameter, IReadOnlyList<DesktopConversation> conversations) =>
+            IsFolderParameter(parameter) && AllChatsDynamicFolder.TryDecodeTitle(parameter.Substring(FolderParameterPrefix.Length), out var title)
+                ? AllChatsDynamicFolder.VisibleConversations(conversations).FirstOrDefault(c => String.Equals(c.Title, title, StringComparison.Ordinal))
+                : null;
+
         protected override void RunCommand(String actionParameter)
         {
-            var conv = Slot(actionParameter);
-            if (conv == null)
+            var shown = DesktopServices.Monitor?.Current;
+            var slot = DesktopServices.Declared ? Slot(actionParameter) : null;
+            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter, shown, slot));
+        }
+
+        private void RunDesktopCommand(String actionParameter, DesktopState shown, DesktopConversation slot)
+        {
+            if (!DesktopServices.Declared) { return; }
+            if (IsFolderParameter(actionParameter))
             {
-                PluginLog.Info($"DesktopConversationCommand({actionParameter}): empty slot — ignored");
+                ExecuteFolder(actionParameter, shown.Conversations, DesktopServices.Automation,
+                    () => this.Plugin.ExecuteGenericAction(ActionString.FromString(PluginDynamicFolder.NavigateUpActionName).ActionName, null, 0),
+                    () => this.ActionImageChanged());
                 return;
             }
+            Execute(slot, DesktopServices.Automation);
+        }
 
-            // Jump: open the conversation, then bring the app forward. Press first — the press
-            // targets by title and needs the tree as-is; the focus is cosmetic and can't fail
-            // the jump.
-            if (!DesktopServices.Automation.PressConversation(conv.Title))
-            {
-                PluginLog.Warning($"DesktopConversationCommand: “{conv.Title}” no longer matches — sidebar changed?");
-                return;
-            }
+        internal static void ExecuteFolder(String parameter, IReadOnlyList<DesktopConversation> conversations,
+            IDesktopAutomation automation, Action close, Action invalidate)
+        {
+            if (!IsFolderParameter(parameter)) { return; }
+            AllChatsDynamicFolder.Execute(parameter.Substring(FolderParameterPrefix.Length), conversations, automation, close, invalidate);
+        }
 
-            DesktopServices.Automation.FocusApp();
-            PluginLog.Info($"DesktopConversationCommand: jumped to “{conv.Title}”");
+        internal static Boolean Execute(DesktopConversation conversation, IDesktopAutomation automation)
+        {
+            if (conversation == null || String.IsNullOrWhiteSpace(conversation.Title)) { return false; }
+            if (!automation.PressConversation(conversation.Title)) { return false; }
+            automation.FocusApp();
+            return true;
         }
 
         // The full widget draws both title and state. A zero-width space suppresses the SDK's
@@ -91,17 +118,17 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             var conv = Slot(actionParameter);
             if (conv == null)
             {
-                return KeyImage.RenderConversationSlot(
+                return DesktopConversationRenderer.Render(
                     imageSize, null, null, KeyImage.Gray, darkText: false);
             }
 
             var (word, color, darkText) = FaceFor(conv.State);
             var title = DesktopConversationLabels.Display(DesktopServices.Monitor.Current.Mode, conv.Title);
-            return KeyImage.RenderConversationSlot(imageSize, title, word, color, darkText);
+            return DesktopConversationRenderer.Render(imageSize, title, word, color, darkText);
         }
 
         // Desktop states are the app's own observable truths. Colour reinforces the two states
-        // that matter across the room: amber wants the user; green means unseen completed work.
+        // that matter across the room: amber wants the user; green means Complete or Unread.
         internal static (String Word, BitmapColor Color, Boolean DarkText) FaceFor(ConversationState state) =>
             state switch
             {

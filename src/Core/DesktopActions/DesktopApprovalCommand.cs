@@ -16,7 +16,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// carries the expected-card guard, so a card that changed between the glance and the thumb
     /// is refused, never approved unseen. "Always allow" is deliberately not a key.
     /// </summary>
-    public class DesktopApprovalCommand : PluginDynamicCommand
+    public class DesktopApprovalCommand : DesktopCommandBase
     {
         private const String Approve = "approve";
         private const String Deny = "deny";
@@ -36,15 +36,21 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
             if (DesktopServices.Declared)
             {
-                DesktopServices.Monitor.OnChanged += state =>
+                DesktopServices.OnMonitorChanged(state =>
                 {
                     _confirmation.Observe(state);
                     this.ActionImageChanged();
-                };
+                });
             }
         }
 
         protected override void RunCommand(String actionParameter)
+        {
+            var shown = DesktopServices.Monitor?.Current;
+            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter, shown));
+        }
+
+        private void RunDesktopCommand(String actionParameter, DesktopState shown)
         {
             if (!DesktopServices.Declared)
             {
@@ -52,37 +58,39 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 return;
             }
 
-            var state = DesktopServices.Monitor.Current;
-            _confirmation.Observe(state);
+            Execute(actionParameter, shown, DesktopServices.App,
+                DesktopServices.Automation, _confirmation, DateTime.UtcNow, () => this.ActionImageChanged());
+        }
+
+        internal static void Execute(String actionParameter, DesktopState state, IDesktopAppAdapter app,
+            IDesktopAutomation automation, DesktopApprovalConfirmation confirmation, DateTime now, Action invalidate)
+        {
+            if (actionParameter is not (Approve or Deny)) { return; }
+            confirmation.Observe(state);
             if (state.Activity != DesktopActivity.WaitingApproval || String.IsNullOrWhiteSpace(state.CardText))
             {
-                PluginLog.Info($"DesktopApprovalCommand({actionParameter}): nothing pending — ignored");
                 return;
             }
 
-            if (state.Risk == ApprovalRisk.High && !_confirmation.Confirm(actionParameter, state, DateTime.UtcNow))
+            if (state.Risk == ApprovalRisk.High && !confirmation.Confirm(actionParameter, state, now))
             {
-                this.ActionImageChanged();
-                PluginLog.Info($"DesktopApprovalCommand({actionParameter}): red — armed, press again to confirm");
+                invalidate();
                 return;
             }
 
-            _confirmation.Reset();
+            confirmation.Reset();
 
-            var app = DesktopServices.App;
             var labels = actionParameter == Approve ? app.ApproveLabels : app.DenyLabels;
 
             // The expected-card guard: press only the card the keypad RENDERED. If it changed
             // between the glance and the thumb, the helper refuses and the honest outcome is
             // "look at the screen", not a silent approval of something unseen.
-            if (!DesktopServices.Automation.PressGuarded(labels, state.CardText, out var matched, out var error))
+            if (!automation.PressGuarded(labels, state.CardText, out _, out var error))
             {
                 PluginLog.Warning($"DesktopApprovalCommand({actionParameter}): {error ?? "press failed"}");
-                this.ActionImageChanged();
+                invalidate();
                 return;
             }
-
-            PluginLog.Info($"DesktopApprovalCommand: pressed “{matched}”");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
@@ -95,9 +103,14 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         private String FaceLabel(String actionParameter)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
-            var pending = state.Activity == DesktopActivity.WaitingApproval;
+            return LabelFor(actionParameter, state, _confirmation, DateTime.UtcNow);
+        }
 
-            if (pending && _confirmation.IsArmed(actionParameter, state, DateTime.UtcNow))
+        internal static String LabelFor(String actionParameter, DesktopState state,
+            DesktopApprovalConfirmation confirmation, DateTime now)
+        {
+            var pending = state.Activity == DesktopActivity.WaitingApproval;
+            if (pending && confirmation.IsArmed(actionParameter, state, now))
             {
                 return "Press again";
             }

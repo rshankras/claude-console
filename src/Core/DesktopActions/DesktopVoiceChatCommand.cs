@@ -4,7 +4,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     using Loupedeck.ClaudeConsolePlugin.Desktop;
 
     /// <summary>Native app-owned spoken conversation. Never records or transcribes locally.</summary>
-    public class DesktopVoiceChatCommand : PluginDynamicCommand
+    public class DesktopVoiceChatCommand : DesktopCommandBase
     {
         private readonly FailureFace _feedback;
 
@@ -13,13 +13,19 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             this.SetWidget(true);
             _feedback = new FailureFace(() => this.ActionImageChanged(), holdMs: 1800);
+            DesktopServices.Lifetime.OnStop(_feedback.Dispose);
             if (DesktopServices.Declared)
             {
-                DesktopServices.Monitor.OnChanged += _ => this.ActionImageChanged();
+                DesktopServices.OnMonitorChanged(_ => this.ActionImageChanged());
             }
         }
 
         protected override void RunCommand(String actionParameter)
+        {
+            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter));
+        }
+
+        private void RunDesktopCommand(String actionParameter)
         {
             if (!DesktopServices.Declared) { return; }
             DesktopServices.VoiceActions.RequestVoice(DesktopServices.Monitor.Current.VoiceChat,
@@ -34,13 +40,13 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             var shortcut = DesktopServices.Declared && DesktopServices.Automation.HasVoiceShortcut;
             var active = state.Available && state.VoiceChat == DesktopVoiceState.Active;
-            return KeyImage.RenderIntentTile(imageSize,
+            return KeyImage.RenderControlTile(imageSize,
                 _feedback.IsActive ? _feedback.Text : LabelFor(state, shortcut),
-                "voice_chat", shortcut ? "TOGGLE" : active ? "ACTIVE" : state.Available && state.VoiceChat == DesktopVoiceState.Ready
+                "voice_chat", status: active ? "ACTIVE" : shortcut ? "TOGGLE" : state.Available && state.VoiceChat == DesktopVoiceState.Ready
                     ? "TALK" : "CHECK APP");
         }
 
-        internal static String LabelFor(DesktopState state, Boolean shortcut = false) => shortcut ? "Voice Chat"
+        internal static String LabelFor(DesktopState state, Boolean shortcut = false) => state.Available && state.VoiceChat == DesktopVoiceState.Active ? "End Voice" : shortcut ? "Voice Chat"
             : !state.Available ? "Unavailable" : state.VoiceChat switch
         {
             DesktopVoiceState.Ready => "Voice Chat",

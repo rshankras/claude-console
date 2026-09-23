@@ -38,6 +38,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("--conv-marker")]
         [InlineData("--state-awaiting")]
         [InlineData("--state-unread")]
+        [InlineData("--state-running")]
         [InlineData("--search")]
         [InlineData("--changes")]
         [InlineData("--projects")]
@@ -120,7 +121,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void Running_uses_the_adapters_verified_idle_baseline()
         {
             Assert.Contains("argValues(\"--idle-images\")", Source());
-            Assert.Contains("conversationState(state: reading.state", Source());
+            Assert.Contains("conversationRowState(title: n.text", Source());
+            Assert.Contains("baseline: baselineImages", Source());
         }
 
         [Fact]
@@ -132,7 +134,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("kAXMainWindowAttribute", source);
             Assert.Contains("let operationWindows = targetWindows()", source);
             Assert.Contains("for w in operationWindows", source);
-            Assert.Contains("CFEqual(operationWindows[0], currentWindows[0])", source);
+            Assert.Contains("operationWindows.count == 1 && current.count == 1 && CFEqual(operationWindows[0], current[0])", source);
             Assert.Contains("windows.count == 1 ? windows : []", source);
         }
 

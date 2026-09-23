@@ -236,7 +236,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var profile = JsonNode.Parse(reader.ReadToEnd());
 
             var pages = profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"].AsArray();
-            Assert.Equal(3, pages.Count);   // Conversations · Actions · Workflows
+            Assert.Equal(2, pages.Count);
+            Assert.Equal("Home", (String)pages[0]["displayName"]);
+            Assert.Equal(pages.Count, pages.Select(p => (String)p["name"]).Distinct().Count());
 
             var pageOne = pages[0]["controls"].AsArray()
                 .Select(c => (String)c["pressAction"]).ToList();
@@ -248,51 +250,41 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Assert.EndsWith($"DesktopConversationCommand___{slot}", pageOne[slot - 1]);
             }
 
-            // Middle row: browse + create + inspect. Session state already lives in each card,
+            // Middle row: browse + create + capture. Session state already lives in each card,
             // so a second global Activity key would duplicate the grid.
             Assert.Equal("$VizhiDesktop___#DynamicFolder___DynamicFolder#Loupedeck.ClaudeConsolePlugin.DesktopActions.AllChatsDynamicFolder", pageOne[3]);
             Assert.EndsWith("DesktopControlCommand___new_chat", pageOne[4]);
-            Assert.EndsWith("DesktopContextCommand___primary", pageOne[5]);
+            Assert.EndsWith("DesktopCaptureCommand___screenshot", pageOne[5]);
 
             // Bottom row: Approve / Deny / Voice.
-            Assert.EndsWith("DesktopApprovalCommand___approve", pageOne[6]);
-            Assert.EndsWith("DesktopApprovalCommand___deny", pageOne[7]);
+            Assert.EndsWith("DesktopVoiceDraftCommand", pageOne[6]);
+            Assert.EndsWith("DesktopComposerCommand___send_stop", pageOne[7]);
             Assert.EndsWith("DesktopVoiceChatCommand", pageOne[8]);
-            Assert.Equal("Vizhi Adaptive 3", (String)profile["displayName"]);
+            Assert.Equal("Vizhi Home", (String)profile["displayName"]);
             Assert.NotEqual("6CA374714642475581835B05D0E6F7AC", (String)profile["name"]);
 
-            // Actions: stable controls first, then four mode-aware positions.
-            var pageTwo = pages[1]["controls"].AsArray()
-                .Select(c => (String)c["pressAction"]).ToList();
+            var pageTwo = pages[1]["controls"].AsArray().Select(c => (String)c["pressAction"]).ToList();
+            Assert.Equal("Tools", (String)pages[1]["displayName"]);
             Assert.EndsWith("DesktopControlCommand___mode", pageTwo[0]);
-            Assert.EndsWith("DesktopControlCommand___stop", pageTwo[1]);
-            Assert.EndsWith("DesktopVoiceDraftCommand", pageTwo[2]);
-            Assert.EndsWith("DesktopComposerCommand___send", pageTwo[7]);
-            Assert.EndsWith("DesktopComposerCommand___output", pageTwo[8]);
-            Assert.Equal("Controls", (String)pages[1]["displayName"]);
-            for (var slot = 1; slot <= 4; slot++)
-            {
-                Assert.EndsWith($"DesktopContextCommand___secondary_{slot}", pageTwo[slot + 2]);
-            }
-
-            // Workflows keep physical positions and resolve by focused mode at runtime.
-            var pageThree = pages[2]["controls"].AsArray()
-                .Select(c => (String)c["pressAction"]).ToList();
-            for (var slot = 1; slot <= 9; slot++)
-            {
-                Assert.EndsWith($"DesktopWorkflowCommand___slot_{slot}", pageThree[slot - 1]);
-            }
+            Assert.EndsWith("DesktopToolsCommand___approve", pageTwo[1]);
+            Assert.EndsWith("DesktopToolsCommand___deny", pageTwo[2]);
+            Assert.Contains("DesktopFilesDynamicFolder", pageTwo[3]);
+            Assert.EndsWith("DesktopCaptureCommand___clipboard", pageTwo[4]);
+            Assert.EndsWith("DesktopNavigateCommand___search", pageTwo[5]);
+            Assert.EndsWith("DesktopCaptureCommand___copy", pageTwo[6]);
+            Assert.Contains("DesktopSavedPromptsDynamicFolder", pageTwo[7]);
+            Assert.Contains("DesktopMoreDynamicFolder", pageTwo[8]);
         }
 
         [Fact]
-        public void Everyday_is_an_explicit_import_with_its_own_identity_and_draft_send_stop_row()
+        public void Adaptive3_remains_an_explicit_import_with_fixed_approval_row()
         {
             using var zip = System.IO.Compression.ZipFile.OpenRead(RepoFile(
-                "src", "Products", "VizhiDesktop", "package", "optional-profiles", "VizhiDesktop-Everyday.lp5"));
+                "src", "Products", "VizhiDesktop", "package", "optional-profiles", "VizhiDesktop-Adaptive3.lp5"));
             String Read(String name) { using var reader = new StreamReader(zip.GetEntry(name).Open()); return reader.ReadToEnd(); }
             var profile = JsonNode.Parse(Read("ProfileInfo.json"));
             var guid = (String)profile["name"];
-            Assert.Equal("Vizhi Everyday", (String)profile["displayName"]);
+            Assert.Equal("Vizhi Adaptive 3", (String)profile["displayName"]);
             Assert.Equal(guid, (String)profile["packageName"]);
             Assert.Equal(guid, (String)JsonNode.Parse(Read("ApplicationInfo.json"))["defaultProfileName"]);
             Assert.Contains($"name: {guid}", Read("metadata/LoupedeckPackage.yaml"));
@@ -302,9 +294,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var pages = profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"].AsArray();
             Assert.Equal(3, pages.Count);
             var home = pages[0]["controls"].AsArray();
-            Assert.EndsWith("DesktopVoiceDraftCommand", (String)home[6]["pressAction"]);
-            Assert.EndsWith("DesktopComposerCommand___send", (String)home[7]["pressAction"]);
-            Assert.EndsWith("DesktopControlCommand___stop", (String)home[8]["pressAction"]);
+            Assert.EndsWith("DesktopApprovalCommand___approve", (String)home[6]["pressAction"]);
+            Assert.EndsWith("DesktopApprovalCommand___deny", (String)home[7]["pressAction"]);
+            Assert.EndsWith("DesktopVoiceChatCommand", (String)home[8]["pressAction"]);
             Assert.DoesNotContain("$ClaudeConsole", Read("metadata/ProfilePreview.json"));
         }
 

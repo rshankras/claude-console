@@ -16,30 +16,29 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// Send, and a failure is named on this key (Not typed / No target), never half-typed and
     /// never only logged.
     /// </summary>
-    public class DesktopVoiceCommand : PluginDynamicCommand
+    public class DesktopVoiceCommand : DesktopCommandBase
     {
         private readonly ListeningFace _face;
         private readonly FailureFace _fail;
-        private String ProgressLabel => BridgeManager.Instance.Voice.StartupLabel(VoiceIntent.Desktop)
-            ?? (BridgeManager.Instance.Voice.IsTranscribing(VoiceIntent.Desktop) ? "Transcribing" : null);
-
         public DesktopVoiceCommand()
             : base(displayName: "Dictate & Send", description: "Speak a prompt — press to start, press again to send it to the app", groupName: "Agent")
         {
             this.SetWidget(true);
             _face = new ListeningFace(() => this.ActionImageChanged());
+            DesktopServices.Lifetime.Bind(() => _face.SetEnabled(true), () => _face.SetEnabled(false));
             _fail = new FailureFace(() => this.ActionImageChanged(), holdMs: VoiceFailure.HoldMs);
+            DesktopServices.Lifetime.OnStop(_fail.Dispose);
 
             // A dictation that failed says so on the key that was pressed, for a moment (#18). Only
             // this key's own captures: a failure routed to another key is that key's to show.
-            BridgeManager.Instance.OnVoiceFailed += (intent, text) =>
+            DesktopServices.OnVoiceFailed((intent, text) =>
             {
                 if (intent == VoiceIntent.Desktop) { _fail.Show(text); }
-            };
+            });
 
             // The engine owns "is the mic running, and for whom" (#28). This key only reflects it,
             // so a capture stopped from ANOTHER voice key clears this face too.
-            BridgeManager.Instance.Voice.Changed += () =>
+            DesktopServices.OnVoiceChanged(() =>
             {
                 if (BridgeManager.Instance.Voice.IsRecording(VoiceIntent.Desktop))
                 {
@@ -50,10 +49,15 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                     _face.Stop();
                 }
                 this.ActionImageChanged();
-            };
+            });
         }
 
         protected override void RunCommand(String actionParameter)
+        {
+            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter));
+        }
+
+        private void RunDesktopCommand(String actionParameter)
         {
             if (!DesktopServices.Declared)
             {
@@ -67,15 +71,15 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             DesktopServices.VoiceActions.RequestDictation(VoiceIntent.Desktop, BridgeManager.Instance.Voice,
                 intent => BridgeManager.Instance.ToggleVoice(intent), out var feedback);
             if (feedback != null) { _fail.Show(feedback); }
-            PluginLog.Info($"DesktopVoiceCommand: recording={_face.IsActive}");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) => "\u200B";
 
-        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize) =>
-            KeyImage.RenderIntentTile(imageSize,
-                _fail.IsActive ? _fail.Text : ProgressLabel ?? (_face.IsActive ? "Listening" : "Dictate"),
-                _face.IsActive ? _face.Icon : "voice",
-                _fail.IsActive ? "CHECK APP" : _face.IsActive ? "PRESS TO STOP" : ProgressLabel != null ? "WAIT" : "SEND");
+        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
+        {
+            var face = DesktopDictationFace.For(VoiceIntent.Desktop, BridgeManager.Instance.Voice,
+                _fail.IsActive ? _fail.Text : null, _face.Icon);
+            return KeyImage.RenderIntentTile(imageSize, face.Label, face.Icon, face.Footer);
+        }
     }
 }

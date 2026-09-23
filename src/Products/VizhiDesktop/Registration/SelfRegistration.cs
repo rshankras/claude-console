@@ -87,8 +87,8 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
                         OperatingSystem.IsWindows(), windowsProcessName))
                     {
                         PluginLog.Info(
-                            "SelfRegistration: installed a new packaged default profile without " +
-                            "overwriting the previous profile; restarting Logi Plugin Service in 10s");
+                            "SelfRegistration: updated packaged profile navigation; " +
+                            "restarting Logi Plugin Service in 10s");
                         Process.Start(OperatingSystem.IsWindows()
                             ? RegistrationHeal.WindowsRestart()
                             : RegistrationHeal.MacRestart());
@@ -204,16 +204,19 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
             }
 
             var profilesDir = Path.Combine(appDir, "Profiles");
+            var navigationUpdated = pluginName == "VizhiDesktop" && DesktopHomeNavigationMigration.Upgrade(appDir);
+            navigationUpdated |= pluginName == "VizhiDesktop" && DesktopHomeScreenshotMigration.Upgrade(appDir);
+            navigationUpdated |= pluginName == "VizhiDesktop" && DesktopTasksMenuMigration.Upgrade(appDir);
             var profileDir = Path.Combine(profilesDir, nextProfile);
             var revisionFile = Path.Combine(appDir, ".vizhi-packaged-profile");
             // Keep package revision outside ApplicationInfo: Options+ rewrites that document,
             // and defaultProfileName is the user's selection, not an installation marker.
             if (File.Exists(revisionFile) && File.ReadAllText(revisionFile) == nextProfile
-                && File.Exists(Path.Combine(profileDir, "ProfileInfo.json"))) return false;
+                && File.Exists(Path.Combine(profileDir, "ProfileInfo.json"))) return navigationUpdated;
             if (File.Exists(Path.Combine(profileDir, "ProfileInfo.json")))
             {
                 WriteProfileRevision(appDir, nextProfile);
-                return false; // adopt older installations without changing their default or restarting
+                return navigationUpdated; // restart only when a stock Home binding was upgraded
             }
             String staging = null;
             try

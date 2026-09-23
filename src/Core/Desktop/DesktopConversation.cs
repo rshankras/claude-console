@@ -12,16 +12,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public String Title { get; init; } = "";
         public ConversationState State { get; init; }
 
-        /// <summary>The app's own selection marker, when it exposes one. The current OpenAI app
-        /// build reports none (checked live: button and two ancestors all false) — kept because
-        /// it costs nothing and an app update could start answering.</summary>
+        /// <summary>The app's own current-conversation marker. The macOS helper reads
+        /// AXARIACurrent (aria-current="page") before the legacy AXSelected fallback.</summary>
         public Boolean Selected { get; init; }
     }
 
     /// <summary>
-    /// Verified against the live app (2026-08-25): Awaiting and Unread are literal texts on the
-    /// sidebar row; Running is inferred from the row's activity spinner (an image with no text —
-    /// the one state the app does not name, which is why it ranks below the text states).
+    /// Sidebar status, preferring exact adapter labels (Awaiting approval, Unread/Complete,
+    /// Thinking). Older app builds expose running only through an unnamed activity image.
+    /// Unread is also the transport state for an explicit Complete badge on a read conversation.
     /// </summary>
     internal enum ConversationState
     {
