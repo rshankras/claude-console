@@ -51,10 +51,12 @@
     <Compile Include="..\tools\windows\ClaudeConsoleInject\SessionInputLock.cs" />
     <Compile Include="..\tools\windows\ClaudeConsoleHook\WindowsHookProcessQuery.cs" />
     <Compile Include="..\src\Agents\**\*.cs" />
-    <!-- Each product's application binding. Not the Plugin classes — those need a live SDK host —
-         but the binding is exactly what broke clean installs in 1.8.0-1.8.4 by naming a process
+    <!-- Each product's application binding broke clean installs in 1.8.0-1.8.4 by naming a process
          that doesn't exist on the running OS, so every product's belongs under test. -->
     <Compile Include="..\src\Products\*\*Application.cs" />
+    <!-- Exercise the uninstall override on a fresh object, without starting the live bridge. -->
+    <Compile Include="..\src\Products\ClaudeConsole\ClaudeConsolePlugin.cs" />
+    <Compile Include="..\src\Products\ClaudeConsole\ClaudePluginLifecycle.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -6,7 +6,7 @@ Claude Console's footprint spans Logi's store, `~/.claude/claude-console/` (incl
 
 In Logi Options+, **right‑click the Claude Console plugin → Uninstall** (or `logiplugintool uninstall ClaudeConsole`), and delete the imported **Claude Console — Keypad** profile. This is the actual uninstall.
 
-## 2. Run the cleanup script
+## 2. Run the cleanup script (macOS)
 
 The plugin installs this script *outside* its package precisely so it survives the uninstall — you don't need the repo:
 
@@ -27,8 +27,16 @@ Don't restore `settings.json.claude-console.bak` by hand to undo the plugin — 
 
 ## Windows
 
-The cleanup script is a bash script and is **not installed on Windows** yet (#55). An Options+ uninstall there leaves the five hooks and the `statusLine` in `~/.claude/settings.json`. Current commands check that `claude-console-hook.exe` still exists before invoking it, so a leftover after the helper is removed is a silent no-op; commands already owned by an older install are migrated to this form when the current version loads. The entries still remain, so **turn live status off first** for a clean uninstall — hold a live key → *Turn off* (or a second long press within 15 s) — then uninstall in Options+.
+Starting with **2.3.1**, the Windows plugin implements the SDK's `Uninstall()` callback. During a normal packaged-plugin uninstall, it removes its five hook entries and its `statusLine` from `~/.claude/settings.json` before Options+ deletes the package. A status line it had chained is restored. Other hooks, settings, comments and formatting stay; the previous file is backed up to `settings.json.claude-console.bak`. No subsequent Claude turn or one-minute delay is required. Ordinary plugin unload and service restart do not remove wiring.
+
+Options+ also calls uninstall during an **upgrade**. The plugin saves only its owned wiring in `~/.claude/claude-console/reinstall-wiring.json` before cleanup, then merges it back during install using the new helper path. A subsequent load retries if install could not access settings. New user settings and a newer user status line are preserved. A fresh install does not enable live status. **Reinstall remembers the previous setup too**; to leave live status off, turn it off before uninstalling, or retain/create the existing `no-autowire` marker before reinstalling. The receipt is removed after restoration or when the Off marker is present.
+
+The runtime directory, downloaded model and user prompts remain for reuse. This change does not delete user data or install an extra executable. The macOS cleanup script remains macOS-only. To reset saved Windows integration state without deleting prompts/models, remove `reinstall-wiring.json` while the plugin is uninstalled. Delete other runtime data only if you no longer need it.
+
+**If settings cannot be changed:** invalid JSON, an unreadable chain, a held lock, a failed backup or a denied write makes cleanup report failure. Read `~/.claude/claude-console/lifecycle.log` and the Logi Plugin Service log. The installed host continues deleting the package even if the callback fails; a failure is not a clean-uninstall success. Existing launcher guards keep missing helpers from producing hook errors. Resolve the reported file problem, reinstall, then turn live status off and retry uninstall. Do not restore the entire rolling backup over newer settings. If the runtime directory itself is unwritable, only the service log may be available.
+
+Manual deletion of the package folder and removal of a developer `.link` can bypass the SDK callback. For those development/recovery paths, turn live status off before removing the files. Version 2.3.1 does not add a resident watcher to detect manual deletion. Packaged Options+ device acceptance is recorded separately in [the verification plan](windows-uninstall-2.3.1-plan.md).
 
 ## Clean reinstall
 
-Do 1–2, then reinstall from the Logi Marketplace (or the package from [vizhi.dev](https://vizhi.dev/claude-console/#install)) and re‑import the profile.
+On macOS, do 1–2, then reinstall from the Logi Marketplace (or the package from [vizhi.dev](https://vizhi.dev/claude-console/#install)) and re‑import the profile. On Windows, use the cleanup and saved-preference guidance above before reinstalling.

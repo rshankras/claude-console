@@ -3,6 +3,25 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [2.3.1] — Unreleased
+
+### Fixed
+- **Windows uninstall removes Claude Console's live-status wiring (#55).** The SDK's
+  `Plugin.Uninstall()` callback removes only owned hooks and restores a chained status line
+  before package deletion. This works without a prior `Load()`; ordinary unload/restart
+  does not remove wiring. No additional executable or background service is needed.
+- **Windows upgrades retain the previous live-status setup.** The host runs uninstall and
+  install during replacement, so a receipt stores only owned wiring outside the package.
+  Install (or a later load after a transient failure) merges it back, preserves unrelated
+  edits, and honors the Off marker. A fresh install adds no wiring. Reinstall retains the
+  same preference; turn live status off first to opt out of restoration.
+- Settings transactions serialize cooperating writers, require a successful rolling backup,
+  preserve source formatting, check for concurrent edits, and atomically replace the file.
+  Cleanup failures are recorded in `~/.claude/claude-console/lifecycle.log`; the host does
+  **not** cancel package deletion when cleanup reports failure. Existing missing-helper
+  guards remain in place. Options+ device acceptance is tracked in
+  [the verification plan](docs/windows-uninstall-2.3.1-plan.md).
+
 ## [2.2.3] — 2026-09-16
 
 Claude Console and Vizhi for Codex compile the same engine, so the work done for Vizhi 1.6.1
