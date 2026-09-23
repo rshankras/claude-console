@@ -75,9 +75,35 @@ No additional runtime executable, scheduled task or service is installed.
   same process (PID 20684). The snapshot is local scratch, `tmp/live-state-before.json`.
 - The existing xUnit1031 warning in `BridgeNoticeTests.cs` remains; the product build is clean.
 
-Build/test logs are local artifacts, not committed user data. The final release package has
-**not** been produced or installed. The release packager requires the macOS signing/notarization
-checks; the shell/macOS suites and a macOS device regression pass remain release checks.
+Build/test logs are local artifacts, not committed user data. A Windows QA candidate was
+subsequently prepared (details below), but has **not** been installed. The final release package
+still requires the macOS signing/notarization checks; the shell/macOS suites and a macOS device
+regression pass remain release checks.
+
+## Windows QA handoff — 2026-09-23
+
+`~/Downloads/ClaudeConsole-2.3.1-verification/` now contains:
+
+- `ClaudeConsole_2.3.1-edbd9a0-windows-test.lplug4` (17,334,133 bytes), built from implementation
+  commit `edbd9a0`. SHA-256:
+  `BD6430D29E23395A2D3C391DBDF63B732C3937D720CFB3A5998A3F1208FC8ACC`.
+- `START-HERE.txt`, exact installation and before/after/reinstall instructions for this machine.
+- `Save-QASnapshot.ps1`, a read-only collector that saves settings, chain/receipt/log, installed
+  version, generated launcher count and available service logs in timestamped evidence folders.
+- Package-verification output and `SHA256.txt`.
+
+The plugin and both self-contained Windows helpers were rebuilt from the branch. The unchanged
+voice payload was taken from the SHA-256-verified published 2.2.2 archive, retaining each entry's
+contents and ZIP metadata. Archive CRCs, unique entries and packaged DLL identity were checked.
+Logitech's `logiplugintool verify` and the repository package verifier both passed, including
+version agreement, helper contracts, no host API dependency payload, and four live support links.
+This is a Windows test candidate, not macOS signing/notarization evidence or a Marketplace release.
+Helper publishing reported the existing platform-analysis and COM-trimming warnings.
+
+A separate working `logiplugintool` 6.1.4 was found in the earlier main-package-test worktree;
+the installed Program Files launcher remains incomplete. The read-only collector was exercised
+against the current machine: **2.2.2.0 installed, six generated launchers**, saved as a baseline.
+No install, uninstall or service restart was performed. Device acceptance below remains pending.
 
 ## Packaged device acceptance still required
 
