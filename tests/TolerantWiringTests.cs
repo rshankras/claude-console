@@ -12,8 +12,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// <summary>
     /// The macOS hook and status-line commands survive their script being deleted (#55).
     ///
-    /// An Options+ uninstall removes the plugin and nothing else: the SDK gives a plugin no
-    /// uninstall moment, so the wiring stays in ~/.claude/settings.json. Logitech QA's 2.2.0
+    /// Older releases did not implement the SDK uninstall callback, so an Options+
+    /// uninstall left wiring in ~/.claude/settings.json. Logitech QA's 2.2.0
     /// retest filed the leftovers on Windows and confirmed them on macOS. Reproduced 2026-09-03
     /// with a throwaway settings file: with the old commands and the folder gone, Claude Code
     /// raised "Stop hook error occurred" on every turn; with a command that checks for the script

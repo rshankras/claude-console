@@ -62,7 +62,7 @@ The Windows build reaches Claude a different way than macOS does, and a few diff
 
 **Elevated sessions cannot be controlled.** Options+ runs unelevated, and Windows blocks the console attach across integrity levels. Run Claude unelevated.
 
-**Before uninstalling on Windows, turn live status off** (hold a live key → *Turn off*). The cleanup script that does this on macOS is not installed on Windows yet (#55), and an Options+ uninstall leaves the hooks in `~/.claude/settings.json`. Current wiring checks that the helper still exists, so a leftover is a silent no-op rather than an error, but it is still a leftover.
+**Windows uninstall cleans up live-status wiring in 2.3.1.** The plugin removes its own hooks and restores a chained status line before Options+ deletes the package. Reinstall and upgrade preserve your previous live-status setup; turn it off first if you want it to stay off. See [uninstall and recovery details](docs/uninstall.md#windows).
 
 ## Install (released plugin)
 
@@ -242,7 +242,7 @@ bash ~/.claude/claude-console/scripts/uninstall.sh --dry-run  # preview only
 
 It unwires the live status hooks surgically, removes `~/.claude/claude-console/` (voice helper, speech model, your `prompts.json`), the IPC files, the Microphone grant and any dev `.link`, and asks before deleting. What it touches, why the order matters, and the Windows caveat: [docs/uninstall.md](docs/uninstall.md).
 
-**Options+ cannot do any of that for you.** Its uninstall removes the plugin and nothing else, on macOS as on Windows: the hooks, the status line and `~/.claude/claude-console/` stay (#55). On macOS the hooks notice on their own (#73): once the plugin's folder has been gone for over a minute, the next Claude Code event takes the plugin's entries out of `settings.json` surgically — same rolling backup as *Turn off*, your own entries untouched, the Off marker set — and leaves `~/.claude/claude-console/unwired-after-uninstall` to say so. `~/.claude/claude-console/` itself stays for the script above. If you would rather not wait, hold a live key and choose **Turn off** *before* uninstalling; on Windows that is still the only way, and the entries left behind are a silent no-op rather than a "hook error" on every turn because each one checks that its exe exists before running it.
+**Windows 2.3.1 removes its settings wiring during Options+ uninstall.** User data and downloaded voice files remain for a future reinstall. On macOS, hooks remove their own entries after the plugin folder has been missing for over a minute across two runs; the runtime home stays for the cleanup script above. Failure recovery, upgrade behavior, and removal of saved data are covered in [docs/uninstall.md](docs/uninstall.md).
 
 ## Developing
 
