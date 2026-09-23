@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin
 {
     using System;
+    using System.Globalization;
     using System.IO;
     using System.Linq;
     using System.Text;
@@ -11,22 +12,32 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// <summary>
     /// Claude Console's Windows package lifecycle, independent of Load(), polling and SDK UI.
     /// Options+ calls Uninstall then Install for replacements too. Keep ONLY our previous wiring
-    /// in a receipt outside the package, so replacement/reinstall retains the user's preference.
+    /// in a receipt outside the package, so a replacement retains the user's preference.
     /// Never restore a whole settings backup over subsequent user edits.
     /// </summary>
     internal sealed class ClaudePluginLifecycle
     {
+        // A replacement runs Uninstall then Install back to back; this is generous for that and
+        // nothing else. A receipt older than this is a real uninstall followed, later, by a fresh
+        // install — which is not consent to wire settings.json (#31). It is dropped, and live
+        // status stays off until the user turns it on again.
+        internal static readonly TimeSpan RestoreWindow = TimeSpan.FromMinutes(10);
+        // Tolerates a small clock step backwards; anything larger is not a receipt we trust.
+        private static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes(1);
+
         private readonly ClaudeSettingsStore _settings;
         private readonly String _runtime;
+        private readonly Func<DateTime> _utcNow;
         internal String ReceiptFile => Path.Combine(_runtime, "reinstall-wiring.json");
         internal String LogFile => Path.Combine(_runtime, "lifecycle.log");
         private String ChainFile => Path.Combine(_runtime, "statusline-chain");
         private String OffFile => Path.Combine(_runtime, "no-autowire");
 
-        internal ClaudePluginLifecycle(String home)
+        internal ClaudePluginLifecycle(String home, Func<DateTime> utcNow = null, TimeSpan? lockWait = null)
         {
-            _settings = new ClaudeSettingsStore(home);
+            _settings = new ClaudeSettingsStore(home, lockWait);
             _runtime = Path.Combine(home, ".claude", "claude-console");
+            _utcNow = utcNow ?? (() => DateTime.UtcNow);
         }
 
         internal Boolean Uninstall()
@@ -48,6 +59,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                         WriteAtomic(ReceiptFile, new JsonObject
                         {
                             ["schema"] = 1,
+                            ["writtenAt"] = _utcNow().ToString("O", CultureInfo.InvariantCulture),
                             ["wiring"] = owned,
                             ["afterStatusLine"] = root["statusLine"]?.DeepClone(),
                             ["chain"] = chain,
@@ -91,6 +103,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                     !JsonNode.DeepEquals(wiring, CaptureOwned(wiring)))
                 {
                     throw new IOException("Unrecognized wiring receipt; retained for recovery");
+                }
+                if (!IsFresh(receipt))
+                {
+                    File.Delete(ReceiptFile);
+                    Record("install", "saved setup is from an earlier uninstall; live status stays off until turned on");
+                    return true;
                 }
                 var directory = String.IsNullOrEmpty(assemblyFilePath) ? null : Path.GetDirectoryName(assemblyFilePath);
                 var exe = directory == null ? null : Path.Combine(directory, "claude-console-hook.exe");
@@ -147,6 +165,17 @@ namespace Loupedeck.ClaudeConsolePlugin
                 Record("install", "DEFERRED; recovery receipt retained; " + ex.Message);
                 return false;
             }
+        }
+
+        private Boolean IsFresh(JsonObject receipt)
+        {
+            if (!DateTime.TryParse(BridgeWiring.Str(receipt["writtenAt"]), CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind, out var writtenAt) || writtenAt.Kind != DateTimeKind.Utc)
+            {
+                return false;
+            }
+            var age = _utcNow() - writtenAt;
+            return age >= -ClockSkew && age <= RestoreWindow;
         }
 
         private static JsonObject CaptureOwned(JsonObject root)

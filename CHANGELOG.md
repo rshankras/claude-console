@@ -13,9 +13,11 @@ All notable changes to Claude Console are documented here. Format based on
 - **Windows upgrades retain the previous live-status setup.** The host runs uninstall and
   install during replacement, so a receipt stores only owned wiring outside the package.
   Install (or a later load after a transient failure) merges it back, preserves unrelated
-  edits, and honors the Off marker. A fresh install adds no wiring. Reinstall retains the
-  same preference; turn live status off first to opt out of restoration.
-- Settings transactions serialize cooperating writers, require a successful rolling backup,
+  edits, and honors the Off marker. The receipt is honoured only within 10 minutes of the
+  uninstall: a reinstall after a real uninstall is a fresh install, adds no wiring, and the
+  live keys ask again (#31).
+- Settings transactions wait up to 2 s for another writer's lock instead of failing at once
+  (the uninstall callback gets one try), serialize cooperating writers, require a successful rolling backup,
   preserve source formatting, check for concurrent edits, and atomically replace the file.
   Cleanup failures are recorded in `~/.claude/claude-console/lifecycle.log`; the host does
   **not** cancel package deletion when cleanup reports failure. Existing missing-helper

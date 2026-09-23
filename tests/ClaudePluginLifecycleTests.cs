@@ -225,12 +225,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void Lock_contention_fails_promptly_and_the_same_cleanup_succeeds_after_release()
+        public void Lock_held_past_the_wait_fails_and_the_same_cleanup_succeeds_after_release()
         {
             using var home = new TempHome();
             Wire(home);
             var store = new ClaudeSettingsStore(home.Dir);
-            var lifecycle = new ClaudePluginLifecycle(home.Dir);
+            var lifecycle = new ClaudePluginLifecycle(home.Dir, lockWait: TimeSpan.Zero);
             var before = home.ReadSettings();
             using (store.AcquireLock())
             {
@@ -239,6 +239,71 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }
             Assert.Equal(before, home.ReadSettings());
             Assert.True(lifecycle.Uninstall());
+        }
+
+        [Fact]
+        public async Task Uninstall_waits_out_a_briefly_held_lock_instead_of_failing()
+        {
+            // The host deletes the package whatever Uninstall returns: one try, so a writer that
+            // is mid-edit (an Enable press, the macOS unwire script) must be waited for.
+            using var home = new TempHome();
+            Wire(home);
+            var held = new ClaudeSettingsStore(home.Dir).AcquireLock();
+            var release = Task.Delay(300).ContinueWith(_ => held.Dispose());
+            Assert.True(new ClaudePluginLifecycle(home.Dir).Uninstall());
+            await release;
+            Assert.Equal(0, HookCount(Read(home)));
+        }
+
+        [Theory]
+        [InlineData(11)]   // a real uninstall, reinstalled later
+        [InlineData(-5)]   // a clock that jumped: not a receipt to trust
+        public void Reinstall_outside_the_replacement_window_leaves_live_status_off(Int32 minutesLater)
+        {
+            using var home = new TempHome();
+            Wire(home);
+            var uninstalledAt = new DateTime(2026, 9, 23, 12, 0, 0, DateTimeKind.Utc);
+            Assert.True(new ClaudePluginLifecycle(home.Dir, () => uninstalledAt).Uninstall());
+            var before = home.ReadSettings();
+
+            var install = new ClaudePluginLifecycle(home.Dir, () => uninstalledAt.AddMinutes(minutesLater));
+            Assert.True(install.Restore(AssemblyPath(home)));
+
+            // A fresh install is not consent (#31): nothing is written, and nothing is left to act later.
+            Assert.Equal(before, home.ReadSettings());
+            Assert.Equal(0, HookCount(Read(home)));
+            Assert.False(File.Exists(install.ReceiptFile));
+            Assert.False(File.Exists(home.Marker));
+            Assert.Contains("earlier uninstall", File.ReadAllText(install.LogFile));
+        }
+
+        [Fact]
+        public void Replacement_inside_the_window_restores_the_setup()
+        {
+            using var home = new TempHome();
+            Wire(home);
+            var uninstalledAt = new DateTime(2026, 9, 23, 12, 0, 0, DateTimeKind.Utc);
+            Assert.True(new ClaudePluginLifecycle(home.Dir, () => uninstalledAt).Uninstall());
+            var install = new ClaudePluginLifecycle(home.Dir,
+                () => uninstalledAt + ClaudePluginLifecycle.RestoreWindow - TimeSpan.FromSeconds(1));
+            Assert.True(install.Restore(AssemblyPath(home)));
+            Assert.Equal(LiveStatusWiring.Enabled, BridgeWiring.Inspect(Read(home)));
+        }
+
+        [Fact]
+        public void A_receipt_without_a_timestamp_is_dropped_not_restored()
+        {
+            // The 2.3.1 test candidate wrote receipts without one.
+            using var home = new TempHome();
+            Wire(home);
+            var lifecycle = new ClaudePluginLifecycle(home.Dir);
+            Assert.True(lifecycle.Uninstall());
+            var receipt = JsonNode.Parse(File.ReadAllText(lifecycle.ReceiptFile)).AsObject();
+            receipt.Remove("writtenAt");
+            File.WriteAllText(lifecycle.ReceiptFile, receipt.ToJsonString());
+            Assert.True(lifecycle.Restore(AssemblyPath(home)));
+            Assert.Equal(0, HookCount(Read(home)));
+            Assert.False(File.Exists(lifecycle.ReceiptFile));
         }
 
         [Fact]

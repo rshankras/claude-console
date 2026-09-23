@@ -6,6 +6,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.Text;
     using System.Text.Json;
     using System.Text.Json.Nodes;
+    using System.Threading;
 
     // Shared by the running bridge and the fresh SDK install/uninstall context.
     // The lock serializes cooperating writers; fingerprints also detect external edits.
@@ -16,19 +17,40 @@ namespace Loupedeck.ClaudeConsolePlugin
         private readonly String SettingsBackup;
         internal String LockFile => Path.Combine(ClaudeDir, ".claude-console-unwire.lock");
 
-        internal ClaudeSettingsStore(String home)
+        // How long a writer waits for another to finish. The uninstall callback gets exactly one
+        // try — the host deletes the package whatever it returns — so a lock held for a moment
+        // (an Enable press, the macOS unwire script) must be waited out, not treated as failure.
+        internal static readonly TimeSpan DefaultLockWait = TimeSpan.FromSeconds(2);
+        private static readonly TimeSpan LockPoll = TimeSpan.FromMilliseconds(100);
+        private readonly TimeSpan _lockWait;
+
+        internal ClaudeSettingsStore(String home, TimeSpan? lockWait = null)
         {
             ClaudeDir = Path.Combine(home, ".claude");
             SettingsFile = Path.Combine(ClaudeDir, "settings.json");
             SettingsBackup = SettingsFile + ".claude-console.bak";
+            _lockWait = lockWait ?? DefaultLockWait;
         }
 
         internal IDisposable AcquireLock()
         {
             Directory.CreateDirectory(ClaudeDir);
             RefuseLink(LockFile);
-            // Never delete this file: unlinking it would let another writer bypass a held lock.
-            return new FileStream(LockFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            var deadline = DateTime.UtcNow + _lockWait;
+            while (true)
+            {
+                try
+                {
+                    // Never delete this file: unlinking it would let another writer bypass a held lock.
+                    return new FileStream(LockFile, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                }
+                // Exactly IOException is the sharing violation; its subclasses (missing directory,
+                // path too long) and access denial will not clear by waiting.
+                catch (IOException ex) when (ex.GetType() == typeof(IOException) && DateTime.UtcNow < deadline)
+                {
+                    Thread.Sleep(LockPoll);
+                }
+            }
         }
 
         internal Boolean Rewrite(Func<JsonObject, Boolean> mutate, out Boolean changed)
@@ -205,7 +227,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     if (File.Exists(SettingsFile))
                     {
                         RefuseLink(SettingsBackup);
-                    File.Copy(SettingsFile, SettingsBackup, overwrite: true);
+                        File.Copy(SettingsFile, SettingsBackup, overwrite: true);
                     }
                 }
                 catch (Exception ex)

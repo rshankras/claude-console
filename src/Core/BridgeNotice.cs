@@ -79,8 +79,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             $"up first. (Pressing {keyName} again within {seconds} s also turns it on.)\n\n" +
             "To take it out later, hold a live key and choose Turn off. Windows uninstall removes the " +
             "plugin's entries; on macOS the hooks remove them after the plugin has been missing for " +
-            "over a minute. Reinstalling on Windows restores your previous live-status setup; turn " +
-            "it off first if you want it to stay off.";
+            "over a minute. Updating the plugin keeps it on; a later reinstall asks again.";
 
         /// <summary>The dialog a long press opens once live status is on: the mirror question.</summary>
         internal static String TurnOffDialog(String keyName, Int32 seconds) =>

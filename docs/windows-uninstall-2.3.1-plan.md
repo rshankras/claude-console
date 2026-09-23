@@ -52,6 +52,8 @@ status line. It is flushed before cleanup commits. Install merges only those ent
 known commands to the new packaged helper, preserves unrelated edits and a newer user status
 line, and consumes the receipt after success. Partial wiring stays partial. An Off marker wins.
 Reinstall remembers the same preference as upgrade; this is disclosed in the uninstall guide.
+*Superseded after review (#55 comment, 23 Sep): the receipt is timestamped and honoured only
+within 10 minutes of the uninstall, so a later reinstall is a fresh install and asks again (#31).*
 No additional runtime executable, scheduled task or service is installed.
 
 ## Completed verification
@@ -153,6 +155,9 @@ Steps 3–5 remain pending.
 3. Reinstall and replace the package while live status is enabled. Verify five owned hooks and
    one status line, no duplicates, correct helper paths, unchanged foreign settings and profiles.
    Repeat with live status off and with partial wiring; neither should become fully enabled.
+   Then uninstall with live status on, wait more than 10 minutes, and install again: settings
+   must stay unwired, `reinstall-wiring.json` must be gone, and `lifecycle.log` must say the
+   saved setup was from an earlier uninstall.
 4. Restart the service with the installed plugin and confirm settings wiring remains intact.
 5. In the disposable account, deny settings replacement or hold the sidecar lock and uninstall.
    Expect a recorded failure and retained recovery data, even though the host removes the
