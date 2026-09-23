@@ -76,9 +76,9 @@ No additional runtime executable, scheduled task or service is installed.
 - The existing xUnit1031 warning in `BridgeNoticeTests.cs` remains; the product build is clean.
 
 Build/test logs are local artifacts, not committed user data. A Windows QA candidate was
-subsequently prepared (details below), but has **not** been installed. The final release package
-still requires the macOS signing/notarization checks; the shell/macOS suites and a macOS device
-regression pass remain release checks.
+subsequently prepared and its real Options+ uninstall was verified (details below). The final
+release package still requires the macOS signing/notarization checks; the shell/macOS suites
+and a macOS device regression pass remain release checks.
 
 ## Windows QA handoff — 2026-09-23
 
@@ -102,10 +102,48 @@ Helper publishing reported the existing platform-analysis and COM-trimming warni
 
 A separate working `logiplugintool` 6.1.4 was found in the earlier main-package-test worktree;
 the installed Program Files launcher remains incomplete. The read-only collector was exercised
-against the current machine: **2.2.2.0 installed, six generated launchers**, saved as a baseline.
-No install, uninstall or service restart was performed. Device acceptance below remains pending.
+against the machine at handoff: **2.2.2.0 installed, six generated launchers**, saved as a baseline.
+No install, uninstall or service restart was performed by the assistant during handoff. The
+owner subsequently installed and uninstalled the candidate as recorded below.
 
-## Packaged device acceptance still required
+## Real Options+ uninstall result — PASS, 23 September 2026
+
+The owner installed the candidate, enabled live status, and uninstalled Claude Console through
+Options+ with live status still on. The assistant captured and compared the before/after state.
+
+| Check | Observed result |
+| --- | --- |
+| Before, 19:20:44 IST | DLL 2.3.1.0 installed; six owned launchers; no developer link |
+| After, 19:23:45 IST | Plugin DLL and manifest absent; zero owned launchers |
+| Settings edit | Exactly five owned hooks and the owned status line removed; remaining parsed settings match the original after only those removals |
+| Rolling backup | Byte-for-byte identical to the before-uninstall settings |
+| Codex hooks | Byte-for-byte unchanged |
+| Recovery state | Owned-wiring reinstall receipt created; no Off marker created |
+| Host process | Logi Plugin Service remained PID 20684 |
+
+New lifecycle entry at 19:23:12 IST:
+
+```text
+2026-09-23T13:53:12.5852248Z Claude Console lifecycle uninstall: complete; owned wiring removed
+```
+
+Cleanup was observed without starting a post-uninstall Claude turn. No chained status line
+was present in this run, so chained restoration and mixed foreign-hook preservation still need
+separate device scenarios despite their automated coverage. Reinstall, replacement, service
+restart, Off-state behavior, failure scenarios and a post-uninstall Claude turn remain pending.
+
+The local handoff folder contains `UNINSTALL-RESULT.txt`, `uninstall-settings.diff`, and
+`evidence/20260923-192044-575-before-uninstall` /
+`evidence/20260923-192345-205-after-uninstall`. Raw settings snapshots are not committed.
+The measured result and outstanding checks are also recorded on
+[issue #55](https://github.com/rshankras/claude-console/issues/55#issuecomment-5796207287),
+which remains open pending the remaining acceptance and release checks.
+
+## Packaged device acceptance checklist
+
+Steps 1–2 have now passed for the enabled setup on this machine, except that a subsequent
+Claude turn and the added foreign-hook/chained-status-line scenarios remain unverified.
+Steps 3–5 remain pending.
 
 1. Install the candidate `.lplug4` normally, with no developer link. Enable live status and add
    a harmless foreign hook and status line in a disposable QA account. Save settings and hashes.
