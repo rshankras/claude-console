@@ -3,7 +3,7 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
-## [2.3.1] — Unreleased
+## [2.3.1] — 2026-09-24
 
 ### Fixed
 - **Windows uninstall removes Claude Console's live-status wiring (#55).** The SDK's
