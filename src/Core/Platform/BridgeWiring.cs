@@ -111,12 +111,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// The command Claude Code should run to render the status line.
         ///
         /// On both platforms the command checks that the handler still exists before running it. An Options+
-        /// uninstall removes the plugin but not the wiring (the SDK gives a plugin no uninstall
-        /// moment — #55), so a user who then deletes ~/.claude/claude-console/ was left with five
-        /// hooks and a status line pointing at nothing: Claude Code raised "Stop hook error occurred"
-        /// on every turn (reproduced 2026-09-03). With the guard, a missing script is a silent no-op
-        /// and the handler's own exit code still propagates when it is there. Windows uses an
-        /// encoded PowerShell launcher so Git Bash cannot rewrite its command switches or paths.
+        /// uninstall now removes owned Windows wiring, but manual deletion or quarantine can still
+        /// remove a handler while its command remains. The Windows guard records that failure for
+        /// the plugin without printing into the user's status line; the handler's own exit code
+        /// still propagates when it is there. Keep the encoded PowerShell launcher until a simpler
+        /// launcher has passed the Windows/Git Bash compatibility tests (#122).
         /// </summary>
         /// <param name="handlerPath">bash script path (macOS) or hook exe path (Windows).</param>
         internal static String StatuslineCommand(Boolean isWindows, String handlerPath) =>
@@ -225,10 +224,32 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 "$ProgressPreference = 'SilentlyContinue'; " +
                 "$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); " +
                 "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); " +
-                $"if (Test-Path -LiteralPath {Literal(path)} -PathType Leaf) {{ " +
-                "$read = [Console]::In.ReadToEndAsync(); if (-not $read.Wait(5000)) { exit 0 }; " +
-                $"$read.Result | & {Literal(path)} " +
-                String.Join(" ", arguments.Select(Literal)) + "; exit $LASTEXITCODE }";
+                $"$helper = {Literal(path)}; " +
+                // A marker is immutable so concurrent hooks cannot replace a newer failure with
+                // an older one. Retaining the newest 16 bounds disk use even during quarantine.
+                // Match WindowsHookHealth and the helper: product root + hash of the full path.
+                "function Write-HookFailure([string]$reason) { try { " +
+                "$bytes = [Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($helper).ToUpperInvariant()); " +
+                "$sha = [Security.Cryptography.SHA256]::Create(); " +
+                "try { $hash = [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant() } finally { $sha.Dispose() }; " +
+                "$dir = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'claude-console', 'hook-health', $hash); " +
+                "[IO.Directory]::CreateDirectory($dir) | Out-Null; " +
+                "$ticks = [DateTime]::UtcNow.Ticks; " +
+                "$file = [IO.Path]::Combine($dir, ('failure-' + $ticks + '-' + [Guid]::NewGuid().ToString('N') + '.json')); " +
+                "$tmp = $file + '.tmp'; " +
+                "$body = @{ schema = 1; observedUtcTicks = $ticks; reason = $reason } | ConvertTo-Json -Compress; " +
+                "[IO.File]::WriteAllText($tmp, $body, [Text.UTF8Encoding]::new($false)); [IO.File]::Move($tmp, $file); " +
+                "Get-ChildItem -LiteralPath $dir -Filter 'failure-*.json' -File | Sort-Object Name -Descending | Select-Object -Skip 16 | ForEach-Object { try { [IO.File]::Delete($_.FullName) } catch {} }; " +
+                "} catch {} }; " +
+                "if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { Write-HookFailure 'missing'; exit 0 }; " +
+                "try { $read = [Console]::In.ReadToEndAsync(); if (-not $read.Wait(5000)) { Write-HookFailure 'input-timeout'; exit 0 }; " +
+                // ErrorActionPreference makes native start failures catchable; native nonzero
+                // exits still flow through LASTEXITCODE and retain their original exit code.
+                "$ErrorActionPreference = 'Stop'; $LASTEXITCODE = 0; " +
+                "$read.Result | & $helper " +
+                String.Join(" ", arguments.Select(Literal)) + "; $code = $LASTEXITCODE; " +
+                "if ($code -ne 0) { Write-HookFailure 'nonzero-exit' }; exit $code " +
+                "} catch { Write-HookFailure 'launch-failed'; exit 1 }";
             return "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand " +
                 Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
         }

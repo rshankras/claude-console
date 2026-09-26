@@ -26,11 +26,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         private const String Script = "#!/bin/bash\n# stable launcher\nprintf '{}'\n";
 
-        // InstallsHooks = true drives the hooks path on ANY host OS: these tests are about what
-        // the installer writes, not about which platform is running them. The Windows branch —
-        // install nothing at all — has its own test below.
-        private CodexStateBridge New() =>
-            new CodexStateBridge(this._home, this._sessions) { InstallsHooks = true };
+        // Supply the expected package file on every OS. Missing-helper behavior has dedicated
+        // tests; these installer/trust tests must also exercise the healthy path on Windows.
+        private CodexStateBridge New()
+        {
+            Directory.CreateDirectory(this._home);
+            var helper = Path.Combine(this._home, "claude-console-hook.exe");
+            if (!File.Exists(helper)) { File.WriteAllText(helper, "fixture"); }
+            return new CodexStateBridge(this._home, this._sessions) { InstallsHooks = true, HookExe = helper };
+        }
 
         public void Dispose()
         {

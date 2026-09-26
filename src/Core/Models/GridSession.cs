@@ -66,6 +66,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         /// <summary>The shell command awaiting approval, when the pending tool is Bash.</summary>
         public String PendingCommand { get; set; }
 
+        /// <summary>
+        /// Write time of the source read for this approval, captured before its bytes were read.
+        /// A newer statusline or another session's hook must not make an old approval current.
+        /// </summary>
+        internal DateTime? ApprovalObservedAtUtc { get; set; }
+        internal DateTime? ApprovalObservationStartedAtUtc { get; set; }
+        internal DateTime? ApprovalSourceEventAtUtc { get; set; }
+        internal DateTime? StateObservationStartedAtUtc { get; set; }
+
+        // Exact parsed versions, checked only immediately before approval injection. Painting
+        // uses the metadata above and performs no disk reads.
+        internal String ApprovalSourcePath { get; set; }
+        internal String ApprovalSourceRaw { get; set; }
+        internal String StateSourcePath { get; set; }
+        internal String StateSourceRaw { get; set; }
+        internal DateTime StateSourceWrittenAtUtc { get; set; }
+
         /// <summary>How much attention the pending approval deserves. See RiskClassifier.</summary>
         public ApprovalRisk Risk { get; set; } = ApprovalRisk.None;
 
@@ -75,7 +92,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Models
         /// <summary>
         /// Fields that change what the key LOOKS like. Compared to decide whether to repaint, so a
         /// heartbeat-only update (UpdatedAt moving) doesn't churn the LCD every poll.
+        /// Fresh proof can remove Blocked without changing the reported value or pending command.
         /// </summary>
-        public String VisualKey => $"{this.SessionKey}|{this.Project}|{this.State}|{this.CtxPercent}|{this.Risk}|{this.IsProvisional}";
+        public String VisualKey => $"{this.SessionKey}|{this.Project}|{this.State}|{this.CtxPercent}|{this.Risk}|{this.IsProvisional}" +
+            $"|{this.StateObservationStartedAtUtc?.Ticks}|{this.ApprovalObservationStartedAtUtc?.Ticks}|{this.ApprovalSourceEventAtUtc?.Ticks}";
     }
 }

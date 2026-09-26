@@ -1,7 +1,7 @@
 // claude-console-hook — the Windows counterpart of scripts/statusline-handler.sh and
 // scripts/activity-hook.sh, in one arg-dispatched executable.
 //
-//   claude-console-hook statusline          <- reads Claude's JSON on stdin, writes it verbatim
+//   claude-console-hook statusline          <- reads Claude JSON, adds invocation time to IPC only
 //   claude-console-hook activity <state>    <- busy | waiting | done | permission
 //   claude-console-hook codex <event>       <- the Windows body of scripts/codex-hook.sh: wraps
 //                                              the event JSON in the state envelope and writes it
@@ -18,8 +18,9 @@
 //
 // Both are pinned by contract tests that read this file (tests/WindowsHookTests.cs).
 //
-// Like the bash handler, this stays DUMB about payload shape: Claude's JSON is written through
-// verbatim and all parsing happens in the plugin (ClaudeState).
+// State interpretation remains in the plugin. IPC retains agent fields and gains a helper
+// invocation timestamp; a chained statusline still receives the original stdin verbatim. Health
+// receipts require valid JSON objects so truncated input cannot claim successful recovery.
 
 using System.Diagnostics;
 using System.Globalization;
@@ -28,6 +29,8 @@ using System.Runtime.InteropServices;
 
 internal static class Program
 {
+    private static Int64 _startedUtcTicks;
+
     private static Int32 Main(String[] args)
     {
         // FIRST — literally before file I/O, process enumeration, console inspection, or any other
@@ -39,6 +42,7 @@ internal static class Program
         {
             return 0;
         }
+        _startedUtcTicks = DateTime.UtcNow.Ticks;
 
         // The Codex limit is 2 s, below its shortest configured deadline (3 s for
         // SessionEnd), with margin for shell/runtime startup. The timer begins at Main;
@@ -59,6 +63,7 @@ internal static class Program
         // left to write, and a dropped status update is survivable; an unbounded process is not.
         if (TooManyOfUs())
         {
+            RecordObservationFailure(args.Length > 0 && args[0] == "codex" ? CodexRoot : Root);
             return 0;
         }
 
@@ -77,6 +82,7 @@ internal static class Program
         }
         catch
         {
+            RecordObservationFailure(args.Length > 0 && args[0] == "codex" ? CodexRoot : Root);
             return 1;
         }
     }
@@ -227,6 +233,7 @@ internal static class Program
         var json = ReadStdinBounded(1500);
         if (String.IsNullOrWhiteSpace(json))
         {
+            RecordObservationFailure(Root);
             return 0;
         }
 
@@ -234,12 +241,20 @@ internal static class Program
         Directory.CreateDirectory(SessionsDir);
 
         // Per-session file, plus the shared last-writer-wins fallback the plugin uses when it has
-        // no key match yet. Written verbatim — the plugin owns all field parsing.
-        if (key != null)
+        // no key match yet. Stamp the invocation in the bytes being observed so another event's
+        // fresh receipt cannot make a late write from before a failure look current.
+        var valid = IsJsonObject(json);
+        var observation = valid ? StampHookInvocation(json) : json;
+        var keyedWrite = key != null && WriteAtomic(Path.Combine(SessionsDir, key + ".json"), observation);
+        WriteAtomic(Path.Combine(SessionsDir, SharedName + ".json"), observation);
+        if (keyedWrite && valid)
         {
-            WriteAtomic(Path.Combine(SessionsDir, key + ".json"), json);
+            RecordSuccessfulObservation(Root, key, "statusline");
         }
-        WriteAtomic(Path.Combine(SessionsDir, SharedName + ".json"), json);
+        else if (key != null)
+        {
+            RecordObservationFailure(Root);
+        }
 
         // Chain: if the user already had a status line, run it and pass its output through so
         // their status bar still renders. Mirrors the bash handler's chain block.
@@ -275,12 +290,9 @@ internal static class Program
         // Built by hand, not JsonSerializer: reflection serialization is the one thing in this
         // exe that publish-trimming can break, and the payload is two fields. Escaping still
         // matters — state arrives via argv and lands in a file the plugin parses as JSON.
-        var payload = $"{{\"state\":\"{JsonEscape(word)}\",\"ts\":{ts}}}";
+        var payload = $"{{\"state\":\"{JsonEscape(word)}\",\"hookStartedUtcTicks\":{_startedUtcTicks},\"ts\":{ts}}}";
 
-        if (key != null)
-        {
-            WriteAtomic(Path.Combine(ActivityDir, key + ".json"), payload);
-        }
+        var keyedWrite = key != null && WriteAtomic(Path.Combine(ActivityDir, key + ".json"), payload);
         WriteAtomic(Path.Combine(ActivityDir, SharedName + ".json"), payload);
 
         // "permission" carries the tool name and its input — that payload is what lets the plugin
@@ -292,21 +304,36 @@ internal static class Program
         // payload on that second event darkened a live approval badge and blinded the Yes/No keys
         // to a menu they were about to answer (#21/#51). Mirror scripts/activity-hook.sh exactly.
         var pending = key != null ? Path.Combine(ActivityDir, "pending-" + key + ".json") : null;
+        var complete = keyedWrite;
         if (pending != null)
         {
             if (state == "permission")
             {
                 var stdin = ReadStdinBounded(1500);   // bounded: see Statusline (#57)
-                if (!String.IsNullOrWhiteSpace(stdin))
+                if (IsJsonObject(stdin))
                 {
-                    WriteAtomic(pending, stdin);
+                    complete &= WriteAtomic(pending, StampHookInvocation(stdin));
+                }
+                else
+                {
+                    // An empty or malformed new request must not revive an older approval.
+                    try { File.Delete(pending); } catch { /* no success receipt below */ }
+                    complete = false;
                 }
             }
             else if (state == "busy" || state == "done")
             {
-                try { File.Delete(pending); } catch { /* best effort */ }
+                try { File.Delete(pending); } catch { complete = false; }
             }
             // "waiting" with no payload: leave any existing pending file intact — the menu is up.
+        }
+        if (complete)
+        {
+            RecordSuccessfulObservation(Root, key, "activity:" + state);
+        }
+        else if (key != null)
+        {
+            RecordObservationFailure(Root);
         }
 
         return 0;
@@ -331,10 +358,10 @@ internal static class Program
             // signature that survived three fixes aimed downstream of it. On timeout the payload
             // is forfeited but the EVENT still records — the keys light with less detail.
             var payload = ReadStdinBounded(1500);
-            var body = payload.TrimStart().StartsWith('{') ? payload : "null";
+            var body = IsJsonObject(payload) ? payload : "null";
             var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var envelope =
-                $"{{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"{JsonEscape(eventName)}\",\"ts\":{ts},\"payload\":{body}}}\n";
+                $"{{\"schema\":1,\"agent\":\"codex-cli\",\"event\":\"{JsonEscape(eventName)}\",\"hookStartedUtcTicks\":{_startedUtcTicks},\"ts\":{ts},\"payload\":{body}}}\n";
 
             // The shared file goes FIRST, before any process walking: codex enforces the hook
             // timeout by TERMINATING the process (exit code 1 — seen as "hook exited with code 1"
@@ -351,7 +378,15 @@ internal static class Program
             var key = SessionKeyTopmost(IsCodex);
             if (key != null)
             {
-                WriteAtomic(Path.Combine(CodexSessionsDir, key + ".json"), envelope);
+                var keyedWrite = WriteAtomic(Path.Combine(CodexSessionsDir, key + ".json"), envelope);
+                if (keyedWrite && body != "null")
+                {
+                    RecordSuccessfulObservation(CodexRoot, key, eventName);
+                }
+                else
+                {
+                    RecordObservationFailure(CodexRoot);
+                }
             }
         }
         catch (Exception ex)
@@ -359,6 +394,7 @@ internal static class Program
             // Swallowed on purpose — same contract as the script — but never silently: the
             // breadcrumb is how "hook exited with code 1" stops being a guessing game.
             Breadcrumb(ex, eventName);
+            RecordObservationFailure(CodexRoot);
         }
 
         // Even the goodbye is guarded: codex reports a nonzero hook exit to the USER, so this
@@ -366,6 +402,100 @@ internal static class Program
         // write was the leading suspect for exactly that report from Windows hardware.
         try { Console.Write("{}"); } catch (Exception ex) { Breadcrumb(ex, eventName); }
         return 0;
+    }
+
+    /// <summary>
+    /// Proof of a completed keyed write, independent of the shared fallback and entry log. A
+    /// process that started before a failure cannot recover it merely by completing afterwards.
+    /// Failure records are deliberately not deleted: the plugin keeps their recovery boundary
+    /// across restarts and requires a fresh observation for each selected session.
+    /// </summary>
+    private static void RecordSuccessfulObservation(String root, String? key, String eventName)
+    {
+        if (key == null || key == SharedName || String.IsNullOrWhiteSpace(Environment.ProcessPath))
+        {
+            return;
+        }
+        try
+        {
+            var directory = HealthDirectory(root);
+            Directory.CreateDirectory(directory);
+            var completed = DateTime.UtcNow.Ticks;
+            var receipt = $"{{\"schema\":1,\"startedUtcTicks\":{_startedUtcTicks},\"completedUtcTicks\":{completed},\"sessionKey\":\"{JsonEscape(key)}\",\"event\":\"{JsonEscape(eventName)}\"}}";
+            if (!WriteAtomic(Path.Combine(directory, "success-" + key + ".json"), receipt))
+            {
+                RecordObservationFailure(root);
+            }
+        }
+        catch
+        {
+            // Health reporting cannot break a user's hook or chained status line. Absence of a
+            // receipt keeps the plugin blocked; it does not count as successful recovery.
+            RecordObservationFailure(root);
+        }
+    }
+
+    private static String HealthDirectory(String root)
+    {
+        var normalized = Path.GetFullPath(Environment.ProcessPath!).ToUpperInvariant();
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant();
+        return Path.Combine(root, "hook-health", hash);
+    }
+
+    private static Boolean IsJsonObject(String input)
+    {
+        try
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(input);
+            return json.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static String StampHookInvocation(String input)
+    {
+        // File mtime says when a write finished, not when the hook started. An old permission
+        // hook can finish after a failure and overlap a fresh statusline hook. Bind the approval
+        // or snapshot itself to its invocation so newer health evidence cannot revive old data.
+        // Keep every agent field; this one transport field is always supplied by the helper.
+        using var json = System.Text.Json.JsonDocument.Parse(input);
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            foreach (var property in json.RootElement.EnumerateObject())
+            {
+                if (!property.NameEquals("hookStartedUtcTicks")) { property.WriteTo(writer); }
+            }
+            writer.WriteNumber("hookStartedUtcTicks", _startedUtcTicks);
+            writer.WriteEndObject();
+        }
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static void RecordObservationFailure(String root)
+    {
+        try
+        {
+            var directory = HealthDirectory(root);
+            Directory.CreateDirectory(directory);
+            var observed = DateTime.UtcNow.Ticks;
+            var path = Path.Combine(directory, $"failure-{observed}-{Guid.NewGuid():N}.json");
+            WriteAtomic(path, $"{{\"schema\":1,\"observedUtcTicks\":{observed},\"reason\":\"observation-failed\"}}");
+            foreach (var old in Directory.EnumerateFiles(directory, "failure-*.json")
+                .OrderByDescending(Path.GetFileName, StringComparer.Ordinal).Skip(16))
+            {
+                try { File.Delete(old); } catch { /* best effort */ }
+            }
+        }
+        catch
+        {
+            // Neither health reporting nor its cleanup may break the user's hook.
+        }
     }
 
     /// <summary>
@@ -788,17 +918,23 @@ internal static class Program
     /// Write via a temp file + move, so the plugin's 500 ms poll can never read a half-written
     /// file. Same guarantee the bash writers give with tmp+mv.
     /// </summary>
-    private static void WriteAtomic(String path, String content)
+    private static Boolean WriteAtomic(String path, String content)
     {
+        var tmp = path + "." + Environment.ProcessId + ".tmp";
         try
         {
-            var tmp = path + "." + Environment.ProcessId + ".tmp";
             File.WriteAllText(tmp, content);
             File.Move(tmp, path, overwrite: true);
+            return true;
         }
         catch
         {
             // A dropped status update is survivable; breaking the user's session is not.
+            return false;
+        }
+        finally
+        {
+            try { File.Delete(tmp); } catch { /* failed writes must not accumulate temporary files */ }
         }
     }
 

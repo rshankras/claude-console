@@ -66,6 +66,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 this.ActionImageChanged(Yes);
                 this.ActionImageChanged(No);
             };
+            BridgeManager.Instance.OnHelperHealthChanged += () =>
+            {
+                this.ActionImageChanged(Yes);
+                this.ActionImageChanged(No);
+            };
 
             this.AddParameter(Yes, "Yes", "Answer")
                 .SetDescription(canObserveApprovals
@@ -210,18 +215,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         internal static void AnswerApproval(BridgeManager bridge, Boolean approve)
         {
+            // A helper may have disappeared since the last poll or repaint. Check before any
+            // approval decision, including one based on a previously captured pending payload.
+            bridge.RefreshHelperHealth();
             var agentSetup = AgentBridgeNotice.FaceLabel(bridge.AgentBridgeState);
             if (agentSetup != null)
             {
                 bridge.Alert();
-                if (Interlocked.Exchange(ref _setupNoticePosted, 1) == 0)
-                {
-                    bridge.Notify?.Invoke(
-                        PluginStatus.Warning,
-                        AgentBridgeNotice.Message(bridge.AgentBridgeState),
-                        AgentBridgeNotice.PublicHelpUrl,
-                        AgentBridgeNotice.Title(bridge.AgentBridgeState));
-                }
+                // The bridge owns this warning and clears it on recovery. Publishing it again
+                // as an action notice would retain a stale warning after the helper recovers.
                 PluginLog.Info($"AnswerCommand: {(approve ? "Yes" : "No")} pressed while the agent bridge reads '{agentSetup}' — no approval was sent");
                 return;
             }
@@ -267,16 +269,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             bridge.SelectionResolved();
 
             var target = decision.Key;
+            if (decision.NeedsObservation)
+            {
+                bridge.Alert();
+                PluginLog.Info($"AnswerCommand: {(approve ? "Yes" : "No")} on {target} needs fresh approval state after helper failure — no approval was sent");
+                return;
+            }
 
             var canObserve = bridge.Agent?.Capabilities.ApprovalSignal ?? true;
             switch (Decide(approve, decision.HasPending, canObserve))
             {
                 case AnswerVia.MenuConfirm:
-                    Answered(bridge, target, bridge.InjectKeyTo(target, KeyStroke.Return), "approved");
+                    Answered(bridge, target, bridge.InjectApprovalTo(target, KeyStroke.Return), "approved");
                     break;
 
                 case AnswerVia.MenuReject:
-                    Answered(bridge, target, bridge.InjectKeyTo(target, KeyStroke.Escape), "rejected");
+                    Answered(bridge, target, bridge.InjectApprovalTo(target, KeyStroke.Escape), "rejected");
                     break;
 
                 case AnswerVia.UnobservedConfirm:
@@ -336,17 +344,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
         // The risk of whatever the targeted session is waiting on — i.e. what pressing Yes right now
         // would approve. None when nothing is pending, which leaves the key looking normal.
-        internal static (String Key, ApprovalRisk Risk, Boolean HasPending, Boolean NeedsSelection)
+        internal static (String Key, ApprovalRisk Risk, Boolean HasPending, Boolean NeedsSelection, Boolean NeedsObservation)
             TargetState(BridgeManager bridge)
         {
             var target = bridge.ApprovalTty();
             if (String.IsNullOrEmpty(target) || !bridge.Grid.Sessions.TryGetValue(target, out var session))
             {
                 return (null, ApprovalRisk.None, false,
-                    bridge.Agent.Id == "codex-cli" && bridge.Grid.LiveSessions().Count > 0);
+                    bridge.Agent.Id == "codex-cli" && bridge.Grid.LiveSessions().Count > 0, false);
             }
 
-            return (target, session.Risk, !String.IsNullOrEmpty(session.PendingTool), false);
+            var pending = !String.IsNullOrEmpty(session.PendingTool);
+            var current = bridge.IsSessionObservationCurrent(target)
+                && (!pending || bridge.IsSessionApprovalCurrent(target));
+            return (target, current ? session.Risk : ApprovalRisk.None, current && pending, false, !current);
         }
 
         /// <summary>
@@ -398,6 +409,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 if (decision.NeedsSelection)
                     return KeyImage.RenderDecisionTile(imageSize, "Select", KeyImage.Gray,
                         approve: actionParameter == Yes, risk: ApprovalRisk.None, targetLabel: "session");
+                if (decision.NeedsObservation)
+                    return KeyImage.RenderDecisionTile(imageSize, "Blocked", KeyImage.Gray,
+                        approve: actionParameter == Yes, risk: ApprovalRisk.None);
 
                 return KeyImage.RenderDecisionTile(
                     imageSize, label, color,

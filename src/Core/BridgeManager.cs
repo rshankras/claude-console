@@ -26,7 +26,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// Reads:  sessions/ + activity/ (statusline + hook data, per Terminal tab)
     /// Types:  keystrokes into the TTY-verified Claude tab in Terminal.app
     /// </summary>
-    public class BridgeManager
+    public partial class BridgeManager
     {
         // The private IPC layout lives in IpcPaths (shared with SessionRegistry). Local aliases keep
         // the rest of this file readable. They are PROPERTIES, not static readonly fields: the root
@@ -159,7 +159,15 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// that never installs it simply says nothing, as before.
         /// (status, message, supportUrl, supportUrlTitle). A null message means "clear to Normal".
         /// </summary>
-        internal Action<PluginStatus, String, String, String> Notify { get; set; }
+        internal Action<PluginStatus, String, String, String> Notify
+        {
+            get => _notificationSink == null ? null : this.ReportPluginStatus;
+            set
+            {
+                _notificationSink = value;
+                _publishedNotice = null;
+            }
+        }
 
         /// <summary>
         /// A system notification (#31): the Options+ card only helps someone who has Options+ open,
@@ -248,7 +256,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// Status of an agent-owned bridge that is not controlled by the live-status switch. Codex
         /// uses this for hook trust; Claude leaves it Ready and continues to use LiveStatus.
         /// </summary>
-        internal AgentBridgeStatus AgentBridgeState => _agentBridgeStatus;
+        internal AgentBridgeStatus AgentBridgeState => this.HookHelperUnavailable
+            ? AgentBridgeStatus.HelperUnavailable : _agentBridgeStatus;
 
         private AgentBridgeStatus _agentBridgeStatus = AgentBridgeStatus.Ready;
 
@@ -262,7 +271,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             _agentBridgeStatus = status;
-            OnAgentBridgeStatusChanged?.Invoke(status);
+            this.PublishBridgeHealth();
         }
 
         /// <summary>
@@ -475,6 +484,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         public void StartPolling()
         {
             EnsureIpcRoot();
+            this.RefreshHelperHealth();
             CleanupLegacyIpcFiles();
             Grid.LoadPersisted();   // keep slot assignments across a plugin reload
             _pinnedTty = Grid.FocusedSession;   // ...and the session you had selected
@@ -504,6 +514,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             try
             {
+                this.RefreshHelperHealth();
                 // ~Every 2s, refresh which Terminal tab is frontmost so the live keys follow the
                 // session you're actually looking at. Keep the last known tab when Terminal isn't
                 // frontmost, so glancing away (e.g. to a browser) doesn't reset the display. The
@@ -531,6 +542,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     Grid.DiscoveredProjectDirs = _platform.SessionDirectories;
                 }
                 Grid.Refresh(liveTtys);
+                if (liveTtys != null) { _hookHealth?.PruneDeadSessions(liveTtys); }
 
                 // A second Codex session means an approval can no longer be attributed on its own.
                 // Noted here, where the grid actually changes, rather than while painting a key.
@@ -547,8 +559,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // key. That is the redraw storm (#27): ~11 renders a second, each a full render plus
                 // an IPC push, continuing when no session was running and the keys were not even on
                 // screen. Byte equality is exact here because one writer rewrites the whole file.
-                var statePath = this.ActiveStateFile();
-                if (statePath == null)
+                var displayTarget = this.DisplayTty();
+                var statePath = this.ActiveStateFile(displayTarget);
+                var stateText = statePath == null ? null : ReadTextWithRetry(statePath);
+                if (!this.IsObservationPayloadCurrent(stateText, displayTarget)) { stateText = null; }
+                if (stateText == null)
                 {
                     // Nothing reported for the session on the display keys. Announce it ONCE, so the
                     // keys can show a dash instead of another session's numbers, and forget the last
@@ -557,11 +572,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         _displayStateKnown = false;
                         _lastStateText = null;
+                        _currentState = null;
                         OnStateUnavailable?.Invoke();
                     }
                 }
 
-                var stateText = statePath == null ? null : ReadTextWithRetry(statePath);
                 var stateChanged = stateText != null
                     && !String.Equals(stateText, _lastStateText, StringComparison.Ordinal);
 
@@ -680,19 +695,21 @@ namespace Loupedeck.ClaudeConsolePlugin
         // hourglass from a tab nobody was asking about.
         private ActivityState ReadActivity()
         {
-            var file = ActiveActivityFile();
+            var routing = this.RoutingTty();
+            var file = ActiveActivityFile(routing);
             if (!File.Exists(file))
             {
                 return null;
             }
 
-            var a = ReadJsonWithRetry<ActivityState>(file);
+            var text = ReadTextWithRetry(file);
+            if (!this.IsObservationPayloadCurrent(text, routing)) { return null; }
+            var a = Deserialize<ActivityState>(text);
             if (a == null)
             {
                 return null;
             }
 
-            var routing = this.RoutingTty();
             var transcript = !String.IsNullOrEmpty(routing)
                 && this.Grid.Sessions.TryGetValue(routing, out var routed)
                     ? routed.TranscriptPath
@@ -718,11 +735,17 @@ namespace Loupedeck.ClaudeConsolePlugin
         // tab has no per-TTY file yet, or when Terminal isn't the frontmost app.
         // ------------------------------------------------------------------------------------------
         // Cost / Model / Context read this one: it follows the tab you are looking at (#25).
-        private String ActiveStateFile() => PerTty(SessionsDir, StateFile, this.DisplayTty());
+        private String ActiveStateFile(String target)
+        {
+            return this.CurrentObservationFile(PerTty(SessionsDir, StateFile, target), target);
+        }
 
         // Activity follows the ROUTING target: "waiting" here is the approval the Yes key answers,
         // so the Activity face and the key that acts on it must describe the same session.
-        private String ActiveActivityFile() => PerTty(ActivityDir, ActivityFile, this.RoutingTty());
+        private String ActiveActivityFile(String target)
+        {
+            return this.CurrentObservationFile(PerTty(ActivityDir, ActivityFile, target), target);
+        }
 
         private String PerTty(String dir, String shared, String tty)
         {
@@ -923,6 +946,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         public void SelectSlot(Int32 slot)
         {
+            this.RefreshHelperHealth();
             if (slot < 1 || slot > this.SessionSlotCount) return;
 
             var session = Grid.SlotSession(slot);
@@ -1051,8 +1075,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// <summary>
         /// Type text into the tracked Claude session and optionally press Return.
         /// </summary>
-        public void InjectText(String text, Boolean pressEnter) =>
+        public void InjectText(String text, Boolean pressEnter)
+        {
+            this.RefreshHelperHealth();
             _platform.InjectText(RoutingTty(), text, pressEnter);
+        }
 
         /// <summary>
         /// Send a single key chord to the tracked Claude session, e.g. Shift+Tab to cycle modes.
@@ -1065,13 +1092,20 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// Send a key to an already-resolved target. Approval actions use this so the session they
         /// acknowledge is exactly the session that received the decision, even if focus changes.
         /// </summary>
-        internal InjectionOutcome InjectKeyTo(String sessionKey, KeyStroke key) =>
-            _platform.InjectKey(sessionKey, key);
+        internal InjectionOutcome InjectKeyTo(String sessionKey, KeyStroke key)
+        {
+            this.RefreshHelperHealth();
+            return _platform.InjectKey(sessionKey, key);
+        }
 
         /// <summary>
         /// Accept the highlighted autocomplete AND submit it in one press.
         /// </summary>
-        public void InjectTabThenEnter() => _platform.InjectTabThenEnter(RoutingTty());
+        public void InjectTabThenEnter()
+        {
+            this.RefreshHelperHealth();
+            _platform.InjectTabThenEnter(RoutingTty());
+        }
 
         /// <summary>
         /// Optional per-poll pull of agent state, for a product whose agent cannot push it.
@@ -1082,7 +1116,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         public Action PullState { get; set; }
 
         /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
-        public void Navigate(TerminalAction action) => _platform.Navigate(action);
+        public void Navigate(TerminalAction action)
+        {
+            this.RefreshHelperHealth();
+            _platform.Navigate(action);
+        }
 
         /// <summary>
         /// Interactive screenshot into this product's IPC tree. Returns the file's path, or null
@@ -1821,6 +1859,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             _liveStatus = state;
             PluginLog.Info($"Live status: {state}");
+            this.RefreshHelperHealth();
             OnLiveStatusChanged?.Invoke(state);
         }
 

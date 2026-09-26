@@ -28,6 +28,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// or another tool's, are not ours to rewrite — and the plugin explains the manual step.
         /// </summary>
         ForeignHooksFile = 3,
+        HelperUnavailable = 4,
     }
 
     /// <summary>
@@ -105,7 +106,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         internal String HookExe
         {
-            get => this._hookExe ?? Platform.PluginPaths.PackagedFile("claude-console-hook.exe") ?? "claude-console-hook.exe";
+            get => this._hookExe ?? (Platform.PluginPaths.PluginDirectory is String directory
+                ? Path.Combine(directory, "claude-console-hook.exe") : "claude-console-hook.exe");
             set => this._hookExe = value;
         }
 
@@ -164,48 +166,53 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             }
         }
 
-        public CodexBridgeStatus Status
+        public CodexBridgeStatus Status => this.StatusFor(OperatingSystem.IsWindows());
+
+        internal CodexBridgeStatus StatusFor(Boolean windows, WindowsHookHealth hookHealth = null)
         {
-            get
+            try
             {
-                try
+                if (!File.Exists(this.HooksFile))
                 {
-                    if (!File.Exists(this.HooksFile))
-                    {
-                        return CodexBridgeStatus.NotInstalled;
-                    }
-
-                    if (!this.IsOurs(File.ReadAllText(this.HooksFile)))
-                    {
-                        return CodexBridgeStatus.ForeignHooksFile;
-                    }
-
-                    // The only honest evidence that Codex is actually running our hook is that it
-                    // has run it. Trust state itself is Codex's business and not ours to read.
-                    // Windows also has rollout-derived state. Only an envelope explicitly written
-                    // by the hook proves the hook was trusted and executed.
-                    // An event from an older hook version does not prove the CURRENT script is
-                    // trusted. EnsureInstalled may replace the launcher while deliberately leaving
-                    // the stable hooks command alone; Codex can then require trust again while an
-                    // old envelope is still on disk. Only an event at or after the newest bridge
-                    // component proves this installation has actually run (#69).
-                    var launcher = OperatingSystem.IsWindows() ? this.HookExe : this.HookScript;
-                    var installedAt = new[] { this.HooksFile, launcher }
-                        .Where(File.Exists)
-                        .Select(File.GetLastWriteTimeUtc)
-                        .DefaultIfEmpty(DateTime.MinValue)
-                        .Max();
-                    var seen = Directory.Exists(this._sessionsDir)
-                        && Directory.EnumerateFiles(this._sessionsDir, "*.json").Any(path =>
-                            IsHookEnvelope(path) && File.GetLastWriteTimeUtc(path) >= installedAt);
-
-                    return seen ? CodexBridgeStatus.Active : CodexBridgeStatus.AwaitingTrust;
-                }
-                catch (Exception ex)
-                {
-                    PluginLog.Info($"CodexStateBridge: status check failed — {ex.Message}");
                     return CodexBridgeStatus.NotInstalled;
                 }
+
+                if (!this.IsOurs(File.ReadAllText(this.HooksFile)))
+                {
+                    return CodexBridgeStatus.ForeignHooksFile;
+                }
+
+                if (windows && !File.Exists(this.HookExe))
+                {
+                    return CodexBridgeStatus.HelperUnavailable;
+                }
+
+                // The only honest evidence that Codex is actually running our hook is that it
+                // has run it. Trust state itself is Codex's business and not ours to read.
+                // Windows also has rollout-derived state. Only an envelope explicitly written
+                // by the hook proves the hook was trusted and executed.
+                // An event from an older hook version does not prove the CURRENT script is
+                // trusted. EnsureInstalled may replace the launcher while deliberately leaving
+                // the stable hooks command alone; Codex can then require trust again while an
+                // old envelope is still on disk. Only an event at or after the newest bridge
+                // component proves this installation has actually run (#69).
+                var launcher = windows ? this.HookExe : this.HookScript;
+                var installedAt = new[] { this.HooksFile, launcher }
+                    .Where(File.Exists)
+                    .Select(File.GetLastWriteTimeUtc)
+                    .DefaultIfEmpty(DateTime.MinValue)
+                    .Max();
+                var seen = (windows && hookHealth?.HasCurrentObservationSince(installedAt) == true)
+                    || (Directory.Exists(this._sessionsDir)
+                        && Directory.EnumerateFiles(this._sessionsDir, "*.json").Any(path =>
+                            IsHookEnvelope(path) && File.GetLastWriteTimeUtc(path) >= installedAt));
+
+                return seen ? CodexBridgeStatus.Active : CodexBridgeStatus.AwaitingTrust;
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Info($"CodexStateBridge: status check failed — {ex.Message}");
+                return CodexBridgeStatus.NotInstalled;
             }
         }
 

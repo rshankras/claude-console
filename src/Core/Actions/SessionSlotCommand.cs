@@ -48,6 +48,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             _bridge.Grid.OnGridChanged += this.OnGridChanged;
             _bridge.OnLiveStatusChanged += _ => this.OnGridChanged();   // the setup word comes and goes with the wiring (#58)
             _bridge.OnAgentBridgeStatusChanged += _ => this.OnGridChanged();
+            _bridge.OnHelperHealthChanged += this.OnGridChanged;
         }
 
         private void OnGridChanged()
@@ -98,6 +99,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             var barColor = active ? KeyImage.SessionBar : KeyImage.Gray;
             var setupWord = AgentBridgeNotice.FaceLabel(_bridge.AgentBridgeState)
                 ?? LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
+            if (setupWord == null && (!_bridge.IsSessionActivityCurrent(session.SessionKey)
+                || (!String.IsNullOrEmpty(session.PendingTool) && !_bridge.IsSessionApprovalCurrent(session.SessionKey))))
+            {
+                setupWord = "Blocked";
+            }
             return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord, _bridge.Agent.Id), barColor, darkText: false);
         }
 

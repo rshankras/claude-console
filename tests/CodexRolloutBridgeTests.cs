@@ -64,7 +64,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         private const String TurnAborted =
             "{\"timestamp\":\"2026-08-20T14:00:05.000Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"turn_aborted\"}}";
 
-        private static String CodeModeExec(String callId, String command, String permission = "require_escalated")
+        private static String CodeModeExec(String callId, String command, String permission = "require_escalated",
+            String timestamp = "2026-08-20T14:00:02.000Z")
         {
             var input = "const r = await tools.exec_command({cmd:"
                 + JsonSerializer.Serialize(command)
@@ -73,7 +74,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 + "});\ntext(r.output);";
             return JsonSerializer.Serialize(new
             {
-                timestamp = "2026-08-20T14:00:02.000Z",
+                timestamp,
                 type = "response_item",
                 payload = new { type = "custom_tool_call", name = "exec", call_id = callId, input },
             });
@@ -331,6 +332,172 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var keyed = CodexStateReader.Parse(File.ReadAllText(Path.Combine(this._ipc, "pid-100-cli.json")));
             Assert.Equal("waiting", keyed.Activity);
             Assert.Equal("git push origin feature", keyed.PendingCommand);
+        }
+
+        [Fact]
+        public void Reading_an_old_approval_now_preserves_its_original_event_timestamp()
+        {
+            this.Rollout("old-approval-proof", Today, TaskStarted, CodeModeExec("call-old", "git push"));
+            var observed = new DateTime(2026, 8, 20, 14, 0, 10, DateTimeKind.Utc);
+            var bridge = this.New();
+            bridge.UtcNow = () => observed;
+            Assert.Equal(1, bridge.Poll());
+
+            using var state = JsonDocument.Parse(this.SharedState());
+            var original = new DateTime(2026, 8, 20, 14, 0, 2, DateTimeKind.Utc);
+            Assert.Equal(original.Ticks, state.RootElement.GetProperty("rolloutEventUtcTicks").GetInt64());
+            Assert.Equal(observed.Ticks, state.RootElement.GetProperty("observationStartedUtcTicks").GetInt64());
+            var failedAt = original.AddSeconds(1);
+            Assert.True(state.RootElement.GetProperty("rolloutEventUtcTicks").GetInt64() < failedAt.Ticks);
+        }
+
+        [Fact]
+        public void A_new_approval_after_recovery_carries_both_fresh_event_and_read_evidence()
+        {
+            var path = this.Rollout("new-approval-proof", Today, TaskStarted);
+            var observed = new DateTime(2026, 8, 20, 14, 0, 10, DateTimeKind.Utc);
+            var bridge = this.New();
+            bridge.UtcNow = () => observed;
+            bridge.Poll();
+            var failedAt = observed;
+            observed = observed.AddSeconds(2);
+            this.Append(path, CodeModeExec("call-new", "git push", timestamp: "2026-08-20T14:00:11.000Z"));
+            Assert.Equal(1, bridge.Poll());
+
+            using var state = JsonDocument.Parse(this.SharedState());
+            Assert.True(state.RootElement.GetProperty("rolloutEventUtcTicks").GetInt64() > failedAt.Ticks);
+            Assert.Equal(observed.Ticks, state.RootElement.GetProperty("observationStartedUtcTicks").GetInt64());
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("not-a-timestamp")]
+        [InlineData("2099-08-20T14:00:02.000Z")]
+        public void A_missing_invalid_or_future_event_timestamp_cannot_authorize_an_approval(String timestamp)
+        {
+            this.Rollout("invalid-approval-proof", Today, TaskStarted, CodeModeExec("call-unknown", "git push", timestamp: timestamp));
+            var bridge = this.New();
+            bridge.UtcNow = () => new DateTime(2026, 8, 20, 14, 0, 10, DateTimeKind.Utc);
+            Assert.Equal(1, bridge.Poll());
+            using var state = JsonDocument.Parse(this.SharedState());
+            Assert.Equal("PermissionRequest", state.RootElement.GetProperty("event").GetString());
+            Assert.False(state.RootElement.TryGetProperty("rolloutEventUtcTicks", out _));
+            Assert.True(state.RootElement.TryGetProperty("observationStartedUtcTicks", out _));
+        }
+
+        [Fact]
+        public void A_bounded_batch_does_not_authorize_a_request_before_its_unread_matching_output()
+        {
+            var path = this.Rollout("approval-before-unread-output", Today, TaskStarted);
+            var bridge = this.New();
+            bridge.Poll(); // Subsequent reads have the 64 KiB bound.
+            this.Append(path, CodeModeExec("call-caught-up", "git push"));
+            for (var index = 0; index < 1500; ++index)
+            {
+                this.Append(path, "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"padding\":\"" + new String('x', 60) + "\"}}");
+            }
+            this.Append(path, CodeModeOutput("call-caught-up"));
+
+            Assert.Equal(1, bridge.Poll());
+            using (var incomplete = JsonDocument.Parse(this.SharedState()))
+            {
+                Assert.Equal("PermissionRequest", incomplete.RootElement.GetProperty("event").GetString());
+                Assert.False(incomplete.RootElement.TryGetProperty("rolloutEventUtcTicks", out _));
+            }
+            for (var index = 0; index < 10; ++index)
+            {
+                bridge.Poll();
+                using var state = JsonDocument.Parse(this.SharedState());
+                Assert.False(state.RootElement.TryGetProperty("rolloutEventUtcTicks", out _));
+            }
+            Assert.Equal("busy", CodexStateReader.Parse(this.SharedState()).Activity);
+        }
+
+        [Fact]
+        public void Catching_up_confirms_a_still_unresolved_request_without_changing_its_event_time()
+        {
+            var path = this.Rollout("approval-needs-complete-tail", Today, TaskStarted);
+            var bridge = this.New();
+            bridge.Poll();
+            this.Append(path, CodeModeExec("call-waiting", "git push"));
+            for (var index = 0; index < 1500; ++index)
+            {
+                this.Append(path, "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"padding\":\"" + new String('x', 60) + "\"}}");
+            }
+            bridge.Poll();
+            using (var incomplete = JsonDocument.Parse(this.SharedState()))
+            {
+                Assert.False(incomplete.RootElement.TryGetProperty("rolloutEventUtcTicks", out _));
+            }
+            for (var index = 0; index < 10; ++index) { bridge.Poll(); }
+            using var complete = JsonDocument.Parse(this.SharedState());
+            Assert.Equal("PermissionRequest", complete.RootElement.GetProperty("event").GetString());
+            Assert.Equal(new DateTime(2026, 8, 20, 14, 0, 2, DateTimeKind.Utc).Ticks,
+                complete.RootElement.GetProperty("rolloutEventUtcTicks").GetInt64());
+        }
+
+        [Fact]
+        public void A_previously_confirmed_request_loses_authority_while_a_new_batch_is_incomplete()
+        {
+            var path = this.Rollout("approval-later-unread-output", Today, TaskStarted, CodeModeExec("call-1", "git push"));
+            var bridge = this.New();
+            bridge.Poll();
+            using (var initial = JsonDocument.Parse(this.SharedState()))
+            {
+                Assert.True(initial.RootElement.TryGetProperty("rolloutEventUtcTicks", out _));
+            }
+            for (var index = 0; index < 1500; ++index)
+            {
+                this.Append(path, "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"padding\":\"" + new String('x', 60) + "\"}}");
+            }
+            this.Append(path, CodeModeOutput("call-1"));
+            Assert.Equal(1, bridge.Poll());
+            using var incomplete = JsonDocument.Parse(this.SharedState());
+            Assert.False(incomplete.RootElement.TryGetProperty("rolloutEventUtcTicks", out _));
+        }
+
+        [Fact]
+        public void An_unterminated_new_record_revokes_earlier_code_mode_authority_until_complete()
+        {
+            var path = this.Rollout("approval-partial-output", Today, TaskStarted, CodeModeExec("call-1", "git push"));
+            var bridge = this.New();
+            bridge.Poll();
+            var output = CodeModeOutput("call-1");
+            File.AppendAllText(path, output.Substring(0, output.Length / 2));
+            Assert.Equal(1, bridge.Poll());
+            using (var incomplete = JsonDocument.Parse(this.SharedState()))
+            {
+                Assert.False(incomplete.RootElement.TryGetProperty("rolloutEventUtcTicks", out _));
+            }
+            File.AppendAllText(path, output.Substring(output.Length / 2) + "\n");
+            Assert.Equal(1, bridge.Poll());
+            Assert.Equal("busy", CodexStateReader.Parse(this.SharedState()).Activity);
+        }
+
+        [Fact]
+        public void Ordinary_rollout_state_uses_the_scan_start_not_the_later_publication_time()
+        {
+            this.Rollout("scan-start-proof", Today, TaskStarted);
+            var began = new DateTime(2026, 8, 20, 14, 0, 10, DateTimeKind.Utc);
+            var calls = 0;
+            var bridge = this.New();
+            bridge.UtcNow = () => ++calls == 1 ? began : began.AddSeconds(10);
+            Assert.Equal(1, bridge.Poll());
+            using var state = JsonDocument.Parse(this.SharedState());
+            Assert.Equal(began.Ticks, state.RootElement.GetProperty("observationStartedUtcTicks").GetInt64());
+            Assert.False(state.RootElement.TryGetProperty("rolloutEventUtcTicks", out _));
+        }
+
+        [Fact]
+        public void Truncating_the_rollout_cannot_confirm_an_old_cached_approval_against_its_new_end()
+        {
+            var path = this.Rollout("approval-truncated", Today, TaskStarted, CodeModeExec("call-old", "git push"));
+            var bridge = this.New();
+            bridge.Poll();
+            File.WriteAllText(path, TaskStarted + "\n");
+            bridge.Poll();
+            using var state = JsonDocument.Parse(this.SharedState());
+            Assert.False(state.RootElement.TryGetProperty("rolloutEventUtcTicks", out _));
         }
 
         [Fact]

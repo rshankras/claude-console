@@ -55,7 +55,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("AgentBridgeStatus.InstallFailed", product);
             Assert.Contains("Grid.OnGridChanged += this.OnGridChanged", product);
             Assert.Contains("SetAgentBridgeStatus(AgentBridgeStatus.Ready)", product);
-            Assert.Contains("PluginStatus.Normal, null, null, null", product);
+            // The shared manager owns warning recovery; a blanket Normal here would erase an
+            // unrelated voice/terminal warning when Codex becomes active again.
+            Assert.DoesNotContain("PluginStatus.Normal, null, null, null", product);
 
             var wire = product.IndexOf("this.WireStateBridge();", StringComparison.Ordinal);
             var poll = product.IndexOf("BridgeManager.Instance.StartPolling();", StringComparison.Ordinal);
