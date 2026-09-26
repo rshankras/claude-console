@@ -36,12 +36,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // Without the hooks this key used to fall through to "Ready" forever — a value the agent
             // never reported. Until live status is set up it says so instead; the first press arms it and
             // says what a second press will change, the second press enables (#31) — see LiveStatusGate.
-            _gate = new LiveStatusGate(_bridge, "Activity", () => this.ActionImageChanged(),
-                selectTarget: () => _bridge.RoutingTty(), isTargetCurrent: _bridge.IsSessionActivityCurrent);
+            _gate = new LiveStatusGate(_bridge, "Activity", () => this.ActionImageChanged());
             _bridge.OnActivityChanged += (_) => this.Refresh();
             _bridge.OnStateChanged += (_) => this.Refresh();
             _bridge.OnHelperHealthChanged += this.Refresh;
-            _bridge.OnTargetChanged += this.Refresh;
         }
 
         // Map the activity flag to a face + word.

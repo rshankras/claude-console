@@ -137,6 +137,26 @@ public sealed class HelperHealthIntegrationTests : IDisposable
     }
 
     [Fact]
+    public void A_present_helper_with_no_evidence_yet_is_not_reported_as_a_failure()
+    {
+        // Fresh install, new day, or no session open: the bridge is Ready, nothing has failed.
+        // No Blocked on the keys and no "contact IT" in Options+ until something actually fails.
+        var notices = new List<(PluginStatus, String)>();
+        var bridge = Rig(notices);
+        bridge.SetAgentBridgeStatus(AgentBridgeStatus.Ready);
+        bridge.RefreshHelperHealth();
+        var gate = new LiveStatusGate(bridge, "Context", () => { });
+
+        Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, bridge.HookHealth.Status);
+        Assert.False(bridge.HookHelperUnavailable);
+        Assert.Equal(AgentBridgeStatus.Ready, bridge.AgentBridgeState);
+        Assert.Null(gate.Label);
+        Assert.DoesNotContain(notices, n => n.Item1 == PluginStatus.Warning);
+        // Actions still need per-session proof; they just refuse quietly.
+        Assert.False(bridge.IsSessionObservationCurrent(Session));
+    }
+
+    [Fact]
     public void Explicitly_disabled_Claude_live_status_does_not_report_a_hook_failure()
     {
         var notices = new List<(PluginStatus, String)>();

@@ -47,6 +47,20 @@ Actual Windows execution, Git Bash/PowerShell compatibility, Logitech CrowdStrik
 certificate signing and the signed-package retest remain release gates. The unchanged launcher
 choice and exact device checklist are documented in [the protocol notes](windows-hook-health-protocol.md).
 
+## Review follow-up — 2026-09-26
+
+The review on #120 found that `AwaitingFresh` (no receipts yet) was rendered as Blocked with an
+Options+ warning — every new day, every fresh tab, and whenever no session was open — and that one
+failure marker of any kind blocked every session. Fixed in the same branch:
+
+- Unavailable, Blocked and the warning now require an observed **helper** failure newer than every
+  success ever seen (a `last-success.json` watermark survives pruning) and newer than the installed
+  file. AwaitingFresh keeps the neutral faces; per-session gating still refuses quietly.
+- Failure records carry a `scope`. Exe-reported and input-timeout failures are `delivery` scope:
+  logged once, receipt withheld, no barrier.
+- The launcher carries the health directory as a literal and no cleanup code (the plugin trims on
+  every read): 3,874 characters encoded, down from ~4,900.
+
 ## Release boundaries
 
 - The helper remains an out-of-process program using the existing file IPC architecture.

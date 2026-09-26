@@ -19,10 +19,24 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// Execution evidence for one product's packaged Windows hook. An existing file is not proof
     /// that it can execute, and restoring it cannot make state from before a failure current.
     /// Receipts come from successful, keyed IPC delivery; quiet healthy sessions never expire.
+    ///
+    /// Three answers, and only one of them is a problem:
+    ///   Unavailable   — the newest thing we saw was the HELPER failing (file missing, would not
+    ///                   launch, crashed) and no hook has succeeded since. Keys say Blocked and
+    ///                   Options+ gets a warning.
+    ///   Healthy       — a live session delivered after the last such failure.
+    ///   AwaitingFresh — no failure since the last success, but no live receipt either: a fresh
+    ///                   install, a new day (receipts die with their sessions), an upgraded exe,
+    ///                   or no session open. Not a failure; the keys keep their neutral faces.
+    ///
+    /// Failure records carry a scope. "helper" failures move the recovery barrier; "delivery"
+    /// failures (a hook that ran but could not complete one write, a slow stdin) only withhold
+    /// that invocation's receipt — the exe ran, so the helper is not blocked.
     /// </summary>
     internal sealed class WindowsHookHealth
     {
         private const Int32 MaxEvidenceFiles = 1024;
+        private const String WatermarkFile = "last-success.json";
         private readonly Object _gate = new Object();
         private readonly String _helperPath;
         private readonly String _ipcRoot;
@@ -32,7 +46,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         private Boolean _unreadableEpisode;
         private Int64 _invalidatedTicks;
         private Int64 _helperVersionTicks;
+        // The newest success ever seen, live or pruned. A failure older than this is history,
+        // not the current state; without it every reboot after any past failure would read as
+        // Unavailable once the receipts of yesterday's sessions were pruned.
+        private Int64 _lastSuccessStartedTicks;
+        private Int64 _lastDeliveryFailureTicks;
         private String _failureReason;
+        private String _deliveryFailureReason;
         private Int64 _revision;
         private WindowsHookHealthStatus _status = WindowsHookHealthStatus.AwaitingFresh;
         private String _message = "Waiting for fresh hook information. Trigger an event in the coding session.";
@@ -54,13 +74,31 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal DateTime FreshAfterUtc { get { lock (this._gate) { return new DateTime(Math.Max(this._invalidatedTicks, this._helperVersionTicks), DateTimeKind.Utc); } } }
         internal Int64 Revision { get { lock (this._gate) { return this._revision; } } }
 
-        // Also implemented by the standalone helper and PowerShell launcher. The product's IPC
-        // root separates products; the hash separates installed copies, upgrades and dev links.
-        internal static String HealthDirectoryFor(String expectedHelperPath, String ipcRoot)
+        /// <summary>The newest delivery-scope failure seen, for the log; it never blocks anything.</summary>
+        internal (DateTime ObservedUtc, String Reason)? LastDeliveryFailure
+        {
+            get
+            {
+                lock (this._gate)
+                {
+                    return this._lastDeliveryFailureTicks > 0
+                        ? (new DateTime(this._lastDeliveryFailureTicks, DateTimeKind.Utc), this._deliveryFailureReason)
+                        : null;
+                }
+            }
+        }
+
+        // Also implemented by the standalone helper (from Environment.ProcessPath); the PowerShell
+        // launcher gets the finished directory name baked in at wiring time, so it carries no
+        // hashing code. The product's IPC root separates products; the hash separates installed
+        // copies, upgrades and dev links.
+        internal static String HealthDirectoryFor(String expectedHelperPath, String ipcRoot) =>
+            Path.Combine(ipcRoot, "hook-health", HealthDirectoryName(expectedHelperPath));
+
+        internal static String HealthDirectoryName(String expectedHelperPath)
         {
             var path = Path.GetFullPath(expectedHelperPath).ToUpperInvariant();
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(path))).ToLowerInvariant();
-            return Path.Combine(ipcRoot, "hook-health", hash);
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(path))).ToLowerInvariant();
         }
 
         internal WindowsHookHealthStatus Refresh()
@@ -108,7 +146,9 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// <summary>
         /// The registry already discovers live processes. Use only a successful discovery result
         /// to retire dead-session receipts, never their age alone. A short grace period protects a
-        /// hook for a process born just after the discovery snapshot. Failure barriers survive.
+        /// hook for a process born just after the discovery snapshot. Failure barriers survive,
+        /// and so does the fact that the helper once worked: a pruned receipt is folded into the
+        /// last-success watermark before it goes.
         /// </summary>
         internal void PruneDeadSessions(IEnumerable<String> liveKeys)
         {
@@ -120,6 +160,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     if (!Directory.Exists(this.HealthDirectory)) { return; }
                     var live = new HashSet<String>(liveKeys, StringComparer.Ordinal);
                     var cutoff = this._utcNow().AddMinutes(-1).Ticks;
+                    var watermark = this.ReadWatermark();
                     foreach (var file in Directory.EnumerateFiles(this.HealthDirectory, "success-*.json").Take(MaxEvidenceFiles))
                     {
                         var name = Path.GetFileNameWithoutExtension(file);
@@ -129,6 +170,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                         if (json != null && ReadTicks(json.RootElement, "completedUtcTicks", out var completed) && completed < cutoff &&
                             json.RootElement.TryGetProperty("sessionKey", out var key) && key.ValueKind == JsonValueKind.String && key.GetString() == session)
                         {
+                            if (ReadTicks(json.RootElement, "startedUtcTicks", out var started) && started > watermark)
+                            {
+                                watermark = started;
+                                this.WriteWatermark(started, completed);
+                            }
                             try { File.Delete(file); } catch { }
                         }
                     }
@@ -186,10 +232,19 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 return this.SetStatus(WindowsHookHealthStatus.Healthy, String.Empty);
             }
-            if (this._invalidatedTicks > 0 && this._failureReason != "missing")
+            // Unavailable means "the newest evidence is a helper failure". A success that started
+            // after the failure — even one whose session has since ended — retires it. Restoring
+            // a quarantined file is not such a success: the next hook has to actually run.
+            // A failure recorded against an older file than the one installed now is history too:
+            // an upgrade or reinstall starts from AwaitingFresh, not Blocked. (A quarantined file
+            // put back by IT keeps its original, older mtime, so that path stays Unavailable.)
+            var lastSuccess = Math.Max(this._lastSuccessStartedTicks,
+                this._receipts.Count == 0 ? 0 : this._receipts.Values.Max());
+            if (this._invalidatedTicks > 0 && lastSuccess <= this._invalidatedTicks && this._helperVersionTicks <= this._invalidatedTicks)
             {
-                return this.SetStatus(WindowsHookHealthStatus.Unavailable,
-                    "Windows hook helper could not complete delivery. Check antivirus detections and trigger a fresh hook event after recovery.");
+                return this.SetStatus(WindowsHookHealthStatus.Unavailable, this._failureReason == "missing"
+                    ? "Windows hook helper is missing or unavailable. Check security software or contact IT; after recovery, trigger a fresh hook event."
+                    : "Windows hook helper could not run. Check antivirus detections and trigger a fresh hook event after recovery.");
             }
             return this.SetStatus(WindowsHookHealthStatus.AwaitingFresh,
                 "Waiting for fresh hook information. Trigger an event in the coding session.");
@@ -208,9 +263,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             try
             {
                 if (!Directory.Exists(this.HealthDirectory)) { return true; }
-                var failures = Directory.EnumerateFiles(this.HealthDirectory, "failure-*.json").Take(MaxEvidenceFiles + 1).ToArray();
+                var failures = TrimFailures(this.HealthDirectory);
                 var successes = Directory.EnumerateFiles(this.HealthDirectory, "success-*.json").Take(MaxEvidenceFiles + 1).ToArray();
                 if (failures.Length > MaxEvidenceFiles || successes.Length > MaxEvidenceFiles) { return false; }
+                this._lastSuccessStartedTicks = Math.Max(this._lastSuccessStartedTicks, this.ReadWatermark());
                 foreach (var file in failures)
                 {
                     using var json = ReadRecord(file);
@@ -219,7 +275,18 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         return false;
                     }
-                    if (observed > this._invalidatedTicks)
+                    // Records written before scopes existed are the launcher's: helper scope.
+                    var delivery = json.RootElement.TryGetProperty("scope", out var scope) &&
+                        scope.ValueKind == JsonValueKind.String && scope.GetString() == "delivery";
+                    if (delivery)
+                    {
+                        if (observed > this._lastDeliveryFailureTicks)
+                        {
+                            this._lastDeliveryFailureTicks = observed;
+                            this._deliveryFailureReason = reason.GetString();
+                        }
+                    }
+                    else if (observed > this._invalidatedTicks)
                     {
                         this._invalidatedTicks = observed;
                         this._failureReason = reason.GetString();
@@ -262,22 +329,61 @@ namespace Loupedeck.ClaudeConsolePlugin
                 PrivateFiles.EnsurePrivateDirectory(this.HealthDirectory);
                 var path = Path.Combine(this.HealthDirectory, $"failure-{observed}-{Guid.NewGuid():N}.json");
                 temporary = path + ".tmp";
-                File.WriteAllText(temporary, JsonSerializer.Serialize(new { schema = 1, observedUtcTicks = observed, reason }));
+                File.WriteAllText(temporary, JsonSerializer.Serialize(new { schema = 1, observedUtcTicks = observed, reason, scope = "helper" }));
                 PrivateFiles.EnsurePrivateFile(temporary);
                 File.Move(temporary, path);
-                // Immutable records avoid writer races. Keep a small tail, preserving the latest
-                // failure even if an older invocation finally publishes its record afterwards.
-                foreach (var old in Directory.EnumerateFiles(this.HealthDirectory, "failure-*.json")
-                    .Take(MaxEvidenceFiles + 1).OrderByDescending(p => Path.GetFileName(p), StringComparer.Ordinal).Skip(16))
-                {
-                    try { File.Delete(old); } catch { }
-                }
+                TrimFailures(this.HealthDirectory);
             }
             catch { /* Keep the in-memory barrier even when the marker cannot be persisted. */ }
             finally
             {
                 if (temporary != null) { try { File.Delete(temporary); } catch { } }
             }
+        }
+
+        // Immutable records avoid writer races; somebody still has to sweep. The plugin does it on
+        // every read, so the launcher (six copies of it, in settings.json) carries no cleanup
+        // code, and a burst of markers written while the service was down is trimmed the moment
+        // it is back. Newest 16 by name — the name starts with the observed ticks — so the latest
+        // failure survives even if an older invocation finally publishes its record afterwards.
+        private static String[] TrimFailures(String directory)
+        {
+            var failures = Directory.EnumerateFiles(directory, "failure-*.json").Take(MaxEvidenceFiles + 1)
+                .OrderByDescending(Path.GetFileName, StringComparer.Ordinal).ToArray();
+            foreach (var old in failures.Skip(16))
+            {
+                try { File.Delete(old); } catch { }
+            }
+            return failures.Take(16).ToArray();
+        }
+
+        // {schema, startedUtcTicks, completedUtcTicks} of the newest pruned receipt. Written only
+        // by the plugin, only while pruning, only when it moves forward.
+        private Int64 ReadWatermark()
+        {
+            try
+            {
+                var path = Path.Combine(this.HealthDirectory, WatermarkFile);
+                if (!File.Exists(path)) { return 0; }
+                using var json = ReadRecord(path);
+                return json != null && ReadTicks(json.RootElement, "startedUtcTicks", out var started) ? started : 0;
+            }
+            catch { return 0; }
+        }
+
+        private void WriteWatermark(Int64 started, Int64 completed)
+        {
+            this._lastSuccessStartedTicks = Math.Max(this._lastSuccessStartedTicks, started);
+            var path = Path.Combine(this.HealthDirectory, WatermarkFile);
+            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(temporary, JsonSerializer.Serialize(new { schema = 1, startedUtcTicks = started, completedUtcTicks = completed }));
+                PrivateFiles.EnsurePrivateFile(temporary);
+                File.Move(temporary, path, overwrite: true);
+            }
+            catch { /* The in-memory watermark still covers this process; the next prune retries. */ }
+            finally { try { File.Delete(temporary); } catch { } }
         }
 
         private static JsonDocument ReadRecord(String path)

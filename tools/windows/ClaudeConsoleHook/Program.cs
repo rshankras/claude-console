@@ -484,8 +484,11 @@ internal static class Program
             var directory = HealthDirectory(root);
             Directory.CreateDirectory(directory);
             var observed = DateTime.UtcNow.Ticks;
+            // Scope "delivery": this process RAN, so the helper is not blocked; only this
+            // invocation's receipt is withheld. The launcher's "helper"-scope records are the
+            // ones that move the plugin's recovery barrier.
             var path = Path.Combine(directory, $"failure-{observed}-{Guid.NewGuid():N}.json");
-            WriteAtomic(path, $"{{\"schema\":1,\"observedUtcTicks\":{observed},\"reason\":\"observation-failed\"}}");
+            WriteAtomic(path, $"{{\"schema\":1,\"observedUtcTicks\":{observed},\"reason\":\"observation-failed\",\"scope\":\"delivery\"}}");
             foreach (var old in Directory.EnumerateFiles(directory, "failure-*.json")
                 .OrderByDescending(Path.GetFileName, StringComparer.Ordinal).Skip(16))
             {

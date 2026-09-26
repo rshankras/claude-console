@@ -13,6 +13,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         private Boolean _hookHealthInjected;
         private String _hookHealthIdentity;
         private Int64 _seenHealthRevision = -1;
+        private DateTime _loggedDeliveryFailureUtc = DateTime.MinValue;
         private AgentBridgeStatus _publishedBridgeState = AgentBridgeStatus.Ready;
 
         /// <summary>Inject isolated Windows health evidence without changing the host platform.</summary>
@@ -35,13 +36,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         private Boolean HookHealthApplies => _hookHealth != null &&
             (!this.LiveStatusApplies || _liveStatus is LiveStatusState.Enabled or LiveStatusState.JustEnabled);
 
+        // Only an observed helper failure is "unavailable". AwaitingFresh — no receipts yet — is
+        // the normal state of a fresh install, a new day, an upgraded exe, or no session open,
+        // and must never put Blocked on the keys or a warning in Options+. Actions still gate on
+        // per-session freshness below; they just refuse quietly. A real failure overrides even a
+        // cached Codex trust status and cannot be hidden by it.
         internal Boolean HookHelperUnavailable => this.HookHealthApplies &&
-            _hookHealth.Status != WindowsHookHealthStatus.Healthy &&
-            // Before any event, retain Codex's normal trust/setup instructions. A real failure
-            // overrides even a previously cached trust status, and cannot be hidden by it.
-            ((_agentBridgeStatus == AgentBridgeStatus.Ready && _liveStatus != LiveStatusState.JustEnabled) ||
-             _hookHealth.Status == WindowsHookHealthStatus.Unavailable ||
-             _hookHealth.InvalidatedAtUtc > DateTime.MinValue);
+            _hookHealth.Status == WindowsHookHealthStatus.Unavailable;
 
         /// <summary>
         /// Local file checks only: called at load, on the existing poll, and on key presses. Never
@@ -78,6 +79,15 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             this.PublishBridgeHealth();
             if (!changed) { return; }
+
+            // A delivery failure is diagnostic only: the exe ran. Say so once per new record, so
+            // a forfeited Codex payload or a slow stdin leaves a trail without blocking anything.
+            var delivery = _hookHealth.LastDeliveryFailure;
+            if (delivery.HasValue && delivery.Value.ObservedUtc > _loggedDeliveryFailureUtc)
+            {
+                _loggedDeliveryFailureUtc = delivery.Value.ObservedUtc;
+                PluginLog.Info($"Windows hook: a hook ran but could not complete delivery ({delivery.Value.Reason}) at {delivery.Value.ObservedUtc:O} — not a helper failure; that invocation's receipt was withheld");
+            }
 
             if (this.HookHelperUnavailable)
             {

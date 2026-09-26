@@ -5,25 +5,58 @@ validated on Windows and is not part of this change. The current form already ha
 tests for Git Bash, direct PowerShell, Unicode input and paths containing spaces/apostrophes. Those
 tests must run on the Windows laptop before release; a passing Mac test run is not that evidence.
 
+## What the keys say, and when
+
+The monitor answers one of three things, and only one of them is a problem:
+
+| Status | Meaning | Keys | Options+ |
+|---|---|---|---|
+| **Unavailable** | The newest evidence is the **helper** failing — file missing, would not launch, crashed — and no hook has succeeded since | **Blocked** on live keys, Yes/No and session slots | one Warning, cleared on recovery |
+| **Healthy** | A live session delivered after the last such failure | normal | none |
+| **AwaitingFresh** | No failure since the last success, but no live receipt either: a fresh install, a new day (receipts die with their sessions), an upgraded exe, or no session open | normal faces; a session that has not reported yet shows a dash, never Blocked | none |
+
+Per-session gating is separate and stricter: Yes/No act only on an approval this exact session
+delivered after the recovery boundary, and a stale one is shown as "nothing pending" and refused
+quietly with a log line. That gate never raises a warning, because "no proof yet" is not a failure.
+
 ## Failure and recovery records
 
 Records live under `<product IPC root>/hook-health/<helper path hash>/`. The hash is lowercase SHA-256
-of UTF-8 `Path.GetFullPath(helperPath).ToUpperInvariant()`. Product IPC roots remain separate:
-`%TEMP%\claude-console` and `%TEMP%\codex-console`. Moving or replacing a helper must require fresh
-delivery; records from another installation path must not make this installation healthy.
+of UTF-8 `Path.GetFullPath(helperPath).ToUpperInvariant()` (`WindowsHookHealth.HealthDirectoryName`).
+The plugin computes it from the package path, the exe from `Environment.ProcessPath`, and the Claude
+launcher gets the finished name baked in at wiring time, so the launcher carries no hashing code.
+Product IPC roots remain separate: `%TEMP%\claude-console` and `%TEMP%\codex-console`. Moving or
+replacing a helper must require fresh delivery; records from another installation path must not make
+this installation healthy.
 
 - `failure-<observedUtcTicks>-<guid>.json`: immutable object containing `schema: 1`,
-  `observedUtcTicks` (UTC `DateTime` ticks), and `reason`. Writers retain the newest 16 failures.
-  Concurrent writers cannot overwrite a later failure with an earlier one.
+  `observedUtcTicks` (UTC `DateTime` ticks), `reason` and `scope`. Concurrent writers cannot
+  overwrite a later failure with an earlier one. Writers only write; the plugin trims the directory
+  to the newest 16 on every read (and the exe on its own writes), so a burst written while the
+  service was down is swept the moment it is back.
+  - `scope: "helper"` — the exe may not have run: `missing`, `launch-failed`, `nonzero-exit` from
+    the launcher, `missing` / `health-unreadable` from the plugin. These move the recovery barrier.
+  - `scope: "delivery"` — the exe ran but this invocation could not complete: `input-timeout` from
+    the launcher, `observation-failed` from the exe (a forfeited Codex payload, a locked keyed file,
+    the concurrency cap). These only withhold that invocation's receipt and are logged once by the
+    plugin. A record without a scope is treated as helper scope.
 - `success-<sessionKey>.json`: atomic object containing `schema: 1`, `sessionKey`, `event`,
   `startedUtcTicks`, and `completedUtcTicks`. The helper captures start time immediately after
   arming its watchdog and writes the record only after successful keyed state/pending writes.
   Shared fallback writes and an invocation log are not recovery evidence.
+- `last-success.json`: `{schema, startedUtcTicks, completedUtcTicks}` of the newest receipt the
+  plugin pruned. It is how the plugin remembers that the helper worked after a failure once the
+  sessions that proved it are gone; without it every reboot after any past failure would read as
+  Unavailable. Written only by the plugin, only while pruning, only when it moves forward.
 
-Success does not delete failure history. A hook that started before the latest failure cannot recover
-the bridge by finishing afterwards. A fresh observation from one session does not validate another
-session's cached approval. A fresh statusline or Notification also does not make an older permission
-payload current. The monitor and approval gate enforce those separate checks.
+Unavailable means exactly "a helper-scope failure is newer than every success ever seen, live or
+pruned, and newer than the installed file". Putting a quarantined file back does not change that —
+its mtime is older than the failure — so the keys stay Blocked until a hook actually runs. A
+replaced file (upgrade, reinstall from the package) is newer than the failure and starts over as
+AwaitingFresh. A hook that started before the latest failure cannot recover the bridge by finishing
+afterwards. A fresh observation from one session does not validate another session's cached
+approval. A fresh statusline or Notification also does not make an older permission payload
+current. The monitor and approval gate enforce those separate checks.
 
 Windows Claude statusline, activity and pending JSON and Codex hook envelopes contain `hookStartedUtcTicks`.
 This is transport metadata supplied by the helper, bound to the actual permission payload. The
@@ -39,8 +72,10 @@ for that same session is still required. Re-reading an old request does not crea
 The same start-time check applies when publishing live values and activity. Stamping IPC leaves
 the original stdin unchanged for the user's chained statusline, including its formatting and Unicode.
 
-The Claude launcher records missing files, native launch exceptions, nonzero exits and input timeouts.
-It preserves UTF-8 stdin, stdout and native exit codes, and remains silent for a missing helper. The
+The Claude launcher records missing files, native launch exceptions and nonzero exits (helper scope)
+and input timeouts (delivery scope). It preserves UTF-8 stdin, stdout and native exit codes, and
+remains silent for a missing helper. It is 3,874 characters encoded for a typical path (1,428 of
+PowerShell); six copies of it sit in `settings.json`, so `WindowsLauncherHealthTests` holds a ceiling. The
 helper records failed required keyed writes, including failures inside the Codex path that must keep
 returning exit 0 to the CLI. Missing permission input clears any old Claude pending payload and does
 not publish a success receipt. Diagnostic writes are best effort and must never break a user's hook.

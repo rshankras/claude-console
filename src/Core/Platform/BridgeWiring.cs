@@ -220,36 +220,39 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         {
             var path = handlerPath.Trim('"');
             String Literal(String value) => "'" + value.Replace("'", "''") + "'";
+            // The health directory is one hash of the helper path. It is computed HERE, once, and
+            // baked into the launcher as a literal: the six hook entries in settings.json are
+            // already six copies of this script, and every line of PowerShell in them is a line a
+            // security product gets to dislike. No hashing, no JSON module, no file enumeration
+            // cmdlets in the hot path — the exe computes the same name from its own path
+            // (WindowsHookHealth.HealthDirectoryName), and the plugin from the package path.
+            var health = WindowsHookHealth.HealthDirectoryName(path);
             var script = "# " + WindowsMarker + "\n" +
-                "$ProgressPreference = 'SilentlyContinue'; " +
-                "$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); " +
-                "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); " +
+                "$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); " +
+                "[Console]::InputEncoding = [Text.UTF8Encoding]::new($false); " +
                 $"$helper = {Literal(path)}; " +
                 // A marker is immutable so concurrent hooks cannot replace a newer failure with
-                // an older one. Retaining the newest 16 bounds disk use even during quarantine.
-                // Match WindowsHookHealth and the helper: product root + hash of the full path.
-                "function Write-HookFailure([string]$reason) { try { " +
-                "$bytes = [Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($helper).ToUpperInvariant()); " +
-                "$sha = [Security.Cryptography.SHA256]::Create(); " +
-                "try { $hash = [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant() } finally { $sha.Dispose() }; " +
-                "$dir = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'claude-console', 'hook-health', $hash); " +
+                // an older one. The launcher only writes; the plugin (which reads this directory
+                // on every poll) and the exe keep it trimmed to the newest 16. Scope "helper"
+                // moves the plugin's recovery barrier (the exe may not have run); "delivery" is
+                // diagnostic only. Reasons are fixed literals, so the hand-built JSON is safe.
+                "function Write-HookFailure([string]$reason, [string]$scope) { try { " +
+                $"$dir = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'claude-console', 'hook-health', '{health}'); " +
                 "[IO.Directory]::CreateDirectory($dir) | Out-Null; " +
                 "$ticks = [DateTime]::UtcNow.Ticks; " +
-                "$file = [IO.Path]::Combine($dir, ('failure-' + $ticks + '-' + [Guid]::NewGuid().ToString('N') + '.json')); " +
-                "$tmp = $file + '.tmp'; " +
-                "$body = @{ schema = 1; observedUtcTicks = $ticks; reason = $reason } | ConvertTo-Json -Compress; " +
-                "[IO.File]::WriteAllText($tmp, $body, [Text.UTF8Encoding]::new($false)); [IO.File]::Move($tmp, $file); " +
-                "Get-ChildItem -LiteralPath $dir -Filter 'failure-*.json' -File | Sort-Object Name -Descending | Select-Object -Skip 16 | ForEach-Object { try { [IO.File]::Delete($_.FullName) } catch {} }; " +
+                "$file = [IO.Path]::Combine($dir, 'failure-' + $ticks + '-' + [Guid]::NewGuid().ToString('N') + '.json'); " +
+                "[IO.File]::WriteAllText($file + '.tmp', '{\"schema\":1,\"observedUtcTicks\":' + $ticks + ',\"reason\":\"' + $reason + '\",\"scope\":\"' + $scope + '\"}', [Text.UTF8Encoding]::new($false)); " +
+                "[IO.File]::Move($file + '.tmp', $file) " +
                 "} catch {} }; " +
-                "if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { Write-HookFailure 'missing'; exit 0 }; " +
-                "try { $read = [Console]::In.ReadToEndAsync(); if (-not $read.Wait(5000)) { Write-HookFailure 'input-timeout'; exit 0 }; " +
+                "if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { Write-HookFailure 'missing' 'helper'; exit 0 }; " +
+                "try { $read = [Console]::In.ReadToEndAsync(); if (-not $read.Wait(5000)) { Write-HookFailure 'input-timeout' 'delivery'; exit 0 }; " +
                 // ErrorActionPreference makes native start failures catchable; native nonzero
                 // exits still flow through LASTEXITCODE and retain their original exit code.
                 "$ErrorActionPreference = 'Stop'; $LASTEXITCODE = 0; " +
                 "$read.Result | & $helper " +
                 String.Join(" ", arguments.Select(Literal)) + "; $code = $LASTEXITCODE; " +
-                "if ($code -ne 0) { Write-HookFailure 'nonzero-exit' }; exit $code " +
-                "} catch { Write-HookFailure 'launch-failed'; exit 1 }";
+                "if ($code -ne 0) { Write-HookFailure 'nonzero-exit' 'helper' }; exit $code " +
+                "} catch { Write-HookFailure 'launch-failed' 'helper'; exit 1 }";
             return "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand " +
                 Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
         }

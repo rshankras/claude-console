@@ -39,8 +39,6 @@ namespace Loupedeck.ClaudeConsolePlugin
         private readonly Action _repaint;
         private readonly Int32 _armWindowMs;
         private readonly Boolean _applies;
-        private readonly Func<String> _selectTarget;
-        private readonly Func<String, Boolean> _isTargetCurrent;
         private readonly Object _lock = new Object();
         private DateTime _armedUntil;             // a second press before this enables; per key, on purpose
         private DateTime _offArmedUntil;          // a second long press before this disables
@@ -50,24 +48,18 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         /// <param name="applies">Test seam: whether this agent has a settings file to consent to.
         /// Null reads it from the agent (Capabilities.SettingsFileWiring).</param>
-        public LiveStatusGate(BridgeManager bridge, String keyName, Action repaint, Int32 armWindowMs = DefaultArmWindowMs, Boolean? applies = null,
-            Func<String> selectTarget = null, Func<String, Boolean> isTargetCurrent = null)
+        public LiveStatusGate(BridgeManager bridge, String keyName, Action repaint, Int32 armWindowMs = DefaultArmWindowMs, Boolean? applies = null)
         {
             _bridge = bridge;
             _keyName = keyName;
             _repaint = repaint;
             _armWindowMs = armWindowMs;
             _applies = applies ?? (bridge.Agent?.Capabilities.SettingsFileWiring ?? false);
-            _selectTarget = selectTarget ?? (() => bridge.DisplayTty());
-            _isTargetCurrent = isTargetCurrent ?? bridge.IsSessionObservationCurrent;
             _flash = new FailureFace(repaint, armWindowMs);
             _label = this.StateLabel();
             bridge.OnLiveStatusChanged += _ => this.Refresh();
             bridge.OnAgentBridgeStatusChanged += _ => this.Refresh();
             bridge.OnHelperHealthChanged += this.Refresh;
-            bridge.OnTargetChanged += this.Refresh;
-            bridge.OnStateUnavailable += this.Refresh;
-            bridge.Grid.OnGridChanged += this.Refresh;
         }
 
         /// <summary>The words that replace the key's live value right now, or null when the key shows its own.</summary>
@@ -269,23 +261,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             { IsBackground = true, Name = "claude-live-status-prompt" }.Start();
         }
 
-        private String HealthLabel()
-        {
-            var agentSetup = AgentBridgeNotice.FaceLabel(_bridge.AgentBridgeState);
-            if (agentSetup != null)
-            {
-                return agentSetup;
-            }
-            // Setup/opt-out words still describe their own distinct condition. Once enabled,
-            // another session recovering the helper cannot refresh this displayed session.
-            if (_applies && LiveStatusFace.Label(_bridge.LiveStatus, _bridge.SettingsApplyLive) != null)
-            {
-                return null;
-            }
-            var target = _selectTarget();
-            return !String.IsNullOrEmpty(target) && !_isTargetCurrent(target)
-                ? "Blocked" : null;
-        }
+        // The agent bridge's own word (Run /hooks, Setup failed, Blocked, …) outranks the key's
+        // value. A session that simply has not reported since the helper recovered is NOT
+        // blocked: the bridge withholds its stale value, and the key shows its dash.
+        private String HealthLabel() => AgentBridgeNotice.FaceLabel(_bridge.AgentBridgeState);
 
         private String StateLabel() => this.HealthLabel()
             ?? (_applies ? LiveStatusFace.Label(_bridge.LiveStatus, _bridge.SettingsApplyLive) : null);

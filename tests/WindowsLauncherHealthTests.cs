@@ -21,6 +21,37 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("UTF8Encoding", source);
         }
 
+        [Fact]
+        public void Launcher_carries_the_health_directory_as_a_literal_and_no_hashing_code()
+        {
+            // The plugin, the launcher and the exe must agree on one directory name. The launcher
+            // gets it precomputed: no SHA-256, no JSON cmdlets, no Get-ChildItem in six copies of
+            // the script inside settings.json.
+            const string path = @"C:\Users\O'Brien\AppData\Local\Logi\LogiPluginService\Plugins\ClaudeConsole\bin\claude-console-hook.exe";
+            var source = WindowsHookTests.DecodeLauncher(BridgeWiring.WindowsCommand(path, "statusline"));
+            Assert.Contains("'claude-console', 'hook-health', '" + WindowsHookHealth.HealthDirectoryName(path) + "'", source);
+            Assert.DoesNotContain("SHA256", source);
+            Assert.DoesNotContain("ConvertTo-Json", source);
+            Assert.DoesNotContain("Get-ChildItem", source);
+            // Every failure the launcher can record names its scope; the plugin blocks on "helper" only.
+            Assert.Contains("Write-HookFailure 'missing' 'helper'", source);
+            Assert.Contains("Write-HookFailure 'launch-failed' 'helper'", source);
+            Assert.Contains("Write-HookFailure 'nonzero-exit' 'helper'", source);
+            Assert.Contains("Write-HookFailure 'input-timeout' 'delivery'", source);
+            Assert.Contains("\"scope\":\"' + $scope + '\"", source);
+        }
+
+        [Fact]
+        public void Encoded_launcher_stays_small_enough_for_six_copies_in_settings_json()
+        {
+            // The original launcher was ~1,700 characters; 27fd842's failure reporting took it to
+            // ~4,900 (six entries ≈ 29 KB of base64 in the user's settings.json). With the health
+            // directory baked in and the cleanup moved to the plugin it is 3,874 for this path.
+            // Hold that line: anything added here is added six times to a file users keep in git.
+            const string path = @"C:\Users\Ravi Shankar\AppData\Local\Logi\LogiPluginService\Plugins\ClaudeConsole\bin\claude-console-hook.exe";
+            Assert.InRange(BridgeWiring.ActivityCommand(true, path, "permission").Length, 1, 4100);
+        }
+
         [Theory]
         [InlineData(100)]
         [InlineData(260)]

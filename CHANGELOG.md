@@ -3,6 +3,21 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Windows: a helper that security software removed no longer fails silently (#120).** When
+  `claude-console-hook.exe` is missing, will not launch, or crashes, the live keys, Yes/No and
+  the session slots read **Blocked**, Options+ shows one warning naming the file and what to do,
+  and the plugin stops trusting state it cached before the failure. Yes/No act only on an
+  approval that same session delivered after recovery, so a menu answered late cannot approve
+  the wrong thing. Everything recovers by itself at the next hook event. Only an observed
+  failure counts: a fresh install, a new day, an upgraded helper or no open session keeps the
+  normal faces. Codex's installed hook command is unchanged, so nothing has to be re-trusted.
+- The Windows hook launcher records why it failed (helper missing, launch failed, nonzero exit,
+  input timeout) and the helper stamps every write with its own start time; the plugin sweeps
+  those records. Existing Claude Code wiring is upgraded in place on load.
+
 ## [2.3.1] — 2026-09-24
 
 ### Fixed

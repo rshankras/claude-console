@@ -50,11 +50,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             }));
         }
 
-        private static void Failure(WindowsHookHealth monitor, DateTime observed, String reason = "launch-failed")
+        private static void Failure(WindowsHookHealth monitor, DateTime observed, String reason = "launch-failed", String scope = null)
         {
             Directory.CreateDirectory(monitor.HealthDirectory);
             File.WriteAllText(Path.Combine(monitor.HealthDirectory, $"failure-{observed.Ticks}-{Guid.NewGuid():N}.json"),
-                JsonSerializer.Serialize(new { schema = 1, observedUtcTicks = observed.Ticks, reason }));
+                scope == null
+                    ? JsonSerializer.Serialize(new { schema = 1, observedUtcTicks = observed.Ticks, reason })
+                    : JsonSerializer.Serialize(new { schema = 1, observedUtcTicks = observed.Ticks, reason, scope }));
         }
 
         [Fact]
@@ -104,8 +106,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Status);
             Assert.Equal(this._now, monitor.InvalidatedAtUtc);
 
+            // Putting the file back is not evidence that it runs: the newest thing seen is still
+            // the failure, so the keys stay Blocked until a hook actually succeeds.
             this.RestoreHelper();
-            Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, monitor.Refresh());
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
             Assert.False(monitor.IsSessionObservationCurrent(SessionA));
 
             Success(monitor, SessionA, this._now.AddSeconds(1));
@@ -123,9 +127,90 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             this.RestoreHelper();
 
             var restarted = this.Monitor();
-            Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, restarted.Refresh());
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, restarted.Refresh());
             Assert.Equal(this._now, restarted.InvalidatedAtUtc);
             Assert.False(restarted.IsSessionObservationCurrent(SessionA));
+        }
+
+        [Fact]
+        public void No_evidence_at_all_is_awaiting_fresh_not_unavailable()
+        {
+            // A fresh install, a new day, no session open: nothing has failed, so nothing is blocked.
+            var monitor = this.Monitor();
+            Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, monitor.Refresh());
+            Assert.Equal(DateTime.MinValue.Ticks, monitor.InvalidatedAtUtc.Ticks);
+            Assert.Empty(Directory.Exists(monitor.HealthDirectory) ? Directory.GetFiles(monitor.HealthDirectory) : Array.Empty<String>());
+        }
+
+        [Theory]
+        [InlineData("observation-failed")]
+        [InlineData("input-timeout")]
+        public void A_delivery_failure_withholds_a_receipt_but_never_blocks_the_helper(String reason)
+        {
+            // The exe ran (or stdin was slow); that is not a helper failure. Other sessions keep
+            // working, and with no receipts at all the answer is "nothing yet", not Blocked.
+            var monitor = this.Monitor();
+            Failure(monitor, this._now, reason, scope: "delivery");
+            Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, monitor.Refresh());
+            Assert.Equal(DateTime.MinValue.Ticks, monitor.InvalidatedAtUtc.Ticks);
+            Assert.Equal((this._now, reason), monitor.LastDeliveryFailure);
+
+            Success(monitor, SessionA, this._now.AddSeconds(-1));
+            Assert.Equal(WindowsHookHealthStatus.Healthy, monitor.Refresh());
+            Assert.True(monitor.IsSessionObservationCurrent(SessionA));
+        }
+
+        [Fact]
+        public void A_launcher_record_without_a_scope_is_a_helper_failure()
+        {
+            var monitor = this.Monitor();
+            Success(monitor, SessionA, this._now.AddSeconds(-1));
+            Failure(monitor, this._now, "launch-failed");   // pre-scope shape
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+        }
+
+        [Fact]
+        public void A_failure_followed_by_a_success_is_forgotten_even_after_that_session_is_pruned()
+        {
+            // Yesterday: one launch failure, then hours of successful hooks. Today the sessions
+            // are dead and their receipts pruned. The failure is history, not the current state.
+            var monitor = this.Monitor();
+            Failure(monitor, this._now.AddHours(-13));
+            Success(monitor, SessionA, this._now.AddHours(-12));
+            Assert.Equal(WindowsHookHealthStatus.Healthy, monitor.Refresh());
+
+            monitor.PruneDeadSessions(Array.Empty<String>());
+            Assert.Empty(Directory.GetFiles(monitor.HealthDirectory, "success-*.json"));
+            Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, monitor.Refresh());
+
+            var restarted = this.Monitor();   // the watermark file carries it across a restart
+            Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, restarted.Refresh());
+        }
+
+        [Fact]
+        public void A_failure_after_the_last_success_stays_unavailable_across_pruning_and_restart()
+        {
+            var monitor = this.Monitor();
+            Success(monitor, SessionA, this._now.AddHours(-12));
+            Failure(monitor, this._now.AddHours(-11));
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+
+            monitor.PruneDeadSessions(Array.Empty<String>());
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, this.Monitor().Refresh());
+        }
+
+        [Fact]
+        public void A_newer_helper_file_than_the_failure_starts_over_as_awaiting_fresh()
+        {
+            // An upgrade or reinstall replaces the file the failure was recorded against. Start
+            // clean and let the first hook decide; a file IT put back keeps its old mtime and
+            // stays Unavailable (covered above).
+            var monitor = this.Monitor();
+            Failure(monitor, this._now);
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+            File.SetLastWriteTimeUtc(this._helper, this._now.AddSeconds(1));
+            Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, monitor.Refresh());
         }
 
         [Fact]

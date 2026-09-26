@@ -29,8 +29,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             using var json = JsonDocument.Parse(File.ReadAllText(marker));
             Assert.Equal(1, json.RootElement.GetProperty("schema").GetInt32());
             Assert.Equal("missing", json.RootElement.GetProperty("reason").GetString());
+            Assert.Equal("helper", json.RootElement.GetProperty("scope").GetString());
             Assert.InRange(json.RootElement.GetProperty("observedUtcTicks").GetInt64(),
                 DateTime.UtcNow.AddMinutes(-1).Ticks, DateTime.UtcNow.Ticks);
+            // The three writers agree on the directory: the launcher's baked-in literal landed
+            // where the plugin's own computation looks.
+            Assert.Equal(WindowsHookHealth.HealthDirectoryFor(missing, Root), Path.GetDirectoryName(marker));
         }
 
         [WindowsFact]
@@ -132,6 +136,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var marker = Assert.Single(Directory.GetFiles(HealthDirectory(_hook), "failure-*.json"));
             using var json = JsonDocument.Parse(File.ReadAllText(marker));
             Assert.Equal("observation-failed", json.RootElement.GetProperty("reason").GetString());
+            Assert.Equal("delivery", json.RootElement.GetProperty("scope").GetString());
+            // The exe's own hash of Environment.ProcessPath matches the plugin's from the package path.
+            Assert.Equal(WindowsHookHealth.HealthDirectoryFor(_hook, Root), Path.GetDirectoryName(marker));
         }
 
         [WindowsFact]

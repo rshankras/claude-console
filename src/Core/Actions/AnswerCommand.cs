@@ -354,10 +354,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     bridge.Agent.Id == "codex-cli" && bridge.Grid.LiveSessions().Count > 0, false);
             }
 
+            // A pending approval the helper has not confirmed since its last failure is neither
+            // shown nor answered: the face is the ordinary no-pending tile, and a press is refused
+            // with a log line (NeedsObservation) rather than falling through to a blind Return.
             var pending = !String.IsNullOrEmpty(session.PendingTool);
             var current = bridge.IsSessionObservationCurrent(target)
                 && (!pending || bridge.IsSessionApprovalCurrent(target));
-            return (target, current ? session.Risk : ApprovalRisk.None, current && pending, false, !current);
+            return (target, current ? session.Risk : ApprovalRisk.None, current && pending, false, pending && !current);
         }
 
         /// <summary>
@@ -409,9 +412,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 if (decision.NeedsSelection)
                     return KeyImage.RenderDecisionTile(imageSize, "Select", KeyImage.Gray,
                         approve: actionParameter == Yes, risk: ApprovalRisk.None, targetLabel: "session");
-                if (decision.NeedsObservation)
-                    return KeyImage.RenderDecisionTile(imageSize, "Blocked", KeyImage.Gray,
-                        approve: actionParameter == Yes, risk: ApprovalRisk.None);
 
                 return KeyImage.RenderDecisionTile(
                     imageSize, label, color,

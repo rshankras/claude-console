@@ -202,11 +202,17 @@ public sealed class HelperHealthActionTests : IDisposable
     }
 
     [Fact]
-    public void Activity_checks_the_pinned_target_when_the_display_target_has_recovered()
+    public void A_session_that_has_not_reported_since_recovery_is_withheld_not_marked_blocked()
     {
+        // The helper failed, then Second delivered a fresh hook: the helper works. First has
+        // not reported since. Its stale values are withheld (dash), but "Blocked" would claim a
+        // failure that is not there — and nothing says so in Options+ either.
         var (bridge, _, health) = Rig();
+        var notices = new List<(PluginStatus Status, string Message)>();
+        bridge.Notify = (status, message, _, _) => notices.Add((status, message));
         File.Delete(Helper);
         bridge.RefreshHelperHealth();
+        Assert.Equal(PluginStatus.Warning, notices[^1].Status);
         now = now.AddSeconds(10);
         RestoreHelper();
         WriteCodex(Second, "Stop", now);
@@ -215,22 +221,45 @@ public sealed class HelperHealthActionTests : IDisposable
         bridge.RefreshHelperHealth();
         bridge.ActiveTty = Second;
         Assert.Equal(First, bridge.RoutingTty());
-        Assert.Equal(Second, bridge.DisplayTty());
         var context = new LiveStatusGate(bridge, "Context", () => { });
-        var activityRepaints = 0;
-        var activity = new LiveStatusGate(bridge, "Activity", () => activityRepaints++,
-            selectTarget: () => bridge.RoutingTty(), isTargetCurrent: bridge.IsSessionActivityCurrent);
+        var activity = new LiveStatusGate(bridge, "Activity", () => { });
 
+        Assert.False(bridge.HookHelperUnavailable);
+        Assert.Equal(PluginStatus.Normal, notices[^1].Status);
         Assert.Null(context.Label);
-        Assert.Equal("Blocked", activity.Label);
+        Assert.Null(activity.Label);
+        Assert.False(bridge.IsSessionActivityCurrent(First));
+        Assert.True(bridge.IsSessionActivityCurrent(Second));
 
         now = now.AddSeconds(1);
         WriteCodex(First, "Stop", now);
         bridge.Grid.Refresh(live);
         Receipt(health, First, now);
         bridge.RefreshHelperHealth();
+        Assert.True(bridge.IsSessionActivityCurrent(First));
         Assert.Null(activity.Label);
-        Assert.True(activityRepaints > 0);
+    }
+
+    [Fact]
+    public void A_stale_pending_approval_shows_no_pending_and_refuses_the_press()
+    {
+        // First's approval was observed before the helper failed. After recovery by Second the
+        // face is the ordinary no-pending tile (risk None), and a press sends nothing.
+        var (bridge, platform, health) = Rig();
+        File.Delete(Helper);
+        bridge.RefreshHelperHealth();
+        now = now.AddSeconds(10);
+        RestoreHelper();
+        Receipt(health, Second, now);
+        bridge.RefreshHelperHealth();
+
+        var decision = AnswerCommand.TargetState(bridge);
+        Assert.Equal(First, decision.Key);
+        Assert.False(decision.HasPending);
+        Assert.Equal(ApprovalRisk.None, decision.Risk);
+        Assert.True(decision.NeedsObservation);
+        AnswerCommand.AnswerApproval(bridge, approve: true);
+        Assert.Empty(platform.Keys);
     }
 
     [Fact]

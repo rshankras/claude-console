@@ -54,7 +54,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 AgentBridgeStatus.ForeignConfiguration =>
                     "Vizhi found a hooks.json file it does not own and left it unchanged. Prompt, navigation and voice actions still work. Merge the Vizhi hook entries manually to enable live session state and approval indicators.",
                 AgentBridgeStatus.HelperUnavailable =>
-                    "The Windows hook helper is missing or fresh hook delivery cannot be verified. Live values and approval actions are blocked. Check security software or contact IT, then trigger a fresh hook event after recovery.",
+                    "The plugin's Windows helper (claude-console-hook.exe) is missing or failed to run, so live values and the Yes/No keys are blocked. Security software may have removed it: ask IT to allow it, or reinstall the plugin. The keys recover on their own at the next hook event.",
                 _ => null,
             };
     }
