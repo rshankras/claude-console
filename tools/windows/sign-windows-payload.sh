@@ -148,6 +148,21 @@ if ! openssl x509 -in "$WORK/leaf.pem" -noout -checkend $((30*24*3600)) >/dev/nu
 fi
 cat "$WORK/leaf.pem" "$INTERMEDIATE" > "$WORK/chain.pem"
 
+# The token stays visible after SimplySign's cloud session has expired — listing it is local,
+# signing is not. Prove the private key answers before touching sixteen files, or the pack dies
+# on the first one with a bare CKR_FUNCTION_FAILED (it did, on 2026-09-27).
+KEY_ID="$(awk -v label="$ALIAS" '$1=="label:" && $2==label {found=1} found && $1=="ID:" {print $2; exit}' "$WORK/certs.txt" | tr -d ':')"
+printf 'claude-console signing probe' > "$WORK/probe.bin"
+if [ -z "$KEY_ID" ] || ! pkcs11-tool --module "$MODULE" --sign -m SHA256-RSA-PKCS --id "$KEY_ID" \
+     -i "$WORK/probe.bin" -o "$WORK/probe.sig" > "$WORK/probe.log" 2>&1; then
+  echo "error: the SimplySign key did not sign a probe — the cloud session has expired even though" >&2
+  echo "       the token is still listed. In SimplySign Desktop: Log out, then Log in again with a" >&2
+  echo "       fresh code from the phone app, and re-run. (Log in right before packing: the session" >&2
+  echo "       times out.)" >&2
+  grep -iE 'CKR_|error' "$WORK/probe.log" | head -2 | sed 's/^/       /' >&2
+  exit 1
+fi
+
 printf 'name = SimplySign\nlibrary = %s\nslot = %s\n' "$MODULE" "$SLOT" > "$WORK/pkcs11.cfg"
 
 echo ">>> signing ${#PES[@]} Windows files as $SUBJECT"
