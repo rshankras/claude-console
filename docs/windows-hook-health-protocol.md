@@ -29,11 +29,17 @@ Product IPC roots remain separate: `%TEMP%\claude-console` and `%TEMP%\codex-con
 replacing a helper must require fresh delivery; records from another installation path must not make
 this installation healthy.
 
-- `failure-<observedUtcTicks>-<guid>.json`: immutable object containing `schema: 1`,
-  `observedUtcTicks` (UTC `DateTime` ticks), `reason` and `scope`. Concurrent writers cannot
-  overwrite a later failure with an earlier one. Writers only write; the plugin trims the directory
-  to the newest 16 on every read (and the exe on its own writes), so a burst written while the
-  service was down is swept the moment it is back.
+- `failure-<observedUtcTicks>-<scope>-<guid>.json`: immutable object containing `schema: 1`,
+  `observedUtcTicks` (UTC `DateTime` ticks), `reason` and `scope`. The scope is in the name so
+  trimming is per scope without reading: the plugin keeps the newest 16 of each on every read,
+  and the exe trims only its own `-delivery-` records, so a run of delivery failures can never
+  push the helper failure out (laptop review of 3de7b20). Records from earlier builds without
+  the scope in the name are read to classify them. Concurrent writers cannot overwrite a later
+  failure with an earlier one.
+- `last-failure.json`: `{schema, observedUtcTicks, reason}` of the newest **helper**-scope failure
+  — the barrier itself, kept apart from the diagnostic records. The plugin writes it when it
+  records a failure and whenever it reads a launcher record newer than it. A restart reads it
+  first; even with every record swept, an approval observed before the failure stays stale.
   - `scope: "helper"` — the exe may not have run: `missing`, `launch-failed`, `nonzero-exit` from
     the launcher, `missing` / `health-unreadable` from the plugin. These move the recovery barrier.
   - `scope: "delivery"` — the exe ran but this invocation could not complete: `input-timeout` from

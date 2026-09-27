@@ -240,7 +240,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 $"$dir = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'claude-console', 'hook-health', '{health}'); " +
                 "[IO.Directory]::CreateDirectory($dir) | Out-Null; " +
                 "$ticks = [DateTime]::UtcNow.Ticks; " +
-                "$file = [IO.Path]::Combine($dir, 'failure-' + $ticks + '-' + [Guid]::NewGuid().ToString('N') + '.json'); " +
+                "$file = [IO.Path]::Combine($dir, 'failure-' + $ticks + '-' + $scope + '-' + [Guid]::NewGuid().ToString('N') + '.json'); " +
                 "[IO.File]::WriteAllText($file + '.tmp', '{\"schema\":1,\"observedUtcTicks\":' + $ticks + ',\"reason\":\"' + $reason + '\",\"scope\":\"' + $scope + '\"}', [Text.UTF8Encoding]::new($false)); " +
                 "[IO.File]::Move($file + '.tmp', $file) " +
                 "} catch {} }; " +

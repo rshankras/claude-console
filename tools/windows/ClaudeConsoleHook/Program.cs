@@ -487,9 +487,12 @@ internal static class Program
             // Scope "delivery": this process RAN, so the helper is not blocked; only this
             // invocation's receipt is withheld. The launcher's "helper"-scope records are the
             // ones that move the plugin's recovery barrier.
-            var path = Path.Combine(directory, $"failure-{observed}-{Guid.NewGuid():N}.json");
+            // The scope is in the NAME so this cleanup can stay scope-blind: it trims only its own
+            // delivery records and can never sweep away the launcher's helper-failure record —
+            // the barrier the plugin relies on across a restart.
+            var path = Path.Combine(directory, $"failure-{observed}-delivery-{Guid.NewGuid():N}.json");
             WriteAtomic(path, $"{{\"schema\":1,\"observedUtcTicks\":{observed},\"reason\":\"observation-failed\",\"scope\":\"delivery\"}}");
-            foreach (var old in Directory.EnumerateFiles(directory, "failure-*.json")
+            foreach (var old in Directory.EnumerateFiles(directory, "failure-*-delivery-*.json")
                 .OrderByDescending(Path.GetFileName, StringComparer.Ordinal).Skip(16))
             {
                 try { File.Delete(old); } catch { /* best effort */ }

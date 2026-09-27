@@ -37,6 +37,11 @@ namespace Loupedeck.ClaudeConsolePlugin
     {
         private const Int32 MaxEvidenceFiles = 1024;
         private const String WatermarkFile = "last-success.json";
+        // The newest HELPER failure ever seen, kept apart from the failure records themselves. The
+        // records are a bounded diagnostic tail; this is the barrier. Without it, sixteen delivery
+        // failures could sweep the helper failure out of the directory and a restart would forget
+        // that an old approval was observed before the helper broke (laptop review of 3de7b20).
+        private const String BarrierFile = "last-failure.json";
         private readonly Object _gate = new Object();
         private readonly String _helperPath;
         private readonly String _ipcRoot;
@@ -267,6 +272,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var successes = Directory.EnumerateFiles(this.HealthDirectory, "success-*.json").Take(MaxEvidenceFiles + 1).ToArray();
                 if (failures.Length > MaxEvidenceFiles || successes.Length > MaxEvidenceFiles) { return false; }
                 this._lastSuccessStartedTicks = Math.Max(this._lastSuccessStartedTicks, this.ReadWatermark());
+                var barrier = this.ReadBarrier();
+                if (barrier.Ticks > this._invalidatedTicks)
+                {
+                    this._invalidatedTicks = barrier.Ticks;
+                    this._failureReason = barrier.Reason;
+                }
                 foreach (var file in failures)
                 {
                     using var json = ReadRecord(file);
@@ -291,6 +302,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                         this._invalidatedTicks = observed;
                         this._failureReason = reason.GetString();
                     }
+                }
+                // A launcher-written helper failure newer than the persisted barrier moves it: the
+                // launcher only writes records, and records get trimmed.
+                if (this._invalidatedTicks > barrier.Ticks)
+                {
+                    this.WriteBarrier(this._invalidatedTicks, this._failureReason);
                 }
 
                 foreach (var file in successes)
@@ -327,11 +344,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                 PrivateFiles.EnsurePrivateDirectory(this._ipcRoot);
                 PrivateFiles.EnsurePrivateDirectory(Path.GetDirectoryName(this.HealthDirectory));
                 PrivateFiles.EnsurePrivateDirectory(this.HealthDirectory);
-                var path = Path.Combine(this.HealthDirectory, $"failure-{observed}-{Guid.NewGuid():N}.json");
+                var path = Path.Combine(this.HealthDirectory, $"failure-{observed}-helper-{Guid.NewGuid():N}.json");
                 temporary = path + ".tmp";
                 File.WriteAllText(temporary, JsonSerializer.Serialize(new { schema = 1, observedUtcTicks = observed, reason, scope = "helper" }));
                 PrivateFiles.EnsurePrivateFile(temporary);
                 File.Move(temporary, path);
+                this.WriteBarrier(observed, reason);
                 TrimFailures(this.HealthDirectory);
             }
             catch { /* Keep the in-memory barrier even when the marker cannot be persisted. */ }
@@ -344,17 +362,72 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Immutable records avoid writer races; somebody still has to sweep. The plugin does it on
         // every read, so the launcher (six copies of it, in settings.json) carries no cleanup
         // code, and a burst of markers written while the service was down is trimmed the moment
-        // it is back. Newest 16 by name — the name starts with the observed ticks — so the latest
-        // failure survives even if an older invocation finally publishes its record afterwards.
+        // it is back. Newest 16 PER SCOPE by name — the name starts with the observed ticks, then
+        // the scope — so a run of delivery failures can never push the helper failure out, and the
+        // latest failure survives even if an older invocation finally publishes its record late.
+        // Records from before the scope was in the name are read to find out.
         private static String[] TrimFailures(String directory)
         {
-            var failures = Directory.EnumerateFiles(directory, "failure-*.json").Take(MaxEvidenceFiles + 1)
+            var kept = new List<String>();
+            var all = Directory.EnumerateFiles(directory, "failure-*.json").Take(MaxEvidenceFiles + 1)
                 .OrderByDescending(Path.GetFileName, StringComparer.Ordinal).ToArray();
-            foreach (var old in failures.Skip(16))
+            foreach (var group in all.GroupBy(ScopeOf))
             {
-                try { File.Delete(old); } catch { }
+                var ordered = group.ToArray();
+                kept.AddRange(ordered.Take(16));
+                foreach (var old in ordered.Skip(16))
+                {
+                    try { File.Delete(old); } catch { }
+                }
             }
-            return failures.Take(16).ToArray();
+            return kept.ToArray();
+        }
+
+        private static String ScopeOf(String path)
+        {
+            var parts = Path.GetFileNameWithoutExtension(path).Split('-');
+            if (parts.Length >= 4 && (parts[2] == "helper" || parts[2] == "delivery")) { return parts[2]; }
+            try
+            {
+                using var json = ReadRecord(path);
+                if (json != null && json.RootElement.TryGetProperty("scope", out var scope) &&
+                    scope.ValueKind == JsonValueKind.String && scope.GetString() == "delivery") { return "delivery"; }
+            }
+            catch { }
+            return "helper";
+        }
+
+        // {schema, observedUtcTicks, reason} of the newest helper-scope failure: the barrier itself,
+        // independent of the diagnostic records. Written by the plugin only, only when it moves.
+        private (Int64 Ticks, String Reason) ReadBarrier()
+        {
+            try
+            {
+                var path = Path.Combine(this.HealthDirectory, BarrierFile);
+                if (!File.Exists(path)) { return (0, null); }
+                using var json = ReadRecord(path);
+                if (json != null && ReadTicks(json.RootElement, "observedUtcTicks", out var observed) &&
+                    json.RootElement.TryGetProperty("reason", out var reason) && reason.ValueKind == JsonValueKind.String)
+                {
+                    return (observed, reason.GetString());
+                }
+            }
+            catch { }
+            return (0, null);
+        }
+
+        private void WriteBarrier(Int64 observed, String reason)
+        {
+            var path = Path.Combine(this.HealthDirectory, BarrierFile);
+            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(temporary, JsonSerializer.Serialize(new { schema = 1, observedUtcTicks = observed, reason = reason ?? "unknown" }));
+                PrivateFiles.EnsurePrivateFile(temporary);
+                File.Move(temporary, path, overwrite: true);
+            }
+            catch { /* The in-memory barrier still covers this process; the next refresh retries. */ }
+            finally { try { File.Delete(temporary); } catch { } }
         }
 
         // {schema, startedUtcTicks, completedUtcTicks} of the newest pruned receipt. Written only
