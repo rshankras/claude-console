@@ -36,9 +36,11 @@ signs through that, osslsigncode verifies against a public root bundle.
 
 ## Per release
 
-1. Be logged in to SimplySign Desktop (menu bar): your e-mail plus the rotating code from the
-   SimplySign phone app. The token exists only while logged in; the sign script's first check is
-   "no slots" and it tells you to log in.
+1. Log in to SimplySign Desktop (menu bar) **right before packing**: your e-mail plus the rotating
+   code from the SimplySign phone app. The cloud session expires after an hour or two and the
+   token stays listed after it does, so the sign script proves the key answers with a probe
+   signature first; if that fails it says "log out, then log in again" and stops before touching
+   any file.
 2. `bash tools/voice/pack-release.sh <ver> <Product>` signs every `.exe` and `.dll` in the staged
    tree, verifies each one, packs, and verifies the packed files again.
 
