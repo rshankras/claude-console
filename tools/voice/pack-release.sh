@@ -18,7 +18,14 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 
 VER="${1:-1_1}"
 PRODUCT="${2:-ClaudeConsole}"
-OUT="$ROOT/${PRODUCT}_${VER}.lplug4"
+# An unsigned pack is a dev artefact and is named as one, so it can never be mistaken for a
+# release: Logitech QA's CrowdStrike quarantines unsigned helpers (#110).
+if [ "${WINDOWS_SIGNING:-}" = "skip" ]; then
+  OUT="$ROOT/${PRODUCT}_${VER}-unsigned.lplug4"
+  export ALLOW_UNSIGNED_WINDOWS=1
+else
+  OUT="$ROOT/${PRODUCT}_${VER}.lplug4"
+fi
 BUILD_DIR="$ROOT/bin/$PRODUCT/Release"
 INTERMEDIATE_DIR="$ROOT/src/Products/$PRODUCT/obj/Release"
 
@@ -194,6 +201,15 @@ if [ "$SHIPS_VOICE" = "1" ]; then
 else
   rm -rf "$PKG_VOICE"
 fi
+
+# --- sign every Windows executable and DLL in the staged tree (#110) ------------------------------
+# Helpers, the plugin DLL, whisper-cli.exe and its ggml DLLs: everything a Windows machine loads.
+# Signed through Certum's SimplySign cloud certificate (SimplySign Desktop must be logged in) and
+# verified file by file; verify-package.sh repeats the check on the packed files. Done after the
+# voice payload is embedded so the Windows whisper bundle is covered, and on the staging copies
+# only — the source bundles under the runtime home stay as bundle-whisper.sh made them.
+echo ">>> signing the Windows payload"
+bash "$ROOT/tools/windows/sign-windows-payload.sh" "$BUILD_DIR/bin" "$PRODUCT"
 
 # --- pack ----------------------------------------------------------------------------------------
 echo ">>> packing $OUT"
