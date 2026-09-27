@@ -128,6 +128,17 @@ if [ "$ISSUER" != "$CA_SUBJECT" ]; then
   echo "       Download the right one from the leaf's 'CA Issuers' URL and point CODESIGN_INTERMEDIATE at it." >&2
   exit 1
 fi
+# Never sign with the wrong certificate, however valid: the gate would refuse the package anyway.
+EXPECTED_CN="${CODESIGN_EXPECTED_CN:-}"
+if [ -z "$EXPECTED_CN" ] && [ -f "$ROOT/tools/windows/signing/expected-publisher.txt" ]; then
+  EXPECTED_CN="$(head -1 "$ROOT/tools/windows/signing/expected-publisher.txt" | tr -d '\r')"
+fi
+LEAF_CN="$(openssl x509 -in "$WORK/leaf.pem" -noout -subject -nameopt RFC2253 | sed 's/^subject=//' | sed -n 's/^CN=\([^,]*\).*/CN=\1/p')"
+if [ -n "$EXPECTED_CN" ] && [ "$LEAF_CN" != "$EXPECTED_CN" ]; then
+  echo "error: the token's certificate is '$LEAF_CN' but tools/windows/signing/expected-publisher.txt says '$EXPECTED_CN'." >&2
+  echo "       Wrong SimplySign account, or the publisher file needs updating after a renewal." >&2
+  exit 1
+fi
 if ! openssl x509 -in "$WORK/leaf.pem" -noout -checkend 0 >/dev/null; then
   echo "error: the code-signing certificate expired on $NOT_AFTER — renew it at Certum before packing." >&2
   exit 1

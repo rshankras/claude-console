@@ -17,7 +17,15 @@ http://repository.certum.pl/ccsca2021.cer, SHA-256 fingerprint
 valid to 2036-05-18. If Certum ever issues our renewal from a different CA, the sign script
 says so (issuer ≠ this file) and this file gets replaced.
 
+`expected-publisher.txt` — the Subject CN every Windows file must be signed by (`CN=Ravi Shankar S`).
+The sign script refuses to sign with any other certificate on the token, and the package gate
+refuses a file signed by anyone else — however trusted — or by a certificate from a different CA,
+or by two different certificates across one package. Update this line only at a renewal that
+changes the name (it should not: Logitech's allow-list keys on it).
+
 Nothing secret lives here. The private key is in Certum's SimplySign cloud and never leaves it.
+`.gitignore` ignores `*.pem` and carves out exactly the CA file above; a key file could not be
+committed here by accident.
 
 ## Where the certificate lives
 
