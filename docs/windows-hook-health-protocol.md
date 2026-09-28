@@ -68,6 +68,18 @@ afterwards. A fresh observation from one session does not validate another sessi
 approval. A fresh statusline or Notification also does not make an older permission payload
 current. The monitor and approval gate enforce those separate checks.
 
+"The installed file's time" is not simply its mtime (#125). The installer restores the package's
+ZIP timestamp, and ZIP times carry no zone: a helper packed at 11:34 IST is dated 11:34 *local*
+wherever it lands, hours ahead of the clock on a machine behind IST. Used raw, that floor judged
+every receipt stale until the clock caught up — Yes/No refused quietly, values withheld, Vizhi
+reading Run /hooks, and no Blocked face because nothing had failed. The monitor therefore latches
+the floor to `min(mtime, first sighting)` per distinct mtime, and persists a future-dated latch in
+`helper-version.json` (`{schema, mtimeTicks, versionTicks}`) so a restart inside the window, or
+after the clock has passed the file time, keeps the same floor. A past-dated file latches to its own
+mtime and writes nothing. A replaced file has a new mtime and starts over, so an upgrade still
+demands fresh evidence. The Codex bridge takes the same latched floor for the exe when it computes
+its installed-at; `hooks.json` is written locally and keeps its real mtime.
+
 Windows Claude statusline, activity and pending JSON and Codex hook envelopes contain `hookStartedUtcTicks`.
 This is transport metadata supplied by the helper, bound to the actual permission payload. The
 approval gate requires that invocation to start after the recovery boundary. A file modification

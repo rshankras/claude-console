@@ -3,6 +3,19 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Windows: a helper dated in the future no longer withholds Yes/No and live values after
+  install (#125).** The installer keeps the package's ZIP timestamp, and ZIP times carry no
+  zone, so a helper packed at 11:34 IST reads 11:34 *local* on any machine — hours ahead of the
+  clock on one behind IST. The helper-health gate from 2.3.2 used that time as its freshness
+  floor, so until the clock caught up every hook receipt counted as stale: Yes/No were refused
+  with only a log line, Cost and Context stayed blank, and nothing said Blocked because nothing
+  had failed. The floor now latches to the earlier of the file time and the moment the file was
+  first seen, and a future-dated latch survives a plugin restart. Found in review on the release
+  day, before any QA run; not visible on the owner's laptop, which shares the packing Mac's zone.
+
 ## [2.3.2] — 2026-09-28
 
 ### Fixed
@@ -80,6 +93,15 @@ blue and its relabelled keys stay with Vizhi.
 - **Log lines carry the product name**, so two consoles writing to one log can be told apart.
 - The voice helper's microphone permission string no longer names a single product. It reaches
   an installed helper only when the helper is re-signed.
+
+## Vizhi for Codex [Unreleased]
+
+### Fixed
+- **Windows: a helper dated in the future no longer reads as Run /hooks after install (#125).**
+  Same cause as Claude Console's entry above: the packaged helper's file time is hours ahead on a
+  machine behind IST, and the bridge measured "an event since the install" against it. Until the
+  clock caught up, trusted and firing hooks still showed **Run /hooks** and Yes/No were refused.
+  The bridge now takes the health monitor's latched floor for the exe.
 
 ## Vizhi for Codex [1.6.1] — 2026-09-15
 

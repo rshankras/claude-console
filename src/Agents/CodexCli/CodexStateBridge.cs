@@ -197,11 +197,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // old envelope is still on disk. Only an event at or after the newest bridge
                 // component proves this installation has actually run (#69).
                 var launcher = windows ? this.HookExe : this.HookScript;
-                var installedAt = new[] { this.HooksFile, launcher }
-                    .Where(File.Exists)
-                    .Select(File.GetLastWriteTimeUtc)
-                    .DefaultIfEmpty(DateTime.MinValue)
-                    .Max();
+                // On Windows the exe's mtime is the package's ZIP time read as local time and can
+                // sit hours ahead of the clock (#125); the health monitor latches a usable floor
+                // for it, so take that when it has one. hooks.json is written here and is honest.
+                var launcherAt = windows && hookHealth != null && hookHealth.HelperVersionUtc > DateTime.MinValue
+                    ? hookHealth.HelperVersionUtc
+                    : File.Exists(launcher) ? File.GetLastWriteTimeUtc(launcher) : DateTime.MinValue;
+                var hooksAt = File.Exists(this.HooksFile) ? File.GetLastWriteTimeUtc(this.HooksFile) : DateTime.MinValue;
+                var installedAt = hooksAt > launcherAt ? hooksAt : launcherAt;
                 var seen = (windows && hookHealth?.HasCurrentObservationSince(installedAt) == true)
                     || (Directory.Exists(this._sessionsDir)
                         && Directory.EnumerateFiles(this._sessionsDir, "*.json").Any(path =>

@@ -50,7 +50,16 @@ namespace Loupedeck.ClaudeConsolePlugin
         private Boolean _missingEpisode;
         private Boolean _unreadableEpisode;
         private Int64 _invalidatedTicks;
+        // The freshness floor for the installed file. NOT simply its mtime (#125): the installer
+        // restores the package's ZIP timestamp, and ZIP times carry no zone, so a helper packed at
+        // 11:34 IST is dated 11:34 LOCAL wherever it lands — hours in the future on a machine
+        // behind IST. Using that as the floor judged every receipt stale until the clock caught
+        // up: Yes/No refused quietly, values withheld, Vizhi reading Run /hooks. So the floor
+        // latches to min(mtime, first sighting) per distinct mtime, and a future-dated latch is
+        // persisted so a restart inside the window — or after the clock passes — keeps it.
         private Int64 _helperVersionTicks;
+        private Int64 _helperMtimeTicks;
+        private const String VersionFile = "helper-version.json";
         // The newest success ever seen, live or pruned. A failure older than this is history,
         // not the current state; without it every reboot after any past failure would read as
         // Unavailable once the receipts of yesterday's sessions were pruned.
@@ -77,6 +86,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal String Message { get { lock (this._gate) { return this._message; } } }
         internal DateTime InvalidatedAtUtc { get { lock (this._gate) { return new DateTime(this._invalidatedTicks, DateTimeKind.Utc); } } }
         internal DateTime FreshAfterUtc { get { lock (this._gate) { return new DateTime(Math.Max(this._invalidatedTicks, this._helperVersionTicks), DateTimeKind.Utc); } } }
+        /// <summary>The latched floor for the installed helper (#125); MinValue before the first refresh.</summary>
+        internal DateTime HelperVersionUtc { get { lock (this._gate) { return new DateTime(this._helperVersionTicks, DateTimeKind.Utc); } } }
         internal Int64 Revision { get { lock (this._gate) { return this._revision; } } }
 
         /// <summary>The newest delivery-scope failure seen, for the log; it never blocks anything.</summary>
@@ -219,7 +230,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             this._missingEpisode = false;
-            try { this._helperVersionTicks = File.GetLastWriteTimeUtc(this._helperPath).Ticks; }
+            try { this.LatchHelperVersion(File.GetLastWriteTimeUtc(this._helperPath).Ticks); }
             catch { evidenceReadable = false; }
 
             if (!evidenceReadable)
@@ -260,6 +271,67 @@ namespace Loupedeck.ClaudeConsolePlugin
             this._status = status;
             this._message = message;
             return status;
+        }
+
+        /// <summary>
+        /// The floor for this mtime: the persisted latch if one was taken for exactly this mtime,
+        /// else min(mtime, now). A past-dated file (the normal case) latches to its own mtime and
+        /// writes nothing; only a future-dated file leaves a latch file behind. A replaced file
+        /// has a new mtime and starts over, so an upgrade still demands fresh evidence (#125).
+        /// </summary>
+        private void LatchHelperVersion(Int64 mtimeTicks)
+        {
+            if (mtimeTicks == this._helperMtimeTicks && this._helperVersionTicks > 0) { return; }
+            this._helperMtimeTicks = mtimeTicks;
+            var now = this._utcNow().Ticks;
+            var persisted = this.ReadVersionLatch();
+            if (persisted.MtimeTicks == mtimeTicks && persisted.VersionTicks > 0 &&
+                persisted.VersionTicks <= Math.Min(mtimeTicks, now))
+            {
+                this._helperVersionTicks = persisted.VersionTicks;
+                return;
+            }
+            this._helperVersionTicks = Math.Min(mtimeTicks, now);
+            if (this._helperVersionTicks < mtimeTicks) { this.WriteVersionLatch(mtimeTicks, this._helperVersionTicks); }
+        }
+
+        // {schema, mtimeTicks, versionTicks}: the sighting time latched for one future-dated mtime.
+        // mtimeTicks is deliberately not bounded by the clock — being ahead of it is the point.
+        private (Int64 MtimeTicks, Int64 VersionTicks) ReadVersionLatch()
+        {
+            try
+            {
+                if (this.HealthDirectory == null) { return (0, 0); }
+                var path = Path.Combine(this.HealthDirectory, VersionFile);
+                if (!File.Exists(path)) { return (0, 0); }
+                using var json = ReadRecord(path);
+                if (json != null &&
+                    json.RootElement.TryGetProperty("mtimeTicks", out var mtime) && mtime.ValueKind == JsonValueKind.Number && mtime.TryGetInt64(out var mtimeTicks) &&
+                    this.ReadTicks(json.RootElement, "versionTicks", out var versionTicks) && mtimeTicks > 0)
+                {
+                    return (mtimeTicks, versionTicks);
+                }
+            }
+            catch { }
+            return (0, 0);
+        }
+
+        private void WriteVersionLatch(Int64 mtimeTicks, Int64 versionTicks)
+        {
+            if (this.HealthDirectory == null) { return; }
+            var path = Path.Combine(this.HealthDirectory, VersionFile);
+            var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                PrivateFiles.EnsurePrivateDirectory(this._ipcRoot);
+                PrivateFiles.EnsurePrivateDirectory(Path.GetDirectoryName(this.HealthDirectory));
+                PrivateFiles.EnsurePrivateDirectory(this.HealthDirectory);
+                File.WriteAllText(temporary, JsonSerializer.Serialize(new { schema = 1, mtimeTicks, versionTicks }));
+                PrivateFiles.EnsurePrivateFile(temporary);
+                File.Move(temporary, path, overwrite: true);
+            }
+            catch { /* The in-memory latch covers this process; a restart inside the window re-latches at its own start. */ }
+            finally { try { File.Delete(temporary); } catch { } }
         }
 
         private Boolean ReadEvidence()
