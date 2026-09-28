@@ -18,6 +18,7 @@ Path to a submittable `.lplug4` for the [Logitech Marketplace](https://marketpla
 - [x] **Bundle whisper.cpp** (see below) — `tools/voice/bundle-whisper.sh` vendors Homebrew's `whisper-cli` + its dylib closure into a self‑contained `~/.claude/claude-console/whisper-bin/`, **Developer‑ID signed + hardened‑runtime + notarized** via `tools/voice/sign-and-notarize.sh`, and **shipped inside the `.lplug4`** by `tools/voice/pack-release.sh` (installed to the runtime home on first use, quarantine stripped, by `BridgeManager.EnsureVoiceRuntimeInstalled`).
 - [x] **Fetch the model** (~142 MB) — the plugin downloads `ggml-base.en.bin` on first use and verifies its sha256 (`BridgeManager.EnsureVoiceModel` / `DownloadVoiceModel`). No manual step, no package bloat.
 - [x] **Sign + notarize `ClaudeVoiceHelper.app`** — done via `tools/voice/sign-and-notarize.sh` (Developer ID + hardened runtime + mic entitlement; notarized & **stapled**; `spctl` → *accepted, source = Notarized Developer ID*).
+- [x] **Sign every Windows executable and DLL** (#110) — `tools/voice/pack-release.sh` runs `tools/windows/sign-windows-payload.sh` on the staged `bin/` (both helpers, the plugin DLL, `whisper-cli.exe` and the ggml DLLs): Authenticode via jsign through Certum's SimplySign cloud certificate (`CN=Ravi Shankar S`, OV, individual), SHA-256, RFC 3161 timestamp from `time.certum.pl`, the Certum intermediate embedded. `tools/verify-package.sh` **refuses** a package with an unsigned or untimestamped Windows PE, or files signed by more than one certificate. Per release: be logged in to SimplySign Desktop (e-mail + the code from the SimplySign phone app). Details, renewal and the reasoning in [tools/windows/signing/README.md](tools/windows/signing/README.md). Added 2026-09-27 after Logitech QA's CrowdStrike quarantined the unsigned hook; a signed package still needs their device pass — signing lets their IT allow-list the publisher, it does not exempt us from scanning.
 - [x] Do **not** bundle ffmpeg/sox (GPL/LGPL). The runtime uses AVFoundation; they're dev‑only.
 - [x] Do **not** bundle `PluginApi.dll` or its dependency closure (ExCSS, Svg.\*, Newtonsoft.Json, YamlDotNet, …) — the host provides them at load time, and Marketplace QA rejects packages that ship them. Enforced by `<Private>false</Private>` on the `PluginApi` reference in the csproj (QA feedback, 2.0.0 submission).
 - [x] Privacy policy and EULA publicly reachable — https://vizhi.dev/privacy/ and https://vizhi.dev/eula/, mirrored from [PRIVACY.md](PRIVACY.md) / [EULA.md](EULA.md). (Formal legal review of the EULA remains open.)
@@ -48,6 +49,26 @@ are notarized so the online check passes regardless.)
 
 The ~142 MB model is **not** bundled — it downloads on first use (see the checklist above), which
 keeps the package small and within any Marketplace size limit.
+
+## Sign the Windows helpers — automated
+
+Every `.exe` and `.dll` a Windows machine loads from the package is Authenticode-signed at pack
+time; nothing ships unsigned (#110). The certificate is Certum's *Standard Code Signing in the
+cloud*; SimplySign Desktop presents it to the Mac as a PKCS#11 token, jsign signs through it,
+osslsigncode verifies each file against a public root bundle, and `verify-package.sh` repeats
+that check on the packed files.
+
+```bash
+brew install jsign osslsigncode opensc        # one-time
+# per release: SimplySign Desktop → Log in (e-mail + code from the SimplySign phone app)
+bash tools/voice/pack-release.sh <ver> <Product>   # signs, packs, verifies
+bash tools/windows/verify-windows-signatures.sh <dir>   # the gate, on any tree
+WINDOWS_SIGNING=skip bash tools/voice/pack-release.sh <ver>   # dev pack → *-unsigned.lplug4
+```
+
+The signing recipe, the bundled intermediate and the renewal notes are in
+[tools/windows/signing/README.md](tools/windows/signing/README.md). The certificate is valid to
+2027-09-27; renew a month early, same subject name, or Logitech's allow-list stops matching.
 
 ## Sign + notarize the voice helper — automated
 
