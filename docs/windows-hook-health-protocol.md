@@ -36,6 +36,10 @@ this installation healthy.
   push the helper failure out (laptop review of 3de7b20). Records from earlier builds without
   the scope in the name are read to classify them. Concurrent writers cannot overwrite a later
   failure with an earlier one.
+  The launcher's suffix is 8 hex digits rather than a full GUID: Windows PowerShell 5.1 enforces
+  MAX_PATH (260), and with the 64-hex directory under a long `%TEMP%` the full name went over by
+  three characters and the marker silently vanished. The plugin and the exe (.NET, no such limit)
+  keep the full GUID. Very long `%TEMP%` paths remain a known limit of the launcher (#122).
 - `last-failure.json`: `{schema, observedUtcTicks, reason}` of the newest **helper**-scope failure
   — the barrier itself, kept apart from the diagnostic records. The plugin writes it when it
   records a failure and whenever it reads a launcher record newer than it. A restart reads it

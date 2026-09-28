@@ -240,7 +240,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 $"$dir = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'claude-console', 'hook-health', '{health}'); " +
                 "[IO.Directory]::CreateDirectory($dir) | Out-Null; " +
                 "$ticks = [DateTime]::UtcNow.Ticks; " +
-                "$file = [IO.Path]::Combine($dir, 'failure-' + $ticks + '-' + $scope + '-' + [Guid]::NewGuid().ToString('N') + '.json'); " +
+                // Eight hex digits, not a 32-digit GUID: the launcher runs in Windows PowerShell 5.1, which
+                // still enforces MAX_PATH (260), and the 64-hex health directory under a long %TEMP% left
+                // the scoped name 3 characters over — the marker silently vanished (laptop, 2026-09-28).
+                // Ticks already make the name unique; the suffix only guards two hooks in the same tick.
+                "$file = [IO.Path]::Combine($dir, 'failure-' + $ticks + '-' + $scope + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.json'); " +
                 "[IO.File]::WriteAllText($file + '.tmp', '{\"schema\":1,\"observedUtcTicks\":' + $ticks + ',\"reason\":\"' + $reason + '\",\"scope\":\"' + $scope + '\"}', [Text.UTF8Encoding]::new($false)); " +
                 "[IO.File]::Move($file + '.tmp', $file) " +
                 "} catch {} }; " +
