@@ -70,18 +70,19 @@ Coexists with Claude Console.
 
 An update, so written as what changed. No version heading — the page shows the version from the
 package. The portal's markdown has no inline code, so filenames and commands are bold or bare.
-**949 characters** (51 spare):
+**972 characters** (28 spare):
 
 ```markdown
 Signed Windows payload, and fixes from the 1.6.1 review.
 
-- **Every Windows file is code-signed** — helpers, plugin DLL and the offline-voice runtime carry a Certum Authenticode signature (publisher Ravi Shankar S) with a timestamp, so security software can allow the publisher once instead of quarantining the hook.
-- **Blocked instead of silence** — if security software removes or blocks the hook helper, the keys read Blocked and Options+ names the file and what to do. Recovers on the next hook.
+- **Every Windows file is code-signed** (Certum, publisher Ravi Shankar S), so security software can allow the publisher once instead of quarantining the hook helper.
+- **Blocked instead of silence** — if security software removes or blocks the hook helper, the keys read Blocked and Options+ names the file. Recovers on the next hook.
+- **Approvals stay on their own session** — with Codex 0.158's shared daemon, one session's approval could light another session's key; events now return to the terminal that owns them.
 - **Yes/No work right after install** on a PC whose clock sits behind the packing machine's time zone.
-- **Session keys no longer report "action failed"** for a switch that worked; the key reads Selecting while the tab comes to the front.
+- **Session keys no longer report "action failed"** for a switch that worked; the key reads Selecting meanwhile.
 - **New Tab and New Codex open in your project folder**, never the user profile root.
 
-After updating on Windows, Codex asks you to trust the Vizhi hooks once more: run /hooks. No need to re-import the layout.
+After updating on Windows, Codex asks you to trust the Vizhi hooks once more: run /hooks.
 ```
 
 ### 1.6.1 — as submitted 2026-09-16
@@ -164,6 +165,6 @@ Things a QA reviewer is likely to hit, with the honest answer ready:
 - [ ] EULA reviewed by counsel (open item in SUBMISSION.md)
 - [x] Windows helpers signed (1.6.2, #110): every `.exe` and `.dll` in the package, verified by
       `tools/verify-package.sh`; the listing no longer needs the unsigned disclosure
-- [x] 1.6.2 packed from main `62bbf36` on 2026-09-28: `VizhiCodex_1.6.2.lplug4` sha `84c3db6973d0…`,
+- [x] 1.6.2 re-cut from main `b2c5507` on 2026-09-28 (after #129): `VizhiCodex_1.6.2.lplug4` sha `e86d6cacc0cd…`,
       16 of 16 Windows files signed; DRAFT release `vizhi-codex/v1.6.2` awaits the Windows device pass,
       then the owner's Publish. Readiness record: [release-vizhi-1.6.2.md](release-vizhi-1.6.2.md)

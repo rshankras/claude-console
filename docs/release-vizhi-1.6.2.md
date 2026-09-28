@@ -6,28 +6,31 @@ Authenticode signature, and the four findings from Logitech's 1.6.1 Windows rete
 [marketplace-listing-vizhi.md](marketplace-listing-vizhi.md); the 1.6.1 record is
 [release-vizhi-1.6.1.md](release-vizhi-1.6.1.md).
 
-**Release source: main `62bbf36`** (PR #127: six fix commits, the docs commit, and the
-review fix `fa6a4b9`).
+**Release source: main `b2c5507`** (PR #127: six fix commits, the docs commit, and the
+review fix `fa6a4b9`; then PR #130, the Codex daemon routing fix found in this release's own
+Mac device pass, #129). The first cut from `62bbf36` (sha `84c3db69…`) was never published.
 
 ## Done
 
 | Item | Evidence |
 |---|---|
-| Code on main, version in both files | `62bbf36`; Vizhi 1.6.2, Claude Console stays 2.3.2 (its share sits under `[Unreleased]`) |
-| macOS suite on the release source | 1,339 passed, 0 failed, 29 skipped (Windows-only); bridge scripts 54/0, codex hook 27/0, windows signing 16/0 |
+| Code on main, version in both files | `b2c5507`; Vizhi 1.6.2, Claude Console stays 2.3.2 (its share sits under `[Unreleased]`) |
+| macOS suite on the release source | 1,350 passed, 0 failed, 29 skipped (Windows-only); bridge scripts 54/0, codex hook 27/0, windows signing 16/0 |
 | Both product compile checks | 0 warnings, 0 errors |
+| macOS device pass, first cut | Install, DLL hash, load, no hook re-trust, two voice drafts, pin without timeout, New Codex in the routed folder: PASS. Then two sessions in different folders showed **AlertWala's approval on the claude-console key** and a No press typed into that tab: Codex 0.158's shared daemon files every session's events under the terminal that started it. Filed #129, fixed in PR #130 |
+| macOS device pass, re-cut source | Unsigned test build of the fix, 19:49–19:52: first poll re-keyed the pending approval to slot 2; No rejected on ttys003, a second No ignored as answered, Yes approved a new prompt on ttys003, voice raised a third and No rejected it; slot 1 read claude-console throughout |
 | Code review before merge | 12 findings; one fixed before the merge (the load-time status read ran ahead of the #125 latch — every service start inside the window flashed *Run /hooks*), one changelog omission fixed (Windows New Tab also moved), the rest recorded below as follow-ups |
-| Package built | `VizhiCodex_1.6.2.lplug4`, sha `84c3db6973d03d92fc0c39b4b285a9b4f74732143de7bd839e69549afc25d967`, 16.85 MiB, packed 2026-09-28 from main |
+| Package built | `VizhiCodex_1.6.2.lplug4`, sha `e86d6cacc0cdced3e29edac07bc890aa73eac024ebf99e910f939bb5848987cc`, 16.85 MiB, packed 2026-09-28 from main |
 | Windows payload signed | 16 of 16 `.exe`/`.dll` Authenticode-signed by one certificate (CN=Ravi Shankar S, Certum Code Signing 2021 CA), SHA-256, RFC 3161 timestamp; verified per file by `tools/verify-package.sh` and again from the packed file |
 | macOS voice helper | Developer ID, notarized, stapled; re-verified after packing; byte-identical to the helper shipped in Claude Console 2.3.2 and Vizhi 1.6.1 |
 | Package hygiene | One plugin DLL, no `PluginApi.dll` or host closure, no build-machine paths, no smoke markers |
 | Profile | Unchanged since 1.6.1: revision `2026-09-16.2`, five pages, three session keys; hosted at <https://vizhi.dev/layouts/> |
 | Release folder | `~/Downloads/Claude Console/VizhiCodex-1.6.2-release/` — package, both layouts, `SHA256SUMS.txt`, `provenance.json`, GitHub notes, Marketplace notes |
-| GitHub release | DRAFT `vizhi-codex/v1.6.2` targeting `62bbf36`, not marked latest (Claude Console 2.3.2 keeps the badge); the owner publishes |
+| GitHub release | DRAFT `vizhi-codex/v1.6.2` targeting `b2c5507`, not marked latest (Claude Console 2.3.2 keeps the badge); the owner publishes |
 
 ## Owed before the Marketplace submission
 
-- [ ] **Windows suite on the release source** (`62bbf36`). The Codex launcher tests are
+- [ ] **Windows suite on the release source** (`b2c5507`). The Codex launcher tests are
       `[WindowsFact]` and skipped on macOS; the tip has only the commit messages' laptop
       measurements as Windows evidence.
 - [ ] **Windows device pass on the signed package**: install from the release draft, `/hooks`
@@ -35,6 +38,9 @@ review fix `fa6a4b9`).
       showing **Selecting** then pinning (#112), New Codex opening in the project folder (#113),
       and once with the hook helper renamed away so **Blocked** and the Options+ warning appear
       (#126) — that last one also exercises the failure-record JSON (review follow-up 2 below).
+      Plus **two sessions in different folders** with Codex's daemon running: the approval must
+      light its own session's key and Yes/No must answer only that session (#129; the Windows
+      hook walks the same process ancestry, so the daemon misroutes there too).
 - [ ] **Publish** the draft after the pass; record the URL here and in the PM note.
 - [ ] Marketplace form: upload, paste the three copy fields from the listing doc via `pbcopy`,
       record the submission date back into the listing doc.
