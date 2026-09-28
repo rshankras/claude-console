@@ -199,6 +199,61 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
         }
 
+        /// <summary>
+        /// Register a delivery the PLUGIN attributed to a session (#131). The helper writes
+        /// success-&lt;key&gt;.json only after a keyed write, i.e. only when the session's own agent
+        /// process is in the hook's ancestry. Under Codex's app-server daemon it never is: the
+        /// hook lands in shared.json (or the daemon's terminal's file) and the registry re-keys it
+        /// by folder (#129). The envelope still carries the helper's own hookStartedUtcTicks —
+        /// proof that the installed helper ran, after the barrier — and the attribution supplies
+        /// "for this session". Same record, same checks: pruning, the watermark and a restart
+        /// treat it exactly like the helper's own. On the 1.6.2 laptop pass every Yes on a real,
+        /// delivered approval was refused for want of this record. True when a receipt was written
+        /// or advanced; a stamp from before the barrier, before the latched helper version, from
+        /// the future, or no newer than the receipt already held changes nothing.
+        /// </summary>
+        internal Boolean NoteDelivery(String sessionKey, Int64 startedUtcTicks, String eventName)
+        {
+            if (this.HealthDirectory == null || !IsSessionKey(sessionKey) || String.IsNullOrWhiteSpace(eventName))
+            {
+                return false;
+            }
+
+            lock (this._gate)
+            {
+                var now = this._utcNow().Ticks;
+                if (startedUtcTicks <= 0 || startedUtcTicks > now + 5 * TimeSpan.TicksPerSecond) { return false; }
+                if (this._helperVersionTicks <= 0) { return false; }   // no latched floor yet: the first refresh decides what is current
+                if (startedUtcTicks <= this._invalidatedTicks || startedUtcTicks < this._helperVersionTicks) { return false; }
+                if (this._receipts.TryGetValue(sessionKey, out var known) && known >= startedUtcTicks) { return false; }
+
+                var path = Path.Combine(this.HealthDirectory, "success-" + sessionKey + ".json");
+                var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
+                {
+                    PrivateFiles.EnsurePrivateDirectory(this._ipcRoot);
+                    PrivateFiles.EnsurePrivateDirectory(Path.GetDirectoryName(this.HealthDirectory));
+                    PrivateFiles.EnsurePrivateDirectory(this.HealthDirectory);
+                    File.WriteAllText(temporary, JsonSerializer.Serialize(new
+                    {
+                        schema = 1,
+                        sessionKey,
+                        @event = eventName,
+                        startedUtcTicks,
+                        completedUtcTicks = Math.Max(now, startedUtcTicks),
+                        attributedBy = "plugin",
+                    }));
+                    PrivateFiles.EnsurePrivateFile(temporary);
+                    File.Move(temporary, path, overwrite: true);
+                }
+                catch { return false; }
+                finally { try { File.Delete(temporary); } catch { } }
+
+                this.RefreshCore();
+                return true;
+            }
+        }
+
         private WindowsHookHealthStatus RefreshCore()
         {
             var previous = new Dictionary<String, Int64>(this._receipts, StringComparer.Ordinal);

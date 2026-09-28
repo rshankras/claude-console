@@ -115,6 +115,19 @@ blue and its relabelled keys stay with Vizhi.
 ## Vizhi for Codex [1.6.2] — 2026-09-28
 
 ### Fixed
+- **Windows: Yes/No answer an approval that arrived through Codex's shared daemon (#131).** The
+  first Windows pass of this release refused every Yes on a real, delivered approval with "needs
+  fresh approval state after helper failure". The 2.3.2 safety gate wants proof that the installed
+  hook helper ran for *that* session since its last failure, and took it only from a receipt the
+  helper writes when it can find the session's own `codex.exe` in its ancestry — which, under the
+  daemon, it never can. The hook's envelope already carries the helper's own start stamp, and the
+  daemon routing above already says which session it belongs to, so the plugin now records that
+  as the session's delivery. Same record, same checks: a stamp from before a helper failure, or
+  from before the installed helper, still counts for nothing.
+- **Windows: Codex's daemon processes no longer occupy session keys (#132).** Since 0.157 two
+  `codex.exe` processes run the app-server daemon; they matched the session scan by name, took
+  slots 1 and 2, and pressing one failed to focus a tab that does not exist. They are excluded the
+  way `codex sandbox` workers already were.
 - **An approval no longer lights another session's key when Codex runs its shared daemon.**
   Codex 0.158 runs every session inside one app-server daemon, and its hooks run there. The hook
   finds "its" terminal by walking the process ancestry, which for a daemon ends at whichever

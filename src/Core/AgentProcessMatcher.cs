@@ -57,7 +57,14 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             ExeNames = new[] { "codex" },
             ScriptHints = new[] { "/@openai/codex/", "/.codex/" },
-            NonSessionSubcommands = new[] { "sandbox" },
+            // `sandbox`: Codex App's long-lived workers. `app-server`: the shared daemon that
+            // hosts every session since 0.157 (`…\app-server-daemon\…\codex.exe app-server
+            // --listen unix:// --managed-daemon`, plus its `app-server daemon pid-update-loop`
+            // sibling). Both share the CLI's image name and neither is a terminal: on the
+            // 1.6.2 laptop pass the two daemon processes took session slots 1 and 2, and the
+            // slot key's focus failed because there was no tab to find (#132). The daemon's
+            // parent has exited, so the "child of a candidate" rule cannot drop it.
+            NonSessionSubcommands = new[] { "sandbox", "app-server" },
         };
     }
 }
