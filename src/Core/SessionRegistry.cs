@@ -176,6 +176,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
                 session.PendingTool = null;
                 session.PendingCommand = null;
+                ClearApprovalMetadata(session);
                 session.Risk = ApprovalRisk.None;
                 // Claude's separate activity file still owns its state; changing it here would
                 // cause a false ready->waiting repaint on the next poll. Codex's approval event is
@@ -414,8 +415,12 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // deserialise as Claude's statusline with every field null: no error, no missing
                 // file, just a session stuck on "ready" wearing a project name it never reported.
                 String raw;
+                DateTime updatedAt;
                 try
                 {
+                    // Capture before reading: a replacement after the read must not give an old
+                    // approval the timestamp of newer bytes we have not parsed yet.
+                    updatedAt = LastWrite(file);
                     raw = File.ReadAllText(file);
                 }
                 catch (IOException)
@@ -429,9 +434,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                     continue;
                 }
 
-                var updatedAt = LastWrite(file);
+                String activityRaw = null;
+                var activityWritten = DateTime.MinValue;
                 var activity = state.Activity == null
-                    ? ReadActivityState(tty, state.TranscriptPath)
+                    ? ReadActivityState(tty, state.TranscriptPath, out activityRaw, out activityWritten)
                     : NormalizeActivityState(
                         tty,
                         state.Activity,
@@ -451,14 +457,27 @@ namespace Loupedeck.ClaudeConsolePlugin
                     TranscriptPath = state.TranscriptPath,
                     State = activity,
                     UpdatedAt = updatedAt,
+                    StateSourcePath = state.Activity == null ? this.ActivityFor(tty) : file,
+                    StateSourceRaw = state.Activity == null ? activityRaw : raw,
+                    StateSourceWrittenAtUtc = state.Activity == null ? activityWritten : updatedAt,
                 };
+                session.StateObservationStartedAtUtc = ObservationTimes(session.StateSourceRaw, approval: false).Started;
 
                 if (state.ReportsApproval)
                 {
                     session.ApprovalInSessionState = true;
                     session.PendingTool = state.PendingTool;
                     session.PendingCommand = state.PendingCommand;
+                    session.ApprovalObservedAtUtc = String.IsNullOrEmpty(state.PendingTool) ? null : updatedAt;
                     session.Risk = state.Risk;
+                    if (!String.IsNullOrEmpty(state.PendingTool))
+                    {
+                        var times = ObservationTimes(raw, approval: true);
+                        session.ApprovalObservationStartedAtUtc = times.Started;
+                        session.ApprovalSourceEventAtUtc = times.Event;
+                        session.ApprovalSourcePath = file;
+                        session.ApprovalSourceRaw = raw;
+                    }
                 }
                 else
                 {
@@ -492,10 +511,23 @@ namespace Loupedeck.ClaudeConsolePlugin
         // been read and parsed in that loop: consulting it here would mean a second read and parse
         // of the same file for every session on every poll, which is the cost #27 just finished
         // removing.
-        private String ReadActivityState(String tty, String transcriptPath)
+        private String ReadActivityState(String tty, String transcriptPath, out String raw, out DateTime written)
         {
             var file = this.ActivityFor(tty);
-            var activity = ReadJson<ActivityState>(file);
+            raw = null;
+            written = DateTime.MinValue;
+            ActivityState activity = null;
+            try
+            {
+                var info = new FileInfo(file);
+                if (info.Exists && info.Length > 0 && info.Length <= MaxFileBytes)
+                {
+                    written = info.LastWriteTimeUtc;
+                    raw = File.ReadAllText(file);
+                    activity = JsonSerializer.Deserialize<ActivityState>(raw);
+                }
+            }
+            catch { }
             if (activity?.State == null)
             {
                 return "ready";
@@ -555,7 +587,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            var pending = ReadPendingApproval(this.PendingFor(session.SessionKey));
+            var pendingPath = this.PendingFor(session.SessionKey);
+            var pending = ReadPendingApproval(pendingPath, out var observedAt, out var raw);
             if (pending == null)
             {
                 // Waiting, but nothing is pending — so this is Claude asking for input at an idle
@@ -572,7 +605,16 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             session.PendingTool = pending.Value.Tool;
             session.PendingCommand = pending.Value.Command;
+            session.ApprovalObservedAtUtc = String.IsNullOrEmpty(pending.Value.Tool) ? null : observedAt;
             session.Risk = RiskClassifier.Classify(pending.Value.Tool, pending.Value.Command);
+            if (!String.IsNullOrEmpty(pending.Value.Tool))
+            {
+                var times = ObservationTimes(raw, approval: true);
+                session.ApprovalObservationStartedAtUtc = times.Started;
+                session.ApprovalSourceEventAtUtc = times.Event;
+                session.ApprovalSourcePath = pendingPath;
+                session.ApprovalSourceRaw = raw;
+            }
         }
 
         private void ApplyApprovalAcknowledgement(GridSession session)
@@ -592,6 +634,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             session.PendingTool = null;
             session.PendingCommand = null;
+            ClearApprovalMetadata(session);
             session.Risk = ApprovalRisk.None;
             if (session.State == "waiting")
             {
@@ -611,8 +654,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// payload. Parsed defensively on purpose: these payloads have demonstrably changed shape
         /// between Claude Code versions, and a badge is never worth throwing on.
         /// </summary>
-        internal static (String Tool, String Command)? ReadPendingApproval(String path)
+        internal static (String Tool, String Command)? ReadPendingApproval(String path) =>
+            ReadPendingApproval(path, out _, out _);
+
+        private static (String Tool, String Command)? ReadPendingApproval(String path, out DateTime observedAt, out String raw)
         {
+            observedAt = DateTime.MinValue;
+            raw = null;
             try
             {
                 var fi = new FileInfo(path);
@@ -621,7 +669,9 @@ namespace Loupedeck.ClaudeConsolePlugin
                     return null;
                 }
 
-                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var writtenBeforeRead = fi.LastWriteTimeUtc;
+                raw = File.ReadAllText(path);
+                using var doc = JsonDocument.Parse(raw);
                 var root = doc.RootElement;
                 if (root.ValueKind != JsonValueKind.Object)
                 {
@@ -642,12 +692,88 @@ namespace Loupedeck.ClaudeConsolePlugin
                     }
                 }
 
-                return tool == null && command == null ? null : (tool, command);
+                if (tool == null && command == null)
+                {
+                    return null;
+                }
+                observedAt = writtenBeforeRead;
+                return (tool, command);
             }
             catch
             {
                 return null;   // mid-write or an unfamiliar shape
             }
+        }
+
+        private static void ClearApprovalMetadata(GridSession session)
+        {
+            session.ApprovalObservedAtUtc = null;
+            session.ApprovalObservationStartedAtUtc = null;
+            session.ApprovalSourceEventAtUtc = null;
+            session.ApprovalSourcePath = null;
+            session.ApprovalSourceRaw = null;
+        }
+
+        private static (DateTime? Started, DateTime? Event) ObservationTimes(String raw, Boolean approval)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(raw);
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object) { return (null, null); }
+                var transport = root.TryGetProperty("transport", out var value) && value.ValueKind == JsonValueKind.String
+                    ? value.GetString() : null;
+                if (String.IsNullOrEmpty(transport) || transport == "hook")
+                {
+                    var started = Timestamp(root, "hookStartedUtcTicks");
+                    return (started, started);
+                }
+                if (transport == "rollout-code-mode" || (!approval && transport == "rollout"))
+                {
+                    return (Timestamp(root, "observationStartedUtcTicks"), Timestamp(root, "rolloutEventUtcTicks"));
+                }
+            }
+            catch { }
+            return (null, null);
+        }
+
+        private static DateTime? Timestamp(JsonElement root, String name) =>
+            root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
+            value.TryGetInt64(out var ticks) && ticks > 0 && ticks <= DateTime.MaxValue.Ticks
+                ? new DateTime(ticks, DateTimeKind.Utc) : null;
+
+        /// <summary>Press-time revalidation of the exact state the user is about to answer.</summary>
+        internal Boolean IsApprovalSourceCurrent(String sessionKey)
+        {
+            GridSession session;
+            lock (_lock)
+            {
+                if (sessionKey == null || !_sessions.TryGetValue(sessionKey, out session) ||
+                    String.IsNullOrEmpty(session.PendingTool)) { return false; }
+            }
+            if (!SourceMatches(session.ApprovalSourcePath, session.ApprovalSourceRaw, session.ApprovalObservedAtUtc) ||
+                (session.StateSourcePath != session.ApprovalSourcePath &&
+                 !SourceMatches(session.StateSourcePath, session.StateSourceRaw, session.StateSourceWrittenAtUtc)))
+            {
+                return false;
+            }
+            lock (_lock)
+            {
+                return _sessions.TryGetValue(sessionKey, out var current) && ReferenceEquals(current, session) &&
+                    !String.IsNullOrEmpty(current.PendingTool);
+            }
+        }
+
+        private static Boolean SourceMatches(String path, String raw, DateTime? written)
+        {
+            if (path == null || raw == null || written == null) { return false; }
+            try
+            {
+                var info = new FileInfo(path);
+                if (!info.Exists || info.Length > MaxFileBytes || info.LastWriteTimeUtc != written.Value) { return false; }
+                return File.ReadAllText(path) == raw && File.GetLastWriteTimeUtc(path) == written.Value;
+            }
+            catch { return false; }
         }
 
         internal static Int32? ContextPercent(ClaudeState state)

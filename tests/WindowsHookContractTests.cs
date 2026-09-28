@@ -34,7 +34,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     ///  - it counts copies of ITSELF by process name (#57), so the copy under test carries a unique
     ///    name and neither counts nor is counted by the real hooks.
     /// </summary>
-    public class WindowsHookContractTests : IClassFixture<HookExeFixture>, IDisposable
+    public partial class WindowsHookContractTests : IClassFixture<HookExeFixture>, IDisposable
     {
         private readonly String _dir;      // scratch for this one test
         private readonly String _name;     // unique base name of the exe copy under test
@@ -101,7 +101,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             File.WriteAllText(Path.Combine(_bin, "status.json"), payload, new System.Text.UTF8Encoding(false));
             Assert.Equal(0, claude.Run(command + " < status.json", 30000));
             var output = File.ReadAllText(Path.Combine(SessionsDir, claude.Key + ".json"));
-            Assert.Equal(payload.TrimEnd(), output.TrimEnd());
+            var received = System.Text.Json.Nodes.JsonNode.Parse(output).AsObject();
+            Assert.True(received["hookStartedUtcTicks"].GetValue<Int64>() > 0);
+            received.Remove("hookStartedUtcTicks");
+            Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(value, received));
             Assert.Equal(0, claude.Run(BridgeWiring.ActivityCommand(true, _hook, "permission") + " < permission.json", 30000));
             Assert.Equal("waiting", ActivityWord(claude.Key));
         }
@@ -140,7 +143,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var key = claude.Key;
             Assert.True(File.Exists(Path.Combine(SessionsDir, key + ".json")), "no session file under the plugin's key: " + key);
             Assert.Equal("waiting", ActivityWord(key));
-            Assert.Equal(File.ReadAllText(Payload("PermissionRequest.json")), File.ReadAllText(Path.Combine(ActivityDir, "pending-" + key + ".json")));
+            var expected = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Payload("PermissionRequest.json"))).AsObject();
+            var pending = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(ActivityDir, "pending-" + key + ".json"))).AsObject();
+            Assert.True(pending["hookStartedUtcTicks"].GetValue<Int64>() > 0);
+            pending.Remove("hookStartedUtcTicks");
+            Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(expected, pending));
 
             // The reader — the exact path the Yes/No keys and the badge go through.
             var session = this.ReadSession(key);
@@ -172,17 +179,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [WindowsFact]
-        public void The_status_line_is_written_verbatim_to_the_session_file_and_the_shared_fallback()
+        public void The_status_line_preserves_agent_fields_and_stamps_the_same_observation_on_both_files()
         {
             using var claude = this.StartClaude();
             var payload = File.ReadAllText(Payload("Status.json"));
 
             Assert.Equal(0, claude.Run($@".\{_name}.exe statusline < status.json"));
 
-            // Verbatim on both files: all parsing belongs to the plugin (ClaudeState), so a shim
-            // that reshaped the JSON would be a second place to update per Claude Code release.
-            Assert.Equal(payload, File.ReadAllText(Path.Combine(SessionsDir, claude.Key + ".json")));
-            Assert.Equal(payload, File.ReadAllText(Path.Combine(SessionsDir, "shared.json")));
+            var keyed = File.ReadAllText(Path.Combine(SessionsDir, claude.Key + ".json"));
+            Assert.Equal(keyed, File.ReadAllText(Path.Combine(SessionsDir, "shared.json")));
+            var received = System.Text.Json.Nodes.JsonNode.Parse(keyed).AsObject();
+            Assert.True(received["hookStartedUtcTicks"].GetValue<Int64>() > 0);
+            received.Remove("hookStartedUtcTicks");
+            Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(System.Text.Json.Nodes.JsonNode.Parse(payload), received));
 
             var state = JsonSerializer.Deserialize<ClaudeState>(File.ReadAllText(Path.Combine(SessionsDir, claude.Key + ".json")));
             Assert.Equal(1.25m, state.Cost.TotalCostUsd);

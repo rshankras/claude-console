@@ -58,10 +58,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             _flash = new FailureFace(repaint, armWindowMs);
             _label = this.StateLabel();
             bridge.OnLiveStatusChanged += _ => this.Refresh();
+            bridge.OnAgentBridgeStatusChanged += _ => this.Refresh();
+            bridge.OnHelperHealthChanged += this.Refresh;
         }
 
         /// <summary>The words that replace the key's live value right now, or null when the key shows its own.</summary>
-        public String Label => !_applies ? null : (_flash.IsActive ? _flash.Text : this.StateLabel());
+        public String Label => this.HealthLabel()
+            ?? (!_applies ? null : (_flash.IsActive ? _flash.Text : this.StateLabel()));
 
         /// <summary>True while a press belongs to setup rather than to the key's own job.</summary>
         public Boolean NeedsSetup => _applies && LiveStatusFace.NeedsSetup(_bridge.LiveStatus);
@@ -82,6 +85,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             switch (type)
             {
                 case DeviceButtonEventType.Press:
+                    _bridge.RefreshHelperHealth();
                     _longPressed = false;
                     return true;
 
@@ -118,6 +122,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         public Boolean Press()
         {
+            _bridge.RefreshHelperHealth();
             if (!this.NeedsSetup)
             {
                 return false;
@@ -256,14 +261,16 @@ namespace Loupedeck.ClaudeConsolePlugin
             { IsBackground = true, Name = "claude-live-status-prompt" }.Start();
         }
 
-        private String StateLabel() => LiveStatusFace.Label(_bridge.LiveStatus, _bridge.SettingsApplyLive);
+        // The agent bridge's own word (Run /hooks, Setup failed, Blocked, …) outranks the key's
+        // value. A session that simply has not reported since the helper recovered is NOT
+        // blocked: the bridge withholds its stale value, and the key shows its dash.
+        private String HealthLabel() => AgentBridgeNotice.FaceLabel(_bridge.AgentBridgeState);
+
+        private String StateLabel() => this.HealthLabel()
+            ?? (_applies ? LiveStatusFace.Label(_bridge.LiveStatus, _bridge.SettingsApplyLive) : null);
 
         private void Refresh()
         {
-            if (!_applies)
-            {
-                return;
-            }
             var label = this.StateLabel();
             if (String.Equals(label, _label, StringComparison.Ordinal))
             {

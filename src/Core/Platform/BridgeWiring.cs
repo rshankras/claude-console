@@ -111,12 +111,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// The command Claude Code should run to render the status line.
         ///
         /// On both platforms the command checks that the handler still exists before running it. An Options+
-        /// uninstall removes the plugin but not the wiring (the SDK gives a plugin no uninstall
-        /// moment — #55), so a user who then deletes ~/.claude/claude-console/ was left with five
-        /// hooks and a status line pointing at nothing: Claude Code raised "Stop hook error occurred"
-        /// on every turn (reproduced 2026-09-03). With the guard, a missing script is a silent no-op
-        /// and the handler's own exit code still propagates when it is there. Windows uses an
-        /// encoded PowerShell launcher so Git Bash cannot rewrite its command switches or paths.
+        /// uninstall now removes owned Windows wiring, but manual deletion or quarantine can still
+        /// remove a handler while its command remains. The Windows guard records that failure for
+        /// the plugin without printing into the user's status line; the handler's own exit code
+        /// still propagates when it is there. Keep the encoded PowerShell launcher until a simpler
+        /// launcher has passed the Windows/Git Bash compatibility tests (#122).
         /// </summary>
         /// <param name="handlerPath">bash script path (macOS) or hook exe path (Windows).</param>
         internal static String StatuslineCommand(Boolean isWindows, String handlerPath) =>
@@ -221,14 +220,43 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         {
             var path = handlerPath.Trim('"');
             String Literal(String value) => "'" + value.Replace("'", "''") + "'";
+            // The health directory is one hash of the helper path. It is computed HERE, once, and
+            // baked into the launcher as a literal: the six hook entries in settings.json are
+            // already six copies of this script, and every line of PowerShell in them is a line a
+            // security product gets to dislike. No hashing, no JSON module, no file enumeration
+            // cmdlets in the hot path — the exe computes the same name from its own path
+            // (WindowsHookHealth.HealthDirectoryName), and the plugin from the package path.
+            var health = WindowsHookHealth.HealthDirectoryName(path);
             var script = "# " + WindowsMarker + "\n" +
-                "$ProgressPreference = 'SilentlyContinue'; " +
-                "$OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); " +
-                "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); " +
-                $"if (Test-Path -LiteralPath {Literal(path)} -PathType Leaf) {{ " +
-                "$read = [Console]::In.ReadToEndAsync(); if (-not $read.Wait(5000)) { exit 0 }; " +
-                $"$read.Result | & {Literal(path)} " +
-                String.Join(" ", arguments.Select(Literal)) + "; exit $LASTEXITCODE }";
+                "$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); " +
+                "[Console]::InputEncoding = [Text.UTF8Encoding]::new($false); " +
+                $"$helper = {Literal(path)}; " +
+                // A marker is immutable so concurrent hooks cannot replace a newer failure with
+                // an older one. The launcher only writes; the plugin (which reads this directory
+                // on every poll) and the exe keep it trimmed to the newest 16. Scope "helper"
+                // moves the plugin's recovery barrier (the exe may not have run); "delivery" is
+                // diagnostic only. Reasons are fixed literals, so the hand-built JSON is safe.
+                "function Write-HookFailure([string]$reason, [string]$scope) { try { " +
+                $"$dir = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'claude-console', 'hook-health', '{health}'); " +
+                "[IO.Directory]::CreateDirectory($dir) | Out-Null; " +
+                "$ticks = [DateTime]::UtcNow.Ticks; " +
+                // Eight hex digits, not a 32-digit GUID: the launcher runs in Windows PowerShell 5.1, which
+                // still enforces MAX_PATH (260), and the 64-hex health directory under a long %TEMP% left
+                // the scoped name 3 characters over — the marker silently vanished (laptop, 2026-09-28).
+                // Ticks already make the name unique; the suffix only guards two hooks in the same tick.
+                "$file = [IO.Path]::Combine($dir, 'failure-' + $ticks + '-' + $scope + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8) + '.json'); " +
+                "[IO.File]::WriteAllText($file + '.tmp', '{\"schema\":1,\"observedUtcTicks\":' + $ticks + ',\"reason\":\"' + $reason + '\",\"scope\":\"' + $scope + '\"}', [Text.UTF8Encoding]::new($false)); " +
+                "[IO.File]::Move($file + '.tmp', $file) " +
+                "} catch {} }; " +
+                "if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { Write-HookFailure 'missing' 'helper'; exit 0 }; " +
+                "try { $read = [Console]::In.ReadToEndAsync(); if (-not $read.Wait(5000)) { Write-HookFailure 'input-timeout' 'delivery'; exit 0 }; " +
+                // ErrorActionPreference makes native start failures catchable; native nonzero
+                // exits still flow through LASTEXITCODE and retain their original exit code.
+                "$ErrorActionPreference = 'Stop'; $LASTEXITCODE = 0; " +
+                "$read.Result | & $helper " +
+                String.Join(" ", arguments.Select(Literal)) + "; $code = $LASTEXITCODE; " +
+                "if ($code -ne 0) { Write-HookFailure 'nonzero-exit' 'helper' }; exit $code " +
+                "} catch { Write-HookFailure 'launch-failed' 'helper'; exit 1 }";
             return "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand " +
                 Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
         }

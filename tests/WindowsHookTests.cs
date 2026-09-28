@@ -40,8 +40,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var spacey = @"C:\Program Files\Logi\ClaudeConsole\claude-console-hook.exe";
 
             var command = BridgeWiring.StatuslineCommand(true, spacey);
-            Assert.Contains($"Test-Path -LiteralPath '{spacey}'", DecodeLauncher(command));
-            Assert.Contains($"& '{spacey}' 'statusline'", DecodeLauncher(command));
+            Assert.Contains($"$helper = '{spacey}'", DecodeLauncher(command));
+            Assert.Contains("Test-Path -LiteralPath $helper", DecodeLauncher(command));
+            Assert.Contains("& $helper 'statusline'", DecodeLauncher(command));
         }
 
         [Fact]

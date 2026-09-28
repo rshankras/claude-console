@@ -48,6 +48,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             _bridge.Grid.OnGridChanged += this.OnGridChanged;
             _bridge.OnLiveStatusChanged += _ => this.OnGridChanged();   // the setup word comes and goes with the wiring (#58)
             _bridge.OnAgentBridgeStatusChanged += _ => this.OnGridChanged();
+            _bridge.OnHelperHealthChanged += this.OnGridChanged;
         }
 
         private void OnGridChanged()
@@ -96,6 +97,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             // Routing stays the cue: inactive sessions remain grey. Only the selected bar follows
             // product identity, which the product declares — the engine does not know whose it is.
             var barColor = active ? KeyImage.SessionBar : KeyImage.Gray;
+            // "Blocked" comes only from the bridge (an observed helper failure). A session that
+            // has not reported since the helper recovered keeps the last state it did report; the
+            // approval gate decides whether Yes/No may act on it, not this face.
             var setupWord = AgentBridgeNotice.FaceLabel(_bridge.AgentBridgeState)
                 ?? LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
             return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord, _bridge.Agent.Id), barColor, darkText: false);
