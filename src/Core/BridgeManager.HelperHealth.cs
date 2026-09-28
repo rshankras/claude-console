@@ -45,6 +45,19 @@ namespace Loupedeck.ClaudeConsolePlugin
             _hookHealth.Status == WindowsHookHealthStatus.Unavailable;
 
         /// <summary>
+        /// Build and latch the helper-health monitor before a product reads a status through it.
+        /// VizhiCodexPlugin.Load() evaluates the Codex bridge status BEFORE StartPolling(), which
+        /// was where the monitor was first built — so that first evaluation had no latched floor
+        /// and fell back to the exe's raw mtime: the future-dated time #125 exists to ignore. On a
+        /// machine behind the packing zone every service start inside the window flashed Run /hooks
+        /// and its Options+ card until the first poll corrected it (found in review, 2026-09-28).
+        /// The same local file checks as RefreshHelperHealth; a no-op on macOS. Call it BEFORE
+        /// subscribing to OnHelperHealthChanged: the monitor's first refresh raises that event, and a
+        /// status refresh ahead of EnsureInstalled is the #69 race.
+        /// </summary>
+        internal void PrimeHelperHealth() => this.RefreshHelperHealth();
+
+        /// <summary>
         /// Local file checks only: called at load, on the existing poll, and on key presses. Never
         /// launches a probe or depends on event age; a quiet working session stays working.
         /// </summary>

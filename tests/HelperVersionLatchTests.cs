@@ -176,5 +176,46 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Equal(CodexBridgeStatus.Active, codex.StatusFor(windows: true, manager.HookHealth));
         }
+
+        [Fact]
+        public void Codex_status_read_at_load_takes_the_latched_floor_before_polling_starts()
+        {
+            // VizhiCodexPlugin.Load() evaluates the bridge status BEFORE StartPolling(), which was
+            // where the monitor was first built. Reviewing PR #127: that first read fell back to the
+            // exe's raw future mtime, so every service start inside the window logged Run /hooks and
+            // posted the trust card, then flipped to Active on the first poll. Load() now primes the
+            // monitor first; this test reads the status exactly as Load() does, before any poll.
+            var root = Path.Combine(this._directory, "codex-root");
+            var sessions = Path.Combine(root, "sessions");
+            Directory.CreateDirectory(sessions);
+
+            // An earlier run saw the future-dated helper and persisted its first sighting.
+            var earlier = this.Monitor(root, "codex-console");
+            Directory.CreateDirectory(earlier.HealthDirectory);
+            earlier.Refresh();
+            var codex = new CodexStateBridge(Path.Combine(root, "codex-home"), sessions) { HookExe = this._helper };
+            codex.EnsureInstalled("#!/bin/sh\n");
+            File.SetLastWriteTimeUtc(codex.HooksFile, this._now);
+
+            // Hooks fired after that sighting, before the service restarts.
+            this._now = this._now.AddMinutes(30);
+            var state = Path.Combine(sessions, SessionA + ".json");
+            File.WriteAllText(state, "{\"event\":\"Stop\",\"payload\":{}}");
+            File.SetLastWriteTimeUtc(state, this._now);
+
+            // The restart: a fresh manager whose monitor has not refreshed yet, as at Load().
+            this._now = this._now.AddMinutes(1);
+            var manager = new BridgeManager(new PlatformSeamTests.FakePlatformBridge())
+            {
+                Agent = new CodexCliAdapter(),
+                HookHealth = this.Monitor(root, "codex-console"),
+            };
+            // Without the prime the raw mtime (three hours ahead) is the floor and the envelope is
+            // "older than the install": the defect the load order fix removes.
+            Assert.Equal(CodexBridgeStatus.AwaitingTrust, codex.StatusFor(windows: true, manager.HookHealth));
+
+            manager.PrimeHelperHealth();
+            Assert.Equal(CodexBridgeStatus.Active, codex.StatusFor(windows: true, manager.HookHealth));
+        }
     }
 }

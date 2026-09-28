@@ -70,7 +70,7 @@ Coexists with Claude Console.
 
 An update, so written as what changed. No version heading — the page shows the version from the
 package. The portal's markdown has no inline code, so filenames and commands are bold or bare.
-**938 characters** (62 spare):
+**949 characters** (51 spare):
 
 ```markdown
 Signed Windows payload, and fixes from the 1.6.1 review.
@@ -79,7 +79,7 @@ Signed Windows payload, and fixes from the 1.6.1 review.
 - **Blocked instead of silence** — if security software removes or blocks the hook helper, the keys read Blocked and Options+ names the file and what to do. Recovers on the next hook.
 - **Yes/No work right after install** on a PC whose clock sits behind the packing machine's time zone.
 - **Session keys no longer report "action failed"** for a switch that worked; the key reads Selecting while the tab comes to the front.
-- **New Codex opens in your project folder**, never the user profile root.
+- **New Tab and New Codex open in your project folder**, never the user profile root.
 
 After updating on Windows, Codex asks you to trust the Vizhi hooks once more: run /hooks. No need to re-import the layout.
 ```

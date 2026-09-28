@@ -62,6 +62,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var wire = product.IndexOf("this.WireStateBridge();", StringComparison.Ordinal);
             var poll = product.IndexOf("BridgeManager.Instance.StartPolling();", StringComparison.Ordinal);
             Assert.True(wire >= 0 && poll > wire, "polling must start after the initial hook status is established");
+
+            // #125 at load: the status read inside WireStateBridge takes the monitor's latched floor,
+            // so the monitor must exist first — and be built before the health event is subscribed,
+            // or its first refresh would evaluate the status ahead of EnsureInstalled (#69).
+            var prime = product.IndexOf("BridgeManager.Instance.PrimeHelperHealth();", StringComparison.Ordinal);
+            var subscribe = product.IndexOf("OnHelperHealthChanged += this.RefreshStateBridgeStatus", StringComparison.Ordinal);
+            Assert.True(prime >= 0 && subscribe > prime && wire > subscribe,
+                "the helper-health monitor must be primed before the health event is subscribed and the hook status is read");
         }
 
         [Fact]
