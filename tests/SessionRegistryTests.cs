@@ -752,5 +752,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             registry.Refresh(live);
             Assert.Equal(2, registry.RoutingNoticesLogged);
         }
+
+        [Fact]
+        public void An_event_written_before_a_terminal_started_is_held_not_handed_to_it()
+        {
+            var written = DateTime.UtcNow.AddMinutes(-6);
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/p/console"), ("ttys005", "/p/alert"));
+            registry.DiscoveredSessionStarts = new Dictionary<String, DateTime>(StringComparer.Ordinal)
+            {
+                ["ttys001"] = DateTime.UtcNow.AddDays(-3),
+                ["ttys005"] = DateTime.UtcNow.AddMinutes(-1),
+            };
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "touch x"), written);
+            registry.Refresh(new HashSet<String> { "ttys001", "ttys005" });
+
+            Assert.All(registry.LiveSessions(), s => Assert.Null(s.PendingTool));
+            Assert.False(File.Exists(this.StateFor("ttys005")));
+        }
     }
 }

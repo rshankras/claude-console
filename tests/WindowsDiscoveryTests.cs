@@ -124,9 +124,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("\"C:\\Users\\me\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\abc\\bin\\node.exe\" \"C:\\Users\\me\\.codex\\plugins\\cache\\openai-bundled\\x\\scripts\\launch.mjs\"", false)]
         [InlineData("\"C:/Users/me/AppData/Local/OpenAI/Codex/runtimes/cua_node/abc/bin/node.exe\" C:/Users/me/.codex/plugins/cache/x/launch.mjs", false)]
         [InlineData("\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js\"", true)]
+        // A real session that merely mentions the plugin cache in its arguments stays a session.
+        [InlineData("\"C:\\Users\\me\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe\" --cd C:\\Users\\me\\.codex\\plugins\\mine", true)]
+        [InlineData("\"C:\\Users\\me\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe\" \"fix the loader in ~/.codex/plugins/cache/x\"", true)]
+        [InlineData("\"C:\\Program Files\\nodejs\\node.exe\" --enable-source-maps \"C:\\Users\\me\\.codex\\plugins\\cache\\x\\launch.mjs\"", false)]
         public void Codex_apps_plugin_runtime_is_not_a_session_but_an_npm_cli_still_is(String commandLine, Boolean expected)
         {
-            Assert.Equal(expected, WindowsProcessWatcher.IsAgentSession(Proc(1, "node.exe", commandLine), AgentProcessMatcher.CodexCli));
+            var image = commandLine.Contains("codex.exe", StringComparison.OrdinalIgnoreCase) ? "codex.exe" : "node.exe";
+            Assert.Equal(expected, WindowsProcessWatcher.IsAgentSession(Proc(1, image, commandLine), AgentProcessMatcher.CodexCli));
         }
 
         [Fact]

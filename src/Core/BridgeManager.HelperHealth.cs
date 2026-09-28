@@ -16,6 +16,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         private Int64 _seenHealthRevision = -1;
         private DateTime _loggedDeliveryFailureUtc = DateTime.MinValue;
         private AgentBridgeStatus _publishedBridgeState = AgentBridgeStatus.Ready;
+        private readonly System.Collections.Generic.HashSet<String> _deliveryLogged = new(StringComparer.Ordinal);
 
         /// <summary>Inject isolated Windows health evidence without changing the host platform.</summary>
         internal WindowsHookHealth HookHealth
@@ -142,7 +143,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (delivery.HasValue && _hookHealth.NoteDelivery(session.SessionKey, delivery.Value.StartedUtcTicks, delivery.Value.Event))
                 {
                     changed = true;
-                    PluginLog.Info($"Windows hook: {delivery.Value.Event} for {session.SessionKey} arrived through the shared daemon — recorded as that session's delivery");
+                    // Once per session: a busy session advances its stamp on every tool call.
+                    if (_deliveryLogged.Add(session.SessionKey))
+                    {
+                        PluginLog.Info($"Windows hook: recording hook deliveries for {session.SessionKey} from its state envelopes ({delivery.Value.Event} first) — the helper could not write a receipt for this session itself");
+                    }
                 }
             }
 
@@ -162,6 +167,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                 var transport = record.TryGetProperty("transport", out var source) && source.ValueKind == JsonValueKind.String
                     ? source.GetString() : null;
                 if (!String.IsNullOrEmpty(transport) && transport != "hook") { return null; }
+                // The helper withholds its own receipt when the payload never arrived (stdin timed
+                // out, payload null) and records a delivery failure instead; mirror that, or such a
+                // run would retire a real helper failure (PR #133 review).
+                if (!record.TryGetProperty("payload", out var payload) || payload.ValueKind != JsonValueKind.Object) { return null; }
                 if (!record.TryGetProperty("hookStartedUtcTicks", out var started) || started.ValueKind != JsonValueKind.Number ||
                     !started.TryGetInt64(out var ticks) || ticks <= 0) { return null; }
                 var evt = record.TryGetProperty("event", out var name) && name.ValueKind == JsonValueKind.String ? name.GetString() : null;

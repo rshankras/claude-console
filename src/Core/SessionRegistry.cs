@@ -84,6 +84,11 @@ namespace Loupedeck.ClaudeConsolePlugin
         // rollout bridge uses for the same question.
         private const Double MaxStartSkewSeconds = 120.0;
 
+        // Process start times and file write times come from different clocks' resolutions (the
+        // start is to the microsecond, an mtime can round); a hook never writes before its session's
+        // process exists, so a small grace only absorbs rounding.
+        private const Double StaleEventGraceSeconds = 2.0;
+
         // Test seam for the five-second post-Escape quiet window. Production always uses wall time.
         internal Func<Int64> NowUnix { get; set; } = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         // A Yes/No press may resolve a permission menu without Codex emitting a following hook
@@ -617,6 +622,17 @@ namespace Loupedeck.ClaudeConsolePlugin
                         continue;
                     }
                     inFolder++;
+                    // A terminal whose process started after the event was written cannot own it:
+                    // a stale approval left in shared.json (or the daemon's terminal's file) by a
+                    // session that has since closed must not be handed to a new terminal that
+                    // opened in the same folder, where Yes would type into a prompt that does not
+                    // exist (PR #133 review). It still counts as in the folder, so the event is
+                    // held rather than adopted by the file's own terminal.
+                    if (this.DiscoveredSessionStarts != null && this.DiscoveredSessionStarts.TryGetValue(live, out var liveStart)
+                        && liveStart > state.UpdatedAt.AddSeconds(StaleEventGraceSeconds))
+                    {
+                        continue;
+                    }
                     // A terminal whose own file names a different conversation is not this one's.
                     var known = next.TryGetValue(live, out var current) && !current.IsProvisional ? current.SessionId : null;
                     if (!String.IsNullOrEmpty(known) && !String.IsNullOrEmpty(state.SessionId) && known != state.SessionId)

@@ -115,6 +115,13 @@ blue and its relabelled keys stay with Vizhi.
 ## Vizhi for Codex [1.6.2] — 2026-09-28
 
 ### Fixed
+- **A stale approval is never handed to a terminal that opened after it.** With the daemon
+  routing above, an approval left behind by a session that has since closed could be moved onto a
+  new terminal opened in the same folder, where Yes would type into a prompt that does not exist.
+  A terminal whose process started after the event was written no longer qualifies; the event is
+  held instead. A hook run whose payload never arrived no longer counts as a delivery, matching
+  the helper's own rule, and a real session whose arguments mention `~/.codex/plugins` is no
+  longer mistaken for Codex App's plugin runtime. Found in review of the Windows fixes.
 - **Windows: Yes/No answer an approval that arrived through Codex's shared daemon (#131).** The
   first Windows pass of this release refused every Yes on a real, delivered approval with "needs
   fresh approval state after helper failure". The 2.3.2 safety gate wants proof that the installed
