@@ -106,9 +106,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var sibling = Proc(6124, "codex.exe", daemonExe + " app-server daemon pid-update-loop", 20644);
             var terminal = Proc(4852, "codex.exe", "\"C:\\Users\\Ravi Shankar\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe\"", 19836);
 
-            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { daemon, sibling, terminal }, AgentProcessMatcher.CodexCli);
+            // The daemon's plugin runtime: node.exe under Codex App's runtimes running a script out
+            // of ~/.codex/plugins/cache. It runs in the session's folder, so once the daemon pair
+            // was excluded it took slot 1 and the daemon routing attributed the session's events to it.
+            var pluginHost = Proc(26804, "node.exe",
+                "\"C:\\Users\\Ravi Shankar\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\b474a88d5d105afa\\bin\\node.exe\" " +
+                "\"C:\\Users\\Ravi Shankar\\.codex\\plugins\\cache\\openai-bundled\\unified-computer-use\\26.901.51231\\scripts\\launch.mjs\"", 14960);
+            var repl = Proc(27680, "node_repl.exe",
+                "\"C:\\Users\\Ravi Shankar\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\b474a88d5d105afa\\bin\\node_repl.exe\"", 14960);
+
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { daemon, sibling, pluginHost, repl, terminal }, AgentProcessMatcher.CodexCli);
 
             Assert.Equal(new[] { WindowsProcessWatcher.SessionKeyFor(terminal) }, sessions);
+        }
+
+        [Theory]
+        [InlineData("\"C:\\Users\\me\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\abc\\bin\\node.exe\" \"C:\\Users\\me\\.codex\\plugins\\cache\\openai-bundled\\x\\scripts\\launch.mjs\"", false)]
+        [InlineData("\"C:/Users/me/AppData/Local/OpenAI/Codex/runtimes/cua_node/abc/bin/node.exe\" C:/Users/me/.codex/plugins/cache/x/launch.mjs", false)]
+        [InlineData("\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js\"", true)]
+        public void Codex_apps_plugin_runtime_is_not_a_session_but_an_npm_cli_still_is(String commandLine, Boolean expected)
+        {
+            Assert.Equal(expected, WindowsProcessWatcher.IsAgentSession(Proc(1, "node.exe", commandLine), AgentProcessMatcher.CodexCli));
         }
 
         [Fact]

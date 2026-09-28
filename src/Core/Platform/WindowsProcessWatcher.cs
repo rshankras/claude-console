@@ -229,6 +229,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 return false;
             }
 
+            // The agent's own machinery (Codex App's plugin runtime, its plugin cache) is never a
+            // session either, however well its command line matches the hints below (#132).
+            var normalized = cmd.Replace('/', '\\');
+            if ((matcher?.NonSessionPathMarkers ?? Array.Empty<String>())
+                .Any(m => normalized.Contains(m, StringComparison.OrdinalIgnoreCase)))
+            {
+                return false;
+            }
+
             // The native CLI: <agent>.exe. Case-insensitive on purpose — Windows filesystems are —
             // and the desktop-app collision that forces case-sensitivity on macOS is handled here
             // by the command-line exclusions above instead.

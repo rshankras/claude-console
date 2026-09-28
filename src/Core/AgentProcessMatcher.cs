@@ -35,6 +35,14 @@ namespace Loupedeck.ClaudeConsolePlugin
         public String[] NonSessionSubcommands { get; init; } = Array.Empty<String>();
 
         /// <summary>
+        /// Path fragments (backslash form; compared with either separator, case-insensitively)
+        /// that mark a process as the agent's OWN machinery rather than a session, whatever else
+        /// its command line says. Checked before the interpreter hints, which they can otherwise
+        /// satisfy by accident.
+        /// </summary>
+        public String[] NonSessionPathMarkers { get; init; } = Array.Empty<String>();
+
+        /// <summary>
         /// Matches nothing. The default everywhere in Core, because the engine must not name an
         /// agent: defaulting to a real one means an undeclared product silently adopts that agent's
         /// sessions, which is how a Codex keypad showed Claude tabs.
@@ -65,6 +73,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             // slot key's focus failed because there was no tab to find (#132). The daemon's
             // parent has exited, so the "child of a candidate" rule cannot drop it.
             NonSessionSubcommands = new[] { "sandbox", "app-server" },
+            // The daemon also spawns Codex App's bundled node runtime to run plugins out of
+            // ~/.codex/plugins/cache (captured 28 Sep: `…\OpenAI\Codex\runtimes\cua_node\…\node.exe
+            // "…\.codex\plugins\cache\openai-bundled\unified-computer-use\…\scripts\launch.mjs"`).
+            // The "/.codex/" hint accepted it as an npm-installed CLI, it took slot 1 in the
+            // session's own folder, and the daemon routing then attributed the session's events
+            // to it (#132). Neither location ever hosts an interactive session.
+            NonSessionPathMarkers = new[] { @"\OpenAI\Codex\runtimes\", @"\.codex\plugins\" },
         };
     }
 }

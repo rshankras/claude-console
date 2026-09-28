@@ -127,7 +127,10 @@ blue and its relabelled keys stay with Vizhi.
 - **Windows: Codex's daemon processes no longer occupy session keys (#132).** Since 0.157 two
   `codex.exe` processes run the app-server daemon; they matched the session scan by name, took
   slots 1 and 2, and pressing one failed to focus a tab that does not exist. They are excluded the
-  way `codex sandbox` workers already were.
+  way `codex sandbox` workers already were. So is the daemon's plugin runtime — Codex App's
+  bundled `node.exe` running a script out of `~/.codex/plugins/cache` — which the scan had taken
+  for an npm-installed CLI; it runs in the session's own folder, so the daemon routing above
+  then credited the session's events to it.
 - **An approval no longer lights another session's key when Codex runs its shared daemon.**
   Codex 0.158 runs every session inside one app-server daemon, and its hooks run there. The hook
   finds "its" terminal by walking the process ancestry, which for a daemon ends at whichever
