@@ -72,6 +72,10 @@ Mac device pass, #129). The first cut from `62bbf36` (sha `84c3db69…`) was nev
    restart past the file time.
 7. New Tab on macOS computes and logs a directory the platform does not use; the synchronous
    `SelectSlot` has no admission gate; Yes/No repaints do wasted work during a selection.
+8. The daemon-routing notice ("an event for … arrived under ttys001 … shown on ttys003") was
+   logged twice on this Mac for one session (20:07:48 and 20:11:43) although the registry test
+   pins once per session and target, and the earlier test build logged it once across two
+   events. Informational only; routing was correct both times. Not reproduced.
 
 ## Not in this release
 

@@ -76,6 +76,9 @@ namespace Loupedeck.ClaudeConsolePlugin
             new Dictionary<String, DateTime>(StringComparer.Ordinal);
         private readonly HashSet<String> _routingLogged = new HashSet<String>(StringComparer.Ordinal);
 
+        /// <summary>Test seam: how many distinct routing notices have been logged (one per session and target).</summary>
+        internal Int32 RoutingNoticesLogged => _routingLogged.Count;
+
         // A session starts within moments of its CLI process; anything further apart is a resumed
         // conversation in an older process, which start times cannot place. Same bound as the
         // rollout bridge uses for the same question.

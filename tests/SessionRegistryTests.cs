@@ -726,5 +726,31 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("waiting", registry.LiveSessions().Single(s => s.SessionKey == "ttys001").State);
             Assert.False(File.Exists(this.StateFor("ttys002")));
         }
+
+        [Fact]
+        public void A_re_keyed_session_is_announced_once_however_many_events_follow()
+        {
+            var t0 = DateTime.UtcNow.AddSeconds(-30);
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/p/console"), ("ttys003", "/p/alert"));
+            var live = new HashSet<String> { "ttys001", "ttys003" };
+
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "touch x"), t0);
+            registry.Refresh(live);
+            registry.Refresh(live);
+            Assert.Equal(1, registry.RoutingNoticesLogged);
+
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "Stop"), t0.AddSeconds(5));
+            registry.Refresh(live);
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "rm x"), t0.AddSeconds(10));
+            registry.Refresh(live);
+            Assert.Equal(1, registry.RoutingNoticesLogged);
+            Assert.Equal("Bash", registry.LiveSessions().Single(s => s.SessionKey == "ttys003").PendingTool);
+
+            // A different conversation on the same terminals is news again.
+            WriteEnvelope("ttys001", CodexEnvelope("S9", "/p/alert", "Stop"), t0.AddSeconds(15));
+            registry.Refresh(live);
+            Assert.Equal(2, registry.RoutingNoticesLogged);
+        }
     }
 }
