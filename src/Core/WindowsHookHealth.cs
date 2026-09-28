@@ -256,7 +256,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             // put back by IT keeps its original, older mtime, so that path stays Unavailable.)
             var lastSuccess = Math.Max(this._lastSuccessStartedTicks,
                 this._receipts.Count == 0 ? 0 : this._receipts.Values.Max());
-            if (this._invalidatedTicks > 0 && lastSuccess <= this._invalidatedTicks && this._helperVersionTicks <= this._invalidatedTicks)
+            // A first-sighting timestamp is only a freshness floor. A future-dated file first
+            // seen after quarantine may be the SAME file restored, so that synthetic floor
+            // cannot retire a failure as an upgrade (including after restart / clock catch-up).
+            var knownNewerFile = this._helperVersionTicks == this._helperMtimeTicks &&
+                this._helperVersionTicks > this._invalidatedTicks;
+            if (this._invalidatedTicks > 0 && lastSuccess <= this._invalidatedTicks && !knownNewerFile)
             {
                 return this.SetStatus(WindowsHookHealthStatus.Unavailable, this._failureReason == "missing"
                     ? "Windows hook helper is missing or unavailable. Check security software or contact IT; after recovery, trigger a fresh hook event."

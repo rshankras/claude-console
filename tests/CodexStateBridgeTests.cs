@@ -100,11 +100,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Assert.True(hooks.ContainsKey(evt), $"missing subscription: {evt}");
                 var command = hooks[evt][0]["hooks"][0]["command"].GetValue<String>();
                 Assert.Equal(b.HookCommand(evt), command);
-                // POSIX: the event is the last argument. Windows: it is the last literal inside
-                // the encoded launcher (#126); the OS-free test below pins that shape in full.
-                if (command.StartsWith("powershell.exe ", StringComparison.Ordinal))
+                // Windows runs launcher source in the PowerShell that Codex supplies.
+                if (OperatingSystem.IsWindows())
                 {
-                    Assert.Contains($" 'codex' '{evt}'; ", WindowsHookTests.DecodeLauncher(command));
+                    Assert.Contains($" 'codex' '{evt}'; ", command);
                 }
                 else
                 {
@@ -139,8 +138,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var b = this.New();
             var command = b.HookCommand("PermissionRequest", windows: true);
-            Assert.StartsWith("powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ", command);
-            var source = WindowsHookTests.DecodeLauncher(command);
+            Assert.StartsWith("# " + Platform.BridgeWiring.WindowsMarker + "\n", command);
+            var source = command;
             Assert.Contains("'" + b.HookExe.Replace("'", "''") + "'", source);
             Assert.Contains(" 'codex' 'PermissionRequest'; ", source);
             Assert.Contains("'codex-console', 'hook-health', '" + WindowsHookHealth.HealthDirectoryName(b.HookExe) + "'", source);

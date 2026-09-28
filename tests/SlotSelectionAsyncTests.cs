@@ -7,6 +7,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     using System.Threading;
 
     using Loupedeck.ClaudeConsolePlugin.Agents;
+    using Loupedeck.ClaudeConsolePlugin.Platform;
 
     using Xunit;
 
@@ -134,12 +135,97 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Null(this._bridge.PinnedTty);
         }
 
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Routed_input_and_navigation_are_inert_until_focus_finishes(Boolean focusSucceeds)
+        {
+            this._bridge.SelectSlot(this.SlotOf("ttys001"));
+            using var hold = new ManualResetEventSlim(false);
+            using var done = new ManualResetEventSlim(false);
+            this._platform.FocusRelease = hold;
+            this._platform.FocusSucceeds = focusSucceeds;
+            Assert.True(this._bridge.BeginSelectSlot(this.SlotOf("ttys002"), done.Set));
+            try
+            {
+                this._bridge.InjectText("draft", false);
+                this._bridge.SendPrompt("/clear");
+                Assert.Equal(InjectionOutcome.Skipped, this._bridge.InjectKey(KeyStroke.Return));
+                Assert.Equal(InjectionOutcome.Skipped, this._bridge.InjectKeyTo("ttys001", KeyStroke.Escape));
+                Assert.Equal(InjectionOutcome.Skipped, this._bridge.InjectApprovalTo("ttys001", KeyStroke.Return));
+                this._bridge.InjectTabThenEnter();
+                this._bridge.DeliverDictation("dictation", false);
+                this._bridge.Navigate(TerminalAction.NewClaudeTab);
+                this._bridge.LaunchClaudeInProject(this._root);
+                this._bridge.LaunchAgentSession("-i", "image.png");
+                Assert.Empty(this._platform.Texts);
+                Assert.Empty(this._platform.Keys);
+                Assert.Empty(this._platform.TabEnters);
+                Assert.Empty(this._platform.Navigations);
+                Assert.Empty(this._platform.Launches);
+                Assert.Empty(this._platform.AgentLaunches);
+            }
+            finally
+            {
+                hold.Set();
+                Await(done);
+            }
+            this._bridge.InjectText("after focus", true);
+            Assert.Equal((focusSucceeds ? "ttys002" : "ttys001", "after focus", true), Assert.Single(this._platform.Texts));
+        }
+
+        [Fact]
+        public void Selection_does_not_start_inside_an_admitted_input_action()
+        {
+            this._platform.DuringTextInjection = () =>
+                Assert.False(this._bridge.BeginSelectSlot(this.SlotOf("ttys002"), null));
+            this._bridge.InjectText("already sending", true);
+            Assert.Single(this._platform.Texts);
+            Assert.Empty(this._platform.Focused);
+            Assert.Equal(0, this._bridge.SelectingSlot);
+        }
+
         [Fact]
         public void An_empty_slot_starts_nothing()
         {
             Assert.False(this._bridge.BeginSelectSlot(SessionRegistry.SlotCount, () => throw new InvalidOperationException("nothing to complete")));
             Assert.Equal(0, this._bridge.SelectingSlot);
             Assert.Empty(this._platform.Focused);
+        }
+
+        [Fact]
+        public void A_session_that_exits_during_focus_does_not_replace_the_previous_pin()
+        {
+            this._bridge.SelectSlot(this.SlotOf("ttys001"));
+            using var entered = new ManualResetEventSlim(false);
+            using var hold = new ManualResetEventSlim(false);
+            using var done = new ManualResetEventSlim(false);
+            this._platform.FocusEntered = entered;
+            this._platform.FocusRelease = hold;
+            Assert.True(this._bridge.BeginSelectSlot(this.SlotOf("ttys002"), done.Set));
+            try
+            {
+                Assert.True(entered.Wait(10000));
+                this._bridge.Grid.Refresh(new HashSet<String> { "ttys001" });
+            }
+            finally
+            {
+                hold.Set();
+                Await(done);
+            }
+            Assert.Equal("ttys001", this._bridge.PinnedTty);
+            Assert.Equal(0, this._bridge.SelectingSlot);
+        }
+
+        [Fact]
+        public void An_input_exception_does_not_leave_future_selection_blocked()
+        {
+            this._platform.DuringTextInjection = () => throw new InvalidOperationException("test failure");
+            Assert.Throws<InvalidOperationException>(() => this._bridge.InjectText("failed", true));
+            using var done = new ManualResetEventSlim(false);
+            Assert.True(this._bridge.BeginSelectSlot(this.SlotOf("ttys002"), done.Set));
+            Await(done);
+            Assert.Equal("ttys002", this._bridge.PinnedTty);
         }
     }
 }

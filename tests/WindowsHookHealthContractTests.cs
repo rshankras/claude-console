@@ -187,14 +187,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         private String CodexRoot => Path.Combine(_temp, "codex-console");
         private String CodexHealthDirectory(String helper) => WindowsHookHealth.HealthDirectoryFor(helper, CodexRoot);
         private static String CodexLauncher(String helper, String eventName) =>
-            BridgeWiring.WindowsCommand(helper, BridgeWiring.LauncherProfile.Codex, "codex", eventName);
+            new Agents.CodexStateBridge { HookExe = helper }.HookCommand(eventName, windows: true);
 
         [WindowsFact]
         public void Codex_launcher_records_a_missing_helper_under_the_codex_root()
         {
-            using var claude = this.StartClaude();
             var missing = Path.Combine(_bin, "missing ' café helper.exe");
-            Assert.Equal(0, claude.Run(CodexLauncher(missing, "Stop") + " < status.json", 30000));
+            Assert.Equal(0, this.LaunchLauncher(CodexLauncher(missing, "Stop"), "{}", false).ExitCode);
             var marker = Assert.Single(Directory.GetFiles(CodexHealthDirectory(missing), "failure-*.json"));
             using var json = JsonDocument.Parse(File.ReadAllText(marker));
             Assert.Equal("missing", json.RootElement.GetProperty("reason").GetString());
@@ -206,10 +205,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [WindowsFact]
         public void Codex_launcher_records_an_unlaunchable_helper_and_returns_nonzero()
         {
-            using var claude = this.StartClaude();
             var invalid = Path.Combine(_bin, "invalid codex helper.exe");
             File.WriteAllText(invalid, "This is not a Windows executable.");
-            Assert.NotEqual(0, claude.Run(CodexLauncher(invalid, "PermissionRequest") + " < permission.json", 30000));
+            Assert.NotEqual(0, this.LaunchLauncher(CodexLauncher(invalid, "PermissionRequest"), "{}", false).ExitCode);
             var marker = Assert.Single(Directory.GetFiles(CodexHealthDirectory(invalid), "failure-*.json"));
             using var json = JsonDocument.Parse(File.ReadAllText(marker));
             Assert.Equal("launch-failed", json.RootElement.GetProperty("reason").GetString());
@@ -219,9 +217,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [WindowsFact]
         public void Codex_launcher_forwards_the_payload_to_the_helpers_codex_verb()
         {
-            using var claude = this.StartClaude();
             var before = DateTime.UtcNow.Ticks;
-            Assert.Equal(0, claude.Run(CodexLauncher(_hook, "PermissionRequest") + " < permission.json", 30000));
+            Assert.Equal(0, this.LaunchLauncher(CodexLauncher(_hook, "PermissionRequest"),
+                File.ReadAllText(Path.Combine(_bin, "permission.json")), false).ExitCode);
             using var envelope = JsonDocument.Parse(File.ReadAllText(Path.Combine(CodexRoot, "sessions", "shared.json")));
             Assert.Equal("PermissionRequest", envelope.RootElement.GetProperty("event").GetString());
             Assert.Equal("PowerShell", envelope.RootElement.GetProperty("payload").GetProperty("tool_name").GetString());
@@ -248,14 +246,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("delivery", json.RootElement.GetProperty("scope").GetString());
         }
 
+        [WindowsFact]
+        public void Cold_codex_session_end_with_held_stdin_finishes_within_its_configured_deadline()
+        {
+            // Codex starts PowerShell and executes commandWindows as source in that shell.
+            // Do not warm the helper: the previous 3s budget failed on a cold copied executable.
+            var bridge = new Agents.CodexStateBridge(Path.Combine(_temp, "codex-home")) { HookExe = _hook };
+            using var hooks = JsonDocument.Parse(bridge.BuildHooksJson(windows: true));
+            var handler = hooks.RootElement.GetProperty("hooks").GetProperty("SessionEnd")[0].GetProperty("hooks")[0];
+            var deadline = handler.GetProperty("timeout").GetInt32() * 1000;
+            var run = this.LaunchLauncher(handler.GetProperty("commandWindows").GetString(),
+                "{\"session_id\":\"cold-session-end\"}", holdStdin: true, timeoutMs: deadline);
+            Assert.Equal(0, run.ExitCode);
+            Assert.True(run.Elapsed.TotalMilliseconds < deadline, $"SessionEnd took {run.Elapsed.TotalSeconds:F3}s");
+            using var envelope = JsonDocument.Parse(File.ReadAllText(Path.Combine(CodexRoot, "sessions", "shared.json")));
+            Assert.Equal("SessionEnd", envelope.RootElement.GetProperty("event").GetString());
+            Assert.Equal("cold-session-end", envelope.RootElement.GetProperty("payload").GetProperty("session_id").GetString());
+        }
+
         /// <summary>
-        /// Run an encoded launcher command line from the test host — no agent ancestor, so no
+        /// Run the installed command through Codex's PowerShell shell — no agent ancestor, so no
         /// session key — with stdin written and then either closed or held open.
         /// </summary>
-        private DirectRun LaunchLauncher(String commandLine, String stdin, Boolean holdStdin)
+        private DirectRun LaunchLauncher(String commandLine, String stdin, Boolean holdStdin, Int32 timeoutMs = 15000)
         {
-            const String prefix = "powershell.exe ";
-            Assert.StartsWith(prefix, commandLine);
             var psi = new ProcessStartInfo("powershell.exe")
             {
                 UseShellExecute = false,
@@ -265,7 +279,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 CreateNoWindow = true,
                 WorkingDirectory = _bin,
             };
-            foreach (var a in commandLine.Substring(prefix.Length).Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            foreach (var a in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", commandLine })
             {
                 psi.ArgumentList.Add(a);
             }
@@ -286,7 +300,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 p.StandardInput.Close();
             }
 
-            var exited = p.WaitForExit(15_000);
+            var exited = p.WaitForExit(timeoutMs);
             clock.Stop();
             if (holdStdin)
             {
@@ -295,7 +309,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             if (!exited)
             {
                 try { p.Kill(entireProcessTree: true); } catch { /* gone */ }
-                throw new Xunit.Sdk.XunitException("the launcher did not exit within 15 s");
+                throw new Xunit.Sdk.XunitException($"the launcher did not exit within {timeoutMs} ms");
             }
             Task.WaitAll(new Task[] { stdout, stderr }, 2000);
             return new DirectRun(p.ExitCode, clock.Elapsed);

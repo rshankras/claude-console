@@ -61,6 +61,49 @@ public class VizhiIntegrationTests : IDisposable
     }
 
     [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public void Answers_during_slot_selection_are_ignored_without_clearing_the_old_prompt(bool approve, bool focusSucceeds)
+    {
+        var (bridge, platform) = Rig(); // Second is pinned.
+        Write("pid-101-a", "PermissionRequest");
+        bridge.Grid.Refresh(live);
+        using var hold = new ManualResetEventSlim(false);
+        using var done = new ManualResetEventSlim(false);
+        platform.FocusRelease = hold;
+        platform.FocusSucceeds = focusSucceeds;
+        var firstSlot = Enumerable.Range(1, bridge.SessionSlotCount)
+            .Single(slot => bridge.Grid.SlotSession(slot)?.SessionKey == "pid-101-a");
+        var repaints = new List<int>();
+        bridge.OnTargetChanged += () => repaints.Add(bridge.SelectingSlot);
+        Assert.True(bridge.BeginSelectSlot(firstSlot, done.Set));
+        try
+        {
+            AnswerCommand.AnswerApproval(bridge, approve);
+            Assert.Empty(platform.Keys);
+            Assert.Null(bridge.ApprovalTty());
+            Assert.False(AnswerCommand.TargetState(bridge).HasPending);
+            Assert.NotNull(bridge.Grid.Sessions["pid-101-a"].PendingTool);
+            Assert.NotNull(bridge.Grid.Sessions["pid-202-b"].PendingTool);
+            Assert.Contains(firstSlot, repaints);
+        }
+        finally
+        {
+            hold.Set();
+            Assert.True(done.Wait(10000), "selection did not complete");
+        }
+
+        Assert.Equal(0, repaints[^1]);
+        AnswerCommand.AnswerApproval(bridge, approve);
+        var target = focusSucceeds ? "pid-101-a" : "pid-202-b";
+        Assert.Equal((target, approve ? KeyStroke.Return : KeyStroke.Escape), Assert.Single(platform.Keys));
+        Assert.Null(bridge.Grid.Sessions[target].PendingTool);
+        Assert.NotNull(bridge.Grid.Sessions[focusSucceeds ? "pid-202-b" : "pid-101-a"].PendingTool);
+    }
+
+    [Theory]
     [InlineData(InjectionOutcome.Failed)]
     [InlineData(InjectionOutcome.SessionMissing)]
     [InlineData(InjectionOutcome.SessionElevated)]

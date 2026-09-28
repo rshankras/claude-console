@@ -14,9 +14,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void Codex_profile_aims_the_launcher_at_the_codex_root_and_forwards_partial_input()
         {
             const string path = @"C:\Users\O'Brien\AppData\Local\Logi\LogiPluginService\Plugins\VizhiCodex\bin\claude-console-hook.exe";
-            var command = BridgeWiring.WindowsCommand(path, BridgeWiring.LauncherProfile.Codex, "codex", "PermissionRequest");
-            var source = WindowsHookTests.DecodeLauncher(command);
-            Assert.StartsWith("powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ", command);
+            var source = new Agents.CodexStateBridge { HookExe = path }.HookCommand("PermissionRequest", windows: true);
+            Assert.StartsWith("# " + BridgeWiring.WindowsMarker + "\n", source);
+            Assert.DoesNotContain("powershell.exe", source);
             Assert.Contains("'codex-console', 'hook-health', '" + WindowsHookHealth.HealthDirectoryName(path) + "'", source);
             Assert.DoesNotContain("'claude-console'", source);
             Assert.Contains(" 'codex' 'PermissionRequest'; ", source);
@@ -28,9 +28,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("Write-HookFailure 'input-timeout' 'delivery' }; $payload = ", source);
             Assert.DoesNotContain("'input-timeout' 'delivery'; exit 0", source);
             Assert.Contains("$payload | & $helper", source);
-            // 4,706 for this path; fourteen copies (command + commandWindows, seven events) is
-            // ~66 KB of hooks.json. Hold the line the same way the Claude launcher's test does.
-            Assert.InRange(command.Length, 1, 4900);
+            Assert.InRange(source.Length, 1, 1900);
+            var sessionEnd = new Agents.CodexStateBridge { HookExe = path }.HookCommand("SessionEnd", windows: true);
+            Assert.Contains("$t.Wait(500)", sessionEnd);
+            Assert.DoesNotContain("powershell.exe", sessionEnd);
         }
 
         [Fact]

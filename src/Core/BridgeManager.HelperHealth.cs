@@ -168,7 +168,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 _hookHealth.IsObservationStartedCurrent(session.StateObservationStartedAtUtc.Value.Ticks);
         }
 
-        internal InjectionOutcome InjectApprovalTo(String sessionKey, KeyStroke key)
+        internal InjectionOutcome InjectApprovalTo(String sessionKey, KeyStroke key) => this.RunRoutedInput(() =>
         {
             this.RefreshHelperHealth();
             if (this.AgentBridgeState != AgentBridgeStatus.Ready ||
@@ -178,7 +178,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return InjectionOutcome.Skipped;
             }
             return _platform.InjectKey(sessionKey, key);
-        }
+        });
 
         private void PublishBridgeHealth()
         {

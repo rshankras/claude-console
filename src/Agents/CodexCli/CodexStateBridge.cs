@@ -130,7 +130,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // the product's hook-health directory, which is what turns that into Blocked and
                 // a warning; Codex now runs the same launcher aimed at its own IPC root. The
                 // command changed once for this, so existing users re-trust it once in /hooks.
-                ? Platform.BridgeWiring.WindowsCommand(this.HookExe, Platform.BridgeWiring.LauncherProfile.Codex, "codex", eventName)
+                ? Platform.BridgeWiring.WindowsLauncherScript(this.HookExe,
+                    eventName == "SessionEnd" ? Platform.BridgeWiring.LauncherProfile.CodexSessionEnd : Platform.BridgeWiring.LauncherProfile.Codex,
+                    "codex", eventName)
                 : $"/bin/sh '{this.HookScript}' {eventName}";
 
         /// <summary>
@@ -278,6 +280,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                     // applying commandWindows. Make the required command native on Windows too,
                     // so either path reaches the same helper instead of trying /bin/sh.
                     ["command"] = this.HookCommand(e, windows),
+                    // Codex clamps SessionEnd to 3s, including all shell and helper startup.
                     ["timeout"] = e == "SessionEnd" ? 3 : 5,
                 };
                 if (windows)

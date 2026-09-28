@@ -108,6 +108,50 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(WindowsHookHealthStatus.Healthy, monitor.Refresh());
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Restoring_a_future_dated_helper_first_seen_missing_requires_a_successful_hook(Boolean restartBeforeRestore)
+        {
+            var mtime = File.GetLastWriteTimeUtc(this._helper);
+            File.Delete(this._helper);
+            var monitor = this.Monitor();
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+            var failedAt = monitor.InvalidatedAtUtc;
+            this._now = this._now.AddMinutes(1);
+            if (restartBeforeRestore) { monitor = this.Monitor(); }
+            File.WriteAllText(this._helper, "restored helper");
+            File.SetLastWriteTimeUtc(this._helper, mtime);
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+            Assert.Equal(failedAt, monitor.InvalidatedAtUtc);
+
+            // The synthetic version floor must not become evidence of an upgrade on restart,
+            // even after the original future mtime has become a past time.
+            this._now = this._now.AddHours(4);
+            monitor = this.Monitor();
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+            Assert.False(monitor.IsSessionObservationCurrent(SessionA));
+            Success(monitor, SessionA, this._now);
+            Assert.Equal(WindowsHookHealthStatus.Healthy, monitor.Refresh());
+            Assert.True(monitor.IsSessionObservationCurrent(SessionA));
+        }
+
+        [Fact]
+        public void A_future_dated_helper_with_a_launch_failure_before_first_sighting_stays_blocked()
+        {
+            var monitor = this.Monitor();
+            Directory.CreateDirectory(monitor.HealthDirectory);
+            File.WriteAllText(Path.Combine(monitor.HealthDirectory, "failure-launch.json"), JsonSerializer.Serialize(new
+            {
+                schema = 1, observedUtcTicks = this._now.AddSeconds(-1).Ticks,
+                reason = "launch-failed", scope = "helper",
+            }));
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+            this._now = this._now.AddSeconds(1);
+            Success(monitor, SessionA, this._now);
+            Assert.Equal(WindowsHookHealthStatus.Healthy, monitor.Refresh());
+        }
+
         [Fact]
         public void Codex_status_is_active_when_the_helper_is_dated_in_the_future_but_hooks_are_firing()
         {

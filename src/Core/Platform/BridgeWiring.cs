@@ -233,9 +233,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             /// then not running the helper would lose the EVENT, which today's direct launch
             /// records with a null payload; so read in bounded chunks, take what arrived, note
             /// the timeout as a delivery failure, and run the helper regardless. 1.5 s matches
-            /// the exe's own bound and keeps SessionEnd inside its 3 s deadline (#126).
+            /// the exe's own bound. SessionEnd uses a shorter wait for its hard 3 s CLI limit.
             /// </summary>
             internal static readonly LauncherProfile Codex = new LauncherProfile("codex-console", 1500, true);
+
+            // Leave room for a cold PowerShell and helper startup within Codex's 3 s clamp.
+            // SessionEnd has a small payload, written before the runner waits for completion.
+            internal static readonly LauncherProfile CodexSessionEnd = new LauncherProfile("codex-console", 500, true);
         }
 
         // Git Bash rewrites cmd.exe /d and /c as paths, leaving cmd interactive and making
@@ -244,7 +248,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         internal static String WindowsCommand(String handlerPath, params String[] arguments) =>
             WindowsCommand(handlerPath, LauncherProfile.Claude, arguments);
 
-        internal static String WindowsCommand(String handlerPath, LauncherProfile profile, params String[] arguments)
+        internal static String WindowsCommand(String handlerPath, LauncherProfile profile, params String[] arguments) =>
+            "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand " +
+                Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(WindowsLauncherScript(handlerPath, profile, arguments)));
+
+        // Codex already supplies PowerShell for commandWindows. Execute this script in that
+        // shell; starting another PowerShell consumed SessionEnd's cold-start budget.
+        internal static String WindowsLauncherScript(String handlerPath, LauncherProfile profile, params String[] arguments)
         {
             var path = handlerPath.Trim('"');
             String Literal(String value) => "'" + value.Replace("'", "''") + "'";
@@ -296,8 +306,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 String.Join(" ", arguments.Select(Literal)) + "; $code = $LASTEXITCODE; " +
                 "if ($code -ne 0) { Write-HookFailure 'nonzero-exit' 'helper' }; exit $code " +
                 "} catch { Write-HookFailure 'launch-failed' 'helper'; exit 1 }";
-            return "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand " +
-                Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script));
+            return script;
         }
 
         private static Boolean IsWindowsLauncher(String command)

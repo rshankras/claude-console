@@ -358,11 +358,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var bridge = new Agents.CodexStateBridge(codexHome: @"C:\Users\me\.codex") { HookExe = Exe };
 
-            // Since #126 the Windows command is the same encoded launcher Claude Code's hooks use,
-            // aimed at the codex-console root and carrying the exe verb as its arguments.
+            // Codex already runs commandWindows in PowerShell. Use the shared guard's source
+            // in that shell, aimed at the Codex root, without a second PowerShell startup.
             var windows = bridge.HookCommand("SessionStart", windows: true);
-            Assert.StartsWith("powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ", windows);
-            var source = DecodeLauncher(windows);
+            Assert.StartsWith("# " + BridgeWiring.WindowsMarker + "\n", windows);
+            var source = windows;
             Assert.Contains($"$helper = '{Exe}'; ", source);
             Assert.Contains(" | & $helper 'codex' 'SessionStart'; ", source);
             Assert.Contains("'codex-console', 'hook-health', '", source);
@@ -371,8 +371,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         /// <summary>
-        /// Codex executes commandWindows as PowerShell source. The command is itself a PowerShell
-        /// command line (the encoded launcher), so run it exactly as Codex would and check that
+        /// Codex executes commandWindows as PowerShell source. Run it exactly as Codex would and check that
         /// the helper receives the verb and the event as two literal arguments. A healthy launch
         /// must leave no failure record behind — that directory is what turns the keys Blocked.
         /// Exercise the real shell boundary, not only the generated string.
@@ -396,8 +395,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 File.WriteAllText(probe, "@echo %1\r\n@echo %2\r\n");
                 var bridge = new Agents.CodexStateBridge(codexHome: Path.Combine(dir, ".codex")) { HookExe = probe };
                 var command = bridge.HookCommand("SessionStart", windows: true);
-                const String prefix = "powershell.exe ";
-                Assert.StartsWith(prefix, command);
 
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {
@@ -408,7 +405,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                 };
-                foreach (var argument in command.Substring(prefix.Length).Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-Command", command })
                 {
                     psi.ArgumentList.Add(argument);
                 }
@@ -441,7 +438,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             // Single-quoted inside the launcher: the apostrophe is doubled and the $ stays literal.
             Assert.Contains("$helper = 'C:\\Users\\O''Brien\\$hooks\\claude-console-hook.exe'; ",
-                DecodeLauncher(bridge.HookCommand("Stop", windows: true)));
+                bridge.HookCommand("Stop", windows: true));
         }
 
         [Fact]

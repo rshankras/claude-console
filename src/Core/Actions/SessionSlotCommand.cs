@@ -75,7 +75,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
 
             // #112: the Windows focus helper outlives the SDK's 1,000 ms action budget, so the
             // selection runs off this thread. Repaint now so the bar reads "Selecting", and again
-            // when it lands; routing changes on success and OnTargetChanged repaints Yes/No.
+            // when it lands. Yes/No and other routed input are ignored until selection finishes.
             if (_bridge.BeginSelectSlot(slot, () => this.ActionImageChanged()))
             {
                 this.ActionImageChanged();
@@ -97,7 +97,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return KeyImage.RenderSessionSlot(imageSize, null, null, KeyImage.Gray, darkText: false);
             }
 
-            var active = session.SessionKey == _bridge.RoutingTty();
+            var active = _bridge.SelectingSlot == 0 && session.SessionKey == _bridge.RoutingTty();
             var name = String.IsNullOrWhiteSpace(session.Project) ? _bridge.Agent.DisplayName : session.Project;
             // Routing stays the cue: inactive sessions remain grey. Only the selected bar follows
             // product identity, which the product declares — the engine does not know whose it is.

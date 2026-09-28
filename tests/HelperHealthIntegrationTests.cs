@@ -221,7 +221,7 @@ public sealed class HelperHealthIntegrationTests : IDisposable
             var installed = bridge.HookCommand("PermissionRequest", windows: true);
             File.Delete(Helper);
             Assert.Equal(installed, bridge.HookCommand("PermissionRequest", windows: true));
-            Assert.Contains(Helper.Replace("'", "''"), WindowsHookTests.DecodeLauncher(installed));
+            Assert.Contains(Helper.Replace("'", "''"), installed);
         }
         finally { PluginPaths.PluginAssemblyFilePath = previous; }
     }

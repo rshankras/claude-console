@@ -15,13 +15,17 @@ All notable changes to Claude Console are documented here. Format based on
   had failed. The floor now latches to the earlier of the file time and the moment the file was
   first seen, and a future-dated latch survives a plugin restart. Found in review on the release
   day, before any QA run; not visible on the owner's laptop, which shares the packing Mac's zone.
+  Restoring a future-dated helper first seen missing keeps **Blocked** until a fresh hook succeeds;
+  its first-sighting timestamp is not treated as proof of an upgrade.
 - **Windows: pressing a session key no longer reports "action failed" for a pin that worked
   (#112).** The press ran the tab-focus helper inside the SDK's 1,000 ms action budget; the
   helper takes 1.3 to 1.8 s, so the service logged a timeout and a failure while the pin went
   through. The selection now runs off the action thread: the key reads **Selecting** until the
   tab is focused, then the pin and the other keys' target change as before. A second session
   key pressed during that second is ignored rather than queued, so the keypad never pins a
-  session you did not mean.
+  session you did not mean. Yes/No also show **Selecting** during the wait. Approval, text,
+  key and navigation actions pressed meanwhile are ignored with an alert; press again once
+  selection finishes. They cannot act on the previous session or clear its pending approval.
 - **New Tab, New Claude and New Claude (Window) open where you work (#113).** Since #85 they
   opened in your home folder, which is not where projects live. They now open in the pinned
   (or single obvious) session's project folder; with no such session, in the first usable
@@ -115,7 +119,8 @@ blue and its relabelled keys stay with Vizhi.
   Same cause as Claude Console's entry above: the packaged helper's file time is hours ahead on a
   machine behind IST, and the bridge measured "an event since the install" against it. Until the
   clock caught up, trusted and firing hooks still showed **Run /hooks** and Yes/No were refused.
-  The bridge now takes the health monitor's latched floor for the exe.
+  The bridge now takes the health monitor's latched floor for the exe. Restoring a future-dated
+  helper first seen missing keeps **Blocked** until a fresh hook succeeds, including after restart.
 - **Windows: a hook helper that is quarantined or blocked from running now shows Blocked (#126).**
   The Windows hook command ran the exe directly, so when security software removed or blocked
   it nothing was written anywhere the plugin reads: the keys stayed on their last state and
@@ -125,12 +130,16 @@ blue and its relabelled keys stay with Vizhi.
   unlaunchable or crashing helper leaves the record that turns the keys **Blocked** with one
   Options+ warning, and recovers on the next hook that runs. The launcher also forwards
   whatever payload arrived when Codex leaves stdin open, instead of dropping the event.
+  It runs directly in Codex's PowerShell shell. SessionEnd uses a 500 ms input wait so a cold
+  launch fits Codex's three-second limit; other events retain the 1.5 s input wait.
   **Because the command changed, Codex asks you to trust the Vizhi hooks once more in
   `/hooks` after this update**; the keys read **Run /hooks** until you do.
 - **Windows: pressing a session key no longer reports "action failed" for a pin that worked
   (#112, QA item 5).** Same change as Claude Console's entry above: the focus helper runs off
   the action thread, the key reads **Selecting** meanwhile, and a second press during that
-  second is ignored rather than queued.
+  second is ignored rather than queued. Yes/No show **Selecting** too. Routed actions pressed
+  during selection are ignored with an alert, so a quick session-key/Yes sequence cannot approve
+  the previous session; press Yes again after selection finishes.
 - **New Codex and New Codex (Window) open where you work (#113, QA item 4).** QA found them
   opening in the user profile root, which Codex then registered as a trusted project. They now
   open in the pinned (or single obvious) session's project folder; with no such session, in the
