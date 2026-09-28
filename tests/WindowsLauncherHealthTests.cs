@@ -5,6 +5,48 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
     public class WindowsLauncherHealthTests
     {
+        /// <summary>
+        /// #126: Codex runs the same launcher, aimed at its own IPC root. Its stdin can lack EOF
+        /// after the payload, so this profile reads bounded chunks and runs the helper with what
+        /// arrived instead of exiting without it — the event must never be the price of a slow pipe.
+        /// </summary>
+        [Fact]
+        public void Codex_profile_aims_the_launcher_at_the_codex_root_and_forwards_partial_input()
+        {
+            const string path = @"C:\Users\O'Brien\AppData\Local\Logi\LogiPluginService\Plugins\VizhiCodex\bin\claude-console-hook.exe";
+            var command = BridgeWiring.WindowsCommand(path, BridgeWiring.LauncherProfile.Codex, "codex", "PermissionRequest");
+            var source = WindowsHookTests.DecodeLauncher(command);
+            Assert.StartsWith("powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ", command);
+            Assert.Contains("'codex-console', 'hook-health', '" + WindowsHookHealth.HealthDirectoryName(path) + "'", source);
+            Assert.DoesNotContain("'claude-console'", source);
+            Assert.Contains(" 'codex' 'PermissionRequest'; ", source);
+            Assert.Contains("Write-HookFailure 'missing' 'helper'", source);
+            Assert.Contains("Write-HookFailure 'launch-failed' 'helper'", source);
+            Assert.Contains("Write-HookFailure 'nonzero-exit' 'helper'", source);
+            Assert.Contains("ReadAsync($buf, 0, $buf.Length)", source);
+            Assert.Contains("$t.Wait(1500)", source);
+            Assert.Contains("Write-HookFailure 'input-timeout' 'delivery' }; $payload = ", source);
+            Assert.DoesNotContain("'input-timeout' 'delivery'; exit 0", source);
+            Assert.Contains("$payload | & $helper", source);
+            // 4,706 for this path; fourteen copies (command + commandWindows, seven events) is
+            // ~66 KB of hooks.json. Hold the line the same way the Claude launcher's test does.
+            Assert.InRange(command.Length, 1, 4900);
+        }
+
+        [Fact]
+        public void The_claude_profile_is_the_default_and_its_text_did_not_move()
+        {
+            // UpgradeOwnedCommands rewrites every user's settings.json the moment this differs
+            // from what is installed, so the 2.3.2 text is the contract.
+            const string path = @"C:\Users\Ravi Shankar\AppData\Local\Logi\LogiPluginService\Plugins\ClaudeConsole\bin\claude-console-hook.exe";
+            var command = BridgeWiring.WindowsCommand(path, "statusline");
+            Assert.Equal(command, BridgeWiring.WindowsCommand(path, BridgeWiring.LauncherProfile.Claude, "statusline"));
+            var source = WindowsHookTests.DecodeLauncher(command);
+            Assert.Contains("'claude-console', 'hook-health', '", source);
+            Assert.Contains("try { $read = [Console]::In.ReadToEndAsync(); if (-not $read.Wait(5000)) { Write-HookFailure 'input-timeout' 'delivery'; exit 0 }; " +
+                "$ErrorActionPreference = 'Stop'; $LASTEXITCODE = 0; $read.Result | & $helper 'statusline'; $code = $LASTEXITCODE; ", source);
+        }
+
         [Fact]
         public void Failure_reporting_keeps_path_and_arguments_literal_across_shells()
         {

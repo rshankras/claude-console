@@ -107,9 +107,16 @@ PowerShell process before it can write a marker while the helper still exists, t
 to distinguish that from an idle session. A marker also cannot be guaranteed when its directory is
 unwritable. Do not infer CrowdStrike's detection reason from either case; collect its detection logs.
 
-The Codex installed command is unchanged because changing it re-prompts hook trust. Its helper can
-publish these receipts without altering that command. Any future Codex launcher guard is coordinated
-with the signing release.
+The Codex installed command runs the same launcher since #126, with `LauncherProfile.Codex`: the
+records go under `%TEMP%\codex-console` and stdin is read in bounded 1.5 s chunks, then the helper
+runs with whatever arrived — Codex can leave the pipe without EOF, and a launcher that waited for EOF
+and then skipped the helper would lose the event that the direct launch used to record with a null
+payload. The command changed once for this, so every existing Windows user re-trusts it once in
+`/hooks` (the keys read Run /hooks until then). Before #126 the command ran the exe directly and a
+missing or unlaunchable helper left nothing anywhere the plugin reads (replicated 2026-09-28: exit 1,
+zero files), so Codex stayed Healthy on old receipts and every Yes/No press logged "no pending
+approval" — QA's 18 September signature. The `LauncherProfile.Claude` text is unchanged from 2.3.2;
+`UpgradeOwnedCommands` would rewrite every settings.json if it moved.
 
 ## Windows laptop gate
 

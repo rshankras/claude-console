@@ -1,9 +1,11 @@
 namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
+    using System.Diagnostics;
     using System.IO;
     using System.Linq;
     using System.Text.Json;
+    using System.Threading.Tasks;
     using Loupedeck.ClaudeConsolePlugin.Platform;
     using Xunit;
 
@@ -174,6 +176,129 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.False(File.Exists(Path.Combine(ActivityDir, "pending-" + claude.Key + ".json")));
             Assert.Equal(receipt, File.ReadAllText(Receipt(claude.Key)));
             Assert.NotEmpty(Directory.GetFiles(HealthDirectory(_hook), "failure-*.json"));
+        }
+
+        // ---------------------------------------------------------------------------------------
+        // #126 — Codex runs the same guarded launcher, aimed at the codex-console root. Before this
+        // the hooks.json command ran the exe directly, and a quarantined or unlaunchable helper
+        // left nothing anywhere the plugin reads (replicated 2026-09-28: exit 1, zero files).
+        // ---------------------------------------------------------------------------------------
+
+        private String CodexRoot => Path.Combine(_temp, "codex-console");
+        private String CodexHealthDirectory(String helper) => WindowsHookHealth.HealthDirectoryFor(helper, CodexRoot);
+        private static String CodexLauncher(String helper, String eventName) =>
+            BridgeWiring.WindowsCommand(helper, BridgeWiring.LauncherProfile.Codex, "codex", eventName);
+
+        [WindowsFact]
+        public void Codex_launcher_records_a_missing_helper_under_the_codex_root()
+        {
+            using var claude = this.StartClaude();
+            var missing = Path.Combine(_bin, "missing ' café helper.exe");
+            Assert.Equal(0, claude.Run(CodexLauncher(missing, "Stop") + " < status.json", 30000));
+            var marker = Assert.Single(Directory.GetFiles(CodexHealthDirectory(missing), "failure-*.json"));
+            using var json = JsonDocument.Parse(File.ReadAllText(marker));
+            Assert.Equal("missing", json.RootElement.GetProperty("reason").GetString());
+            Assert.Equal("helper", json.RootElement.GetProperty("scope").GetString());
+            // The product roots stay separate: nothing of Codex's lands under claude-console.
+            Assert.False(Directory.Exists(Path.Combine(Root, "hook-health")));
+        }
+
+        [WindowsFact]
+        public void Codex_launcher_records_an_unlaunchable_helper_and_returns_nonzero()
+        {
+            using var claude = this.StartClaude();
+            var invalid = Path.Combine(_bin, "invalid codex helper.exe");
+            File.WriteAllText(invalid, "This is not a Windows executable.");
+            Assert.NotEqual(0, claude.Run(CodexLauncher(invalid, "PermissionRequest") + " < permission.json", 30000));
+            var marker = Assert.Single(Directory.GetFiles(CodexHealthDirectory(invalid), "failure-*.json"));
+            using var json = JsonDocument.Parse(File.ReadAllText(marker));
+            Assert.Equal("launch-failed", json.RootElement.GetProperty("reason").GetString());
+            Assert.Equal("helper", json.RootElement.GetProperty("scope").GetString());
+        }
+
+        [WindowsFact]
+        public void Codex_launcher_forwards_the_payload_to_the_helpers_codex_verb()
+        {
+            using var claude = this.StartClaude();
+            var before = DateTime.UtcNow.Ticks;
+            Assert.Equal(0, claude.Run(CodexLauncher(_hook, "PermissionRequest") + " < permission.json", 30000));
+            using var envelope = JsonDocument.Parse(File.ReadAllText(Path.Combine(CodexRoot, "sessions", "shared.json")));
+            Assert.Equal("PermissionRequest", envelope.RootElement.GetProperty("event").GetString());
+            Assert.Equal("PowerShell", envelope.RootElement.GetProperty("payload").GetProperty("tool_name").GetString());
+            Assert.InRange(envelope.RootElement.GetProperty("hookStartedUtcTicks").GetInt64(), before, DateTime.UtcNow.Ticks);
+            var health = CodexHealthDirectory(_hook);
+            Assert.Empty(Directory.Exists(health) ? Directory.GetFiles(health, "failure-*.json") : Array.Empty<String>());
+        }
+
+        [WindowsFact]
+        public void Codex_launcher_with_a_stdin_that_never_closes_still_delivers_what_arrived()
+        {
+            // The exe's own bounded read exists because Codex can leave the pipe without EOF. A
+            // launcher that waited for EOF and then skipped the helper would lose the EVENT; this
+            // one takes the bytes that arrived, notes the timeout, and runs the helper anyway.
+            var run = this.LaunchLauncher(CodexLauncher(_hook, "Stop"), "{\"session_id\":\"held-open\"}", holdStdin: true);
+            Assert.Equal(0, run.ExitCode);
+            Assert.True(run.Elapsed < TimeSpan.FromSeconds(5), $"launcher took {run.Elapsed.TotalSeconds:F2}s against Codex's 5 s deadline");
+            using var envelope = JsonDocument.Parse(File.ReadAllText(Path.Combine(CodexRoot, "sessions", "shared.json")));
+            Assert.Equal("Stop", envelope.RootElement.GetProperty("event").GetString());
+            Assert.Equal("held-open", envelope.RootElement.GetProperty("payload").GetProperty("session_id").GetString());
+            var marker = Assert.Single(Directory.GetFiles(CodexHealthDirectory(_hook), "failure-*.json"));
+            using var json = JsonDocument.Parse(File.ReadAllText(marker));
+            Assert.Equal("input-timeout", json.RootElement.GetProperty("reason").GetString());
+            Assert.Equal("delivery", json.RootElement.GetProperty("scope").GetString());
+        }
+
+        /// <summary>
+        /// Run an encoded launcher command line from the test host — no agent ancestor, so no
+        /// session key — with stdin written and then either closed or held open.
+        /// </summary>
+        private DirectRun LaunchLauncher(String commandLine, String stdin, Boolean holdStdin)
+        {
+            const String prefix = "powershell.exe ";
+            Assert.StartsWith(prefix, commandLine);
+            var psi = new ProcessStartInfo("powershell.exe")
+            {
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                WorkingDirectory = _bin,
+            };
+            foreach (var a in commandLine.Substring(prefix.Length).Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                psi.ArgumentList.Add(a);
+            }
+            psi.Environment["TEMP"] = _temp;
+            psi.Environment["TMP"] = _temp;
+
+            var clock = Stopwatch.StartNew();
+            using var p = Process.Start(psi) ?? throw new InvalidOperationException("could not start powershell.exe");
+            var stdout = p.StandardOutput.ReadToEndAsync();
+            var stderr = p.StandardError.ReadToEndAsync();
+            if (stdin != null)
+            {
+                p.StandardInput.Write(stdin);
+                p.StandardInput.Flush();
+            }
+            if (!holdStdin)
+            {
+                p.StandardInput.Close();
+            }
+
+            var exited = p.WaitForExit(15_000);
+            clock.Stop();
+            if (holdStdin)
+            {
+                try { p.StandardInput.Close(); } catch { /* the launcher is gone; the pipe may be too */ }
+            }
+            if (!exited)
+            {
+                try { p.Kill(entireProcessTree: true); } catch { /* gone */ }
+                throw new Xunit.Sdk.XunitException("the launcher did not exit within 15 s");
+            }
+            Task.WaitAll(new Task[] { stdout, stderr }, 2000);
+            return new DirectRun(p.ExitCode, clock.Elapsed);
         }
     }
 }

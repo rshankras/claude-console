@@ -102,6 +102,17 @@ blue and its relabelled keys stay with Vizhi.
   machine behind IST, and the bridge measured "an event since the install" against it. Until the
   clock caught up, trusted and firing hooks still showed **Run /hooks** and Yes/No were refused.
   The bridge now takes the health monitor's latched floor for the exe.
+- **Windows: a hook helper that is quarantined or blocked from running now shows Blocked (#126).**
+  The Windows hook command ran the exe directly, so when security software removed or blocked
+  it nothing was written anywhere the plugin reads: the keys stayed on their last state and
+  every Yes/No press logged "no pending approval". Replicated on 28 September: a missing and an
+  unlaunchable helper both exit 1 and leave zero files. The command is now the same guarded
+  PowerShell launcher Claude Console uses, aimed at Vizhi's own IPC root, so a missing,
+  unlaunchable or crashing helper leaves the record that turns the keys **Blocked** with one
+  Options+ warning, and recovers on the next hook that runs. The launcher also forwards
+  whatever payload arrived when Codex leaves stdin open, instead of dropping the event.
+  **Because the command changed, Codex asks you to trust the Vizhi hooks once more in
+  `/hooks` after this update**; the keys read **Run /hooks** until you do.
 
 ## Vizhi for Codex [1.6.1] — 2026-09-15
 

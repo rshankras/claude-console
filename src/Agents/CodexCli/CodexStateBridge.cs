@@ -113,20 +113,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         /// <summary>
         /// The command Codex runs for one lifecycle event. Split by OS because the launch vehicle
-        /// differs (sh script vs exe verb); both are STABLE strings, which trust-by-hash requires.
-        /// The OS-free overload exists so tests can pin both shapes from any machine.
+        /// differs (sh script vs guarded exe launcher); both are STABLE strings that depend only
+        /// on the install path, which trust-by-hash requires. The OS-free overload exists so
+        /// tests can pin both shapes from any machine.
         /// </summary>
         internal String HookCommand(String eventName) =>
             this.HookCommand(eventName, OperatingSystem.IsWindows());
 
         internal String HookCommand(String eventName, Boolean windows) =>
             windows
-                // Codex runs commandWindows through PowerShell. A quoted path by itself is only a
-                // string expression there, so the following `codex` token produces a parser error
-                // and exit code 1 before the helper starts. The call operator makes the quoted
-                // path executable; single-quote escaping keeps ordinary Windows profile names
-                // (including apostrophes or dollar signs) literal.
-                ? $"& '{this.HookExe.Replace("'", "''")}' codex {eventName}"
+                // Until 1.6.1 this was `& '<exe>' codex <event>`, run by Codex through PowerShell
+                // directly. A quarantined or execution-blocked exe then failed without a trace:
+                // nothing the plugin reads was written, so the keys stayed Healthy and every
+                // Yes/No press logged "no pending approval" — QA's 18 September report (#126).
+                // The Claude Code launcher records missing / launch-failed / nonzero-exit under
+                // the product's hook-health directory, which is what turns that into Blocked and
+                // a warning; Codex now runs the same launcher aimed at its own IPC root. The
+                // command changed once for this, so existing users re-trust it once in /hooks.
+                ? Platform.BridgeWiring.WindowsCommand(this.HookExe, Platform.BridgeWiring.LauncherProfile.Codex, "codex", eventName)
                 : $"/bin/sh '{this.HookScript}' {eventName}";
 
         /// <summary>

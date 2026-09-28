@@ -354,19 +354,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         // ---------------------------------------------------------------------------------------
 
         [Fact]
-        public void The_codex_hook_command_is_the_exe_verb_on_windows_and_the_script_on_macos()
+        public void The_codex_hook_command_is_the_guarded_launcher_on_windows_and_the_script_on_macos()
         {
             var bridge = new Agents.CodexStateBridge(codexHome: @"C:\Users\me\.codex") { HookExe = Exe };
 
-            Assert.Equal($"& '{Exe}' codex SessionStart", bridge.HookCommand("SessionStart", windows: true));
+            // Since #126 the Windows command is the same encoded launcher Claude Code's hooks use,
+            // aimed at the codex-console root and carrying the exe verb as its arguments.
+            var windows = bridge.HookCommand("SessionStart", windows: true);
+            Assert.StartsWith("powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand ", windows);
+            var source = DecodeLauncher(windows);
+            Assert.Contains($"$helper = '{Exe}'; ", source);
+            Assert.Contains(" | & $helper 'codex' 'SessionStart'; ", source);
+            Assert.Contains("'codex-console', 'hook-health', '", source);
             Assert.Contains("/bin/sh '", bridge.HookCommand("SessionStart", windows: false));
             Assert.Contains("codex-hook.sh' SessionStart", bridge.HookCommand("SessionStart", windows: false));
         }
 
         /// <summary>
-        /// Codex executes commandWindows as PowerShell source. Without the call operator, a
-        /// quoted executable path is parsed as a string followed by an unexpected token: Codex
-        /// reports exit code 1 and the helper never reaches its first breadcrumb instruction.
+        /// Codex executes commandWindows as PowerShell source. The command is itself a PowerShell
+        /// command line (the encoded launcher), so run it exactly as Codex would and check that
+        /// the helper receives the verb and the event as two literal arguments. A healthy launch
+        /// must leave no failure record behind — that directory is what turns the keys Blocked.
         /// Exercise the real shell boundary, not only the generated string.
         /// </summary>
         [Fact]
@@ -377,31 +385,52 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 return;
             }
 
-            var bridge = new Agents.CodexStateBridge(codexHome: @"C:\Users\me\.codex")
+            var dir = Path.Combine(Path.GetTempPath(), "cc-codex-launcher-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
             {
-                HookExe = "Write-Output",
-            };
-            var psi = new System.Diagnostics.ProcessStartInfo
+                // A probe that prints its arguments stands in for the exe. The TEMP handed to the
+                // launcher is private, so a marker — were one written — could not land in the
+                // live codex-console root.
+                var probe = Path.Combine(dir, "probe ' helper.cmd");
+                File.WriteAllText(probe, "@echo %1\r\n@echo %2\r\n");
+                var bridge = new Agents.CodexStateBridge(codexHome: Path.Combine(dir, ".codex")) { HookExe = probe };
+                var command = bridge.HookCommand("SessionStart", windows: true);
+                const String prefix = "powershell.exe ";
+                Assert.StartsWith(prefix, command);
+
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                foreach (var argument in command.Substring(prefix.Length).Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    psi.ArgumentList.Add(argument);
+                }
+                psi.Environment["TEMP"] = dir;
+                psi.Environment["TMP"] = dir;
+
+                using var process = System.Diagnostics.Process.Start(psi);
+                process.StandardInput.Write("{}");
+                process.StandardInput.Close();
+                var stdout = process.StandardOutput.ReadToEnd();
+                var stderr = process.StandardError.ReadToEnd();
+
+                Assert.True(process.WaitForExit(15_000), "PowerShell did not finish the hook command");
+                Assert.True(process.ExitCode == 0, $"PowerShell rejected the hook command: {stderr}");
+                Assert.Equal(new[] { "codex", "SessionStart" },
+                    stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
+                Assert.False(Directory.Exists(Path.Combine(dir, "codex-console")), "a healthy launch must not record a failure");
+            }
+            finally
             {
-                FileName = "powershell.exe",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            psi.ArgumentList.Add("-NoProfile");
-            psi.ArgumentList.Add("-NonInteractive");
-            psi.ArgumentList.Add("-Command");
-            psi.ArgumentList.Add(bridge.HookCommand("SessionStart", windows: true));
-
-            using var process = System.Diagnostics.Process.Start(psi);
-            var stdout = process.StandardOutput.ReadToEnd();
-            var stderr = process.StandardError.ReadToEnd();
-
-            Assert.True(process.WaitForExit(10_000), "PowerShell did not finish the hook command");
-            Assert.True(process.ExitCode == 0, $"PowerShell rejected the hook command: {stderr}");
-            Assert.Equal(new[] { "codex", "SessionStart" },
-                stdout.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries));
+                try { Directory.Delete(dir, recursive: true); } catch { /* best effort */ }
+            }
         }
 
         [Fact]
@@ -410,8 +439,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             const String tricky = @"C:\Users\O'Brien\$hooks\claude-console-hook.exe";
             var bridge = new Agents.CodexStateBridge(codexHome: @"C:\Users\me\.codex") { HookExe = tricky };
 
-            Assert.Equal("& 'C:\\Users\\O''Brien\\$hooks\\claude-console-hook.exe' codex Stop",
-                bridge.HookCommand("Stop", windows: true));
+            // Single-quoted inside the launcher: the apostrophe is doubled and the $ stays literal.
+            Assert.Contains("$helper = 'C:\\Users\\O''Brien\\$hooks\\claude-console-hook.exe'; ",
+                DecodeLauncher(bridge.HookCommand("Stop", windows: true)));
         }
 
         [Fact]

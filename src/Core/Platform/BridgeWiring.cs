@@ -213,13 +213,52 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             (command.Contains(MacActivityMarker, StringComparison.OrdinalIgnoreCase) ||
              command.Contains(WindowsMarker, StringComparison.OrdinalIgnoreCase) || IsWindowsLauncher(command));
 
+        /// <summary>
+        /// What differs between the two agents' launchers. Everything else — the marker, the
+        /// failure records, the exit-code contract — is shared, so a fix lands in both.
+        /// </summary>
+        /// <param name="ProductSlug">The IPC root under %TEMP% the failure records go to; must
+        /// match the exe's root for that verb and the plugin's IpcPaths.Root for that product.</param>
+        /// <param name="InputWaitMs">How long to wait for stdin before giving up on it.</param>
+        /// <param name="ForwardPartialInput">On that timeout, still run the helper with whatever
+        /// arrived (Codex) instead of exiting without running it (Claude Code).</param>
+        internal sealed record LauncherProfile(String ProductSlug, Int32 InputWaitMs, Boolean ForwardPartialInput)
+        {
+            /// <summary>Claude Code closes the pipe after the JSON, so a read that has not ended in 5 s is a hang; exit without running the helper.</summary>
+            internal static readonly LauncherProfile Claude = new LauncherProfile("claude-console", 5000, false);
+
+            /// <summary>
+            /// Codex on Windows can leave stdin without EOF after writing the whole payload
+            /// (inherited pipe write handles — see the exe's Codex verb). Waiting for EOF and
+            /// then not running the helper would lose the EVENT, which today's direct launch
+            /// records with a null payload; so read in bounded chunks, take what arrived, note
+            /// the timeout as a delivery failure, and run the helper regardless. 1.5 s matches
+            /// the exe's own bound and keeps SessionEnd inside its 3 s deadline (#126).
+            /// </summary>
+            internal static readonly LauncherProfile Codex = new LauncherProfile("codex-console", 1500, true);
+        }
+
         // Git Bash rewrites cmd.exe /d and /c as paths, leaving cmd interactive and making
         // it execute the JSON payload. EncodedCommand passes literal PowerShell source through
         // Bash, PowerShell and cmd without another round of path or quote interpretation.
-        internal static String WindowsCommand(String handlerPath, params String[] arguments)
+        internal static String WindowsCommand(String handlerPath, params String[] arguments) =>
+            WindowsCommand(handlerPath, LauncherProfile.Claude, arguments);
+
+        internal static String WindowsCommand(String handlerPath, LauncherProfile profile, params String[] arguments)
         {
             var path = handlerPath.Trim('"');
             String Literal(String value) => "'" + value.Replace("'", "''") + "'";
+            // The Claude profile must keep producing the exact 2.3.2 text: UpgradeOwnedCommands
+            // rewrites every user's settings.json the moment the desired command differs.
+            var read = profile.ForwardPartialInput
+                ? "$in = [Console]::OpenStandardInput(); $buf = New-Object byte[] 65536; $ms = New-Object IO.MemoryStream; $late = $false; " +
+                  "while ($true) { $t = $in.ReadAsync($buf, 0, $buf.Length); " +
+                  $"if (-not $t.Wait({profile.InputWaitMs})) {{ $late = $true; break }}; " +
+                  "if ($t.Result -le 0) { break }; $ms.Write($buf, 0, $t.Result) }; " +
+                  "if ($late) { Write-HookFailure 'input-timeout' 'delivery' }; " +
+                  "$payload = [Text.Encoding]::UTF8.GetString($ms.ToArray()); "
+                : $"$read = [Console]::In.ReadToEndAsync(); if (-not $read.Wait({profile.InputWaitMs})) {{ Write-HookFailure 'input-timeout' 'delivery'; exit 0 }}; ";
+            var source = profile.ForwardPartialInput ? "$payload" : "$read.Result";
             // The health directory is one hash of the helper path. It is computed HERE, once, and
             // baked into the launcher as a literal: the six hook entries in settings.json are
             // already six copies of this script, and every line of PowerShell in them is a line a
@@ -237,7 +276,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 // moves the plugin's recovery barrier (the exe may not have run); "delivery" is
                 // diagnostic only. Reasons are fixed literals, so the hand-built JSON is safe.
                 "function Write-HookFailure([string]$reason, [string]$scope) { try { " +
-                $"$dir = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'claude-console', 'hook-health', '{health}'); " +
+                $"$dir = [IO.Path]::Combine([IO.Path]::GetTempPath(), {Literal(profile.ProductSlug)}, 'hook-health', '{health}'); " +
                 "[IO.Directory]::CreateDirectory($dir) | Out-Null; " +
                 "$ticks = [DateTime]::UtcNow.Ticks; " +
                 // Eight hex digits, not a 32-digit GUID: the launcher runs in Windows PowerShell 5.1, which
@@ -249,11 +288,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 "[IO.File]::Move($file + '.tmp', $file) " +
                 "} catch {} }; " +
                 "if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { Write-HookFailure 'missing' 'helper'; exit 0 }; " +
-                "try { $read = [Console]::In.ReadToEndAsync(); if (-not $read.Wait(5000)) { Write-HookFailure 'input-timeout' 'delivery'; exit 0 }; " +
+                "try { " + read +
                 // ErrorActionPreference makes native start failures catchable; native nonzero
                 // exits still flow through LASTEXITCODE and retain their original exit code.
                 "$ErrorActionPreference = 'Stop'; $LASTEXITCODE = 0; " +
-                "$read.Result | & $helper " +
+                source + " | & $helper " +
                 String.Join(" ", arguments.Select(Literal)) + "; $code = $LASTEXITCODE; " +
                 "if ($code -ne 0) { Write-HookFailure 'nonzero-exit' 'helper' }; exit $code " +
                 "} catch { Write-HookFailure 'launch-failed' 'helper'; exit 1 }";
