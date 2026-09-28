@@ -18,6 +18,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         private readonly Dictionary<String, String> _sessionDirectories = new();
         public IReadOnlyDictionary<String, String> SessionDirectories => _sessionDirectories;
         internal Func<Int32, String> ProcessDirectoryReader { get; set; } = MacProcessDirectory.Read;
+        private readonly Dictionary<String, DateTime> _sessionStarts = new();
+        public IReadOnlyDictionary<String, DateTime> SessionStartTimes => _sessionStarts;
+        internal Func<Int32, DateTime?> ProcessStartReader { get; set; } = MacProcessDirectory.StartTimeUtc;
 
         public Boolean IsSupported => OperatingSystem.IsMacOS();
 
@@ -159,8 +162,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
             var found = AgentProcessWatcher.Discover(output, this._matcher, this.DrivableOwner);
             _sessionDirectories.Clear();
+            _sessionStarts.Clear();
             // Codex may omit SessionStart until its first prompt. Ask the live process for cwd;
-            // no directory scan, extra ps, or external command is needed.
+            // no directory scan, extra ps, or external command is needed. Its start time rides
+            // along from the same syscall family: with the shared daemon routing every session's
+            // hooks through one terminal, folder plus start time is how the registry puts an
+            // envelope back on the terminal it belongs to.
             if (_cliCommand == "codex")
             {
                 foreach (var row in AgentProcessWatcher.Parse(output, _matcher))
@@ -169,6 +176,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                     {
                         var directory = ProcessDirectoryReader(pid);
                         if (!String.IsNullOrWhiteSpace(directory)) { _sessionDirectories[row.Tty] = directory; }
+                        var started = ProcessStartReader(pid);
+                        if (started.HasValue) { _sessionStarts[row.Tty] = started.Value; }
                     }
                 }
             }

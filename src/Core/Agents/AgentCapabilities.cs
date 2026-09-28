@@ -26,6 +26,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         public Boolean ContextPercent { get; init; }
 
         /// <summary>
+        /// The agent's hooks can run in a process whose terminal is not the session's own —
+        /// Codex 0.158 runs every session inside one shared app-server daemon, and a hook
+        /// started there inherits the ancestry of whichever terminal started the daemon. The
+        /// hook writes its envelope under that terminal's key, so the registry re-keys such
+        /// envelopes from what it independently knows about each live process (its folder and
+        /// start time), and holds back the ones it cannot place rather than guess.
+        /// </summary>
+        public Boolean HooksMayReportAnotherTerminal { get; init; }
+
+        /// <summary>
         /// Context usage is derivable, but only by parsing a format the vendor explicitly declines
         /// to keep stable (Codex's rollout JSONL). Such a reader must degrade to "unknown" on any
         /// surprise, never to a stale or guessed number, and must never be on a hot path.

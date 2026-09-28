@@ -541,6 +541,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (liveTtys != null && this.Agent.Id == "codex-cli")
                 {
                     Grid.DiscoveredProjectDirs = _platform.SessionDirectories;
+                    Grid.DiscoveredSessionStarts = _platform.SessionStartTimes;
                 }
                 Grid.Refresh(liveTtys);
                 if (liveTtys != null) { _hookHealth?.PruneDeadSessions(liveTtys); }

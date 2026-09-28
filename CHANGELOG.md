@@ -115,6 +115,19 @@ blue and its relabelled keys stay with Vizhi.
 ## Vizhi for Codex [1.6.2] — 2026-09-28
 
 ### Fixed
+- **An approval no longer lights another session's key when Codex runs its shared daemon.**
+  Codex 0.158 runs every session inside one app-server daemon, and its hooks run there. The hook
+  finds "its" terminal by walking the process ancestry, which for a daemon ends at whichever
+  terminal started it — so every session's events landed in that terminal's file: its key took
+  the other session's project and approval, and Yes would have typed into the wrong tab. Seen on
+  the release day with two sessions in different folders. The plugin already knows each Codex
+  terminal's real folder and start time from the process table, so an event whose folder is not
+  the file's own terminal's is now shown on the one terminal that runs in that folder (when two
+  do, the one that started just before the session did, since Codex session ids carry their
+  creation time); with no unique match the event is held back and logged once rather than
+  guessed, and the daemon's own terminal keeps its last state. Events the hook could attach to no
+  terminal at all (`shared.json`, once the daemon outlives its terminal) are routed the same way.
+  Both platforms; the hooks themselves are unchanged, so nothing has to be re-trusted.
 - **Windows: a helper dated in the future no longer reads as Run /hooks after install (#125).**
   Same cause as Claude Console's entry above: the packaged helper's file time is hours ahead on a
   machine behind IST, and the bridge measured "an event since the install" against it. Until the
