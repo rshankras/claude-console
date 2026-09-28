@@ -93,6 +93,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         internal Func<Int32, DateTime, String> DirectoryResolver { get; set; } = WindowsProcessDirectory.Read;
         private readonly Dictionary<String, String> _sessionDirectories = new(StringComparer.Ordinal);
         public IReadOnlyDictionary<String, String> SessionDirectories => _sessionDirectories;
+        private readonly Dictionary<String, DateTime> _sessionStarts = new(StringComparer.Ordinal);
+        public IReadOnlyDictionary<String, DateTime> SessionStartTimes => _sessionStarts;
 
         public HashSet<String> DiscoverSessions()
         {
@@ -144,15 +146,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             if (_cliCommand != "codex")
             {
                 _sessionDirectories.Clear();
+                _sessionStarts.Clear();
                 return sessions;
             }
 
             foreach (var stale in _sessionDirectories.Keys.Where(k => !sessions.Contains(k)).ToArray())
                 _sessionDirectories.Remove(stale);
+            foreach (var stale in _sessionStarts.Keys.Where(k => !sessions.Contains(k)).ToArray())
+                _sessionStarts.Remove(stale);
             foreach (var row in rows)
             {
                 var key = WindowsProcessWatcher.SessionKeyFor(row);
                 if (!sessions.Contains(key)) continue;
+                // The same start the session key is built from (SessionKeyFor), as UTC.
+                _sessionStarts[key] = row.StartTime.ToUniversalTime();
                 // Retry missing data and refresh CWD after /resume; only a few bounded reads
                 // per live CLI, with no subprocess, directory crawl or title inference.
                 String directory = null;

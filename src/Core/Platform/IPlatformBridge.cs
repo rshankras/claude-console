@@ -69,6 +69,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // Optional directory hints from the same process discovery pass, never activity evidence.
         IReadOnlyDictionary<String, String> SessionDirectories => null;
 
+        // The UTC start time of each live session's CLI process, from the same pass; null where
+        // the platform does not report it. Read only to break a tie between two terminals in
+        // one folder (SessionRegistry), never as activity evidence.
+        IReadOnlyDictionary<String, DateTime> SessionStartTimes => null;
+
         /// <summary>
         /// The session id of the terminal tab the user is looking at, or null when the terminal
         /// isn't frontmost / isn't running. Called on the poll timer, so it must be cheap and

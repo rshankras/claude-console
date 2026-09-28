@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Agents
 {
     using System;
+    using System.Globalization;
     using System.IO;
 
     /// <summary>
@@ -63,6 +64,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             // as a recovery fallback for old/untrusted hooks.
             ApprovalSignal = true,
             HooksNeedTrust = true,
+            // Since 0.158 every session lives in one shared app-server daemon, and hooks run
+            // there: the hook's process ancestry ends at whichever terminal started the daemon,
+            // so its envelope lands under THAT tty. Seen live 2026-09-28: AlertWala's approval
+            // lit the claude-console key. The registry re-keys by the process table.
+            HooksMayReportAnotherTerminal = true,
             SettingsFileWiring = false,  // our own ~/.codex/hooks.json, gated by Codex's trust prompt — no Enable/Disable keys
 
             MultiConsumerHooks = true,   // matcher groups; concurrent handlers per event
@@ -106,6 +112,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// Codex has no statusline: every fact arrives on a lifecycle event, so one file carries
         /// the project, the activity AND the pending approval — already graded by CodexStateReader.
         /// </summary>
+        /// <summary>
+        /// Codex session ids are UUIDv7: the first 48 bits are the session's creation time in
+        /// milliseconds since the Unix epoch. Verified against two live sessions on 2026-09-28
+        /// (01a0e83c-9f59-… decoded to 13:38:02.201Z, half a second after its TUI process
+        /// started). Null for anything else, including the ids tests make up.
+        /// </summary>
+        public DateTime? SessionStartedAtUtc(String sessionId)
+        {
+            if (String.IsNullOrEmpty(sessionId)) { return null; }
+            var hex = sessionId.Replace("-", "");
+            if (hex.Length != 32 || hex[12] != '7') { return null; }
+            if (!Int64.TryParse(hex.AsSpan(0, 12), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var milliseconds))
+            {
+                return null;
+            }
+            return DateTime.UnixEpoch.AddMilliseconds(milliseconds);
+        }
+
         public AgentSessionState ParseSessionState(String json)
         {
             var snap = CodexStateReader.Parse(json);
