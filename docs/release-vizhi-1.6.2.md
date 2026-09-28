@@ -40,17 +40,13 @@ a stale approval no longer reaches a terminal that opened after it). The cuts fr
       same tree as the merge). The two failures are timing cases: the held-open launcher case is
       green 3 of 3 after `20ef983`; the cold SessionEnd case fails identically on an untouched
       main there and is noted on #126.
-- [ ] **Windows device pass on the signed package** (the 28 Sep laptop pass ran an unsigned splice
-      of the second cut with only the plugin DLL replaced; it found #131 and #132 and verified
-      their fixes — Yes 21:10:27 and No 21:13:50 on the real terminal — but the signed third cut
-      has not been installed there): install from the release draft, `/hooks`
-      re-trust (the command changed, #126), Yes and No on a real approval, a session-key press
-      showing **Selecting** then pinning (#112), New Codex opening in the project folder (#113),
-      and once with the hook helper renamed away so **Blocked** and the Options+ warning appear
-      (#126) — that last one also exercises the failure-record JSON (review follow-up 2 below).
-      Plus **two sessions in different folders** with Codex's daemon running: the approval must
-      light its own session's key and Yes/No must answer only that session (#129; the Windows
-      hook walks the same process ancestry, so the daemon misroutes there too).
+- [x] **Windows device pass on the signed package** (fourth cut, sha `bd53c8c1…`): installed on the
+      laptop 21:38 IST, hooks not re-trusted (command unchanged since the earlier cuts), bridge Ready
+      after the first prompt (22:00:27), **Yes 22:03:46** and **No 22:08:12** on `pid-23764-…` by key,
+      receipt `success-pid-23764-….json` present, only the real terminal in the slots (evidence on
+      #131). Not exercised on Windows: two sessions in different folders, and the renamed-helper
+      Blocked check. Doc note from the pass: after an upgrade the keys read *Run /hooks* until the
+      first prompt, because Codex fires hooks on the first turn, not when the TUI opens.
 - [ ] **Publish** the draft after the pass; record the URL here and in the PM note.
 - [ ] Marketplace form: upload, paste the three copy fields from the listing doc via `pbcopy`,
       record the submission date back into the listing doc.
