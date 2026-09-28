@@ -102,8 +102,11 @@ The keypad never shows a value the agent did not report:
    Until trusted, keys show static labels and no live state — `/hooks` reopens the review if
    you skipped it. (Never use `--dangerously-bypass-hook-trust` — it disables the review for
    everything, not just this plugin.)
-   On Windows the reviewed command uses Codex's `commandWindows` override and the packaged
-   `claude-console-hook.exe`; rollout polling remains available as a fallback.
+   On Windows the reviewed command uses Codex's `commandWindows` override: a small PowerShell
+   launcher that runs the packaged `claude-console-hook.exe` and records when it cannot (missing,
+   blocked or crashing), which is what puts **Blocked** on the keys instead of silence. Rollout
+   polling remains available as a fallback. Updating from 1.6.1 changes that command once, so
+   Codex asks you to trust the seven hooks again; the keys read **Run /hooks** until you do.
 5. **Grant permissions as the OS asks.** On macOS:
    - **Accessibility** (Logi Plugin Service) — how keys type into Terminal.
    - **Microphone** (first Voice press).

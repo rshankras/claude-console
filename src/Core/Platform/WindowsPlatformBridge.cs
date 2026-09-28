@@ -512,9 +512,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
         public String QueryFrontmostSession() => null;   // see gap 1 above
 
-        public void Navigate(TerminalAction action)
+        public void Navigate(TerminalAction action, String directory = null)
         {
-            var args = WindowsTerminalCli.ArgsFor(action);
+            var args = WindowsTerminalCli.ArgsFor(action, directory);
             if (args == null)
             {
                 // Cycling windows is an OS gesture wt.exe can't express. Better to say so than to

@@ -209,7 +209,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var monitor = this.Monitor();
             Failure(monitor, this._now);
             Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
-            File.SetLastWriteTimeUtc(this._helper, this._now.AddSeconds(1));
+            // The replacement lands after the failure. (Its mtime cannot be ahead of the clock:
+            // the floor latches to min(mtime, now) since #125, so the clock moves on instead.)
+            this._now = this._now.AddSeconds(2);
+            File.SetLastWriteTimeUtc(this._helper, this._now);
             Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, monitor.Refresh());
         }
 
@@ -317,11 +320,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var monitor = this.Monitor();
             Success(monitor, SessionA, this._now);
             Assert.Equal(WindowsHookHealthStatus.Healthy, monitor.Refresh());
-            File.SetLastWriteTimeUtc(this._helper, this._now.AddSeconds(1));
+            this._now = this._now.AddSeconds(2);                // the replacement lands later (#125: floor = min(mtime, now))
+            File.SetLastWriteTimeUtc(this._helper, this._now);
 
             Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, monitor.Refresh());
             Assert.False(monitor.IsSessionObservationCurrent(SessionA));
-            Success(monitor, SessionA, this._now.AddSeconds(2));
+            Success(monitor, SessionA, this._now.AddSeconds(1));
             Assert.Equal(WindowsHookHealthStatus.Healthy, monitor.Refresh());
         }
 
@@ -372,9 +376,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var monitor = this.Monitor();
             Failure(monitor, this._now);
-            File.SetLastWriteTimeUtc(this._helper, this._now.AddSeconds(1));
+            this._now = this._now.AddSeconds(2);                // #125: floor = min(mtime, now)
+            File.SetLastWriteTimeUtc(this._helper, this._now);
             monitor.Refresh();
-            Assert.Equal(this._now.AddSeconds(1), monitor.FreshAfterUtc);
+            Assert.Equal(this._now, monitor.FreshAfterUtc);
         }
 
         [Fact]

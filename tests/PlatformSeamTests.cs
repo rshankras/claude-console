@@ -61,6 +61,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             public InjectionOutcome InjectText(String sessionId, String text, Boolean pressEnter)
             {
+                this.DuringTextInjection?.Invoke();
                 this.Texts.Add((sessionId, text, pressEnter));
                 return this.Outcome;
             }
@@ -77,13 +78,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 return this.Outcome;
             }
 
+            /// <summary>When set, a focus request blocks until this is signalled — a stand-in for the 1.3–1.8 s Windows focus helper (#112).</summary>
+            public System.Threading.ManualResetEventSlim FocusRelease { get; set; }
+            public System.Threading.ManualResetEventSlim FocusEntered { get; set; }
+            public Action DuringTextInjection { get; set; }
+
             public void FocusSession(String sessionId) => this.Focused.Add(sessionId);
             public Boolean TryFocusSession(String sessionId)
             {
                 this.FocusSession(sessionId);
+                this.FocusEntered?.Set();
+                this.FocusRelease?.Wait(10_000);
                 return this.FocusSucceeds;
             }
-            public void Navigate(TerminalAction action) => this.Navigations.Add(action);
+            public List<(TerminalAction Action, String Directory)> NavigationTargets { get; } = new();
+            public void Navigate(TerminalAction action, String directory = null)
+            {
+                this.Navigations.Add(action);
+                this.NavigationTargets.Add((action, directory));
+            }
             public void LaunchClaudeInProject(String projectDir) => this.Launches.Add(projectDir);
             public void Alert() => this.Alerts++;
 

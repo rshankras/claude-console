@@ -213,7 +213,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         // The Options+ card that explains an inert Yes/No is posted once per load, not per press.
         private static Int32 _setupNoticePosted;
 
-        internal static void AnswerApproval(BridgeManager bridge, Boolean approve)
+        internal static void AnswerApproval(BridgeManager bridge, Boolean approve) =>
+            bridge.RunRoutedAction(() => AnswerApprovalCore(bridge, approve));
+
+        private static void AnswerApprovalCore(BridgeManager bridge, Boolean approve)
         {
             // A helper may have disappeared since the last poll or repaint. Check before any
             // approval decision, including one based on a previously captured pending payload.
@@ -409,6 +412,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 }
 
                 var decision = TargetState(bridge);
+                if (bridge.SelectingSlot != 0)
+                    return KeyImage.RenderDecisionTile(imageSize, "Selecting", KeyImage.Gray,
+                        approve: actionParameter == Yes, risk: ApprovalRisk.None);
                 if (decision.NeedsSelection)
                     return KeyImage.RenderDecisionTile(imageSize, "Select", KeyImage.Gray,
                         approve: actionParameter == Yes, risk: ApprovalRisk.None, targetLabel: "session");

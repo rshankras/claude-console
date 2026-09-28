@@ -105,8 +105,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     // instead of waiting out the full transcript-quiet window (#30). Deliberately
                     // NOT inside InjectKey — AnswerCommand also sends Escape, to reject a tool,
                     // and the turn carries on after that one.
-                    bridge.Grid.NoteInterrupt(bridge.RoutingTty());
-                    bridge.InjectKey(KeyStroke.Escape);
+                    bridge.RunRoutedAction(() =>
+                    {
+                        bridge.Grid.NoteInterrupt(bridge.RoutingTty());
+                        bridge.InjectKey(KeyStroke.Escape);
+                    });
                     break;
                 case Mode:
                     bridge.InjectKey(KeyStroke.ShiftTab); // cycle input modes

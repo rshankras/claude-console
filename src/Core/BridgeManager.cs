@@ -443,6 +443,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         internal String ApprovalTty()
         {
+            if (this.SelectingSlot != 0) { return null; }
             if (this.Agent.Id != "codex-cli") { return this.RoutingTty(); }
 
             if (this.IsSelectableSession(_pinnedTty)) { return _pinnedTty; }
@@ -946,11 +947,17 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         public void SelectSlot(Int32 slot)
         {
-            this.RefreshHelperHealth();
             if (slot < 1 || slot > this.SessionSlotCount) return;
-
             var session = Grid.SlotSession(slot);
-            if (session == null)
+            if (session != null) { this.SelectSlot(slot, session); }
+        }
+
+        private void SelectSlot(Int32 slot, GridSession session)
+        {
+            this.RefreshHelperHealth();
+            // A queued worker must select the session that was pressed, never a new occupant
+            // of a slot recycled by discovery before the worker could start.
+            if (Grid.SlotSession(slot)?.SessionKey != session.SessionKey)
             {
                 return;
             }
@@ -965,6 +972,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
                 return;
             }
+
+            if (Grid.SlotSession(slot)?.SessionKey != session.SessionKey) { return; }
 
             // Pressing the slot that is ALREADY pinned releases it, and the keys go back to
             // following the frontmost tab. Until now a pin could only be MOVED, never dropped —
@@ -986,6 +995,97 @@ namespace Loupedeck.ClaudeConsolePlugin
             OnTargetChanged?.Invoke();
             PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.SessionKey} ({session.Project})");
         }
+
+        // #112: on Windows the focus helper takes 1.3–1.8 s, past the SDK's 1,000 ms action budget,
+        // so the service logged "Action timed out" and "action failed" for a pin that had worked
+        // (Logitech, 1.6.1 retest item 5). The press now returns at once and the selection lands
+        // on a background task. One selection at a time: a second press while one is in flight is
+        // dropped, not queued — the focus helper serialises anyway, and a queue would pin
+        // whichever session finished last rather than the one the user meant.
+        private Int32 _selectingSlot;
+        private readonly Object _routingGate = new Object();
+        private Int32 _routedActions;
+
+        /// <summary>The slot whose selection is in flight, or 0. Painted as "Selecting" by the slot key.</summary>
+        internal Int32 SelectingSlot => Volatile.Read(ref _selectingSlot);
+
+        /// <summary>
+        /// Start <see cref="SelectSlot"/> off the calling thread. Returns whether a selection was
+        /// started; <paramref name="completed"/> runs afterwards whatever the outcome, so the key
+        /// can repaint. An empty slot or a press during another selection or routed action starts nothing.
+        /// </summary>
+        internal Boolean BeginSelectSlot(Int32 slot, Action completed)
+        {
+            GridSession session;
+            lock (_routingGate)
+            {
+                if (slot < 1 || slot > this.SessionSlotCount || (session = Grid.SlotSession(slot)) == null)
+                {
+                    return false;
+                }
+                if (_selectingSlot != 0 || _routedActions != 0)
+                {
+                    PluginLog.Info($"BridgeManager: slot {slot} pressed during another selection or routed action — ignored");
+                    return false;
+                }
+                Volatile.Write(ref _selectingSlot, slot);
+            }
+
+            this.RepaintSelection();
+            Task.Run(() =>
+            {
+                try
+                {
+                    this.SelectSlot(slot, session);
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, $"BridgeManager: selecting slot {slot} failed");
+                }
+                finally
+                {
+                    lock (_routingGate) { Volatile.Write(ref _selectingSlot, 0); }
+                    this.RepaintSelection();
+                    try { completed?.Invoke(); }
+                    catch (Exception ex) { PluginLog.Verbose(ex, "BridgeManager: slot repaint after selection failed"); }
+                }
+            });
+            return true;
+        }
+
+        private void RepaintSelection()
+        {
+            try { OnTargetChanged?.Invoke(); }
+            catch (Exception ex) { PluginLog.Verbose(ex, "BridgeManager: selection repaint failed"); }
+        }
+
+        // Admission is atomic with beginning a selection. Never hold the lock across an OS call:
+        // a second SDK action must return promptly, including while the focus helper is running.
+        // An admitted action finishes before another selection may start, so even a target
+        // resolved before injection cannot be overtaken by a slot press.
+        private InjectionOutcome RunRoutedInput(Func<InjectionOutcome> action)
+        {
+            Boolean admitted;
+            lock (_routingGate)
+            {
+                admitted = _selectingSlot == 0;
+                if (admitted) { ++_routedActions; }
+            }
+            if (!admitted)
+            {
+                this.Alert();
+                PluginLog.Info("BridgeManager: session selection is still in progress — action ignored");
+                return InjectionOutcome.Skipped;
+            }
+            try { return action(); }
+            finally { lock (_routingGate) { --_routedActions; } }
+        }
+
+        internal void RunRoutedAction(Action action) => this.RunRoutedInput(() =>
+        {
+            action();
+            return InjectionOutcome.Ok;
+        });
 
         // Drop the pin and go back to following the frontmost tab. Called when the pinned session
         // exits, and when we deliberately start a session somewhere else (voice "go to project").
@@ -1075,37 +1175,37 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// <summary>
         /// Type text into the tracked Claude session and optionally press Return.
         /// </summary>
-        public void InjectText(String text, Boolean pressEnter)
+        public void InjectText(String text, Boolean pressEnter) => this.RunRoutedAction(() =>
         {
             this.RefreshHelperHealth();
             _platform.InjectText(RoutingTty(), text, pressEnter);
-        }
+        });
 
         /// <summary>
         /// Send a single key chord to the tracked Claude session, e.g. Shift+Tab to cycle modes.
         /// Returns the platform's outcome, so a caller that must act only on a keystroke that
         /// actually landed (the answer keys clearing a badge, #60) can tell.
         /// </summary>
-        public InjectionOutcome InjectKey(KeyStroke key) => this.InjectKeyTo(RoutingTty(), key);
+        public InjectionOutcome InjectKey(KeyStroke key) => this.RunRoutedInput(() => this.InjectKeyTo(RoutingTty(), key));
 
         /// <summary>
         /// Send a key to an already-resolved target. Approval actions use this so the session they
         /// acknowledge is exactly the session that received the decision, even if focus changes.
         /// </summary>
-        internal InjectionOutcome InjectKeyTo(String sessionKey, KeyStroke key)
+        internal InjectionOutcome InjectKeyTo(String sessionKey, KeyStroke key) => this.RunRoutedInput(() =>
         {
             this.RefreshHelperHealth();
             return _platform.InjectKey(sessionKey, key);
-        }
+        });
 
         /// <summary>
         /// Accept the highlighted autocomplete AND submit it in one press.
         /// </summary>
-        public void InjectTabThenEnter()
+        public void InjectTabThenEnter() => this.RunRoutedAction(() =>
         {
             this.RefreshHelperHealth();
             _platform.InjectTabThenEnter(RoutingTty());
-        }
+        });
 
         /// <summary>
         /// Optional per-poll pull of agent state, for a product whose agent cannot push it.
@@ -1116,10 +1216,82 @@ namespace Loupedeck.ClaudeConsolePlugin
         public Action PullState { get; set; }
 
         /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
-        public void Navigate(TerminalAction action)
+        public void Navigate(TerminalAction action) => this.RunRoutedAction(() =>
         {
             this.RefreshHelperHealth();
-            _platform.Navigate(action);
+            var opensSession = action is TerminalAction.NewTab or TerminalAction.NewClaudeTab or TerminalAction.NewClaudeWindow;
+            _platform.Navigate(action, opensSession ? this.NewSessionDirectory() : null);
+        });
+
+        /// <summary>Test seam for the roots file; null means the default under the runtime home.</summary>
+        internal String ProjectRootsFile { get; set; }
+
+        /// <summary>
+        /// Where New Tab, New &lt;agent&gt; and New &lt;agent&gt; (Window) open (#113, QA 1.6.1 item 4).
+        /// Until now: the home folder, since #85 moved them off the plugin service's own
+        /// directory. Neither is where projects live, and Codex trusts whatever folder it is
+        /// started in as a project — QA's config.toml gained the entire user profile as a
+        /// trusted project the second they pressed the key. In order:
+        ///   1. the routed (pinned, or single obvious) session's own project folder — "another
+        ///      session on what I am working on" is the common case;
+        ///   2. the first usable root in the project-roots file (#26) — the user's stated layout;
+        ///   3. null, i.e. the platform's default (home), with a log line saying why.
+        /// The profile root, the plugin service's working directory and the plugin's install
+        /// directory never qualify, whichever step produced them.
+        /// </summary>
+        internal String NewSessionDirectory()
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            var target = this.RoutingTty();
+            if (!String.IsNullOrEmpty(target) && Grid.Sessions.TryGetValue(target, out var session)
+                && IsProjectDirectory(session.ProjectDir, home))
+            {
+                PluginLog.Info($"BridgeManager: new session opens in {session.ProjectDir} (the routed session's folder)");
+                return session.ProjectDir;
+            }
+
+            var rootsFile = this.ProjectRootsFile ?? ProjectDiscovery.DefaultRootsFile(home);
+            foreach (var root in ProjectDiscovery.ReadRootsFile(rootsFile, home))
+            {
+                if (IsProjectDirectory(root, home))
+                {
+                    PluginLog.Info($"BridgeManager: new session opens in {root} (the first configured project root)");
+                    return root;
+                }
+            }
+
+            PluginLog.Info("BridgeManager: new session opens in the home folder — the routed session has no project folder and no configured project root exists (~/.claude/claude-console/project-roots)");
+            return null;
+        }
+
+        private static Boolean IsProjectDirectory(String path, String home)
+        {
+            if (String.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!Directory.Exists(path))
+                {
+                    return false;
+                }
+
+                var candidate = Normalize(path);
+                return candidate != Normalize(home)
+                    && candidate != Normalize(Environment.CurrentDirectory)
+                    && candidate != Normalize(PluginPaths.PluginDirectory);
+            }
+            catch
+            {
+                return false;
+            }
+
+            static String Normalize(String p) => String.IsNullOrWhiteSpace(p)
+                ? ""
+                : Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToUpperInvariant();
         }
 
         /// <summary>
@@ -1140,7 +1312,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal Boolean TryCancelScreenshot() => _platform.TryCancelScreenshot();
 
         /// <summary>Open a terminal and start the agent with extra CLI args (e.g. -i shot.png).</summary>
-        public void LaunchAgentSession(params String[] extraArgs) => _platform.LaunchAgentSession(extraArgs);
+        public void LaunchAgentSession(params String[] extraArgs) =>
+            this.RunRoutedAction(() => _platform.LaunchAgentSession(extraArgs));
 
         // State/activity files are a few KB — refuse to slurp anything huge (corrupt or hostile).
         private const Int64 MaxIpcFileBytes = 1 << 20;
@@ -2432,7 +2605,12 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal void DeliverDictation(String text, Boolean submit)
         {
             var intent = submit ? VoiceIntent.Send : VoiceIntent.Draft;
-            var target = RoutingTty();
+            String target = null;
+            var outcome = this.RunRoutedInput(() =>
+            {
+                target = RoutingTty();
+                return target == null ? InjectionOutcome.Skipped : _platform.InjectText(target, text, submit);
+            });
             if (target == null)
             {
                 this.ReportVoiceFailure(intent, VoiceFailure.NoTarget,
@@ -2440,7 +2618,6 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            var outcome = _platform.InjectText(target, text, submit);
             if (outcome != InjectionOutcome.Ok)
             {
                 this.ReportVoiceFailure(intent, VoiceFailure.NotTyped, $"{outcome} for {target}. Dropped: \"{text}\"");
@@ -2893,7 +3070,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Open the project in a terminal and start claude there. Where exactly (reuse an idle tab
         // vs open a new one) is the backend's call — it needs terminal-specific knowledge of what
         // "idle" means. What is platform-neutral, and stays here, is the pin bookkeeping.
-        internal void LaunchClaudeInProject(String path)
+        internal void LaunchClaudeInProject(String path) => this.RunRoutedAction(() =>
         {
             // Opening a project is an explicit "I'm working here now", and it starts a session in a
             // tab that has no key yet. Holding a pin from before would quietly send Yes / Clear /
@@ -2901,7 +3078,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             this.ClearPin();
 
             _platform.LaunchClaudeInProject(path);
-        }
+        });
 
         private static void TryDelete(String path)
         {

@@ -59,14 +59,28 @@ this installation healthy.
   sessions that proved it are gone; without it every reboot after any past failure would read as
   Unavailable. Written only by the plugin, only while pruning, only when it moves forward.
 
-Unavailable means exactly "a helper-scope failure is newer than every success ever seen, live or
-pruned, and newer than the installed file". Putting a quarantined file back does not change that —
-its mtime is older than the failure — so the keys stay Blocked until a hook actually runs. A
-replaced file (upgrade, reinstall from the package) is newer than the failure and starts over as
-AwaitingFresh. A hook that started before the latest failure cannot recover the bridge by finishing
+Unavailable means a helper-scope failure is newer than every success ever seen, live or pruned,
+unless a non-future file timestamp proves a newer installation. Putting a quarantined file back
+keeps the keys Blocked until a hook actually runs. A replaced file with a known timestamp newer
+than the failure starts over as AwaitingFresh. A timestamp synthesized from first sighting of a
+future-dated file cannot prove an upgrade: it may be the same helper restored after quarantine.
+That distinction survives restart and the clock passing the original file time.
+A hook that started before the latest failure cannot recover the bridge by finishing
 afterwards. A fresh observation from one session does not validate another session's cached
 approval. A fresh statusline or Notification also does not make an older permission payload
 current. The monitor and approval gate enforce those separate checks.
+
+"The installed file's time" is not simply its mtime (#125). The installer restores the package's
+ZIP timestamp, and ZIP times carry no zone: a helper packed at 11:34 IST is dated 11:34 *local*
+wherever it lands, hours ahead of the clock on a machine behind IST. Used raw, that floor judged
+every receipt stale until the clock caught up — Yes/No refused quietly, values withheld, Vizhi
+reading Run /hooks, and no Blocked face because nothing had failed. The monitor therefore latches
+the floor to `min(mtime, first sighting)` per distinct mtime, and persists a future-dated latch in
+`helper-version.json` (`{schema, mtimeTicks, versionTicks}`) so a restart inside the window, or
+after the clock has passed the file time, keeps the same floor. A past-dated file latches to its own
+mtime and writes nothing. A replaced file has a new mtime and starts over, so an upgrade still
+demands fresh evidence. The Codex bridge takes the same latched floor for the exe when it computes
+its installed-at; `hooks.json` is written locally and keeps its real mtime.
 
 Windows Claude statusline, activity and pending JSON and Codex hook envelopes contain `hookStartedUtcTicks`.
 This is transport metadata supplied by the helper, bound to the actual permission payload. The
@@ -95,9 +109,21 @@ PowerShell process before it can write a marker while the helper still exists, t
 to distinguish that from an idle session. A marker also cannot be guaranteed when its directory is
 unwritable. Do not infer CrowdStrike's detection reason from either case; collect its detection logs.
 
-The Codex installed command is unchanged because changing it re-prompts hook trust. Its helper can
-publish these receipts without altering that command. Any future Codex launcher guard is coordinated
-with the signing release.
+The Codex installed command runs the same launcher since #126, with `LauncherProfile.Codex`: the
+records go under `%TEMP%\codex-console` and stdin is read in bounded 1.5 s chunks, then the helper
+runs with whatever arrived — Codex can leave the pipe without EOF, and a launcher that waited for EOF
+and then skipped the helper would lose the event that the direct launch used to record with a null
+payload. Codex already starts PowerShell for `commandWindows`, so this command is the launcher
+source executed in that shell, without starting a second PowerShell. SessionEnd uses a 500 ms
+input wait to leave room for cold startup within Codex's hard three-second limit; other events
+keep their five-second deadline and 1.5 s input wait. Contract tests run the installed command
+through `powershell.exe -Command` with held-open input and an unwarmed helper.
+The command changed once for this release, so every existing Windows user re-trusts it once in
+`/hooks` (the keys read Run /hooks until then). Before #126 the command ran the exe directly and a
+missing or unlaunchable helper left nothing anywhere the plugin reads (replicated 2026-09-28: exit 1,
+zero files), so Codex stayed Healthy on old receipts and every Yes/No press logged "no pending
+approval" — QA's 18 September signature. The `LauncherProfile.Claude` text is unchanged from 2.3.2;
+`UpgradeOwnedCommands` would rewrite every settings.json if it moved.
 
 ## Windows laptop gate
 
