@@ -3,7 +3,7 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [2.3.2] — Unreleased
 
 ### Fixed
 - **Windows: a helper that security software removed no longer fails silently (#120).** When
