@@ -164,3 +164,6 @@ Things a QA reviewer is likely to hit, with the honest answer ready:
 - [ ] EULA reviewed by counsel (open item in SUBMISSION.md)
 - [x] Windows helpers signed (1.6.2, #110): every `.exe` and `.dll` in the package, verified by
       `tools/verify-package.sh`; the listing no longer needs the unsigned disclosure
+- [x] 1.6.2 packed from main `62bbf36` on 2026-09-28: `VizhiCodex_1.6.2.lplug4` sha `84c3db6973d0…`,
+      16 of 16 Windows files signed; DRAFT release `vizhi-codex/v1.6.2` awaits the Windows device pass,
+      then the owner's Publish. Readiness record: [release-vizhi-1.6.2.md](release-vizhi-1.6.2.md)
