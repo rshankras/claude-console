@@ -18,6 +18,14 @@ All notable changes to Claude Console are documented here. Format based on
   input timeout) and the helper stamps every write with its own start time; the plugin sweeps
   those records. Existing Claude Code wiring is upgraded in place on load.
 
+### Changed
+- **Every Windows executable and DLL in the package is now code-signed (#110).** The two
+  helpers, the plugin DLL, `whisper-cli.exe` and the ggml DLLs carry an Authenticode signature
+  from Certum (publisher *Ravi Shankar S*), SHA-256 with an RFC 3161 timestamp, and the package
+  verifier refuses a package with an unsigned or untimestamped Windows file. Logitech QA's
+  CrowdStrike had quarantined the unsigned hook helper; a signed publisher can be allow-listed
+  once. Signing happens on the Mac at pack time through Certum's SimplySign cloud certificate.
+
 ## [2.3.1] — 2026-09-24
 
 ### Fixed
