@@ -77,10 +77,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 return this.Outcome;
             }
 
+            /// <summary>When set, a focus request blocks until this is signalled — a stand-in for the 1.3–1.8 s Windows focus helper (#112).</summary>
+            public System.Threading.ManualResetEventSlim FocusRelease { get; set; }
+
             public void FocusSession(String sessionId) => this.Focused.Add(sessionId);
             public Boolean TryFocusSession(String sessionId)
             {
                 this.FocusSession(sessionId);
+                this.FocusRelease?.Wait(10_000);
                 return this.FocusSucceeds;
             }
             public void Navigate(TerminalAction action) => this.Navigations.Add(action);

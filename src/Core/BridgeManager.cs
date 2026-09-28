@@ -987,6 +987,55 @@ namespace Loupedeck.ClaudeConsolePlugin
             PluginLog.Info($"BridgeManager: pinned slot {slot} -> {session.SessionKey} ({session.Project})");
         }
 
+        // #112: on Windows the focus helper takes 1.3–1.8 s, past the SDK's 1,000 ms action budget,
+        // so the service logged "Action timed out" and "action failed" for a pin that had worked
+        // (Logitech, 1.6.1 retest item 5). The press now returns at once and the selection lands
+        // on a background task. One selection at a time: a second press while one is in flight is
+        // dropped, not queued — the focus helper serialises anyway, and a queue would pin
+        // whichever session finished last rather than the one the user meant.
+        private Int32 _selectingSlot;
+
+        /// <summary>The slot whose selection is in flight, or 0. Painted as "Selecting" by the slot key.</summary>
+        internal Int32 SelectingSlot => Volatile.Read(ref _selectingSlot);
+
+        /// <summary>
+        /// Start <see cref="SelectSlot"/> off the calling thread. Returns whether a selection was
+        /// started; <paramref name="completed"/> runs afterwards whatever the outcome, so the key
+        /// can repaint. An empty slot or a press during another selection starts nothing.
+        /// </summary>
+        internal Boolean BeginSelectSlot(Int32 slot, Action completed)
+        {
+            if (slot < 1 || slot > this.SessionSlotCount || Grid.SlotSession(slot) == null)
+            {
+                return false;
+            }
+
+            if (Interlocked.CompareExchange(ref _selectingSlot, slot, 0) != 0)
+            {
+                PluginLog.Info($"BridgeManager: slot {slot} pressed while slot {this.SelectingSlot} is still being selected — ignored");
+                return false;
+            }
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    this.SelectSlot(slot);
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, $"BridgeManager: selecting slot {slot} failed");
+                }
+                finally
+                {
+                    Volatile.Write(ref _selectingSlot, 0);
+                    try { completed?.Invoke(); }
+                    catch (Exception ex) { PluginLog.Verbose(ex, "BridgeManager: slot repaint after selection failed"); }
+                }
+            });
+            return true;
+        }
+
         // Drop the pin and go back to following the frontmost tab. Called when the pinned session
         // exits, and when we deliberately start a session somewhere else (voice "go to project").
         private void ClearPin()

@@ -15,6 +15,13 @@ All notable changes to Claude Console are documented here. Format based on
   had failed. The floor now latches to the earlier of the file time and the moment the file was
   first seen, and a future-dated latch survives a plugin restart. Found in review on the release
   day, before any QA run; not visible on the owner's laptop, which shares the packing Mac's zone.
+- **Windows: pressing a session key no longer reports "action failed" for a pin that worked
+  (#112).** The press ran the tab-focus helper inside the SDK's 1,000 ms action budget; the
+  helper takes 1.3 to 1.8 s, so the service logged a timeout and a failure while the pin went
+  through. The selection now runs off the action thread: the key reads **Selecting** until the
+  tab is focused, then the pin and the other keys' target change as before. A second session
+  key pressed during that second is ignored rather than queued, so the keypad never pins a
+  session you did not mean.
 
 ## [2.3.2] — 2026-09-28
 
@@ -113,6 +120,10 @@ blue and its relabelled keys stay with Vizhi.
   whatever payload arrived when Codex leaves stdin open, instead of dropping the event.
   **Because the command changed, Codex asks you to trust the Vizhi hooks once more in
   `/hooks` after this update**; the keys read **Run /hooks** until you do.
+- **Windows: pressing a session key no longer reports "action failed" for a pin that worked
+  (#112, QA item 5).** Same change as Claude Console's entry above: the focus helper runs off
+  the action thread, the key reads **Selecting** meanwhile, and a second press during that
+  second is ignored rather than queued.
 
 ## Vizhi for Codex [1.6.1] — 2026-09-15
 
