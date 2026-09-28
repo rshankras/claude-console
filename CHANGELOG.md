@@ -108,7 +108,7 @@ blue and its relabelled keys stay with Vizhi.
 - The voice helper's microphone permission string no longer names a single product. It reaches
   an installed helper only when the helper is re-signed.
 
-## Vizhi for Codex [Unreleased]
+## Vizhi for Codex [1.6.2] — unreleased
 
 ### Fixed
 - **Windows: a helper dated in the future no longer reads as Run /hooks after install (#125).**
