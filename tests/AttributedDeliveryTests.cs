@@ -169,4 +169,83 @@ public sealed class AttributedDeliveryTests : IDisposable
         Assert.False(bridge.RegisterAttributedDeliveries());
         Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, health.Status);
     }
+
+    // --- PR #133 review: the re-key path itself, from shared.json -------------------------------
+
+    private void SharedEnvelope(string kind, DateTime written, string cwd, bool withPayload = true)
+    {
+        var record = new Dictionary<string, object>
+        {
+            ["schema"] = 1, ["agent"] = "codex-cli", ["event"] = kind,
+            ["ts"] = new DateTimeOffset(written).ToUnixTimeSeconds(),
+            ["hookStartedUtcTicks"] = written.Ticks,
+            ["payload"] = withPayload
+                ? new { session_id = "01a0e888", cwd, tool_name = "Bash", tool_input = new { command = "echo test" } }
+                : null,
+        };
+        var path = Path.Combine(Sessions, "shared.json");
+        File.WriteAllText(path, JsonSerializer.Serialize(record));
+        File.SetLastWriteTimeUtc(path, written);
+    }
+
+    private (BridgeManager Bridge, PlatformSeamTests.FakePlatformBridge Platform, WindowsHookHealth Health, SessionRegistry Grid) RoutedRig(DateTime sessionStarted)
+    {
+        var agent = new CodexCliAdapter();
+        var grid = new SessionRegistry(Sessions, Activity, Path.Combine(root, "registry.json"))
+        {
+            Agent = agent,
+            DiscoveredProjectDirs = new Dictionary<string, string> { [Session] = @"C:\work\alert", [Other] = @"C:\work\console" },
+            DiscoveredSessionStarts = new Dictionary<string, DateTime> { [Session] = sessionStarted, [Other] = now.AddHours(-3) },
+        };
+        grid.Refresh(live);
+        var platform = new PlatformSeamTests.FakePlatformBridge();
+        var health = new WindowsHookHealth(Helper, root, "codex-console", () => now);
+        var bridge = new BridgeManager(platform) { Agent = agent, Grid = grid, HookHealth = health };
+        bridge.RefreshHelperHealth();
+        bridge.SelectSlot(grid.SlotSession(1).SessionKey == Session ? 1 : 2);
+        return (bridge, platform, health, grid);
+    }
+
+    [Fact]
+    public void A_shared_approval_re_keyed_by_folder_is_answered_on_its_own_terminal()
+    {
+        SharedEnvelope("PermissionRequest", now.AddSeconds(-10), @"C:\work\alert");
+        var (bridge, platform, health, grid) = RoutedRig(sessionStarted: now.AddMinutes(-5));
+
+        Assert.Equal("Bash", grid.Sessions[Session].PendingTool);   // routed by the registry, not by the fixture
+        Assert.True(bridge.RegisterAttributedDeliveries());
+        Assert.True(bridge.IsSessionObservationCurrent(Session));
+        AnswerCommand.AnswerApproval(bridge, true);
+        Assert.Equal((Session, KeyStroke.Return), Assert.Single(platform.Keys));
+    }
+
+    [Fact]
+    public void A_stale_shared_approval_is_not_handed_to_a_terminal_that_opened_after_it()
+    {
+        // Session A asked, was answered in its terminal and closed; its PermissionRequest is still the
+        // last thing in shared.json. A new terminal opens in the same folder five minutes later.
+        SharedEnvelope("PermissionRequest", now.AddMinutes(-6), @"C:\work\alert");
+        var (bridge, platform, health, grid) = RoutedRig(sessionStarted: now.AddMinutes(-1));
+
+        Assert.Null(grid.Sessions[Session].PendingTool);
+        Assert.False(File.Exists(Path.Combine(Sessions, Session + ".json")));
+        Assert.False(bridge.RegisterAttributedDeliveries());
+        AnswerCommand.AnswerApproval(bridge, true);
+        Assert.Empty(platform.Keys);
+    }
+
+    [Fact]
+    public void An_envelope_whose_payload_never_arrived_earns_no_receipt()
+    {
+        Envelope(Other, "Stop", now.AddMinutes(-1));
+        var (bridge, _, health) = Rig();
+        var path = Path.Combine(Sessions, Session + ".json");
+        File.WriteAllText(path, $$"""{"schema":1,"agent":"codex-cli","event":"PermissionRequest","ts":1,"hookStartedUtcTicks":{{now.AddSeconds(-3).Ticks}},"payload":null}""");
+        File.SetLastWriteTimeUtc(path, now.AddSeconds(-3));
+        bridge.Grid.Refresh(live);
+
+        bridge.RegisterAttributedDeliveries();   // Other's complete envelope may register; this one must not
+        Assert.False(File.Exists(Path.Combine(health.HealthDirectory, "success-" + Session + ".json")));
+        Assert.False(bridge.IsSessionObservationCurrent(Session));
+    }
 }
