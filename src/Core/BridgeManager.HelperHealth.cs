@@ -2,6 +2,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 {
     using System;
     using System.IO;
+    using System.Linq;
     using System.Text.Json;
 
     using Loupedeck.ClaudeConsolePlugin.Platform;
@@ -119,6 +120,55 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal Boolean IsSessionObservationCurrent(String sessionKey) =>
             _hookHealth == null || (this.HookHealthApplies &&
                 !this.HookHelperUnavailable && _hookHealth.IsSessionObservationCurrent(sessionKey));
+
+        /// <summary>
+        /// Give every session whose state is a helper-stamped hook envelope a receipt (#131). Only
+        /// for an agent whose hooks may report another terminal: there the helper cannot key the
+        /// session and never writes one, so the registry's attribution (#129) is the only thing
+        /// that says whose delivery it was. Rollout-derived state is not helper execution and is
+        /// skipped. Runs after each grid refresh; idempotent, and a no-op off Windows.
+        /// </summary>
+        internal Boolean RegisterAttributedDeliveries()
+        {
+            if (_hookHealth == null || this.Agent?.Capabilities.HooksMayReportAnotherTerminal != true)
+            {
+                return false;
+            }
+
+            var changed = false;
+            foreach (var session in Grid.Sessions.Values.ToList())
+            {
+                var delivery = HookDelivery(session.StateSourceRaw);
+                if (delivery.HasValue && _hookHealth.NoteDelivery(session.SessionKey, delivery.Value.StartedUtcTicks, delivery.Value.Event))
+                {
+                    changed = true;
+                    PluginLog.Info($"Windows hook: {delivery.Value.Event} for {session.SessionKey} arrived through the shared daemon — recorded as that session's delivery");
+                }
+            }
+
+            if (changed) { this.RefreshHelperHealth(); }
+            return changed;
+        }
+
+        // The helper's stamp on a hook-transport envelope; null for rollout state or anything unstamped.
+        private static (Int64 StartedUtcTicks, String Event)? HookDelivery(String raw)
+        {
+            if (String.IsNullOrEmpty(raw)) { return null; }
+            try
+            {
+                using var json = JsonDocument.Parse(raw);
+                var record = json.RootElement;
+                if (record.ValueKind != JsonValueKind.Object) { return null; }
+                var transport = record.TryGetProperty("transport", out var source) && source.ValueKind == JsonValueKind.String
+                    ? source.GetString() : null;
+                if (!String.IsNullOrEmpty(transport) && transport != "hook") { return null; }
+                if (!record.TryGetProperty("hookStartedUtcTicks", out var started) || started.ValueKind != JsonValueKind.Number ||
+                    !started.TryGetInt64(out var ticks) || ticks <= 0) { return null; }
+                var evt = record.TryGetProperty("event", out var name) && name.ValueKind == JsonValueKind.String ? name.GetString() : null;
+                return (ticks, String.IsNullOrWhiteSpace(evt) ? "hook" : evt);
+            }
+            catch { return null; }
+        }
 
         private String CurrentObservationFile(String path, String sessionKey)
         {

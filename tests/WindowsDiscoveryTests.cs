@@ -80,11 +80,53 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData("--sandbox workspace-write", true)]
         [InlineData("\"sandbox project needs fixing\"", true)]
         [InlineData("resume sandbox", true)]
+        // #132: the shared app-server daemon and its sibling, captured on 0.157.1.
+        [InlineData("app-server --listen unix:// --managed-daemon", false)]
+        [InlineData("app-server daemon pid-update-loop", false)]
+        [InlineData("\"app-server\" --listen unix://", false)]
+        [InlineData("\"fix the app-server\"", true)]
+        [InlineData("resume app-server", true)]
         public void Codex_sandbox_workers_are_not_interactive_sessions(String arguments, Boolean expected)
         {
             var process = Proc(16916, "codex.exe",
                 "\"C:\\Users\\Test User\\AppData\\Local\\OpenAI\\Codex\\bin\\version\\codex.exe\" " + arguments);
             Assert.Equal(expected, WindowsProcessWatcher.IsAgentSession(process, AgentProcessMatcher.CodexCli));
+        }
+
+        /// <summary>
+        /// #132, from the 1.6.2 laptop pass (28 Sep): registry.json held the two daemon processes in
+        /// slots 1 and 2 and the one real terminal in slot 3. Their parent (20644) had exited, so
+        /// the child-of-a-candidate rule could not drop them.
+        /// </summary>
+        [Fact]
+        public void The_app_server_daemon_and_its_sibling_are_not_sessions_even_when_orphaned()
+        {
+            const String daemonExe = "\"\\\\?\\C:\\Users\\Ravi Shankar\\.codex\\packages\\app-server-daemon\\releases\\0.157.1-x86_64-pc-windows-msvc\\bin\\codex.exe\"";
+            var daemon = Proc(14960, "codex.exe", daemonExe + " app-server --listen unix:// --managed-daemon", 20644);
+            var sibling = Proc(6124, "codex.exe", daemonExe + " app-server daemon pid-update-loop", 20644);
+            var terminal = Proc(4852, "codex.exe", "\"C:\\Users\\Ravi Shankar\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe\"", 19836);
+
+            // The daemon's plugin runtime: node.exe under Codex App's runtimes running a script out
+            // of ~/.codex/plugins/cache. It runs in the session's folder, so once the daemon pair
+            // was excluded it took slot 1 and the daemon routing attributed the session's events to it.
+            var pluginHost = Proc(26804, "node.exe",
+                "\"C:\\Users\\Ravi Shankar\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\b474a88d5d105afa\\bin\\node.exe\" " +
+                "\"C:\\Users\\Ravi Shankar\\.codex\\plugins\\cache\\openai-bundled\\unified-computer-use\\26.901.51231\\scripts\\launch.mjs\"", 14960);
+            var repl = Proc(27680, "node_repl.exe",
+                "\"C:\\Users\\Ravi Shankar\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\b474a88d5d105afa\\bin\\node_repl.exe\"", 14960);
+
+            var sessions = WindowsProcessWatcher.SessionsFrom(new[] { daemon, sibling, pluginHost, repl, terminal }, AgentProcessMatcher.CodexCli);
+
+            Assert.Equal(new[] { WindowsProcessWatcher.SessionKeyFor(terminal) }, sessions);
+        }
+
+        [Theory]
+        [InlineData("\"C:\\Users\\me\\AppData\\Local\\OpenAI\\Codex\\runtimes\\cua_node\\abc\\bin\\node.exe\" \"C:\\Users\\me\\.codex\\plugins\\cache\\openai-bundled\\x\\scripts\\launch.mjs\"", false)]
+        [InlineData("\"C:/Users/me/AppData/Local/OpenAI/Codex/runtimes/cua_node/abc/bin/node.exe\" C:/Users/me/.codex/plugins/cache/x/launch.mjs", false)]
+        [InlineData("\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js\"", true)]
+        public void Codex_apps_plugin_runtime_is_not_a_session_but_an_npm_cli_still_is(String commandLine, Boolean expected)
+        {
+            Assert.Equal(expected, WindowsProcessWatcher.IsAgentSession(Proc(1, "node.exe", commandLine), AgentProcessMatcher.CodexCli));
         }
 
         [Fact]

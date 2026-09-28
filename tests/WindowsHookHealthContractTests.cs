@@ -234,6 +234,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // The exe's own bounded read exists because Codex can leave the pipe without EOF. A
             // launcher that waited for EOF and then skipped the helper would lose the EVENT; this
             // one takes the bytes that arrived, notes the timeout, and runs the helper anyway.
+            // Warm the copied binary first: the first launch of a freshly copied exe pays an
+            // antivirus scan, and on the laptop that alone pushed one run to 5.55 s. The 1.5 s
+            // stdin wait plus PowerShell and the helper is what the 5 s budget measures.
+            this.LaunchDirect("{}", false, "codex", "SessionStart");
             var run = this.LaunchLauncher(CodexLauncher(_hook, "Stop"), "{\"session_id\":\"held-open\"}", holdStdin: true);
             Assert.Equal(0, run.ExitCode);
             Assert.True(run.Elapsed < TimeSpan.FromSeconds(5), $"launcher took {run.Elapsed.TotalSeconds:F2}s against Codex's 5 s deadline");

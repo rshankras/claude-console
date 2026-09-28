@@ -54,6 +54,16 @@ this installation healthy.
   `startedUtcTicks`, and `completedUtcTicks`. The helper captures start time immediately after
   arming its watchdog and writes the record only after successful keyed state/pending writes.
   Shared fallback writes and an invocation log are not recovery evidence.
+  **The plugin writes the same record (with `attributedBy: "plugin"`) for a hook envelope the
+  registry attributed to a session (#131).** Under Codex's app-server daemon the helper's ancestry
+  never reaches the session's `codex.exe`, so it can only write `shared.json` (or the daemon's
+  terminal's file) and never a receipt; the 1.6.2 laptop pass refused every Yes on a delivered
+  approval for that reason. The envelope carries the helper's own `hookStartedUtcTicks`, which is
+  the proof of execution the receipt encoded; the daemon routing (#129) supplies "for this
+  session". `WindowsHookHealth.NoteDelivery` applies the same checks as a read receipt — after the
+  barrier, at or after the latched helper version, not from the future — and rollout-derived
+  state never qualifies. Agents whose hooks key their own session (Claude Code) are left to the
+  helper's receipts.
 - `last-success.json`: `{schema, startedUtcTicks, completedUtcTicks}` of the newest receipt the
   plugin pruned. It is how the plugin remembers that the helper worked after a failure once the
   sessions that proved it are gone; without it every reboot after any past failure would read as

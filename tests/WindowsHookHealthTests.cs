@@ -68,6 +68,66 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(DateTime.MinValue.Ticks, monitor.InvalidatedAtUtc.Ticks);
         }
 
+        // ---- #131: a delivery the plugin attributed counts like a helper-written receipt ----
+
+        [Fact]
+        public void An_attributed_delivery_is_the_sessions_receipt_and_survives_a_restart()
+        {
+            var monitor = this.Monitor();
+            monitor.Refresh();                                          // latches the helper version
+            Assert.True(monitor.NoteDelivery(SessionA, this._now.AddSeconds(-13).Ticks, "PermissionRequest"));
+
+            Assert.Equal(WindowsHookHealthStatus.Healthy, monitor.Status);
+            Assert.True(monitor.IsSessionObservationCurrent(SessionA));
+            Assert.False(monitor.IsSessionObservationCurrent(SessionB));
+            var restarted = this.Monitor();
+            Assert.Equal(WindowsHookHealthStatus.Healthy, restarted.Refresh());
+            Assert.True(restarted.IsSessionObservationCurrent(SessionA));
+            // Same record shape the helper writes, so pruning and the watermark treat it alike.
+            using var json = JsonDocument.Parse(File.ReadAllText(Path.Combine(monitor.HealthDirectory, "success-" + SessionA + ".json")));
+            Assert.Equal(SessionA, json.RootElement.GetProperty("sessionKey").GetString());
+            Assert.Equal(this._now.AddSeconds(-13).Ticks, json.RootElement.GetProperty("startedUtcTicks").GetInt64());
+            Assert.True(json.RootElement.GetProperty("completedUtcTicks").GetInt64() >= json.RootElement.GetProperty("startedUtcTicks").GetInt64());
+        }
+
+        [Fact]
+        public void An_attributed_delivery_is_bound_by_the_same_barriers_as_a_helper_receipt()
+        {
+            var monitor = this.Monitor();
+            Failure(monitor, this._now.AddMinutes(-1));
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+
+            // Stamped before the failure: nothing, still Unavailable.
+            Assert.False(monitor.NoteDelivery(SessionA, this._now.AddMinutes(-2).Ticks, "Stop"));
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+            // From the future, a bad key, no event: nothing.
+            Assert.False(monitor.NoteDelivery(SessionA, this._now.AddMinutes(1).Ticks, "Stop"));
+            Assert.False(monitor.NoteDelivery("shared", this._now.Ticks, "Stop"));
+            Assert.False(monitor.NoteDelivery(SessionA, this._now.Ticks, ""));
+            Assert.Equal(WindowsHookHealthStatus.Unavailable, monitor.Refresh());
+
+            // Stamped after the failure: recovers, exactly as a helper receipt would.
+            Assert.True(monitor.NoteDelivery(SessionA, this._now.AddSeconds(-1).Ticks, "Stop"));
+            Assert.Equal(WindowsHookHealthStatus.Healthy, monitor.Status);
+            // An older stamp than the one held changes nothing; a newer one advances it.
+            Assert.False(monitor.NoteDelivery(SessionA, this._now.AddSeconds(-2).Ticks, "Stop"));
+            Assert.True(monitor.NoteDelivery(SessionA, this._now.Ticks, "PermissionRequest"));
+        }
+
+        [Fact]
+        public void An_attributed_delivery_from_before_a_replaced_helper_does_not_count_for_the_new_one()
+        {
+            var monitor = this.Monitor();
+            monitor.Refresh();
+            this._now = this._now.AddSeconds(2);
+            File.SetLastWriteTimeUtc(this._helper, this._now);   // upgrade lands
+            Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, monitor.Refresh());
+
+            Assert.False(monitor.NoteDelivery(SessionA, this._now.AddSeconds(-1).Ticks, "Stop"));
+            Assert.Equal(WindowsHookHealthStatus.AwaitingFresh, monitor.Refresh());
+            Assert.True(monitor.NoteDelivery(SessionA, this._now.AddSeconds(1).Ticks, "Stop"));
+        }
+
         [Fact]
         public void Successful_delivery_verifies_only_the_session_that_delivered_it()
         {

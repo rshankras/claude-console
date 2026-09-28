@@ -545,6 +545,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
                 Grid.Refresh(liveTtys);
                 if (liveTtys != null) { _hookHealth?.PruneDeadSessions(liveTtys); }
+                this.RegisterAttributedDeliveries();   // #131: receipts for envelopes the registry attributed to a session
 
                 // A second Codex session means an approval can no longer be attributed on its own.
                 // Noted here, where the grid actually changes, rather than while painting a key.
