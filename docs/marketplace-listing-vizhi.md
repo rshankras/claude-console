@@ -2,7 +2,7 @@
 
 Draft text for the Logitech Marketplace submission form
 ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)) for **Vizhi
-for Codex 1.6.1**. Same structure and field limits as Claude Console's
+for Codex 1.6.2** (1.6.1 was the first submission, 2026-09-16). Same structure and field limits as Claude Console's
 [marketplace-listing.md](marketplace-listing.md); process and packaging live in
 [SUBMISSION.md](../SUBMISSION.md).
 
@@ -66,6 +66,26 @@ Coexists with Claude Console.
 
 ## Release notes — limit 1000 characters
 
+### 1.6.2 — 2026-09-28
+
+An update, so written as what changed. No version heading — the page shows the version from the
+package. The portal's markdown has no inline code, so filenames and commands are bold or bare.
+**938 characters** (62 spare):
+
+```markdown
+Signed Windows payload, and fixes from the 1.6.1 review.
+
+- **Every Windows file is code-signed** — helpers, plugin DLL and the offline-voice runtime carry a Certum Authenticode signature (publisher Ravi Shankar S) with a timestamp, so security software can allow the publisher once instead of quarantining the hook.
+- **Blocked instead of silence** — if security software removes or blocks the hook helper, the keys read Blocked and Options+ names the file and what to do. Recovers on the next hook.
+- **Yes/No work right after install** on a PC whose clock sits behind the packing machine's time zone.
+- **Session keys no longer report "action failed"** for a switch that worked; the key reads Selecting while the tab comes to the front.
+- **New Codex opens in your project folder**, never the user profile root.
+
+After updating on Windows, Codex asks you to trust the Vizhi hooks once more: run /hooks. No need to re-import the layout.
+```
+
+### 1.6.1 — as submitted 2026-09-16
+
 First Marketplace release for this product, so written as an introduction rather than a
 changelog. No version heading — the page shows the version from the package. **986 characters**
 (14 spare). The approval line carried a `(macOS)` qualifier until 1.6.1; Codex's Windows hook now
@@ -109,11 +129,18 @@ Things a QA reviewer is likely to hit, with the honest answer ready:
 - **The screenshot picker switches the keypad to its default profile** while the overlay is open,
   so Vizhi's Escape key is off screen. Press Escape on the keyboard: the picker closes and the
   Vizhi profile returns by itself. Known issue, accepted for this release.
-- **The Windows helper executables are unsigned.** Smart App Control or an organization policy can
-  block them, and the symptom is keys that beep while nothing types. A reviewer who hits this on
-  Windows is seeing a code-signing gap, not a broken plugin. macOS is unaffected: the voice helper is
-  Developer ID signed, notarized and stapled, and re-verified after packing. Stated in the GitHub
-  release notes and at <https://vizhi.dev/vizhi-codex/#windows>.
+- **Every Windows executable and DLL is code-signed (1.6.2).** Authenticode from Certum, publisher
+  *Ravi Shankar S*, SHA-256 with an RFC 3161 timestamp; the package verifier refuses an unsigned
+  file. A brand-new certificate can still trip a scanner's reputation check, in which case the
+  keys read **Blocked** and Options+ names the file — that is the scanner, not a broken plugin,
+  and the publisher can be allow-listed once. macOS: the voice helper is Developer ID signed,
+  notarized and stapled, re-verified after packing.
+- **After updating to 1.6.2 on Windows, Codex asks you to trust the hooks again.** The hook
+  command changed once (it now runs through the guarded launcher, #126) and Codex trusts hooks
+  by hash. The keys read **Run /hooks** until you approve; nothing else needs redoing.
+- **A session key reads Selecting for about a second on Windows.** Focusing a Windows Terminal
+  tab takes 1.3–1.8 s, longer than the SDK's action budget, so the switch now runs off the key
+  press (#112). A second session key pressed during that second is ignored, not queued.
 - **Not affiliated with OpenAI.** "Codex" is OpenAI's product; the listing and README both say so.
 
 ## Before submitting — checklist
@@ -135,5 +162,5 @@ Things a QA reviewer is likely to hit, with the honest answer ready:
 - [x] Released and tagged: `vizhi-codex/v1.6.1`, package sha `70e6408ea216…`. Do **not** submit the
       earlier `ef35c7d765ea…` build sitting in the same folder; it predates the help-URL fix
 - [ ] EULA reviewed by counsel (open item in SUBMISSION.md)
-- [ ] Decide how the unsigned Windows helpers are handled: sign them, or submit with the limitation
-      disclosed as above
+- [x] Windows helpers signed (1.6.2, #110): every `.exe` and `.dll` in the package, verified by
+      `tools/verify-package.sh`; the listing no longer needs the unsigned disclosure
