@@ -22,6 +22,13 @@ All notable changes to Claude Console are documented here. Format based on
   tab is focused, then the pin and the other keys' target change as before. A second session
   key pressed during that second is ignored rather than queued, so the keypad never pins a
   session you did not mean.
+- **New Tab, New Claude and New Claude (Window) open where you work (#113).** Since #85 they
+  opened in your home folder, which is not where projects live. They now open in the pinned
+  (or single obvious) session's project folder; with no such session, in the first usable
+  folder listed in `~/.claude/claude-console/project-roots`; and only then in your home folder,
+  with a log line saying why. The profile root and the plugin service's own folder never
+  qualify. On macOS a plain New Tab stays Cmd+T, following Terminal's own "new tabs open in"
+  preference; the two session-starting keys carry a `cd` into the same command.
 
 ## [2.3.2] — 2026-09-28
 
@@ -124,6 +131,13 @@ blue and its relabelled keys stay with Vizhi.
   (#112, QA item 5).** Same change as Claude Console's entry above: the focus helper runs off
   the action thread, the key reads **Selecting** meanwhile, and a second press during that
   second is ignored rather than queued.
+- **New Codex and New Codex (Window) open where you work (#113, QA item 4).** QA found them
+  opening in the user profile root, which Codex then registered as a trusted project. They now
+  open in the pinned (or single obvious) session's project folder; with no such session, in the
+  first usable folder listed in `~/.claude/claude-console/project-roots`; and only then in the
+  home folder, with a log line saying why. The profile root and the plugin service's own folder
+  never qualify. Codex records a trusted-project entry per folder it is started in; the entry
+  1.5.3 left for the Logi service folder can be deleted from `config.toml` by hand.
 
 ## Vizhi for Codex [1.6.1] — 2026-09-15
 

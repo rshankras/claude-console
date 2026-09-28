@@ -183,10 +183,43 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void Starting_a_session_uses_do_script_rather_than_typed_keystrokes(TerminalAction action)
         {
             // `do script` sends the command atomically; per-character keystrokes race the shell.
+            // Since #113 the command is an osascript argument (it may carry a cd), not source.
             var calls = new List<List<String>>();
             WithResult("ok", calls).Navigate(action);
 
-            Assert.Contains("do script \"claude\"", Assert.Single(calls)[1]);
+            var call = Assert.Single(calls);
+            Assert.Contains("do script shellCommand", call[1]);
+            Assert.Equal("claude", call[2]);
+        }
+
+        /// <summary>
+        /// #113: with a directory chosen by the bridge, the agent starts there — as a `cd` in the
+        /// same shell command, quoted the way LaunchClaudeInProject quotes, never typed keystrokes.
+        /// </summary>
+        [Theory]
+        [InlineData(TerminalAction.NewClaudeTab)]
+        [InlineData(TerminalAction.NewClaudeWindow)]
+        public void Starting_a_session_in_a_directory_cds_there_first(TerminalAction action)
+        {
+            var calls = new List<List<String>>();
+            WithResult("ok", calls).Navigate(action, "/Users/me/Work/O'Brien's app");
+
+            var call = Assert.Single(calls);
+            Assert.Contains("set shellCommand to item 1 of argv", call[1]);
+            Assert.Equal("cd '/Users/me/Work/O'\"'\"'Brien'\"'\"'s app' && claude", call[2]);
+        }
+
+        [Fact]
+        public void A_plain_new_tab_ignores_the_directory_and_stays_cmd_t()
+        {
+            // Terminal's own "new tabs open in" preference applies; a cd typed into a tab the
+            // user asked to be empty would be noise.
+            var calls = new List<List<String>>();
+            WithResult("ok", calls).Navigate(TerminalAction.NewTab, "/Users/me/Work/app");
+
+            var script = Assert.Single(calls)[1];
+            Assert.Contains("key code 17", script);
+            Assert.DoesNotContain("cd ", script);
         }
 
         /// <summary>
@@ -208,9 +241,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             codex.Navigate(action);
 
-            var script = Assert.Single(calls)[1];
-            Assert.Contains("do script \"codex\"", script);
-            Assert.DoesNotContain("claude", script);
+            var call = Assert.Single(calls);
+            Assert.Contains("do script shellCommand", call[1]);
+            Assert.Equal("codex", call[2]);
+            Assert.DoesNotContain("claude", String.Join(" ", call));
         }
 
         [Fact]

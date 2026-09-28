@@ -87,7 +87,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 this.FocusRelease?.Wait(10_000);
                 return this.FocusSucceeds;
             }
-            public void Navigate(TerminalAction action) => this.Navigations.Add(action);
+            public List<(TerminalAction Action, String Directory)> NavigationTargets { get; } = new();
+            public void Navigate(TerminalAction action, String directory = null)
+            {
+                this.Navigations.Add(action);
+                this.NavigationTargets.Add((action, directory));
+            }
             public void LaunchClaudeInProject(String projectDir) => this.Launches.Add(projectDir);
             public void Alert() => this.Alerts++;
 

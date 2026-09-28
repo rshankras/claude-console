@@ -111,8 +111,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             return true;
         }
 
-        /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
-        void Navigate(TerminalAction action);
+        /// <summary>
+        /// Drive a terminal navigation gesture (new tab, cycle windows, …). For the gestures that
+        /// open a session, <paramref name="directory"/> is where it starts, or null for the
+        /// platform's default (the user's home) — the bridge decides which (#113).
+        /// </summary>
+        void Navigate(TerminalAction action, String directory = null);
 
         /// <summary>
         /// Open a terminal at <paramref name="projectDir"/> and start claude there, reusing an

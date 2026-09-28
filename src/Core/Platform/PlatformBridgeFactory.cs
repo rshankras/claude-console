@@ -63,7 +63,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         public void FocusSession(String sessionKey) => this.Unsupported(nameof(this.FocusSession));
         public Boolean TryFocusSession(String sessionKey) => false;
 
-        public void Navigate(TerminalAction action) => this.Unsupported(nameof(this.Navigate));
+        public void Navigate(TerminalAction action, String directory = null) => this.Unsupported(nameof(this.Navigate));
 
         public void LaunchClaudeInProject(String projectDir) => this.Unsupported(nameof(this.LaunchClaudeInProject));
 

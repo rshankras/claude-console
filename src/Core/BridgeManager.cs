@@ -1168,7 +1168,79 @@ namespace Loupedeck.ClaudeConsolePlugin
         public void Navigate(TerminalAction action)
         {
             this.RefreshHelperHealth();
-            _platform.Navigate(action);
+            var opensSession = action is TerminalAction.NewTab or TerminalAction.NewClaudeTab or TerminalAction.NewClaudeWindow;
+            _platform.Navigate(action, opensSession ? this.NewSessionDirectory() : null);
+        }
+
+        /// <summary>Test seam for the roots file; null means the default under the runtime home.</summary>
+        internal String ProjectRootsFile { get; set; }
+
+        /// <summary>
+        /// Where New Tab, New &lt;agent&gt; and New &lt;agent&gt; (Window) open (#113, QA 1.6.1 item 4).
+        /// Until now: the home folder, since #85 moved them off the plugin service's own
+        /// directory. Neither is where projects live, and Codex trusts whatever folder it is
+        /// started in as a project — QA's config.toml gained the entire user profile as a
+        /// trusted project the second they pressed the key. In order:
+        ///   1. the routed (pinned, or single obvious) session's own project folder — "another
+        ///      session on what I am working on" is the common case;
+        ///   2. the first usable root in the project-roots file (#26) — the user's stated layout;
+        ///   3. null, i.e. the platform's default (home), with a log line saying why.
+        /// The profile root, the plugin service's working directory and the plugin's install
+        /// directory never qualify, whichever step produced them.
+        /// </summary>
+        internal String NewSessionDirectory()
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            var target = this.RoutingTty();
+            if (!String.IsNullOrEmpty(target) && Grid.Sessions.TryGetValue(target, out var session)
+                && IsProjectDirectory(session.ProjectDir, home))
+            {
+                PluginLog.Info($"BridgeManager: new session opens in {session.ProjectDir} (the routed session's folder)");
+                return session.ProjectDir;
+            }
+
+            var rootsFile = this.ProjectRootsFile ?? ProjectDiscovery.DefaultRootsFile(home);
+            foreach (var root in ProjectDiscovery.ReadRootsFile(rootsFile, home))
+            {
+                if (IsProjectDirectory(root, home))
+                {
+                    PluginLog.Info($"BridgeManager: new session opens in {root} (the first configured project root)");
+                    return root;
+                }
+            }
+
+            PluginLog.Info("BridgeManager: new session opens in the home folder — the routed session has no project folder and no configured project root exists (~/.claude/claude-console/project-roots)");
+            return null;
+        }
+
+        private static Boolean IsProjectDirectory(String path, String home)
+        {
+            if (String.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!Directory.Exists(path))
+                {
+                    return false;
+                }
+
+                var candidate = Normalize(path);
+                return candidate != Normalize(home)
+                    && candidate != Normalize(Environment.CurrentDirectory)
+                    && candidate != Normalize(PluginPaths.PluginDirectory);
+            }
+            catch
+            {
+                return false;
+            }
+
+            static String Normalize(String p) => String.IsNullOrWhiteSpace(p)
+                ? ""
+                : Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToUpperInvariant();
         }
 
         /// <summary>
