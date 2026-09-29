@@ -244,6 +244,18 @@ if [ "$SHIPS_DESKTOP" = "1" ]; then
   rm -rf "$PKG_DESKTOP"
   mkdir -p "$PKG_DESKTOP"
   bash "$ROOT/tools/desktop/build.sh" --no-install --output "$PKG_DESKTOP/VizhiAxBridge"
+  # A release build (Developer ID, not ad-hoc "-") is notarized too, like the voice helper, so
+  # Gatekeeper accepts it on other Macs. A bare Mach-O cannot be stapled; the ticket is checked
+  # online on first launch.
+  if [ "${SIGN_IDENTITY:--}" != "-" ]; then
+    echo ">>> notarizing desktop AX helper (can take a few minutes)"
+    NOTARY_ZIP="$(mktemp -d)/VizhiAxBridge.zip"
+    ditto -c -k "$PKG_DESKTOP/VizhiAxBridge" "$NOTARY_ZIP"
+    xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "${NOTARY_PROFILE:-claude-console-notary}" --wait \
+      | tee /dev/stderr | grep -q "status: Accepted" \
+      || { echo "error: desktop AX helper was not accepted by the notary service" >&2; exit 1; }
+    rm -f "$NOTARY_ZIP"
+  fi
 else
   rm -rf "$PKG_DESKTOP"
 fi

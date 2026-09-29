@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
-    <plugin displayName="Vizhi Desktop" homepage="https://github.com/rshankras/claude-console" />
+    <plugin displayName="Vizhi Desktop" homepage="https://vizhi.dev/vizhi-desktop/" />
     <aliases />
     <modes>
         <mode name="Main" />

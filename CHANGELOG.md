@@ -1,3 +1,16 @@
+## Vizhi Desktop [1.0.0] — 2026-09-29
+
+First release. Keypad controls for the ChatGPT desktop app on macOS, in both ChatGPT and Codex modes, on the Logitech MX Creative Keypad.
+
+- **Home:** your three most recent chats as live cards; New Chat; Deny and Approve (red and green, where Claude Console and Vizhi for Codex put No and Yes; press twice; "Allow once" only); Screenshot, Dictate and Send/Stop.
+- **Tools:** mode switch, All Chats, Find Chat (View Changes in Codex), Attach Files, Paste into Chat, Copy Reply, Voice Chat, Prompts (ChatGPT) or Tasks (Codex), and More.
+- **Voice** runs offline with the same small speech model as the other Vizhi plugins, downloaded once on first use.
+- The layout installs itself as the Vizhi Home profile for the ChatGPT app; updates only change pages you haven't customised, with a backup.
+- macOS only (Apple Silicon). The Accessibility helper is Developer-ID signed and notarized.
+- Package metadata now points to the EULA and vizhi.dev.
+
+The 0.17.x entries below are the preview builds that led to this release.
+
 ## Vizhi Desktop 0.17.24 — A shorter ChatGPT More
 
 - ChatGPT's More now holds Projects and Continue (plus Clear Added once something is added). Schedule and Scheduled are removed from the default menu for this release: Schedule depends on ChatGPT creating a scheduled task from a chat message, not confirmed on the owner's setup, and Scheduled opens a screen that needs a mouse and leaves no chat to write into. Both stay assignable in Options+. Codex's More is unchanged.
