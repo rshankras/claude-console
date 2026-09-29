@@ -2,6 +2,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
     using System.IO;
+    using System.Linq;
 
     using Xunit;
 
@@ -83,12 +84,42 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("CleanTranscript", source);
         }
 
+        [Fact]
+        // Desktop ships no Windows payload yet: its UI Automation helper is framework-dependent,
+        // and every Windows helper has had to bundle its runtime since #83. The packer says so with
+        // a gate, the verifier reads the same fact off the package yaml (pluginFolderWin), and
+        // neither ships an exe that would fail on a clean install. Voice on Windows, for the
+        // products that do ship it, is a verb of the one self-contained toolkit — never a
+        // standalone voice exe, which the branch this test came from still listed.
+        public void Desktop_ships_no_Windows_payload_and_the_toolkit_carries_voice_for_those_that_do()
+        {
+            var builder = ReadRepoFile("tools", "windows", "build-windows-payload.sh");
+            var packer = ReadRepoFile("tools", "voice", "pack-release.sh");
+            var verifier = ReadRepoFile("tools", "verify-package.sh");
+
+            Assert.Contains("ClaudeConsole|VizhiCodex) SHIPS_WINDOWS=1", packer);
+            Assert.Contains("VizhiDesktop) SHIPS_DESKTOP=1", packer);
+            Assert.Contains("desktop/VizhiAxBridge", packer);
+            Assert.Contains("pluginFolderWin", verifier);
+            Assert.DoesNotContain("PROJECTS=(VizhiDesktopUia", builder);
+
+            Assert.Contains("for proj in ClaudeConsoleHook ClaudeConsoleTools", builder);
+            Assert.Contains("SelfContained", builder);
+
+            Assert.Contains("WINDOWS_WHISPER_DIR", packer);
+            Assert.Contains("$PKG_VOICE/whisper-bin-win", packer);
+            Assert.Contains("$WIN_WBIN/whisper-cli.exe", packer);
+        }
+
         private static String ReadHelperSource()
+            => ReadRepoFile("tools", "windows", "ClaudeConsoleVoice", "Program.cs");
+
+        private static String ReadRepoFile(params String[] parts)
         {
             var dir = AppContext.BaseDirectory;
             for (var i = 0; i < 8 && dir != null; i++)
             {
-                var candidate = Path.Combine(dir, "tools", "windows", "ClaudeConsoleVoice", "Program.cs");
+                var candidate = Path.Combine(new[] { dir }.Concat(parts).ToArray());
                 if (File.Exists(candidate))
                 {
                     return File.ReadAllText(candidate);

@@ -69,7 +69,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             var session = _bridge.Grid.SlotSession(slot);
             if (session == null)
             {
-                PluginLog.Info($"SessionSlotCommand: slot {slot} is empty — ignoring");
                 return;   // empty key is inert; nothing to focus
             }
 

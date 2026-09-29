@@ -1,0 +1,19 @@
+[
+  {
+    "id": "review_pr",
+    "label": "Review PR",
+    "icon": "review",
+    "submit": false,
+    "input": "voice",
+    "prompt": "Your request:\n{brief}\n\nReview PR task:\nReview the identified pull request; ask if its identifier is unclear. Check correctness, edge cases, and security. Give file:line and a concrete failure scenario for each finding, then recommend merge or changes. Do not edit files.",
+    "scope": "BRIEF"
+  },
+  {
+    "id": "write_tests",
+    "label": "Write Tests",
+    "icon": "write_tests",
+    "prompt": "Write tests for the most recent changes — the uncommitted diff if there is one, otherwise the last commit. Use the project's test framework and conventions, cover the happy path, edge cases, and failure modes, then run the suite and fix any failures.",
+    "scope": "DIFF",
+    "submit": false
+  }
+]

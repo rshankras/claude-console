@@ -35,6 +35,12 @@
          so the package cannot carry code for an agent it doesn't ship — enforced by the compiler
          rather than by remembering. -->
     <Compile Include="..\..\Core\**\*.cs" />
+    <!-- The desktop surface belongs to Vizhi Desktop alone. The SDK auto-discovers every
+         PluginDynamicCommand in the assembly, so compiling these in would grow this terminal
+         product a set of GUI-app keys pointing at an app it does not drive. Exact mirror of
+         VizhiDesktop's Remove of Core\Actions. -->
+    <Compile Remove="..\..\Core\Desktop\**\*.cs" />
+    <Compile Remove="..\..\Core\DesktopActions\**\*.cs" />
     <Compile Include="..\..\Agents\ClaudeCode\**\*.cs" />
   </ItemGroup>
 

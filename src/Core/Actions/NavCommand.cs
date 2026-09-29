@@ -92,8 +92,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     bridge.Navigate(TerminalAction.PreviousWindow);
                     break;
             }
-
-            PluginLog.Info($"NavCommand: {actionParameter}");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)

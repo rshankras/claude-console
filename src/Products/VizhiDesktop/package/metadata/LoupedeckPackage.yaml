@@ -1,0 +1,76 @@
+# ==================================================================================================
+# GENERAL SETTINGS
+# ==================================================================================================
+
+# Package type. Must be plugin4 for plugins.
+type: plugin4
+
+# Name that identifies the plugin.
+name: VizhiDesktop
+
+# Plugin name that is shown to the user.
+displayName: Vizhi Desktop
+
+# Short description of the plugin.
+description: Mode-aware physical controls for the ChatGPT / Codex desktop app on the MX Creative Keypad. Approve from the keypad. Never lose focus.
+
+# Name of the plugin library file.
+pluginFileName: VizhiDesktopPlugin.dll
+
+# Plugin version.
+version: 1.0.0
+
+# Author of the plugin. The author can be a company or an individual developer.
+author: S.Ravi Shankar
+
+# Copyright information.
+copyright: Copyright © 2026 S.Ravi Shankar. All rights reserved.
+
+
+# ==================================================================================================
+# PLUGIN PROPERTIES
+# ==================================================================================================
+
+# Location of plugin files on macOS (relative to the plugin base directory).
+# This parameter is required to support Mac.
+pluginFolderMac: bin
+
+# List of devices the plugin is optimized for.
+supportedDevices:
+    # LogitechCreativeFamily covers the MX Creative Console devices:
+    # MX Creative Keypad (the 9 LCD keys) and MX Creative Dialpad (the dial/ring).
+    - LogitechCreativeFamily
+
+# List of plugin capabilities.
+pluginCapabilities:
+    # Application plugin, associated with the OpenAI desktop app (VizhiDesktopApplication,
+    # bundle com.openai.codex). Required for the auto-imported default profile in
+    # profiles/DefaultProfile70.lp5. NOTE: enabling this with an EMPTY bundle name in the
+    # application class crashes the service's association machinery and trips the crash-disable
+    # marker — the class must name a real application.
+    - HasApplication
+
+# Minimum Loupedeck version supported by the plugin.
+# 6.4 = first Logi Plugin Service on the .NET 10 runtime; this net10.0-built DLL
+# will not load on the older .NET 8-based services.
+minimumLoupedeckVersion: 6.4
+
+
+# ==================================================================================================
+# LOUPEDECK MARKETPLACE SETTINGS
+# ==================================================================================================
+
+# Name of the license that the plugin is licensed under. Select the one that you prefer.
+# NOTE: GPL license is not compatible with Loupedeck Marketplace.
+license: Proprietary
+
+# URL of the plugin license.
+licenseUrl: https://vizhi.dev/eula/
+
+# URL of the support page where the users can send improvement suggestions and report bugs.
+# The URL is shown in Loupedeck Marketplace. The page can be for example a GitHub issues page.
+# NOTE: This setting is recommended when publishing the plugin in Loupedeck Marketplace.
+supportPageUrl: https://vizhi.dev/faq/
+
+# URL of the plugin homepage. The URL is shown in Loupedeck Marketplace.
+homePageUrl: https://vizhi.dev/vizhi-desktop/

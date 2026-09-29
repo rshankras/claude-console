@@ -28,7 +28,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             {
                 _bridge.SendPrompt(command);
             }
-            PluginLog.Info("ModelCycleCommand: opened /model picker");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>

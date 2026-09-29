@@ -1,6 +1,7 @@
 namespace Loupedeck.ClaudeConsolePlugin.Tests
 {
     using System;
+    using System.Collections.Generic;
     using System.IO;
 
     using Xunit;
@@ -208,6 +209,98 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void LongestCommonSubstringLength_measures_the_longest_run(String a, String b, Int32 expected)
         {
             Assert.Equal(expected, BridgeManager.LongestCommonSubstringLength(a, b));
+        }
+
+        // -------------------------------------------------------------------------------------
+        // Voice runtime/capture ownership — every voice key shares the same IPC files.
+        // -------------------------------------------------------------------------------------
+
+        // -------------------------------------------------------------------------------------
+        // The transcript sink — a product's voice keys aimed at something that is not a terminal.
+        // The engine still owns delivery failures, so they reach the key like every other (#18).
+        // -------------------------------------------------------------------------------------
+
+        [Fact]
+        public void A_desktop_capture_with_no_sink_installed_says_No_target_on_its_key()
+        {
+            var platform = new PlatformSeamTests.FakePlatformBridge();
+            var bridge = new BridgeManager(platform);
+            var failures = new List<(VoiceIntent Intent, String Text)>();
+            bridge.OnVoiceFailed += (intent, text) => failures.Add((intent, text));
+
+            bridge.DeliverToSink("hello", submit: true);
+
+            Assert.Equal((VoiceIntent.Desktop, VoiceFailure.NoTarget), Assert.Single(failures));
+            Assert.Equal(1, platform.Alerts);
+        }
+
+        [Fact]
+        public void The_sink_gets_the_words_and_the_submit_flag_and_only_a_refusal_reaches_the_key()
+        {
+            var platform = new PlatformSeamTests.FakePlatformBridge();
+            var bridge = new BridgeManager(platform);
+            var failures = new List<(VoiceIntent Intent, String Text)>();
+            bridge.OnVoiceFailed += (intent, text) => failures.Add((intent, text));
+            var delivered = new List<(String Text, Boolean Submit)>();
+            bridge.TranscriptSink = (text, submit) =>
+            {
+                delivered.Add((text, submit));
+                return text == "bad" ? "composer hidden" : null;
+            };
+
+            bridge.DeliverToSink("draft me", submit: false);
+            bridge.DeliverToSink("bad", submit: true);
+
+            Assert.Equal(new[] { ("draft me", false), ("bad", true) }, delivered);
+            Assert.Equal((VoiceIntent.Desktop, VoiceFailure.NotTyped), Assert.Single(failures));
+            Assert.Equal(1, platform.Alerts);
+        }
+
+        [Fact]
+        public void A_sink_that_throws_is_a_Not_typed_failure_not_a_crash()
+        {
+            var platform = new PlatformSeamTests.FakePlatformBridge();
+            var bridge = new BridgeManager(platform);
+            var failures = new List<(VoiceIntent Intent, String Text)>();
+            bridge.OnVoiceFailed += (intent, text) => failures.Add((intent, text));
+            bridge.TranscriptSink = (_, _) => throw new InvalidOperationException("boom");
+
+            bridge.DeliverToSink("x", submit: false);
+
+            Assert.Equal((VoiceIntent.DesktopDraft, VoiceFailure.NotTyped), Assert.Single(failures));
+        }
+
+        [Fact]
+        public void Voice_runtime_match_requires_every_packaged_file_at_the_same_length()
+        {
+            var package = Path.Combine(_root, "package");
+            var runtime = Path.Combine(_root, "runtime");
+            Directory.CreateDirectory(Path.Combine(package, "backends"));
+            Directory.CreateDirectory(Path.Combine(runtime, "backends"));
+            File.WriteAllText(Path.Combine(package, "whisper-cli"), "cli-v2");
+            File.WriteAllText(Path.Combine(package, "backends", "libggml.dylib"), "backend");
+            File.WriteAllText(Path.Combine(runtime, "whisper-cli"), "cli-v2");
+
+            Assert.False(BridgeManager.RuntimeTreeMatchesPackage(package, runtime));
+
+            File.WriteAllText(Path.Combine(runtime, "backends", "libggml.dylib"), "backend");
+            Assert.True(BridgeManager.RuntimeTreeMatchesPackage(package, runtime));
+
+            // Same length, different content: catches a stale CLI whose broken linkage changed
+            // without changing the executable size.
+            File.WriteAllText(Path.Combine(runtime, "whisper-cli"), "old-v2");
+            Assert.False(BridgeManager.RuntimeTreeMatchesPackage(package, runtime));
+        }
+
+        [Fact]
+        public void Empty_voice_package_is_never_considered_a_valid_runtime()
+        {
+            var package = Path.Combine(_root, "empty-package");
+            var runtime = Path.Combine(_root, "empty-runtime");
+            Directory.CreateDirectory(package);
+            Directory.CreateDirectory(runtime);
+
+            Assert.False(BridgeManager.RuntimeTreeMatchesPackage(package, runtime));
         }
     }
 }

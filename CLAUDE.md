@@ -32,6 +32,12 @@ DOTNET_ROLL_FORWARD=LatestMajor bash tools/voice/pack-release.sh <ver> <Product>
 - **`dotnet build` mutates your live Logi install.** It writes a dev `.link` and reloads
   LogiPluginService. Use `-t:Compile` to check compilation, or `-p:SkipPluginLink=true` for a
   full build that leaves the installed plugin alone.
+- **`-t:Compile` can poison the next real build.** It shares `obj/` with a full build, and a
+  full build that follows it may reuse an output with **no embedded resources** — the plugin
+  loads, every key renders as bare text, and the log says `Could not find file 'icons.*.png'`.
+  It reads exactly like a broken plugin, not a stale build. A resource-less product DLL is
+  ~140 KB against ~1 MB with icons, so `ls -la` the DLL before debugging anything else; the fix
+  is `rm -rf src/Products/<Product>/obj bin/<Product>` and rebuild. (Cost an hour on 2026-08-25.)
 - **`logiplugintool` needs `DOTNET_ROLL_FORWARD=LatestMajor`** — it targets .NET 8 and the
   default runtime here is 10, so packing fails without it.
 - Never install a package *and* keep a dev `.link`: the service sees the plugin twice, refuses

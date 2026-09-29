@@ -21,6 +21,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         private readonly Action _onFrame;
         private Timer _timer;
         private Int32 _frame;
+        private readonly Object _gate = new();
+        private Int64 _generation;
+        private Int32 _drawing;
+        private Boolean _enabled = true;
 
         public ListeningFace(Action onFrame) => _onFrame = onFrame;
 
@@ -32,23 +36,51 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         public void Start()
         {
-            _frame = 0;
-            _timer?.Dispose();
-            // Wrap the frame index here rather than at the read site so it can never go negative
-            // (an unbounded Int32 counter eventually overflows, and a negative % is negative).
-            _timer = new Timer(
-                _ =>
-                {
-                    _frame = (_frame + 1) % Frames.Length;
-                    _onFrame();
-                },
-                null, FrameMs, FrameMs);
+            lock (_gate)
+            {
+                if (!_enabled) return;
+                _frame = 0;
+                _timer?.Dispose();
+                var generation = ++_generation;
+                _timer = new Timer(_ => DrawFrame(generation), null, FrameMs, Timeout.Infinite);
+            }
+        }
+
+        private void Arm(Int64 generation)
+        {
+            lock (_gate) if (generation == _generation) _timer?.Change(FrameMs, Timeout.Infinite);
+        }
+
+        private void DrawFrame(Int64 generation)
+        {
+            lock (_gate) if (generation != _generation || _timer == null) return;
+            if (Interlocked.Exchange(ref _drawing, 1) != 0) { Arm(generation); return; }
+            try
+            {
+                _frame = (_frame + 1) % Frames.Length;
+                _onFrame();
+            }
+            catch { /* A stopped SDK renderer must not terminate a timer thread. */ }
+            finally { Volatile.Write(ref _drawing, 0); Arm(generation); }
         }
 
         public void Stop()
         {
-            _timer?.Dispose();
-            _timer = null;
+            lock (_gate)
+            {
+                _generation++;
+                _timer?.Dispose();
+                _timer = null;
+            }
+        }
+
+        internal void SetEnabled(Boolean enabled)
+        {
+            lock (_gate)
+            {
+                _enabled = enabled;
+                if (!enabled) Stop();
+            }
         }
 
         public void Dispose() => this.Stop();

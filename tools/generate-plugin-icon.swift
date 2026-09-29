@@ -1,18 +1,24 @@
 // generate-plugin-icon.swift — renders a product's plugin icon (256×256 PNG).
 // A terminal prompt "❯_" on a dark rounded square, optionally with a sparkle.
 //
-// Usage: swift generate-plugin-icon.swift <output.png> [accentHex] [sparkleHex|none]
+// Usage: swift generate-plugin-icon.swift <output.png> [accentHex] [sparkleHex|none] [terminal|window]
 //   Claude Console : accent f59e0b, sparkle fde68a
 //   Vizhi for Codex: accent 4fd1c5, sparkle none
+//   Vizhi Desktop  : accent a78bfa, sparkle none, shape window
 //
 // The sparkle is a deliberate per-product choice, not decoration: it echoes Anthropic's mark, so a
-// product driving a different vendor's agent must not carry it. The shared terminal frame is what
-// makes the family read as one; the accent is what tells the two apart on the app strip.
+// product driving a different vendor's agent must not carry it. The chevron is what makes the
+// family read as one; the accent is what tells them apart on the app strip.
+//
+// The SHAPE says which surface the product drives, and it is not decoration either: a bare prompt
+// means a terminal, a window frame means a desktop app. Putting a TTY prompt on the product that
+// drives a GUI would be the icon telling the same lie the key faces are built to avoid.
 import AppKit
 
 let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "Icon256x256.png"
 let accentHex = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : "f59e0b"
 let sparkleArg = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "fde68a"
+let shape = CommandLine.arguments.count > 4 ? CommandLine.arguments[4].lowercased() : "terminal"
 let size: CGFloat = 256
 
 func hex(_ h: String, _ a: CGFloat = 1) -> NSColor {
@@ -44,21 +50,51 @@ hex("4a4a5e").setStroke(); bg.lineWidth = 2; bg.stroke()
 
 let amber = hex(accentHex)
 
-// --- prompt chevron "❯" (thick stroked polyline, vertex pointing right) ---
-let chev = NSBezierPath()
-chev.move(to: NSPoint(x: 74, y: 172))
-chev.line(to: NSPoint(x: 126, y: 128))
-chev.line(to: NSPoint(x: 74, y: 84))
-chev.lineWidth = 26
-chev.lineCapStyle = .round
-chev.lineJoinStyle = .round
-amber.setStroke()
-chev.stroke()
+// The chevron is the family mark; only its size and placement change with the shape.
+func chevron(tipX: CGFloat, midY: CGFloat, arm: CGFloat, width: CGFloat) -> NSBezierPath {
+    let p = NSBezierPath()
+    p.move(to: NSPoint(x: tipX - arm, y: midY + arm))
+    p.line(to: NSPoint(x: tipX, y: midY))
+    p.line(to: NSPoint(x: tipX - arm, y: midY - arm))
+    p.lineWidth = width
+    p.lineCapStyle = .round
+    p.lineJoinStyle = .round
+    return p
+}
 
-// --- cursor underscore (rounded bar to the right of the chevron) ---
-let cursor = NSBezierPath(roundedRect: NSRect(x: 142, y: 82, width: 64, height: 20), xRadius: 10, yRadius: 10)
-amber.setFill()
-cursor.fill()
+if shape == "window" {
+    // --- a window frame: this product drives a desktop app, not a TTY ---
+    let win = NSRect(x: 50, y: 62, width: 156, height: 132)
+    let frame = NSBezierPath(roundedRect: win, xRadius: 18, yRadius: 18)
+    amber.setStroke()
+    frame.lineWidth = 12
+    frame.stroke()
+
+    // title bar: a rule plus two dots, the universal shorthand for a window chrome
+    let barY = win.maxY - 34
+    let bar = NSBezierPath()
+    bar.move(to: NSPoint(x: win.minX + 6, y: barY))
+    bar.line(to: NSPoint(x: win.maxX - 6, y: barY))
+    bar.lineWidth = 10
+    bar.stroke()
+    amber.setFill()
+    for dx in [CGFloat(26), CGFloat(52)] {
+        NSBezierPath(ovalIn: NSRect(x: win.minX + dx - 6, y: barY + 12, width: 12, height: 12)).fill()
+    }
+
+    // the chevron, inside the window
+    amber.setStroke()
+    chevron(tipX: 152, midY: barY - 46, arm: 34, width: 20).stroke()
+} else {
+    // --- prompt chevron "❯" (thick stroked polyline, vertex pointing right) ---
+    amber.setStroke()
+    chevron(tipX: 126, midY: 128, arm: 44, width: 26).stroke()
+
+    // --- cursor underscore (rounded bar to the right of the chevron) ---
+    let cursor = NSBezierPath(roundedRect: NSRect(x: 142, y: 82, width: 64, height: 20), xRadius: 10, yRadius: 10)
+    amber.setFill()
+    cursor.fill()
+}
 
 // --- sparkle, top-right (4-point concave star) ---
 func sparkle(_ c: NSPoint, outer R: CGFloat, inner r: CGFloat) -> NSBezierPath {

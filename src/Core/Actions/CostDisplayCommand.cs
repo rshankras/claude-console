@@ -76,12 +76,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
         {
             if (!this.ReportsCost)
             {
-                PluginLog.Info($"CostDisplayCommand: {_bridge.Agent.DisplayName} reports no cost — nothing to show");
                 return;
             }
 
             _bridge.SendPrompt("/cost");
-            PluginLog.Info("CostDisplayCommand: Requested /cost details");
         }
 
         // The live value, or the setup state's words while they apply ("Set up" / "Off" / "Restart Claude").

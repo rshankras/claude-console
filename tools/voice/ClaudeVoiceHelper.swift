@@ -82,7 +82,6 @@ sem.wait()
 if !granted {
     fail("microphone permission denied — allow ClaudeVoiceHelper in System Settings › Privacy & Security › Microphone", 2)
 }
-log("microphone permission granted")
 
 // 2) Record 16kHz mono PCM WAV — the format whisper.cpp reads directly (no ffmpeg step).
 let url = URL(fileURLWithPath: outWav)
@@ -104,21 +103,16 @@ guard recorder.record() else {
     fail("recorder.record() returned false — is an input device connected?", 3)
 }
 NSSound(named: "Tink")?.play()  // audible "speak now" cue (also the product's recording-started feedback)
-log("recording -> \(outWav)  (touch \(stopFlag) to stop, max \(maxSec)s)")
 
 // 3) Wait for the stop flag or the hard cap. RunLoop (not Thread.sleep) keeps AVFoundation happy.
 let start = Date()
 while true {
     RunLoop.current.run(until: Date().addingTimeInterval(0.12))
-    if fm.fileExists(atPath: stopFlag) { log("stop flag seen"); break }
-    if Date().timeIntervalSince(start) > maxSec { log("max duration reached"); break }
+    if fm.fileExists(atPath: stopFlag) { break }
+    if Date().timeIntervalSince(start) > maxSec { break }
 }
 recorder.stop()
 try? fm.removeItem(atPath: stopFlag)
-let dur = Date().timeIntervalSince(start)
-let attrs = try? fm.attributesOfItem(atPath: outWav)
-let size = (attrs?[.size] as? Int) ?? 0
-log(String(format: "recorded %.1fs, %d bytes", dur, size))
 
 // 4) Transcribe with whisper.cpp. stdout = transcription. Failures go through fail() above.
 
@@ -171,6 +165,5 @@ text = text.replacingOccurrences(of: "\n", with: " ")
 // whisper emits "[BLANK_AUDIO]" / "(silence)" markers when it hears nothing — treat as empty.
 if text == "[BLANK_AUDIO]" || text == "(silence)" || text == "[ Silence ]" { text = "" }
 
-log("transcript: \"\(text)\"")
 try? text.write(toFile: transcriptPath, atomically: true, encoding: .utf8)
 exit(0)

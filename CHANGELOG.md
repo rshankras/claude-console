@@ -1,4 +1,425 @@
+## Vizhi Desktop [1.0.0] — 2026-09-29
+
+First release. Keypad controls for the ChatGPT desktop app on macOS, in both ChatGPT and Codex modes, on the Logitech MX Creative Keypad.
+
+- **Home:** your three most recent chats as live cards; New Chat; Deny and Approve (red and green, where Claude Console and Vizhi for Codex put No and Yes; press twice; "Allow once" only); Screenshot, Dictate and Send/Stop.
+- **Tools:** mode switch, All Chats, Find Chat (View Changes in Codex), Attach Files, Paste into Chat, Copy Reply, Voice Chat, Prompts (ChatGPT) or Tasks (Codex), and More.
+- **Voice** runs offline with the same small speech model as the other Vizhi plugins, downloaded once on first use.
+- The layout installs itself as the Vizhi Home profile for the ChatGPT app; updates only change pages you haven't customised, with a backup.
+- macOS only (Apple Silicon). The Accessibility helper is Developer-ID signed and notarized.
+- Package metadata now points to the EULA and vizhi.dev.
+
+The 0.17.x entries below are the preview builds that led to this release.
+
+## Vizhi Desktop 0.17.24 — A shorter ChatGPT More
+
+- ChatGPT's More now holds Projects and Continue (plus Clear Added once something is added). Schedule and Scheduled are removed from the default menu for this release: Schedule depends on ChatGPT creating a scheduled task from a chat message, not confirmed on the owner's setup, and Scheduled opens a screen that needs a mouse and leaves no chat to write into. Both stay assignable in Options+. Codex's More is unchanged.
+- A prompt or dictation pressed while no chat text box is open (for example on the app's Scheduled or Projects screen) now says Open Chat instead of Chat Changed, and never starts recording.
+
+## Vizhi Desktop 0.17.23 — One failed prompt no longer blocks the rest
+
+- If a one-press prompt (Summarize, Explain, Review Code, …) could not confirm its text reached the chat, every other prompt then showed "Insert Draft" and did nothing until the plugin was restarted. A stuck fixed prompt is now dropped as soon as you press a different prompt, or when its chat is gone, and the new request goes ahead. It holds none of your words, so nothing is lost.
+- Dictated and source-based drafts still wait for you: tap to retry, hold to discard. When the chat they came from is gone, the key now says HOLD TO DISCARD.
+- Retries in the same chat still never duplicate or auto-send a prompt.
+
+## Vizhi Desktop 0.17.22 — Find Chat opens again
+
+- Tools → Find Chat opens its search page. The key was a command asking Options+ to open the Find Chat folder, and Options+ ignores that request from a command, so the key stayed on "Opening". It is now the folder itself, which opens natively; in Codex mode the same key is View Changes, opening the review panel as before.
+- Installed Vizhi Home profiles from 0.17.18–0.17.21 switch that one key when the Tools page is still stock, with a `.before-0.17.22` backup.
+- A helper action with a missing value (for example no chat target) now reports it on the key and names it in the log, instead of failing to launch.
+
+## Vizhi Desktop 0.17.21 — Run Tests gets its own icon
+
+- Run Tests (Codex Tasks) shows a flask instead of borrowing Write Tests' clipboard glyph, so the two keys are no longer mistaken for each other. Applies whenever Run Tests still has its stock icon; a custom icon is kept.
+
+## Vizhi Desktop 0.17.20 — Speak Query uses the shared speech model
+
+- Speak Query now uses the same offline speech model as Dictate, Claude Console and Vizhi for Codex (base.en, about 148 MB, downloaded once on the first voice press). The separate 574 MB Whisper Turbo download is gone.
+- Searches transcribe about four times faster (0.34 s against 1.46 s per query on an M1 Pro). The trade-off is somewhat more misheard words on accented speech; search results are picked on the keypad and the query can be corrected in the app's search field.
+- A Turbo model already downloaded is no longer used and can be deleted: `~/.claude/claude-console/whisper/ggml-large-v3-turbo-q5_0.bin`.
+
+## Vizhi Desktop 0.17.19 — Speak Query model on first use
+
+- The 574 MB Speak Query model no longer downloads when the plugin loads. It downloads the first time you press Speak Query; until then the key reads "Set Up Voice · TAP · 574 MB" and Options+ shows nothing.
+- Loading still checks a model already on disk (locally, no network), so anyone who has it is ready at once.
+- The Options+ message appears only while the model is downloading or if the download fails.
+
+## Vizhi Desktop 0.17.18 — Approve and Deny on Home
+
+- Home follows the family layout: Deny and Approve sit where Claude Console and Vizhi for Codex put No and Yes, in both modes. They use the family decision tiles — solid green Approve and red Deny with the white check and cross — with the corner badge while a request waits, the chat's title as a small caption, the second confirmation, and "Allow once" only. They turn grey only when the app cannot be read. New Chat takes the reset position; the bottom row is Screenshot · Dictate · Send/Stop.
+- Tools groups getting around (mode, All Chats, Find Chat — View Changes in Codex), content in and out (Attach, Paste, Copy Reply), and modes and menus (Voice Chat, Prompts/Tasks, More). No key is blank in either mode; ChatGPT previously had two, Codex one.
+- The Mode key says what a press does, "To Codex" or "To ChatGPT", in one line instead of a clipped status strip.
+- Paste into Chat gets a clipboard glyph (it shared Copy Reply's), and Clear Added a trash glyph (it shared Stop's square).
+- More: Continue joins ChatGPT's list; its duplicate Approve/Deny are removed, and Return to App is no longer in a default menu (still assignable). Continue was the ninth ChatGPT prompt and spilled onto a second Prompts page (an open folder spends one key on Back), so ChatGPT Prompts now fits one page like Codex Tasks. A reordered Continue moves from its own slot; prompt text and order are unchanged.
+- Keypad-only review:
+  - **Schedule** (ChatGPT, in More): speak what to schedule and when; review the draft, then Send. ChatGPT sets up the task — no Scheduled screen needed. The Scheduled list stays in More for viewing.
+  - More no longer offers Plugins, Explore (ChatGPT) or Quick Chat (Codex) by default: each opens a screen that needs a pointer or typing. They remain assignable in Options+.
+- Installed Vizhi Home profiles move to the new layout when both Home and Tools are still stock, with a `.before-0.17.18` backup. A customized key on either page leaves both as they were. This supersedes the 0.17.16 Tasks migration.
+
+## Vizhi Desktop 0.17.17 — Continue in More
+
+- Move Codex Continue from Tasks to More, keeping the default Tasks menu to eight clear actions and an unused bottom-right position.
+- Preserve its configured prompt, draft/send behavior and Codex mode guard. ChatGPT Continue stays in Prompts; direct assignments remain available.
+- No profile or workflow-file migration is needed; both menus resolve the existing configured slot.
+
+## Vizhi Desktop 0.17.16 — Review tools in Tasks
+
+- Move View Changes into Codex Tasks, beside Review Code and Run Tests. Keep Screenshot on Home and ChatGPT Find Chat on Tools.
+- Rename only the untouched Review Changes prompt to Review Code; its scope remains the uncommitted diff, with no edits.
+- Keep the default Tasks menu to nine keys by moving Update Deps to More. Preserve configured task content and custom ordering.
+- Pin Tasks bindings to Codex, retain review availability checks, and migrate only the stock default-profile navigation binding with backups. Legacy direct assignments and Adaptive 3 remain compatible.
+
+## Vizhi Desktop 0.17.15 — View Changes availability
+
+- Enable View Changes only when the app exposes a unique enabled Changes control or an existing Review panel; Codex mode alone is insufficient.
+- Show Not available for a missing review route, keep opening failures distinct, and remove the unverified default keyboard fallback.
+- Scope Review controls to the app web area containing its mode control, excluding embedded browser content. Keep empty-but-valid Review panels available.
+- Preserve the Screenshot-on-Home profile, draft contents, explicit Send and custom assignments.
+
+## Vizhi Desktop 0.17.14 — Screenshot on Home
+
+- Put Screenshot in the middle-right Home position in ChatGPT and Codex, using the existing capture-and-attach workflow and explicit Send.
+- Move Find Chat / View Changes to the same position on Tools; keep both pages and the other Home keys unchanged.
+- Upgrade only the stock pair in Vizhi Home, with a profile backup. Preserve custom keys, profile selection and the optional Adaptive 3 layout.
+
+## Vizhi Desktop 0.17.13 — Open Review when its summary button is hidden
+
+- Use the installed app's idempotent Open review tab shortcut (Control–Shift–G) when no Changes summary button is exposed.
+- Run the shortcut inside the same pinned, foreground Codex-window operation and confirm the review panel before showing Opened. Repeated taps leave an already-visible panel open.
+- Refuse disabled/ambiguous controls, wrong mode and dialogs; do not fall back to a toggle, type text, change the clipboard or submit a draft.
+
+
+## Vizhi Desktop 0.17.12 — Formatted change counts
+
+- Recognize Changes summary buttons whose line counts contain locale grouping separators or whose count spans form a compact accessible name, such as Changes+1,234-56.
+- Keep exact destination names, numeric-only suffixes, one enabled target, no nested controls, and positive panel confirmation.
+- Distinguish missing and multiple openers in the expiring diagnostic codes. The owner's previous code establishes an opener refusal; live acceptance remains separate from the reproduced formatting regression.
+
+
+## Vizhi Desktop 0.17.11 — View Changes diagnostic
+
+- Preserve allowlisted panel-opening failure codes instead of replacing every refusal with panel-unconfirmed.
+- Add opt-in diagnostics for explicit View Changes taps, with 30-minute expiry and an 80-record limit. No conversation, clipboard or arbitrary helper output is logged.
+- Panel targeting and keypad layouts are unchanged; this release diagnoses the owner's unconfirmed live failure.
+
+
+## Vizhi Desktop 0.17.10 — View Changes stays on Home
+
+- Rename Codex Home's Changes to View Changes and run it directly, eliminating the folder flash. ChatGPT retains Find Chat.
+- Confirm the review panel before showing Opened, report failures, and leave an already-open panel visible on repeat taps.
+- Remove per-file and file-list toggle fallbacks; apply the same guarded operation to legacy Changes commands.
+- Back up and migrate only the stock Home binding while preserving custom assignments and profile selection.
+
+
+## Vizhi Desktop 0.17.9 — spoken requests first
+
+- Put the recognized request first in every stock spoken workflow, followed by a separate, shorter task instruction.
+- Make Debug investigate first and allow a no-bug-found result before asking for a fix.
+- Upgrade only unchanged stock recipes, preserve custom prompts and metadata, and back up previous settings.
+- Keep the existing speak, finish, review and Send interaction with no additional key presses.
+
+## Vizhi Desktop 0.17.8 — Copy Reply with auxiliary panels
+
+- Fix the confirmed refusal when the focused Codex window contains multiple accessibility web areas.
+- Select the unique area with recognized conversation speaker headings; exclude other areas' copy controls.
+- Keep nested panels as content boundaries, and refuse ambiguous conversations, unfinished turns and changed targets.
+- Reproduce the original refusal and test nested conversations, preview Copy buttons and ambiguity in isolated Chromium fixtures.
+
+## Vizhi Desktop 0.17.7 — temporary Copy Reply diagnosis
+
+- Add opt-in Copy Reply tracing that expires after at most 30 minutes and records at most 80 fixed status codes per service instance.
+- Distinguish keypad dispatch, busy refusals and native copy results without recording chat or clipboard contents.
+- Preserve copy behavior and profiles; the reported Codex failure still requires a captured owner attempt.
+
+## Vizhi Desktop 0.17.6 — whole-text insertion for every Mac command
+
+- Consolidate composer write and append, including legacy Dictate & Send and recovery, on one verified whole-text insertion path.
+- Remove character-chunk typing and its four-second deadline, including the legacy reply-field fallback.
+- Use one insertion-only accessibility write, or one clipboard-preserving paste when that write is ignored; never repeat after partial insertion.
+- Preserve conversation, mode, focus, existing text, attachments and explicit-send guards. Search already writes its complete query.
+- Exercise long multilingual prompts, legacy and current paths, retry, partial failures, clipboard formats and changed destinations in controlled fixtures.
+
+## Vizhi Desktop 0.17.5 — complete task prompts
+
+- Insert immediate ChatGPT and Codex presets through the verified whole-draft path before sending.
+- Preserve the original prompt and destination after insertion failure; retry cannot treat a partial prefix as new source material.
+- Send an immediate preset only while its full text and destination remain unchanged; recovered drafts wait for explicit Send.
+- Suppress rapid repeat taps after a confirmed submission.
+
+## Vizhi Desktop 0.17.4 — Codex dictation input hints
+
+- Recognize the installed app's exact Codex, Chat, Plan and Goal composer hints, alongside Work with ChatGPT.
+- Let the shared insertion helper distinguish those generated hints from real text when dictation stops.
+- Cover start/stop delivery in both modes, native empty/literal drafts, attachment preservation, retries and explicit Send.
+- Preserve the transcript as an unsent draft; Dictate remains Dictate after successful insertion.
+
+## Vizhi Desktop 0.17.3 — rich-text placeholder insertion
+
+- Handle generated placeholder text that appears in both AXValue and AXStringForRange after an image enables Send.
+- Use native end-of-input navigation for this known placeholder, insert with an empty selection, and verify the full instruction.
+- Preserve literal drafts with the same wording, attachments, the clipboard, and explicit Send; verify retries without duplicating text.
+- Add a Chromium CSS-placeholder screenshot workflow and an AppKit regression for its range/cursor mismatch.
+- Live keypad acceptance remains separate from controlled fixture results.
+
+## Vizhi Desktop 0.17.2 — insertion failure feedback
+
+- Preserve the reason for failed prompt insertion and show cursor, focus, or changed-input hints.
+- Record only fixed failure codes for explicit failed insertions; omit prompt and chat contents.
+- Keep the original instruction and target across retries, with explicit Send after insertion.
+- The remaining live Screenshot → Explain failure is under investigation; this update makes its refusal observable.
+
+## Vizhi Desktop 0.17.1 — Explain after screenshot
+
+- Fix instruction insertion when attachments enable Send but the empty composer exposes placeholder text.
+- Verify emptiness through editable text ranges; preserve actual drafts with the same wording.
+- Cover Screenshot → Explain, unsent attachment preservation, and duplicate-free insertion retries.
+
+## Vizhi Desktop 0.17.0 — complete capture and prompt workflows
+
+- Pick recent Downloads on the keypad, select multiple files, and attach them to the pinned chat.
+- Paste copied files and images directly into chat while preserving text and clipboard contents.
+- Compose source-aware instructions with existing input; keep captured material unsent until review.
+- Clarify prompt scope and submission feedback, and migrate only unchanged stock settings.
+- Keep Home fixed and common Tools actions in consistent positions across ChatGPT and Codex.
+- Simplify search, remove default Clear Added/Return, and keep occasional navigation in More.
+- Preserve native Voice Chat, screenshot, Copy Reply, approval guards, and bounded background work.
+
+## Vizhi Desktop 0.16.3 — screenshot directly into chat
+
+- Attach a screenshot as soon as region capture completes, without requiring Dictate or a workflow.
+- Pin the destination before the picker, preserve existing draft text, and never submit automatically.
+- Show Select Area, Attaching, and Attached; an uncertain result asks the user to Check Image.
+- Keep attached screenshots out of staging so later dictation cannot attach them again.
+- Preserve the simplified Tools layout and all existing profile bindings.
+
+## Vizhi Desktop 0.16.2 — simpler ChatGPT Tools
+
+- Remove Return to App from the default ChatGPT Tools page; leave that key blank while
+  preserving Deny in the same Codex position and its approval guards.
+- Keep Paste into Chat, Copy Reply, Screenshot, and the Home layout in their existing positions.
+- Retain Return to App for explicitly configured capture workflows and custom profiles.
+
+## Vizhi Desktop 0.16.1 — responsiveness and lifecycle
+
+- Keep native desktop work off keypad callbacks and refuse overlapping gestures without queuing.
+- Back off slow/background status scans, serialize animation/search timers, and keep draft/search
+  rendering responsive during native operations.
+- Detach event subscriptions, stop timers, invalidate transcript routes, and cancel pending model
+  preparation on unload; restore each subscription once on reload.
+- Add concurrency/lifecycle regression tests and an opt-in CPU/RSS observation tool.
+
+## Vizhi Desktop 0.16.0 — Paste into Chat
+
+- Rename Clipboard to Paste into Chat and insert copied text immediately, preserving existing
+  input. Confirm Pasted only after readback; no hidden staging or automatic submission.
+- Dictate and spoken workflows append instructions beneath existing text. Pin the original
+  chat and draft, preserve user edits, and verify retries without duplicating uncertain writes.
+- Keep profile bindings and positions unchanged; update command names and workflow checks.
+- Remove temporary desktop diagnostics and routine plugin action traces.
+
+## Unreleased — logging cleanup
+
+- Remove temporary Copy Reply and composer diagnostics, routine keypad action traces,
+  dictated-text logging, and Windows hook invocation/environment dumps.
+- Keep error reporting, process timeouts, setup/migration events, and explicitly invoked
+  troubleshooting tools. Subprocess logs report exit codes without dumping arguments or output.
+- Preserve Copy Reply verification, voice draft delivery, keypad feedback and profiles.
+
+## Vizhi Desktop 0.15.13 — recognize wrapped response action rows
+
+- Recognize Rate response and its selected-feedback labels as native assistant actions.
+- When accessibility wrappers prevent structural matching, require Copy plus two distinct
+  response actions aligned in one compact horizontal row. Use native AXPress and verify
+  the fresh clipboard acknowledgement; positions are never used to synthesize clicks.
+- Reproduce reply-action-row-unrecognized in Chromium with wrapped controls and a timestamp;
+  add geometry, duplicate-control, code-only, different-row and native-copy regressions.
+
+## Vizhi Desktop 0.15.12 — diagnose remaining response control mismatch
+
+- Distinguish a missing Copy label, Copy only before the latest answer, an unsupported
+  control role, nested controls, missing response actions and an unrecognized action row.
+  Preserve targeting behavior and emit only fixed operational reason codes.
+- Add an isolated Chromium native-copy fixture with response Copy / Rate / Branch controls,
+  extra editors and SVG icons. Controlled tests pass; owner Copy Reply remains unresolved.
+
+## Vizhi Desktop 0.15.11 — Copy Reply does not require one composer
+
+- Fix the owner-reported reply-composer-multiple refusal: copying a response no longer
+  depends on the number of text areas in the window. Keep native response target uniqueness,
+  conversation/window checks, running/dialog guards and clipboard acknowledgement.
+- Add web regressions with unrelated text areas and a Copy / Rate / Branch response row,
+  plus read-only replies and refusal of code-only or duplicate response Copy controls.
+
+## Vizhi Desktop 0.15.10 — identify the Copy Reply refusal
+
+- Replace the generic ambiguous-answer diagnostic with fixed reasons for missing/multiple
+  web areas or composers, a dialog, multiple selected chats, or multiple Copy candidates.
+- Preserve refusal behavior and verify each reason reaches the operational log without
+  response content. This is a diagnostic release; the owner failure remains unresolved.
+
+## Vizhi Desktop 0.15.9 — native Copy with flattened web controls
+
+- Recognize the assistant response's native Copy button when the web accessibility tree
+  omits ordinary action-row div wrappers. Require a contiguous sibling control row with
+  one Copy and a known response action; text, headings and the composer break that row.
+- Continue pressing the native Copy control, preserving window/conversation guards and
+  requiring Copied plus fresh clipboard text. Never select response text or send Cmd+C.
+- Reproduce 0.15.8's copy-control-unavailable failure in an isolated WKWebView fixture;
+  add real web tests for complete replies, code-only buttons, newest user turns, activity
+  and clipboard acknowledgement.
+
+## Vizhi Desktop 0.15.8 — Copy Reply diagnostics
+
+- Record Copy Reply key dispatch, request and confirmed result or a fixed failure reason in
+  the plugin log. Include voice, busy and mode guards before the helper runs.
+- Never log response text, clipboard content, source identity or arbitrary helper errors.
+  Diagnostic failures do not change copying. Earlier attempts cannot be reconstructed.
+
+## Vizhi Desktop 0.15.7 — recognize ChatGPT reply actions
+
+- Recognize ChatGPT's More actions popup and Continue in new chat footer alongside the shared
+  Fork chat from here layout. Copy Reply no longer requires the hidden branch menu item.
+- Prevent a code-block Copy from borrowing a response footer across intervening answer text.
+- Distinguish unrecognized reply controls from a newest user message with no answer. Keep the
+  Copy Reply title on failure and show the reason once in its footer.
+- Add production-selector and native fixture regressions for the actual shipped viewer layouts.
+
+## Vizhi Desktop 0.15.6 — one-tap Copy Reply
+
+- Copy the latest completed response in the open conversation using its native copy control,
+  preserving the app's clipboard formatting and retaining plain text for Paste Reply.
+- Require assistant speaker ownership and response action-row semantics; refuse older answers,
+  user messages, code-only copy controls, running/approval states and ambiguous targets.
+- Recheck the window, conversation and response around the press and require fresh clipboard
+  content. Clear retained reply on failure so Paste Reply cannot reuse a previous answer.
+- Show a dim Copy Reply with Wait or No answer, and confirm successful copying on the key.
+
+## Vizhi Desktop 0.15.5 — distinct voice controls
+
+- Give Voice Chat a rounded waveform inside a circle, matching Send's circle, colour and
+  rendered size. Align its label and status with the adjacent Send control.
+- Give Dictate a simple microphone so speech-to-draft and native Voice Chat have distinct
+  symbols. Preserve recording feedback, voice shortcuts and action behaviour.
+
+## Vizhi Desktop 0.15.4 — prompt send icon
+
+- Replace the mail-style paper-plane Send glyph with an upward arrow in a circle, including
+  its dimmed unavailable state. Retain the square Stop glyph and existing guarded Send/Stop
+  behavior. Use the new glyph wherever Vizhi Desktop offers prompt submission.
+- Add ready/empty/working tile previews and targeted icon regeneration.
+
+## Vizhi Desktop 0.15.3 — match the installed sidebar semantics
+
+- Recognize the sidebar's Working label, identified in installed app 26.915.31945's static
+  interface code. The visible transcript's Thinking / Working for timer is a separate element.
+- Read AXARIACurrent (aria-current="page") to identify the open conversation. Keep AXSelected
+  as a legacy fallback and use the same reader for conversation status and pinned draft delivery.
+- Reproduce the installed semantics in the compiled fixture: a Working status group and a
+  current row with AXSelected false. Preserve exact per-row scoping and ambiguous-target guards.
+
+## Vizhi Desktop 0.15.2 — selected conversation activity
+
+- Apply visible task Stop/approval state to the uniquely identified, app-selected conversation
+  when its sidebar badge does not report the activity. Preserve the other conversation states.
+- Reject ambiguous selections and duplicate titles; preserve explicit permission badges.
+  Do not infer the active conversation from recency or the last keypad press.
+- Add regressions for the previously disconnected task and conversation states. This fixes
+  a reproduced mapping defect; the owner's current app must still expose selection for it
+  to resolve the reported Ready-during-Working case.
+
+## Vizhi Desktop 0.15.1 — conversation status labels
+
+- Recognize explicit Thinking and Complete sidebar badges in addition to the older Unread
+  and Awaiting approval labels. Read status from named images and accessibility descriptions,
+  as well as static text, before falling back to the legacy unnamed-spinner count.
+- Keep matching inside each conversation row; titles and neighbouring conversations do not
+  supply its status. Preserve the existing Home/Tools layout and profile selection.
+- Add compiled fixture lifecycle coverage and a three-slot monitor regression. Live ChatGPT
+  compatibility and physical keypad acceptance remain separate from fixture verification.
+
+## Vizhi Desktop 0.15.0 — two-page Home redesign
+
+- Replace the default four-page layout with Vizhi Home: Home and adaptive Tools. Preserve the
+  three recent conversation keys and make native Voice Chat directly accessible on Home.
+- Keep Dictate bottom-left and Send/Stop bottom-centre. Dictate remains unsent after source-backed
+  insertion; Send/Stop executes the displayed verb and cannot submit on a late Stop press.
+- Put Clipboard/Screenshot/Copy/Return on ChatGPT Tools, and Review Changes/Run Tests/Approve/Deny
+  on Codex Tools. Preserve approval positions, expected-card checks and high-risk confirmation.
+- Move configurable workflows into Saved Prompts; remove the redundant Ask ChatGPT entry inside
+  the app. Keep existing profiles and external System controls. Allow region capture to start
+  from the app without inventing a return destination.
+- Add dispatch, mode-transition, dictation and combined-action regressions; render both modes.
+  Native fixture evidence remains separate from live app and hardware acceptance.
+
+## Vizhi Desktop 0.14.0 — source capture and reply return
+
+- Add Use Selection, Use Clipboard and interactive Screenshot. Stage sources without sending;
+  combine them with spoken task instructions into one reviewable draft. Contextual one-tap
+  workflows also pause for review before submission.
+- Add Copy Reply for selected answer text, Return to App, and Paste Reply into a selected empty
+  field in the original app. Retain the reply independently of clipboard changes; never send email.
+- Add Vizhi Flow 2's Context page, Ask ChatGPT folder, and an additive System-page installer.
+  Preserve earlier profiles and the first three Flow pages.
+- Preserve clipboard contents during selection fallback/image paste. Verify attachment filenames;
+  refuse repeated unconfirmed image pastes and preserve source/draft recovery.
+- Extend command, native fixture and hardware workflow checks. Real ChatGPT/email/browser and
+  screenshot-picker acceptance remain owner-run; automatic latest-answer copying is unsupported.
+
+## Vizhi Desktop 0.13.0 — complete workflows from the keypad
+
+- Add Vizhi Flow: Home groups Voice Draft, Send Draft and Stop. Actions keeps approval keys
+  fixed, separates native Voice Chat, and moves infrequent utilities into More.
+- Spoken task briefs automatically fill Draft Reply, Rewrite, Compare, Research, Debug,
+  Refactor and Review PR. The same key becomes Send Draft for explicit review and submission.
+  Changed window/editor/mode/selected-chat signals refuse delivery; failed composed briefs
+  remain available for tap-to-retry or hold-to-discard.
+- Promote Review Changes and Run Tests in Codex. Keep Review PR and Write Tests in More.
+  Migrate unchanged stock slots with a backup while preserving custom prompts and profiles.
+- Show Mode's destination, clarify Type Now in Find Chat, and add honest request/sent feedback.
+  Remove unsupported Copy Answer and duplicate Changes from the new pages.
+- Extend production dispatch, migration, voice session and native fixture coverage. Live app
+  and physical keypad acceptance remain separate from automated test results.
+
 # Changelog
+
+## Vizhi Desktop 0.12.13 — distinguish the empty composer prompt from a draft
+
+- Recognize the observed **Work with ChatGPT** empty prompt when it is mirrored into the
+  accessibility value and description, the cursor is at zero without a selection, and no Send
+  control is enabled. Unknown prompts and contradictory state keep the existing draft guard.
+- Insert into that state using verified keyboard text events, without value/selection replacement
+  or clipboard access. Preserve retry, long-press discard, and separate Send Draft behavior.
+- Add native fixture coverage for mirrored placeholders, exact-placeholder transcripts, and
+  existing text containing the same words. Real ChatGPT confirmation remains owner-run.
+
+## Vizhi Desktop 0.12.12 — hold to discard a retained voice draft
+
+- Tap **Insert Draft** to retry, or hold it to discard only the retained recording. The key
+  shows **HOLD TO DISCARD**, confirms **Discarded**, then returns to **Voice Draft**.
+- Handle SDK press/hold/release events so a hold cannot also insert text, send it, or start a
+  fresh recording on release. A newer transcript arriving during the hold is preserved.
+- Existing ChatGPT input and clipboard contents are untouched by discard. No profile rebinding
+  is needed. This release also packages the metadata-only insertion diagnostic helper;
+  the original live non-empty-composer diagnosis remains open.
+
+## Vizhi Desktop 0.12.11 — automatic draft completion
+
+- A blank paragraph no longer blocks Voice Draft. Readback tolerates outer whitespace while
+  preserving the original transcript and refusing different/partial existing text.
+- Successful automatic insertion briefly shows **Draft Ready / SEND DRAFT**, directing the
+  user to the existing keypad submission button. No manual paste step is required.
+- Added a native rich-editor AX fixture case and delivery-feedback regressions. The owner's
+  specific live Clear Composer report still requires confirmation of the visible input contents.
+
+## Vizhi Desktop 0.12.10 — keypad voice draft insertion
+
+- Voice Draft tries verified text events when the app refuses accessibility setters; it never
+  reads or replaces the clipboard. Existing/partial drafts and changed targets block further input.
+- Failed transcripts stay in memory. The same key becomes **Insert Draft** for a retry;
+  **Send Draft** submits the reviewed composer with a separate press. Exact already-inserted
+  transcripts are recognized on retry, preventing duplicates. Existing profile bindings work.
+- Added controlled native fixture checks for rejected setters, Unicode insertion, retry, explicit
+  send, partial writes and window changes. Live ChatGPT/keypad acceptance remains owner-run.
 
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
@@ -77,6 +498,114 @@ All notable changes to Claude Console are documented here. Format based on
   **not** cancel package deletion when cleanup reports failure. Existing missing-helper
   guards remain in place. Options+ device acceptance is tracked in
   [the verification plan](docs/windows-uninstall-2.3.1-plan.md).
+## [0.12.9] — Vizhi Desktop — 2026-09-19
+
+- Speak Query on macOS uses a stronger local Whisper Turbo model, downloaded and verified
+  separately from the plugin on load. Keypad and Options+ show progress, with tap-to-retry on
+  failure. No recording starts until the model is ready; Type Query remains available.
+- Silent/invalid search recordings no longer deliver invented text. Search transcript success
+  logs contain character counts instead of the query.
+- Added reproducible fixed-audio model comparisons and download/recovery tests. See
+  `docs/vizhi-desktop-speak-query-2026-09-19.md` for results and owner acceptance limits.
+
+## [0.12.8] — Vizhi Desktop — 2026-09-18
+
+- Keep a verified search usable when its modal hides the mode selector. Bind mode evidence to
+  the process, window and search field; reject visible mode conflicts and changed targets.
+- Recognize mode descriptions on popup controls and directly labelled pressable groups. An
+  unreadable initial mode cannot open search or issue a recovery token.
+- Reproduce the previous Mode unreadable failure in the native fixture and add modal lifetime,
+  missing initial mode, mode/window changes and delayed modal recovery checks. Real ChatGPT
+  compatibility still requires the owner's retry; fixture results do not establish it.
+
+## [0.12.7] — Vizhi Desktop — 2026-09-18
+
+- Recognize search fields by exact placeholder labels, semantic search roles and search sheets
+  containing web content. Accept mode popup controls and their labels without treating message
+  text as a mode selector.
+- Let an explicit Find Chat request bring its selected app window forward. Background polling
+  and delayed voice writes remain unable to focus or retarget an application.
+- Recover from a late search field using a read-only probe pinned to the original window. Never
+  repeatedly click Search while polling or toggle an already-open unsupported search panel.
+- Show a specific failure and a correctly labelled Open Search retry key. Revoke pending voice
+  transcripts on explicit retry, even when the app reuses its original search field.
+- Add search recovery/diagnostic tests and native fixture variants. These address implementation
+  defects; the owner's exact live-app failure is not yet confirmed resolved.
+
+## [0.12.6] — Vizhi Desktop — 2026-09-18
+
+- Add a Find Chat keypad page with Speak Query, Type Query, query status and conversation cards.
+  Search dictation has a separate capture-start sink and can never fall back to the message composer.
+- Select exact result links, pin the search window/field and verify the expected query. Reject
+  stale results and cancelled captures; preserve paging when results have not changed.
+- Update the same home position in both profiles; Codex still dispatches Changes with one press.
+- Add controlled native search fixture checks and session/dispatch tests to the command harness.
+  Live ChatGPT search compatibility and microphone/keypad acceptance remain owner checks. Unknown
+  accessibility layouts show Use App; Windows search has no implementation yet.
+
+## [0.12.5] — Vizhi Desktop — 2026-09-18
+
+- Measure conversation titles in the actual font and draw each line once. Keep a consistent text
+  size and at most three lines; avoid the SDK's second wrap and dangling final-word fragments.
+- Use a thinner, darker Ready footer; preserve explicit approval, thinking and completion states.
+- Add long-title and Unicode layout regressions plus real-render pixel checks. Home and All Chats
+  share the renderer; display aliases do not change conversation names or navigation targets.
+
+## [0.12.4] — Vizhi Desktop — 2026-09-18
+
+- Render All Chats entries through the same full-key conversation widgets as Home, removing the
+  duplicated SDK caption while preserving exact-title selection, Back, and automatic pagination.
+- Balance the All Chats outline and distinguish Quick Chat, Search, New Chat, Scheduled,
+  Attach Files, Rewrite, Plan, Send Draft, and Continue with semantic desktop glyphs.
+- Keep control names visible when unavailable, with dim glyphs and separate status text. Report
+  unsupported Copy Answer explicitly; distinguish a busy task or pending approval from no draft.
+- Refresh both profile previews while preserving their IDs, bindings and custom workflow behavior.
+- Add automated command/fixture coverage, an owner-driven hardware checklist, and a standalone
+  renderer for the built plugin's key faces. Keep the shortcut helper alive long enough to deliver
+  targeted events, as verified against the controlled fixture app. Live ChatGPT and hardware checks
+  remain separate from software verification.
+
+## [0.12.3] — Vizhi Desktop — 2026-09-17
+
+- Add an explicitly configured native Voice Chat shortcut. The user's app settings screenshot
+  confirms **Control–Shift–V** is **Toggle voice chat — Start or stop voice chat**.
+- With the shortcut configured, the home key stays **Voice Chat / TOGGLE**, including when AX
+  voice controls or the web tree are unavailable. Post one chord only to the already-frontmost
+  ChatGPT process; do not activate another app or fall back to a second toggle method.
+- Keep key feedback honest: **Requested** means events were posted; the app owns start/stop state.
+  Refuse while local dictation is in progress and suppress repeat requests within 1.2 seconds.
+- Preserve all profile identities/bindings and the Voice Draft clipboard recovery path. The
+  shortcut is local configuration, not a presumed default for every ChatGPT installation.
+
+## [0.12.2] — Vizhi Desktop — 2026-09-17
+
+- Recover a Voice Draft that the composer refuses by copying its transcript to the macOS clipboard.
+  The key shows **Paste Draft / CMD+V** until the next attempt. Review the composer before pasting:
+  an unconfirmed write may have partially landed. Recovery does not send text or simulate a paste.
+- Show **Transcribing / WAIT** after the second press and **PRESS TO STOP** while recording.
+  Keep Voice Draft failure messages visible until the next press.
+- Preserve existing profile identities and bindings. Native Voice recognition still reports
+  **No Voice** on the user's app after 0.12.1; direct draft insertion is also unresolved there.
+  This release adds draft recovery, not a verified repair of the app's Accessibility integration.
+
+## [0.12.1] — Vizhi Desktop — 2026-09-17
+
+- Match complete button labels independent of capitalization and whitespace. The user-reported
+  **Start Voice Chat** tooltip differs from the documentation's sentence case.
+- Read button title, description, help, and label together so a short icon title or AX value
+  cannot hide the action name. Continue refusing generic Close/× controls and ambiguous matches.
+- Preserve the Adaptive 3 and Everyday profiles without changing their identities or bindings.
+
+## [0.12.0] — Vizhi Desktop — 2026-09-17
+
+- Add native **Voice Chat / End Voice**, driven by exact observed app buttons. Unsupported or
+  ambiguous controls remain unavailable; live native-voice validation is still pending.
+- Add **Vizhi Adaptive 3**, with native Voice at home bottom-right. Keep Voice Draft and Send on
+  Controls, preserve all nine workflows, and retain older profiles and the user's selected default.
+- Keep offline **Dictate & Send** as an optional action. Coordinate native and local voice key
+  requests to avoid overlapping capture when the target window's native session is observable.
+- Match task **Stop** exactly so it cannot press **Stop voice chat** or report voice as task activity.
+- Preserve the Everyday profile's **Voice Draft / Send / Stop** row.
 
 ## [2.2.3] — 2026-09-16
 

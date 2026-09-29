@@ -22,11 +22,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
     /// </summary>
     public class PluginConfigurationTests
     {
-        private static readonly String[] Products = { "ClaudeConsole", "VizhiCodex" };
+        private static readonly String[] Products = { "ClaudeConsole", "VizhiCodex", "VizhiDesktop" };
 
         [Theory]
         [InlineData("ClaudeConsole")]
         [InlineData("VizhiCodex")]
+        [InlineData("VizhiDesktop")]
         public void The_file_is_embedded_under_the_name_the_SDK_looks_up(String product)
         {
             // The SDK resolves "<plugin class namespace>.PluginConfiguration.xml". Both products
@@ -40,6 +41,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Theory]
         [InlineData("ClaudeConsole")]
         [InlineData("VizhiCodex")]
+        [InlineData("VizhiDesktop")]
         public void The_declaration_satisfies_the_legacy_parser_without_exposing_a_static_action(String product)
         {
             var doc = XDocument.Load(Path.Combine(RepoRoot(), "src", "Products", product, "PluginConfiguration.xml"));
@@ -74,6 +76,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Theory]
         [InlineData("ClaudeConsole")]
         [InlineData("VizhiCodex")]
+        [InlineData("VizhiDesktop")]
         public void The_display_name_is_the_packages_display_name(String product)
         {
             var doc = XDocument.Load(Path.Combine(RepoRoot(), "src", "Products", product, "PluginConfiguration.xml"));

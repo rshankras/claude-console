@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup><Compile Remove="fixtures/**/*.cs" /></ItemGroup>
+  <ItemGroup>
+    <Compile Remove="fixtures/**/*.cs" />
+    <None Update="desktop/commands.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -34,6 +37,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
@@ -52,8 +56,15 @@
     <Compile Include="..\tools\windows\ClaudeConsoleHook\WindowsHookProcessQuery.cs" />
     <Compile Include="..\src\Agents\**\*.cs" />
     <!-- Each product's application binding broke clean installs in 1.8.0-1.8.4 by naming a process
-         that doesn't exist on the running OS, so every product's belongs under test. -->
+         that doesn't exist on the running OS, so every product's belongs under test. The desktop
+         Plugin declaration is included too: its HasNoApplication flag decides whether Options+
+         ever consults that binding. -->
     <Compile Include="..\src\Products\*\*Application.cs" />
+    <Compile Include="..\src\Products\VizhiDesktop\VizhiDesktopPlugin.cs" />
+    <!-- Desktop-owned registration (see the header in those files). The product glob above
+         deliberately compiles only *Application.cs; this is the one product folder whose
+         logic the suite must cover, because nothing else in the engine exercises it. -->
+    <Compile Include="..\src\Products\VizhiDesktop\Registration\**\*.cs" />
     <!-- Exercise the uninstall override on a fresh object, without starting the live bridge. -->
     <Compile Include="..\src\Products\ClaudeConsole\ClaudeConsolePlugin.cs" />
     <Compile Include="..\src\Products\ClaudeConsole\ClaudePluginLifecycle.cs" />

@@ -97,14 +97,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 }
 
                 var outp = SafeAwait(outTask);
+                // Output can contain a transcript, clipboard text, or a script with user content.
+                // Drain both streams and retain stdout for the caller. A nonzero exit alone is
+                // often an expected status (e.g. app closed); do not log it on every poll.
                 var err = SafeAwait(errTask);
-                if (!wantOutput && !String.IsNullOrWhiteSpace(outp))
+                if (proc.ExitCode != 0 && !String.IsNullOrWhiteSpace(err))
                 {
-                    PluginLog.Warning($"{file} out: {outp.Trim()}");
-                }
-                if (!String.IsNullOrWhiteSpace(err))
-                {
-                    PluginLog.Warning($"{file} error: {err.Trim()}");
+                    PluginLog.Warning($"{file} exited {proc.ExitCode}");
                 }
                 return wantOutput ? outp?.Trim() : null;
             }
@@ -162,9 +161,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 }
 
                 var err = SafeAwait(errTask);
-                if (!String.IsNullOrWhiteSpace(err))
+                if (proc.ExitCode != 0 && !String.IsNullOrWhiteSpace(err))
                 {
-                    PluginLog.Warning($"{file}: {err.Trim()}");
+                    PluginLog.Warning($"{file} exited {proc.ExitCode}");
                 }
                 _ = SafeAwait(outTask);
 

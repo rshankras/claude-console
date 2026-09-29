@@ -143,11 +143,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             var command = _bridge.Agent.SlashCommand(AgentVerb.Context);
             if (command == null)
             {
-                PluginLog.Info($"ContextCommand: {_bridge.Agent.DisplayName} has no context/status command");
                 return;
             }
             _bridge.SendPrompt(command);
-            PluginLog.Info($"ContextCommand: {command}");
         }
 
         private void Compact()
@@ -158,7 +156,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return;
             }
             _bridge.SendPrompt(command);
-            PluginLog.Info($"ContextCommand: long press {command}");
         }
 
         private String Label()

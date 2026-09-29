@@ -156,6 +156,72 @@ and the hook already stamps `agent` into every file. What is missing is a per-se
 Everything else must still be namespaced per product: IPC root, `@_` registration, profile GUIDs,
 package name, crash-marker assembly version, `~/.<product>/` runtime home.
 
+## The desktop app is a third PRODUCT, not a third adapter — RECON 2026-08-24
+
+**What the target actually is** (this Mac, verified on disk, not from docs):
+
+| | |
+|---|---|
+| App | `/Applications/ChatGPT.app` — display name **ChatGPT** |
+| Bundle id | **`com.openai.codex`** (the ChatGPT app's id *is* `com.openai.codex`) |
+| Version | `26.814.41407`, `LSMinimumSystemVersion` 13.0 |
+| Shape | Electron — `Contents/Resources/app.asar`, `Codex Framework.framework` |
+| Deep link | `codex://` (plus `http`/`https`) — the analogue of `claude://resume` |
+| Bundled CLI | `Contents/Resources/codex`, a 203 MB arm64 Mach-O |
+
+**Separate product. Three reasons, in order of weight.**
+
+**1. It is the one product that is still app-bound, and that is the point.** Since 2.2.0 the
+terminal plugins are universal: they claim no application, ship no profile, and coexist without
+registering anything (#23). The desktop product deliberately still binds `com.openai.codex` — it
+must activate when ChatGPT is frontmost and stay out of the way otherwise, and a universal plugin
+cannot express that. So it is the only product that registers, heals and sweeps, which is why that
+machinery lives under `src/Products/VizhiDesktop/Registration/` and was deleted from Core. (The
+2026-08-24 recon made this argument the other way round: a desktop bundle escaped the Terminal
+collision the terminal pair suffered. Universality dissolved that collision, so the app binding is
+now the distinguishing property rather than the escape from one.)
+
+**2. It is not an `IAgentAdapter`.** Read the contract: `CliCommand`, `ProcessNames`,
+`ProcessMatcher`, `ParseSessionState(json)`, `SlashCommand(verb)`. Every member presumes a CLI
+process per session, a hook writing state files into an IPC root, and a prompt that accepts typed
+slash commands. The desktop app has none of them — one process, N conversations inside one window,
+no hook interface, no verb to type. Forcing it through this seam would make both terminal adapters
+answer desktop questions, and would invite exactly the fiction rule 1 forbids.
+
+**3. What it needs is a third seam: the SURFACE.** `IPlatformBridge` hides the OS.
+`IAgentAdapter` hides the agent. Neither hides *terminal vs GUI*, and that is the axis this
+product moves along. Its verbs are the spike's four mechanisms — AX press on a named control,
+global hotkey, menu accelerator, `codex://` deep link — none of which is typing into a TTY. The
+one engine seam it does share is voice: the capture pipeline is agent-neutral, and the product
+names where the words go once, in `BridgeManager.TranscriptSink`.
+
+**The keypad it earns is smaller, and the listing must say so.** No hooks means no telemetry:
+Cost, Context, Model and Activity have nothing to render, so those keys hide under the same rule
+that hides Cost on Codex CLI. What survives is the half that matters most — approve/deny (the
+safety property D2 already proved on Claude Desktop), conversation switching, new chat, voice,
+deep-link resume.
+
+**Matcher collision — RESOLVED on macOS, verified live 2026-08-24.** The desktop app does spawn
+its bundled CLI (observed: `Contents/Resources/codex -c features.code_mode_host=true app-server`),
+and its basename is an exact `ExeNames = ["codex"]` match — but discovery never sees it:
+`AgentProcessWatcher.Parse` drops any row whose TTY is `??` *before* the name match, and the
+desktop-spawned process runs with no controlling terminal (`ps -o tty=` → `??`, confirmed against
+the live pid). The same filter that keeps daemons off the grid keeps the desktop app off it.
+Windows still needs its analogue confirmed on the laptop: the console-attach step should filter a
+console-less `codex.exe` identically, but that is an assumption until W-run day.
+
+**Windows is not packaged yet.** `tools/windows/VizhiDesktopUia` exists and
+`WindowsDesktopAutomation` calls it, but the helper is framework-dependent and every Windows helper
+has had to bundle its runtime since #83. The desktop package therefore declares no
+`pluginFolderWin`; `pack-release.sh` gates the product off the Windows payload and
+`verify-package.sh` rejects a helper or Windows whisper bundle in a package that makes no such
+declaration. Making the UIA helper self-contained, then declaring the folder, is the W0 step.
+
+**Still to certify:** the AX spike against `com.openai.codex`. The spike probe
+(`spikes/desktop-plugin/probe.swift`, local by design — `.gitignore` excludes `spikes/`) takes
+`--app <bundle-id>`, so D0–D5 re-run unchanged against this target. Claude Desktop's D2 pass is
+strong prior evidence (same Electron/Chromium AX mechanism), not a substitute for the run.
+
 ## Uninstall leaves the registration behind (historical — no registration since 2.2.0)
 
 Uninstalling through Options+ removes the PLUGIN and nothing else. A sideloaded install never gets

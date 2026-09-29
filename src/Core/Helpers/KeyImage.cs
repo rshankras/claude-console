@@ -120,7 +120,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                         // other open line icons. Keep their render box smaller so Clear, Esc and Tab
                         // read as one balanced group on the physical keypad.
                         var compactUtilityIcon = icon == "clear" || icon == "esc" || icon == "tab";
-                        var iconShare = compactUtilityIcon ? 0.70 : 0.82;
+                        // A folder opener still uses the SDK's inset icon+caption layout. Its
+                        // outline should have the same optical size as our full-key controls.
+                        var compactDesktopFolder = _identityIconFolder == "desktop_icons" && icon == "all_chats";
+                        var iconShare = compactDesktopFolder ? 0.62 : compactUtilityIcon ? 0.70 : 0.82;
                         var s = (Int32)(Math.Min(w, h) * iconShare);
                         bitmap.DrawImage(img, (w - s) / 2, (h - s) / 2, s, s);
                         return bitmap.ToImage();
@@ -254,6 +257,129 @@ namespace Loupedeck.ClaudeConsolePlugin
         }
 
         /// <summary>A full-canvas black action face used by the other Answer-command widgets.</summary>
+        /// <summary>
+        /// An action face with the approval badge in the corner — for a product whose approval
+        /// keys are icons rather than the Yes/No decision tiles. Without a pending approval it is
+        /// exactly <see cref="Render"/>; the icon resolves through the product's identity folder.
+        /// </summary>
+        public static BitmapImage RenderWithApprovalBadge(
+            PluginImageSize imageSize, String label, BitmapColor accent, String icon, ApprovalRisk risk)
+        {
+            if (risk == ApprovalRisk.None)
+            {
+                return Render(imageSize, label, accent, icon);
+            }
+
+            using (var bitmap = new BitmapBuilder(imageSize))
+            {
+                bitmap.Clear(Background);
+
+                var drewIcon = false;
+                if (!String.IsNullOrEmpty(icon))
+                {
+                    try
+                    {
+                        var img = PluginResources.ReadImage(IconResource(icon));
+                        var s = (Int32)(Math.Min(bitmap.Width, bitmap.Height) * 0.82);
+                        bitmap.DrawImage(img, (bitmap.Width - s) / 2, (bitmap.Height - s) / 2, s, s);
+                        drewIcon = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        PluginLog.Verbose(ex, $"KeyImage: icon '{icon}' failed to load — falling back to text");
+                    }
+                }
+                if (!drewIcon)
+                {
+                    bitmap.DrawText(label ?? "");
+                }
+
+                DrawApprovalBadge(bitmap, risk);
+                return bitmap.ToImage();
+            }
+        }
+
+        public static BitmapImage RenderApprovalTile(PluginImageSize size, String label, String icon, String status, ApprovalRisk risk)
+        {
+            using var face = RenderIntentTile(size, label, icon, status);
+            using var bitmap = ButtonCanvas(size);
+            bitmap.DrawImage(face, 0, 0, bitmap.Width, bitmap.Height);
+            DrawApprovalBadge(bitmap, risk);
+            return bitmap.ToImage();
+        }
+
+        /// <summary>A full-key action with a readable title and explicit DRAFT/SEND intent strip.</summary>
+        public static BitmapImage RenderIntentTile(
+            PluginImageSize imageSize, String label, String icon, String intent)
+        {
+            using var bitmap = ButtonCanvas(imageSize);
+            bitmap.Clear(Background);
+            var w = bitmap.Width;
+            var h = bitmap.Height;
+            var scale = Math.Min(w, h) / 96f;
+            var size = (Int32)(Math.Min(w, h) * 0.44f);
+            try
+            {
+                var glyph = PluginResources.ReadImage(IconResource(icon));
+                bitmap.DrawImage(glyph, (w - size) / 2, (Int32)(h * 0.04f), size, size);
+            }
+            catch (Exception ex) { PluginLog.Verbose(ex, $"KeyImage: intent glyph '{icon}' unavailable"); }
+            var lines = WrapConversationTitle(label ?? "", 13, 2);
+            var lineH = (Int32)(15 * scale);
+            var top = (Int32)(h * 0.48f) + Math.Max(0, ((Int32)(h * 0.31f) - lines.Length * lineH) / 2);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                bitmap.DrawText(lines[i], 2, top + i * lineH, w - 4, lineH, White, fontSize: (Int32)(13 * scale));
+            }
+            var barY = (Int32)(h * 0.80f);
+            bitmap.FillRectangle(0, barY, w, h - barY, Gray);
+            bitmap.DrawText(intent ?? "", 0, barY, w, h - barY, White, fontSize: (Int32)(11 * scale));
+            return bitmap.ToImage();
+        }
+
+        /// <summary>Word-wrap a conversation title into at most <paramref name="maxLines"/> lines.</summary>
+        internal static String[] WrapConversationTitle(String value, Int32 maxLength, Int32 maxLines)
+        {
+            if (String.IsNullOrWhiteSpace(value) || maxLength < 2 || maxLines < 1)
+            {
+                return Array.Empty<String>();
+            }
+
+            var remaining = String.Join(" ", value.Trim().Split(
+                new[] { ' ', '\t', '\r', '\n' },
+                StringSplitOptions.RemoveEmptyEntries));
+            var lines = new System.Collections.Generic.List<String>();
+
+            while (!String.IsNullOrEmpty(remaining) && lines.Count < maxLines)
+            {
+                if (remaining.Length <= maxLength)
+                {
+                    lines.Add(remaining);
+                    break;
+                }
+
+                if (lines.Count == maxLines - 1)
+                {
+                    lines.Add(remaining.Substring(0, maxLength - 1).TrimEnd() + "…");
+                    break;
+                }
+
+                // Include the boundary character in the search: "Find planned" is exactly 12
+                // characters and the following space is the ideal cut, not the earlier one.
+                var window = remaining.Substring(0, Math.Min(remaining.Length, maxLength + 1));
+                var breakAt = window.LastIndexOf(' ');
+                if (breakAt <= 0 || breakAt > maxLength)
+                {
+                    breakAt = maxLength;
+                }
+
+                lines.Add(remaining.Substring(0, breakAt).TrimEnd());
+                remaining = remaining.Substring(breakAt).TrimStart();
+            }
+
+            return lines.ToArray();
+        }
+
         public static BitmapImage RenderWidgetAction(PluginImageSize imageSize, String label, String icon)
         {
             using (var bitmap = ButtonCanvas(imageSize))
@@ -278,6 +404,42 @@ namespace Loupedeck.ClaudeConsolePlugin
                 bitmap.DrawText(label, 0, labelY, w, h - labelY, White, fontSize: (Int32)(14 * scale));
                 return bitmap.ToImage();
             }
+        }
+
+        /// <summary>Desktop controls keep their identity; availability is a separate, quiet line.</summary>
+        public static BitmapImage RenderControlTile(PluginImageSize imageSize, String label, String icon,
+            Boolean enabled = true, String status = null)
+        {
+            using var bitmap = ButtonCanvas(imageSize);
+            bitmap.Clear(Background);
+            var w = bitmap.Width;
+            var h = bitmap.Height;
+            var scale = Math.Min(w, h) / 96f;
+            var size = (Int32)(Math.Min(w, h) * 0.54f);
+            try
+            {
+                var glyph = PluginResources.ReadImage(IconResource(icon + (enabled ? "" : "_idle")));
+                bitmap.DrawImage(glyph, (w - size) / 2, (Int32)(h * 0.04f), size, size);
+            }
+            catch (Exception ex) { PluginLog.Verbose(ex, $"KeyImage: control glyph '{icon}' unavailable"); }
+
+            var lines = WrapConversationTitle(label ?? "", 13, 2);
+            var lineH = Math.Max(1, (Int32)(15 * scale));
+            var hasStatus = !String.IsNullOrEmpty(status);
+            var labelY = (Int32)(h * 0.58f);
+            var labelH = (Int32)(h * 0.27f); // reserve status space so the name never jumps when availability changes
+            var top = labelY + Math.Max(0, (labelH - lines.Length * lineH) / 2);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                bitmap.DrawText(lines[i], 2, top + i * lineH, w - 4, lineH, White, fontSize: (Int32)(13 * scale));
+            }
+            if (hasStatus)
+            {
+                var statusY = (Int32)(h * 0.85f);
+                bitmap.DrawText(status, 1, statusY, w - 2, h - statusY,
+                    new BitmapColor(0xAA, 0xAA, 0xB0), fontSize: (Int32)(11 * scale));
+            }
+            return bitmap.ToImage();
         }
 
         private static BitmapBuilder ButtonCanvas(PluginImageSize imageSize)

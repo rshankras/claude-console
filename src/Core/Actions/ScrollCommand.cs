@@ -46,8 +46,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                     bridge.InjectKey(KeyStroke.PageDown);
                     break;
             }
-
-            PluginLog.Info($"ScrollCommand: {actionParameter}");
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize)
