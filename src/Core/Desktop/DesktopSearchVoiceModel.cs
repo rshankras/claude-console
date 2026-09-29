@@ -17,6 +17,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             SpeechModelPhase.Verifying => "Verifying",
             SpeechModelPhase.Ready => "SEARCH",
             SpeechModelPhase.Failed => "Tap to retry",
+            SpeechModelPhase.NotStarted or SpeechModelPhase.Cancelled => "TAP · 574 MB",
             _ => "Preparing"
         };
     }
@@ -56,8 +57,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         internal static Boolean AppliesTo(VoiceIntent intent, Boolean isMacOS) =>
             isMacOS && intent == VoiceIntent.DesktopSearch;
 
-        /// <summary>Nonblocking. A press during preparation never opens the microphone.</summary>
-        public Boolean EnsureReady()
+        /// <summary>Nonblocking. A press during preparation never opens the microphone.
+        /// <paramref name="allowDownload"/> false only verifies a model already on disk: plugin load
+        /// uses it so a returning user is ready at once, while the 574 MB download waits for the
+        /// first Speak Query press.</summary>
+        public Boolean EnsureReady(Boolean allowDownload = true)
         {
             lock (_gate)
             {
@@ -67,7 +71,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 if (_cancel.IsCancellationRequested) { _cancel.Dispose(); _cancel = new(); }
                 _status = new SpeechModelStatus(SpeechModelPhase.Checking);
                 var token = _cancel.Token;
-                _pending = Task.Run(() => this.Prepare(token));
+                _pending = Task.Run(() => this.Prepare(token, allowDownload));
                 return false;
             }
         }
@@ -102,7 +106,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             return Convert.ToHexString(actual).Equals(_hash, StringComparison.OrdinalIgnoreCase);
         }
 
-        private async Task Prepare(CancellationToken token)
+        private async Task Prepare(CancellationToken token, Boolean allowDownload)
         {
             // Unique partial files let separate service instances finish without deleting each
             // other's transfer. Promotion is atomic and only follows size + SHA-256 verification.
@@ -115,6 +119,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             {
                 if (!await this.Valid(this.ModelPath, token).ConfigureAwait(false))
                 {
+                    if (!allowDownload) { this.Publish(SpeechModelPhase.NotStarted); return; }
                     Directory.CreateDirectory(Path.GetDirectoryName(this.ModelPath));
                     this.Publish(SpeechModelPhase.Downloading);
                     using var response = await _http.GetAsync(_url, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);

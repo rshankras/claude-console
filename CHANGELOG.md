@@ -1,3 +1,9 @@
+## Vizhi Desktop 0.17.19 — Speak Query model on first use
+
+- The 574 MB Speak Query model no longer downloads when the plugin loads. It downloads the first time you press Speak Query; until then the key reads "Set Up Voice · TAP · 574 MB" and Options+ shows nothing.
+- Loading still checks a model already on disk (locally, no network), so anyone who has it is ready at once.
+- The Options+ message appears only while the model is downloading or if the download fails.
+
 ## Vizhi Desktop 0.17.18 — Approve and Deny on Home
 
 - Home follows the family layout: Deny and Approve sit where Claude Console and Vizhi for Codex put No and Yes, in both modes. They use the family decision tiles — solid green Approve and red Deny with the white check and cross — with the corner badge while a request waits, the chat's title as a small caption, the second confirmation, and "Allow once" only. They turn grey only when the app cannot be read. New Chat takes the reset position; the bottom row is Screenshot · Dictate · Send/Stop.

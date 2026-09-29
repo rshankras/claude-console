@@ -48,6 +48,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public async Task Load_never_downloads_it_only_verifies_a_model_already_on_disk()
+        {
+            var handler = new Handler(); using var http = new HttpClient(handler); using var model = Model(http);
+            Assert.False(model.EnsureReady(allowDownload: false)); await model.Pending;
+            Assert.Equal(SpeechModelPhase.NotStarted, model.Status.Phase);       // nothing on disk: wait for a press
+            Assert.Equal("TAP · 574 MB", model.Status.Footer);
+            Assert.Equal(0, handler.Calls);
+
+            Assert.False(model.EnsureReady()); await model.Pending;              // the first Speak Query press
+            Assert.Equal(1, handler.Calls);
+            using var reload = Model(http);                                       // next plugin load
+            Assert.False(reload.EnsureReady(allowDownload: false)); await reload.Pending;
+            Assert.Equal(SpeechModelPhase.Ready, reload.Status.Phase);
+            Assert.Equal(1, handler.Calls);                                       // verified locally, no network
+        }
+
+        [Fact]
         public async Task Downloads_once_with_progress_and_reuses_verified_model_offline()
         {
             var handler = new Handler(); using var http = new HttpClient(handler); using var model = Model(http);

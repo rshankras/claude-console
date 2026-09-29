@@ -125,11 +125,11 @@ namespace Loupedeck.ClaudeConsolePlugin
             // have it from tools/desktop/build.sh). Voice installs itself lazily on first press.
             DesktopRuntime.EnsureInstalled(this.AssemblyFilePath);
 
-            // Prepare Speak Query once on load. The download contains only local inference
-            // weights, never audio. The keypad and Options+ show progress; no microphone opens.
+            // Speak Query's 574 MB model downloads on its first press, never at load. Load only
+            // verifies a copy already on disk (no network), so a returning user is ready at once.
             if (OperatingSystem.IsMacOS())
             {
-                _searchVoice.EnsureReady();
+                _searchVoice.EnsureReady(allowDownload: false);
                 this.SearchVoiceChanged();
             }
 
@@ -161,9 +161,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             var model = _searchVoice.Status;
             try
             {
-                if (model.Phase == SpeechModelPhase.Ready)
+                // Only an actual download (or its failure) is worth an Options+ message.
+                if (model.Phase is not (SpeechModelPhase.Downloading or SpeechModelPhase.Verifying or SpeechModelPhase.Failed))
                 {
-                    if (DesktopServices.Search.Feedback == VoiceFailure.ModelLoading)
+                    if (model.Phase == SpeechModelPhase.Ready && DesktopServices.Search.Feedback == VoiceFailure.ModelLoading)
                         DesktopServices.Search.ShowFeedback(null);
                     this.OnPluginStatusChanged(Loupedeck.PluginStatus.Normal, String.Empty);
                 }

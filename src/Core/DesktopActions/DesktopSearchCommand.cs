@@ -72,7 +72,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 var ours = capture.Phase != VoicePhase.Idle && capture.Intent == VoiceIntent.DesktopSearch;
                 var model = DesktopServices.SearchVoice.Status;
                 if (!ours && OperatingSystem.IsMacOS() && model.Phase != SpeechModelPhase.Ready)
-                    return KeyImage.RenderIntentTile(size, model.Phase == SpeechModelPhase.Failed ? "Voice Setup" : "Preparing Voice", "voice", model.Footer);
+                    return KeyImage.RenderIntentTile(size, model.Phase switch
+                    {
+                        SpeechModelPhase.Failed => "Voice Setup",
+                        SpeechModelPhase.NotStarted or SpeechModelPhase.Cancelled => "Set Up Voice",   // nothing downloading yet
+                        _ => "Preparing Voice",
+                    }, "voice", model.Footer);
                 if (!ours && !current.Available) return KeyImage.RenderControlTile(size, "Speak Query", "voice", false, problem.Hint);
                 var label = ours ? capture.Phase switch { VoicePhase.Recording => "Listening", VoicePhase.Transcribing => "Searching", _ => "Starting" } : "Speak Query";
                 return KeyImage.RenderIntentTile(size, label, "voice", ours && capture.Phase == VoicePhase.Recording ? "PRESS TO END" : search.Feedback ?? (current.Available ? "SEARCH" : "USE APP"));
