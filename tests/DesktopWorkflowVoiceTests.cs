@@ -138,8 +138,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var chat = DesktopMoreDynamicFolder.Actions("VizhiDesktop", "ChatGPT");
             var codex = DesktopMoreDynamicFolder.Actions("VizhiDesktop", "Codex");
-            Assert.Equal(4, chat.Length); Assert.Equal(6, codex.Length);
-            Assert.Contains(chat, a => a.EndsWith("DesktopWorkflowCommand___schedule"));
+            Assert.Equal(2, chat.Length); Assert.Equal(6, codex.Length);   // ChatGPT: Projects, Continue
+            Assert.DoesNotContain(chat, a => a.EndsWith("___schedule") || a.EndsWith("___secondary_3"));   // no Schedule / Scheduled
+            Assert.Contains(codex, a => a.EndsWith("DesktopContextCommand___secondary_3"));              // Codex keeps Pull Requests
             // Screens a keypad cannot finish stay out of the default menu (Plugins, Explore, Quick Chat).
             Assert.DoesNotContain(chat.Concat(codex), a => a.EndsWith("___secondary_2") || a.EndsWith("___secondary_4"));
             Assert.DoesNotContain(chat.Concat(codex), a => a.Contains("DesktopApprovalCommand")); // Approve/Deny are on Home

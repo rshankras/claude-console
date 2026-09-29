@@ -1,3 +1,8 @@
+## Vizhi Desktop 0.17.24 — A shorter ChatGPT More
+
+- ChatGPT's More now holds Projects and Continue (plus Clear Added once something is added). Schedule and Scheduled are removed from the default menu for this release: Schedule depends on ChatGPT creating a scheduled task from a chat message, not confirmed on the owner's setup, and Scheduled opens a screen that needs a mouse and leaves no chat to write into. Both stay assignable in Options+. Codex's More is unchanged.
+- A prompt or dictation pressed while no chat text box is open (for example on the app's Scheduled or Projects screen) now says Open Chat instead of Chat Changed, and never starts recording.
+
 ## Vizhi Desktop 0.17.23 — One failed prompt no longer blocks the rest
 
 - If a one-press prompt (Summarize, Explain, Review Code, …) could not confirm its text reached the chat, every other prompt then showed "Insert Draft" and did nothing until the plugin was restarted. A stuck fixed prompt is now dropped as soon as you press a different prompt, or when its chat is gone, and the new request goes ahead. It holds none of your words, so nothing is lost.

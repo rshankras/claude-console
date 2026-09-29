@@ -132,7 +132,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 prepareError = null;
                 _appendTarget = append ? preparedAppend ?? _automation.PrepareAppend(mode, out prepareError) : null;
                 var destination = append ? _appendTarget?.Target : _automation.PrepareDraft(mode, true, out prepareError);
-                if (String.IsNullOrEmpty(destination)) return Problem(prepareError);
+                // Starting fresh, nothing "changed": there is simply no chat text box (e.g. the app
+                // is showing its Scheduled or Projects screen).
+                if (String.IsNullOrEmpty(destination))
+                    return prepareError is "composer-target-changed" or "no-unique-composer" or "composer-unavailable" ? "Open Chat" : Problem(prepareError);
                 String context = ""; Int64 contextRevision = -1;
                 if (_context != null && !_context.Prepare(mode, destination, out context, out contextRevision, out var contextError)) return contextError;
                 _contextRevision = contextRevision;

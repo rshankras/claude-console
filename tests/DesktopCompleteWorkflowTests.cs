@@ -103,6 +103,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.DoesNotContain(app.Calls, c => c.Send || c.Name is "send" or "send-prompt");
         }
 
+        [Fact]
+        public void A_spoken_prompt_with_no_chat_open_says_open_chat_and_never_records()
+        {
+            var app = App(); app.Next = new() { SurfaceAvailable = true, Mode = "Codex" };
+            app.Succeeds = false; app.Error = "composer-target-changed";          // e.g. ChatGPT's Scheduled screen
+            var recipe = DesktopWorkflowCommand.CodexDefaults.Single(w => w.Id == "debug");
+            var recovery = new DesktopDraftRecovery(app); var flow = new DesktopWorkflowVoice(app, recovery); var voice = new VoiceCaptureState();
+            Assert.Equal("Open Chat", DesktopWorkflowCommand.Execute("slot_2", app, (_, _) => recipe, flow, voice, new(app),
+                (_, _) => Assert.Fail("Must not start recording without a chat")));
+            Assert.Equal(VoicePhase.Idle, voice.Phase);
+        }
+
         [Theory]
         [InlineData(false)]
         [InlineData(true)]

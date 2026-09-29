@@ -50,8 +50,8 @@ Attach Files now lists recent Downloads on the keypad. Select files and press At
 opens the app's picker for files elsewhere. Paste into Chat accepts copied text, images, or files.
 Existing input is preserved. Summarize and Explain use supplied material and prepare a draft
 for review instead of rejecting it as an existing draft.
-Home keeps Screenshot in the same position in both modes. ChatGPT's More has **Schedule**: speak what and when,
-review, Send. Plugins, Explore and Quick Chat are no longer in More (they need a pointer or typing). Tools keeps Attach Files,
+Home keeps Screenshot in the same position in both modes. ChatGPT's More holds Projects and Continue; Scheduled, Plugins, Explore and Quick Chat
+are not in More (they need a pointer or typing), but stay assignable. Tools keeps Attach Files,
 Paste into Chat and Copy Reply together. Approvals are on Home; Codex task prompts are
 under Tasks. Continue is in More in both modes, so Prompts and Tasks each fit one page; Clear Added appears in
 More once something is staged. Return to App is not in a default menu; assign it in Options+ if you

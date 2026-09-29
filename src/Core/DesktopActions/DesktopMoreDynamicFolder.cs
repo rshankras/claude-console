@@ -45,14 +45,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> tasks = null, IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> prompts = null)
         {
             if (mode is not ("ChatGPT" or "Codex")) return Array.Empty<String>();
-            // Only app screens a keypad can finish: Projects/Scheduled (ChatGPT), Permissions/Pull
-            // Requests (Codex). Plugins, Explore and Quick Chat open screens that need a pointer or
-            // typing; they stay assignable but are not in the default menu.
-            var context = new[] { "secondary_1", "secondary_3" };
+            // App screens worth one press: Projects (ChatGPT), Permissions and Pull Requests (Codex).
+            // Plugins, Explore, Quick Chat and ChatGPT's Scheduled open screens that need a pointer
+            // or typing, and leave no chat to write into; they stay assignable, not in the menu.
+            var context = mode == "Codex" ? new[] { "secondary_1", "secondary_3" } : new[] { "secondary_1" };
             var actions = context.Where(p => DesktopContextCommand.FaceFor(p, mode, available).Enabled)
                 .Select(p => ActionString.ToString(plugin, typeof(DesktopContextCommand).FullName, p));
-            // Scheduling by voice, beside the Scheduled list it creates entries in.
-            if (mode == "ChatGPT") actions = actions.Append(ActionString.ToString(plugin, typeof(DesktopWorkflowCommand).FullName, "schedule"));
             if (mode == "Codex") actions = actions.Concat(new[] { "review_pr", "write_tests" }
                 .Select(p => ActionString.ToString(plugin, typeof(DesktopWorkflowCommand).FullName, p)))
                 .Concat((tasks ?? DesktopWorkflowCommand.CodexDefaults).Select((w, i) => (w, i))
