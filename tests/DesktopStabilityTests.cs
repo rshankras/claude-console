@@ -47,7 +47,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 DesktopServices.Actions.Stop(); queue.Dequeue()();
                 Assert.False(DesktopServices.Actions.IsBusy); Assert.Equal(0, app.Reads);
             }
-            finally { DesktopServices.Lifetime.Dispose(); DesktopServices.SearchVoice.Dispose(); }
+            finally { DesktopServices.Lifetime.Dispose(); }
         }
 
         [Fact]

@@ -13,7 +13,6 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             this.AddParameter("status", "Search Query", "Find Chat");
             if (!DesktopServices.Declared) return;
             DesktopServices.OnSearchChanged(() => this.ActionImageChanged());
-            DesktopServices.OnSearchVoiceChanged(() => this.ActionImageChanged());
             DesktopServices.OnVoiceChanged(() => this.ActionImageChanged());
             DesktopServices.OnVoiceFailed((intent, feedback) =>
             {
@@ -22,7 +21,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         }
 
         internal static void Execute(String parameter, DesktopSearch search, DesktopVoiceActions voice,
-            VoiceCaptureState capture, Action<VoiceIntent, Func<String, String>> toggle, Action close, Func<Boolean> prepareVoice = null)
+            VoiceCaptureState capture, Action<VoiceIntent, Func<String, String>> toggle, Action close)
         {
             if (parameter == "type") { search.TypeQuery(); return; }
             if (parameter == "status") { search.TypeQuery(); return; }
@@ -30,8 +29,6 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             {
                 if (capture.Phase != VoicePhase.Idle && capture.Intent != VoiceIntent.DesktopSearch)
                 { search.ShowFeedback("Dictating"); return; }
-                // Preparation/retry works even when the app search surface is not available.
-                if (capture.Phase == VoicePhase.Idle && prepareVoice != null && !prepareVoice()) return;
                 var sink = capture.Phase == VoicePhase.Idle ? search.CaptureSink() : null;
                 if (capture.Phase == VoicePhase.Idle && sink == null) { search.ShowFeedback(DesktopSearch.ProblemFor(search.Current.Error).Hint); return; }
                 voice.RequestDictation(VoiceIntent.DesktopSearch, capture, intent => toggle(intent, sink), out var feedback);
@@ -54,8 +51,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 {
                     if (sink != null) BridgeManager.Instance.SearchTranscriptSink = sink;
                     BridgeManager.Instance.ToggleVoice(intent);
-                }, () => this.Plugin.ExecuteGenericAction(ActionString.FromString(PluginDynamicFolder.NavigateUpActionName).ActionName, null, 0),
-                OperatingSystem.IsMacOS() ? () => DesktopServices.SearchVoice.EnsureReady() : null);
+                }, () => this.Plugin.ExecuteGenericAction(ActionString.FromString(PluginDynamicFolder.NavigateUpActionName).ActionName, null, 0));
             this.ActionImageChanged();
         }
 
@@ -70,14 +66,6 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             if (parameter == "speak")
             {
                 var ours = capture.Phase != VoicePhase.Idle && capture.Intent == VoiceIntent.DesktopSearch;
-                var model = DesktopServices.SearchVoice.Status;
-                if (!ours && OperatingSystem.IsMacOS() && model.Phase != SpeechModelPhase.Ready)
-                    return KeyImage.RenderIntentTile(size, model.Phase switch
-                    {
-                        SpeechModelPhase.Failed => "Voice Setup",
-                        SpeechModelPhase.NotStarted or SpeechModelPhase.Cancelled => "Set Up Voice",   // nothing downloading yet
-                        _ => "Preparing Voice",
-                    }, "voice", model.Footer);
                 if (!ours && !current.Available) return KeyImage.RenderControlTile(size, "Speak Query", "voice", false, problem.Hint);
                 var label = ours ? capture.Phase switch { VoicePhase.Recording => "Listening", VoicePhase.Transcribing => "Searching", _ => "Starting" } : "Speak Query";
                 return KeyImage.RenderIntentTile(size, label, "voice", ours && capture.Phase == VoicePhase.Recording ? "PRESS TO END" : search.Feedback ?? (current.Available ? "SEARCH" : "USE APP"));

@@ -36,7 +36,6 @@ namespace Loupedeck.ClaudeConsolePlugin
         private readonly IDesktopAppAdapter _app;
         private readonly DesktopLifetime _lifetime;
         private readonly DesktopActionRunner _actions;
-        private readonly DesktopSearchVoiceModel _searchVoice;
 
         /// <summary>
         /// Vizhi Desktop drives the same OpenAI app as Vizhi for Codex, through the desktop
@@ -66,7 +65,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             DesktopServices.Declare(_app, automation, _monitor);
             _lifetime = DesktopServices.Lifetime;
             _actions = DesktopServices.Actions;
-            _searchVoice = DesktopServices.SearchVoice;
             if (automation is MacDesktopAutomation mac) mac.IsEnabled = () => _lifetime.Active;
 
             // The voice keys are aimed at the app's composer, not a terminal. The engine keeps
@@ -80,15 +78,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                 bridge.TranscriptSink = (text, send) => _lifetime.Active
                     ? DesktopTranscriptDelivery.Write(automation, text, send, recovery.NotifyReady) : "Cancelled";
                 bridge.DraftRecoverySink = recovery.Retain;
-                bridge.VoiceModelOverride = intent =>
-                    DesktopSearchVoiceModel.AppliesTo(intent, OperatingSystem.IsMacOS())
-                        ? (true, _searchVoice.EnsureReady() ? _searchVoice.ModelPath : null)
-                        : (false, null);
                 bridge.SearchAudioHasSignal = DesktopSearchAudio.HasSignal;
                 bridge.DesktopCaptureAllowed = _lifetime.CaptureGuard();
             }, bridge.ClearDesktopRouting);
             DesktopServices.OnVoiceFailed(workflow.Fail);
-            DesktopServices.OnSearchVoiceChanged(this.SearchVoiceChanged);
 
             // Same family as Vizhi for Codex, same hold: a failure word is an instruction, held
             // long enough to read and act on.
@@ -125,14 +118,6 @@ namespace Loupedeck.ClaudeConsolePlugin
             // have it from tools/desktop/build.sh). Voice installs itself lazily on first press.
             DesktopRuntime.EnsureInstalled(this.AssemblyFilePath);
 
-            // Speak Query's 574 MB model downloads on its first press, never at load. Load only
-            // verifies a copy already on disk (no network), so a returning user is ready at once.
-            if (OperatingSystem.IsMacOS())
-            {
-                _searchVoice.EnsureReady(allowDownload: false);
-                this.SearchVoiceChanged();
-            }
-
             _monitor.Start();
 
             // Sweep orphans first, then register-or-heal — same sequence and same reasons as
@@ -156,33 +141,11 @@ namespace Loupedeck.ClaudeConsolePlugin
             PluginLog.Info("VizhiDesktopPlugin: Loaded — driving the ChatGPT/Codex desktop app");
         }
 
-        private void SearchVoiceChanged()
-        {
-            var model = _searchVoice.Status;
-            try
-            {
-                // Only an actual download (or its failure) is worth an Options+ message.
-                if (model.Phase is not (SpeechModelPhase.Downloading or SpeechModelPhase.Verifying or SpeechModelPhase.Failed))
-                {
-                    if (model.Phase == SpeechModelPhase.Ready && DesktopServices.Search.Feedback == VoiceFailure.ModelLoading)
-                        DesktopServices.Search.ShowFeedback(null);
-                    this.OnPluginStatusChanged(Loupedeck.PluginStatus.Normal, String.Empty);
-                }
-                else
-                    this.OnPluginStatusChanged(Loupedeck.PluginStatus.Warning,
-                        model.Phase == SpeechModelPhase.Failed
-                            ? "Speak Query download failed. Press Speak Query to retry."
-                            : $"Preparing Speak Query (574 MB, one time): {model.Footer}");
-            }
-            catch (Exception ex) { PluginLog.Warning(ex, "VizhiDesktopPlugin: voice model status unavailable"); }
-        }
-
         public override void Unload()
         {
             _actions.Stop();
             _monitor.Stop();
             _lifetime.Stop();
-            _searchVoice.Suspend();
             PluginLog.Info("VizhiDesktopPlugin: Unloaded");
         }
     }

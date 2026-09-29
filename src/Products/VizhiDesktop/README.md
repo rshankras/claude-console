@@ -20,7 +20,7 @@ product. *(Not an OpenAI product; ChatGPT and Codex are trademarks of OpenAI.)*
 
 ## Status
 
-**Preview, macOS package only. Version 0.17.19 puts Approve/Deny on Home, and fetches the Speak Query model on first use:** two pages, Home and Tools.
+**Preview, macOS package only. Version 0.17.20 puts Approve/Deny on Home; Speak Query shares the one offline speech model:** two pages, Home and Tools.
 Approve and Deny take the family positions on Home in both modes; All Chats joins Find Chat on Tools, and Voice Chat moves to Tools.
 Stock Home and Tools pages migrate together, with a backup; a customized key on either page leaves both as they were.
 Custom assignments and the optional Adaptive 3 layout are preserved.

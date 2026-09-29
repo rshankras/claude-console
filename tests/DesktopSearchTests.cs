@@ -48,24 +48,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Theory]
-        [InlineData(false)] [InlineData(true)]
-        public void Preparing_voice_never_starts_capture_and_can_retry_without_app_search(Boolean available)
-        {
-            var fake = new Fake { Next = available ? Ready() : new() { Error = "mode-unavailable" } };
-            var search = new DesktopSearch(fake); search.Begin(); var capture = new VoiceCaptureState();
-            var prepares = 0; var calls = fake.Calls.Count;
-            for (var i = 0; i < 2; i++)
-                DesktopSearchCommand.Execute("speak", search, new DesktopVoiceActions(fake), capture,
-                    (_, _) => throw new Exception("Microphone must not start during preparation"),
-                    () => throw new Exception("Must not navigate"), () => { prepares++; return false; });
-            Assert.Equal(2, prepares); Assert.Equal(calls, fake.Calls.Count); Assert.Equal(VoicePhase.Idle, capture.Phase);
-            DesktopSearchCommand.Execute("type", search, new DesktopVoiceActions(fake), capture,
-                (_, _) => throw new Exception("Type query must not capture"), () => { },
-                () => throw new Exception("Type query must not wait for voice model"));
-            Assert.Equal(calls + 1, fake.Calls.Count);
-        }
-
-        [Theory]
         [InlineData(null)] [InlineData("oops")] [InlineData("[]")] [InlineData("null")]
         [InlineData("{\"ok\":true}")] [InlineData("{\"ok\":false,\"target\":\"x\"}")]
         public void Bad_helper_responses_never_enable_search(String json) => Assert.False(DesktopSearchSnapshot.Parse(json).Available);

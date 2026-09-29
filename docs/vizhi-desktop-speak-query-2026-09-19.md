@@ -1,5 +1,10 @@
 # Speak Query accuracy — 0.12.9
 
+> **Superseded in 0.17.20 (2026-09-29).** Owner decision for the first release: Speak Query uses the
+> shared base.en model (the same as Dictate and the terminal products) instead of large-v3-turbo —
+> no 574 MB second download, ~4× faster, at the cost of the higher error rate measured below. Kept as
+> the record of the comparison; Turbo can return as an opt-in if users need it.
+
 Implemented on `integrate/vizhi-desktop-main`. Scope: local **Find Chat → Speak Query** on
 macOS. Native ChatGPT Voice Chat still uses the app shortcut. Composer dictation, Voice Draft
 and terminal products retain their existing base.en model. No model selector or profile rebinding.

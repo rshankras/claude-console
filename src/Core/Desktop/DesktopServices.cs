@@ -20,7 +20,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public static DesktopMonitor Monitor { get; private set; }
         public static DesktopVoiceActions VoiceActions { get; private set; }
         public static DesktopSearch Search { get; private set; }
-        public static DesktopSearchVoiceModel SearchVoice { get; private set; }
         public static DesktopDraftRecovery DraftRecovery { get; private set; }
         public static DesktopContextCapture Context { get; private set; }
         public static DesktopFilePicker Files { get; private set; }
@@ -48,8 +47,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         { var source = Context; Lifetime.Bind(() => source.Changed += handler, () => source.Changed -= handler); }
         internal static void OnSearchChanged(Action handler)
         { var source = Search; Lifetime.Bind(() => source.Changed += handler, () => source.Changed -= handler); }
-        internal static void OnSearchVoiceChanged(Action handler)
-        { var source = SearchVoice; Lifetime.Bind(() => source.Changed += handler, () => source.Changed -= handler); }
         internal static void OnDraftChanged(Action handler)
         { var source = DraftRecovery; Lifetime.Bind(() => source.Changed += handler, () => source.Changed -= handler); }
         internal static void OnDraftReady(Action handler)
@@ -87,10 +84,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             Lifetime.OnStop(Files.End);
             WorkflowVoice = new DesktopWorkflowVoice(automation, DraftRecovery, Context);
             Search = new DesktopSearch(automation);
-            SearchVoice?.Dispose();
-            SearchVoice = new DesktopSearchVoiceModel(System.IO.Path.Combine(
-                BridgeManager.HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".claude", "claude-console", "whisper"));
         }
     }
 }

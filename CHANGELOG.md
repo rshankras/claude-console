@@ -1,3 +1,9 @@
+## Vizhi Desktop 0.17.20 — Speak Query uses the shared speech model
+
+- Speak Query now uses the same offline speech model as Dictate, Claude Console and Vizhi for Codex (base.en, about 148 MB, downloaded once on the first voice press). The separate 574 MB Whisper Turbo download is gone.
+- Searches transcribe about four times faster (0.34 s against 1.46 s per query on an M1 Pro). The trade-off is somewhat more misheard words on accented speech; search results are picked on the keypad and the query can be corrected in the app's search field.
+- A Turbo model already downloaded is no longer used and can be deleted: `~/.claude/claude-console/whisper/ggml-large-v3-turbo-q5_0.bin`.
+
 ## Vizhi Desktop 0.17.19 — Speak Query model on first use
 
 - The 574 MB Speak Query model no longer downloads when the plugin loads. It downloads the first time you press Speak Query; until then the key reads "Set Up Voice · TAP · 574 MB" and Options+ shows nothing.
