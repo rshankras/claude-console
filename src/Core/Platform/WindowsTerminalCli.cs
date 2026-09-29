@@ -87,19 +87,26 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// `--window` targeting. `-w 0` means "the current window", which is what makes these
         /// act on the terminal the user is already looking at rather than spawning a new one.
         /// </summary>
-        internal static List<String> ArgsFor(TerminalAction action) => action switch
+        internal static List<String> ArgsFor(TerminalAction action) => ArgsFor(action, null);
+
+        /// <param name="directory">Where a new tab starts (#113: the routed session's project or a
+        /// configured root, chosen by the bridge); null falls back to <see cref="StartingDirectory"/>.</param>
+        internal static List<String> ArgsFor(TerminalAction action, String directory)
         {
+            var start = String.IsNullOrWhiteSpace(directory) ? StartingDirectory : directory;
+            return action switch
+            {
             // Focusing the existing window without changing anything: address the current window
             // and re-focus the tab it already has.
             TerminalAction.Activate => new List<String> { "-w", "0", "focus-tab" },
 
-            TerminalAction.NewTab => new List<String> { "-w", "0", "new-tab", "-d", StartingDirectory },
-            TerminalAction.NewClaudeTab => new List<String> { "-w", "0", "new-tab", "-d", StartingDirectory, ClaudeCommand() },
+            TerminalAction.NewTab => new List<String> { "-w", "0", "new-tab", "-d", start },
+            TerminalAction.NewClaudeTab => new List<String> { "-w", "0", "new-tab", "-d", start, ClaudeCommand() },
             TerminalAction.NextTab => new List<String> { "-w", "0", "focus-tab", "-n" },
             TerminalAction.PreviousTab => new List<String> { "-w", "0", "focus-tab", "-p" },
 
             // A NEW window: "-w new" is the documented spelling for "don't reuse".
-            TerminalAction.NewClaudeWindow => new List<String> { "-w", "new", "new-tab", "-d", StartingDirectory, ClaudeCommand() },
+            TerminalAction.NewClaudeWindow => new List<String> { "-w", "new", "new-tab", "-d", start, ClaudeCommand() },
 
             // Cycling WINDOWS is an OS-level gesture, not a terminal one — wt.exe cannot do it.
             // Callers degrade rather than sending something that would do the wrong thing.
@@ -107,7 +114,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             TerminalAction.PreviousWindow => null,
 
             _ => null,
-        };
+            };
+        }
 
         /// <summary>
         /// Open a new tab at <paramref name="projectDir"/> running claude.

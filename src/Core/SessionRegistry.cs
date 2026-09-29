@@ -59,6 +59,36 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Directory hints from live process discovery; authoritative hook paths win.
         internal IReadOnlyDictionary<String, String> DiscoveredProjectDirs { get; set; }
 
+        // UTC start of each live session's CLI process, from the same discovery pass; null
+        // where the platform does not report it. Only ever a tie-breaker (see Reroute…).
+        internal IReadOnlyDictionary<String, DateTime> DiscoveredSessionStarts { get; set; }
+
+        // The last state each live terminal reported for ITSELF — its file's folder matched
+        // its process's folder. Shown in its place when its file turns out to hold another
+        // session's event (the shared-daemon case below), so the key neither goes blank nor
+        // wears the other session's approval.
+        private readonly Dictionary<String, GridSession> _ownStates =
+            new Dictionary<String, GridSession>(StringComparer.Ordinal);
+
+        // Source files already examined, by their write time: the same misplaced envelope is
+        // not re-matched and its target not re-read on every 500 ms poll.
+        private readonly Dictionary<String, DateTime> _examinedSources =
+            new Dictionary<String, DateTime>(StringComparer.Ordinal);
+        private readonly HashSet<String> _routingLogged = new HashSet<String>(StringComparer.Ordinal);
+
+        /// <summary>Test seam: how many distinct routing notices have been logged (one per session and target).</summary>
+        internal Int32 RoutingNoticesLogged => _routingLogged.Count;
+
+        // A session starts within moments of its CLI process; anything further apart is a resumed
+        // conversation in an older process, which start times cannot place. Same bound as the
+        // rollout bridge uses for the same question.
+        private const Double MaxStartSkewSeconds = 120.0;
+
+        // Process start times and file write times come from different clocks' resolutions (the
+        // start is to the microsecond, an mtime can round); a hook never writes before its session's
+        // process exists, so a small grace only absorbs rounding.
+        private const Double StaleEventGraceSeconds = 2.0;
+
         // Test seam for the five-second post-Escape quiet window. Production always uses wall time.
         internal Func<Int64> NowUnix { get; set; } = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         // A Yes/No press may resolve a permission menu without Codex emitting a following hook
@@ -176,6 +206,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 }
                 session.PendingTool = null;
                 session.PendingCommand = null;
+                ClearApprovalMetadata(session);
                 session.Risk = ApprovalRisk.None;
                 // Claude's separate activity file still owns its state; changing it here would
                 // cause a false ready->waiting repaint on the next poll. Codex's approval event is
@@ -280,6 +311,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     _lastLiveTtys = liveTtys;
                 }
 
+                this.RerouteMisattributedStates(next, liveTtys);
+
                 if (liveTtys != null)
                 {
                     // `ps` is the authority on which tabs still exist. Reap the rest — this is what
@@ -288,6 +321,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         next.Remove(dead);
                         _lastKnownProject.Remove(dead);   // a reused tab must not inherit this name
+                        _ownStates.Remove(dead);
+                        _examinedSources.Remove(dead);
                         ReapFiles(dead);
                     }
 
@@ -410,28 +445,47 @@ namespace Loupedeck.ClaudeConsolePlugin
                     continue;   // the fallback file is a duplicate of some tab, not a tab of its own
                 }
 
+                var session = this.ReadSessionFile(file, tty);
+                if (session != null)
+                {
+                    sessions[tty] = session;
+                }
+            }
+
+            return sessions;
+        }
+
+        /// <summary>One state file, one session; null when it cannot be read or parsed.</summary>
+        private GridSession ReadSessionFile(String file, String tty)
+        {
+            {
                 // The AGENT owns its format. Parsing here is what made a Codex hook envelope
                 // deserialise as Claude's statusline with every field null: no error, no missing
                 // file, just a session stuck on "ready" wearing a project name it never reported.
                 String raw;
+                DateTime updatedAt;
                 try
                 {
+                    // Capture before reading: a replacement after the read must not give an old
+                    // approval the timestamp of newer bytes we have not parsed yet.
+                    updatedAt = LastWrite(file);
                     raw = File.ReadAllText(file);
                 }
                 catch (IOException)
                 {
-                    continue;
+                    return null;
                 }
 
                 var state = this.Agent.ParseSessionState(raw);
                 if (state == null)
                 {
-                    continue;
+                    return null;
                 }
 
-                var updatedAt = LastWrite(file);
+                String activityRaw = null;
+                var activityWritten = DateTime.MinValue;
                 var activity = state.Activity == null
-                    ? ReadActivityState(tty, state.TranscriptPath)
+                    ? ReadActivityState(tty, state.TranscriptPath, out activityRaw, out activityWritten)
                     : NormalizeActivityState(
                         tty,
                         state.Activity,
@@ -451,14 +505,27 @@ namespace Loupedeck.ClaudeConsolePlugin
                     TranscriptPath = state.TranscriptPath,
                     State = activity,
                     UpdatedAt = updatedAt,
+                    StateSourcePath = state.Activity == null ? this.ActivityFor(tty) : file,
+                    StateSourceRaw = state.Activity == null ? activityRaw : raw,
+                    StateSourceWrittenAtUtc = state.Activity == null ? activityWritten : updatedAt,
                 };
+                session.StateObservationStartedAtUtc = ObservationTimes(session.StateSourceRaw, approval: false).Started;
 
                 if (state.ReportsApproval)
                 {
                     session.ApprovalInSessionState = true;
                     session.PendingTool = state.PendingTool;
                     session.PendingCommand = state.PendingCommand;
+                    session.ApprovalObservedAtUtc = String.IsNullOrEmpty(state.PendingTool) ? null : updatedAt;
                     session.Risk = state.Risk;
+                    if (!String.IsNullOrEmpty(state.PendingTool))
+                    {
+                        var times = ObservationTimes(raw, approval: true);
+                        session.ApprovalObservationStartedAtUtc = times.Started;
+                        session.ApprovalSourceEventAtUtc = times.Event;
+                        session.ApprovalSourcePath = file;
+                        session.ApprovalSourceRaw = raw;
+                    }
                 }
                 else
                 {
@@ -479,10 +546,243 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 this.ApplyApprovalAcknowledgement(session);
 
-                sessions[tty] = session;
+                return session;
+            }
+        }
+
+        /// <summary>
+        /// Put a hook envelope back on the terminal it belongs to.
+        ///
+        /// Codex 0.158 runs every session inside one shared app-server daemon, and its hooks run
+        /// there. The hook finds "its" terminal by walking the process ancestry, which for a
+        /// daemon ends at the terminal that started it — so EVERY session's events land in that
+        /// tty's file: its key shows the other session's project and approval, and Yes would type
+        /// into the wrong tab. Seen live on 2026-09-28 (AlertWala's approval on the claude-console
+        /// key); the same limitation was deferred as "background-server routing" in #103. Once
+        /// that terminal is gone the daemon has no terminal in its ancestry and the hook writes
+        /// shared.json instead — the same evidence with no key of its own.
+        ///
+        /// The plugin independently knows each live CLI's real folder and start time from the
+        /// process table. A file whose event names a folder its own terminal is not in is re-keyed
+        /// to the one live terminal that IS in that folder (start times break a tie between two;
+        /// a terminal already known to run a different conversation never qualifies), and the
+        /// envelope is written under that key so approval currency, acknowledgement and Yes/No
+        /// see exactly what the hook would have written there. With no unique match the event is
+        /// held back — the keys never guess — and the file's own terminal keeps its last own
+        /// state. When no other terminal is in that folder and nothing says the event is another
+        /// conversation, the hook's folder stays authoritative over the process hint, as before:
+        /// a resumed session can report a folder its process no longer sits in.
+        /// </summary>
+        private void RerouteMisattributedStates(Dictionary<String, GridSession> next, IReadOnlyCollection<String> liveTtys)
+        {
+            var dirs = this.DiscoveredProjectDirs;
+            if (!this.Agent.Capabilities.HooksMayReportAnotherTerminal || dirs == null || liveTtys == null)
+            {
+                return;
             }
 
-            return sessions;
+            var sources = next.Select(p => (Tty: p.Key, State: p.Value, Shared: false)).ToList();
+            var sharedFile = this.StateFor(IpcPaths.SharedName);
+            if (File.Exists(sharedFile))
+            {
+                var shared = this.ReadSessionFile(sharedFile, IpcPaths.SharedName);
+                if (shared != null)
+                {
+                    sources.Add((IpcPaths.SharedName, shared, true));
+                }
+            }
+
+            foreach (var (tty, state, shared) in sources)
+            {
+                if (String.IsNullOrWhiteSpace(state.ProjectDir))
+                {
+                    continue;
+                }
+
+                String ownDir = null;
+                if (!shared)
+                {
+                    if (!dirs.TryGetValue(tty, out ownDir) || String.IsNullOrWhiteSpace(ownDir))
+                    {
+                        continue;   // no independent view of this terminal: nothing to compare with
+                    }
+                    if (SamePath(ownDir, state.ProjectDir))
+                    {
+                        _ownStates[tty] = state;   // routed as the hook meant: this terminal's own news
+                        continue;
+                    }
+                }
+
+                var inFolder = 0;
+                var candidates = new List<String>();
+                foreach (var live in liveTtys)
+                {
+                    if (live == tty || !dirs.TryGetValue(live, out var dir) || !SamePath(dir, state.ProjectDir))
+                    {
+                        continue;
+                    }
+                    inFolder++;
+                    // A terminal whose process started after the event was written cannot own it:
+                    // a stale approval left in shared.json (or the daemon's terminal's file) by a
+                    // session that has since closed must not be handed to a new terminal that
+                    // opened in the same folder, where Yes would type into a prompt that does not
+                    // exist (PR #133 review). It still counts as in the folder, so the event is
+                    // held rather than adopted by the file's own terminal.
+                    if (this.DiscoveredSessionStarts != null && this.DiscoveredSessionStarts.TryGetValue(live, out var liveStart)
+                        && liveStart > state.UpdatedAt.AddSeconds(StaleEventGraceSeconds))
+                    {
+                        continue;
+                    }
+                    // A terminal whose own file names a different conversation is not this one's.
+                    var known = next.TryGetValue(live, out var current) && !current.IsProvisional ? current.SessionId : null;
+                    if (!String.IsNullOrEmpty(known) && !String.IsNullOrEmpty(state.SessionId) && known != state.SessionId)
+                    {
+                        continue;
+                    }
+                    candidates.Add(live);
+                }
+                if (candidates.Count > 1)
+                {
+                    candidates = this.ClosestStart(candidates, state.SessionId);
+                }
+
+                // No live terminal is in that folder and nothing says this is another conversation:
+                // the hook's folder wins over the process hint, as it always has. Once ANY terminal
+                // is in that folder the event is somebody else's, matched or not.
+                _ownStates.TryGetValue(tty, out var own);
+                var anotherConversation = !shared && own?.SessionId != null && state.SessionId != null && own.SessionId != state.SessionId;
+                if (inFolder == 0 && !anotherConversation)
+                {
+                    if (!shared) { _ownStates[tty] = state; }
+                    continue;
+                }
+
+                // The same envelope, examined last poll: keep its decision, only refresh the substitute.
+                var examined = _examinedSources.TryGetValue(tty, out var seenAt) && seenAt == state.UpdatedAt;
+                if (!examined)
+                {
+                    _examinedSources[tty] = state.UpdatedAt;
+                    var where = shared ? "shared.json" : tty + (ownDir == null ? String.Empty : $", whose terminal runs in {ownDir}");
+                    if (candidates.Count == 1)
+                    {
+                        var to = candidates[0];
+                        if (this.Materialise(state, to))
+                        {
+                            var reread = this.ReadSessionFile(this.StateFor(to), to);
+                            if (reread != null) { next[to] = reread; }
+                        }
+                        this.LogRoutingOnce($"{state.SessionId}|{tty}>{to}",
+                            $"SessionRegistry: an event for {state.ProjectDir} arrived under {where} — {this.Agent.DisplayName}'s hook runs in a shared daemon and reports the terminal that started it; shown on {to}, the one terminal in that folder");
+                    }
+                    else
+                    {
+                        this.LogRoutingOnce($"{state.SessionId}|{tty}|held",
+                            $"SessionRegistry: an event for {state.ProjectDir} (session {state.SessionId}) arrived under {where}; {inFolder} live terminal(s) run {this.Agent.DisplayName} in that folder and none can be singled out, so the keys will not guess — answer in the terminal");
+                    }
+                }
+
+                if (!shared)
+                {
+                    if (own != null)
+                    {
+                        next[tty] = OwnCopy(own);
+                    }
+                    else
+                    {
+                        next.Remove(tty);   // a live tab with no news of its own yet: provisional, named from its process
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Write the envelope under the key it belongs to, keeping the hook's write time so every
+        /// reader sees the file the hook would have produced. False when the target already holds
+        /// this envelope or newer news of its own.
+        /// </summary>
+        private Boolean Materialise(GridSession state, String to)
+        {
+            var target = this.StateFor(to);
+            try
+            {
+                if (File.Exists(target))
+                {
+                    if (LastWrite(target) > state.UpdatedAt) { return false; }
+                    if (File.ReadAllText(target) == state.StateSourceRaw) { return false; }
+                }
+                var temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                File.WriteAllText(temporary, state.StateSourceRaw);
+                PrivateFiles.EnsurePrivateFile(temporary);   // owner-only, as the hook writes its own
+                File.Move(temporary, target, overwrite: true);
+                File.SetLastWriteTimeUtc(target, state.UpdatedAt);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Verbose(ex, $"SessionRegistry: could not re-key an event to {to}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Among terminals in the event's folder, the one that started just before the session
+        /// did — when the agent's session id carries that time and the platform reports process
+        /// starts. Otherwise, or when two are too close to call, the whole list comes back.
+        /// </summary>
+        private List<String> ClosestStart(List<String> candidates, String sessionId)
+        {
+            var started = this.Agent.SessionStartedAtUtc(sessionId);
+            var starts = this.DiscoveredSessionStarts;
+            if (started == null || starts == null)
+            {
+                return candidates;
+            }
+
+            var scored = candidates
+                .Where(c => starts.ContainsKey(c))
+                .Select(c => (Tty: c, Skew: Math.Abs((started.Value - starts[c]).TotalSeconds)))
+                .Where(x => x.Skew <= MaxStartSkewSeconds)
+                .OrderBy(x => x.Skew)
+                .ToList();
+            if (scored.Count == 0 || (scored.Count > 1 && scored[1].Skew - scored[0].Skew < 1.0))
+            {
+                return candidates;
+            }
+            return new List<String> { scored[0].Tty };
+        }
+
+        // The terminal's last own state, minus anything that could be claimed as a live approval:
+        // its file no longer holds it, so a press could not be checked against the source.
+        private static GridSession OwnCopy(GridSession own) => new GridSession
+        {
+            SessionKey = own.SessionKey,
+            Project = own.Project,
+            ProjectDir = own.ProjectDir,
+            SessionId = own.SessionId,
+            SessionName = own.SessionName,
+            CtxPercent = own.CtxPercent,
+            TranscriptPath = own.TranscriptPath,
+            State = own.State,
+            UpdatedAt = own.UpdatedAt,
+            IsProvisional = own.IsProvisional,
+            StateObservationStartedAtUtc = own.StateObservationStartedAtUtc,
+        };
+
+        private static Boolean SamePath(String a, String b)
+        {
+            if (String.IsNullOrWhiteSpace(a) || String.IsNullOrWhiteSpace(b)) { return false; }
+            // Both come from this machine (a process's cwd and the hook's cwd), so only trailing
+            // separators and case need levelling: APFS and NTFS are case-insensitive by default.
+            static String Trim(String p) => p.Length > 1 ? p.TrimEnd('/', '\\') : p;
+            return String.Equals(Trim(a), Trim(b), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void LogRoutingOnce(String key, String message)
+        {
+            if (_routingLogged.Add(key))
+            {
+                PluginLog.Info(message);
+            }
         }
 
         // "ready" unless the hooks say otherwise. A "busy" whose TRANSCRIPT has gone quiet is
@@ -492,10 +792,23 @@ namespace Loupedeck.ClaudeConsolePlugin
         // been read and parsed in that loop: consulting it here would mean a second read and parse
         // of the same file for every session on every poll, which is the cost #27 just finished
         // removing.
-        private String ReadActivityState(String tty, String transcriptPath)
+        private String ReadActivityState(String tty, String transcriptPath, out String raw, out DateTime written)
         {
             var file = this.ActivityFor(tty);
-            var activity = ReadJson<ActivityState>(file);
+            raw = null;
+            written = DateTime.MinValue;
+            ActivityState activity = null;
+            try
+            {
+                var info = new FileInfo(file);
+                if (info.Exists && info.Length > 0 && info.Length <= MaxFileBytes)
+                {
+                    written = info.LastWriteTimeUtc;
+                    raw = File.ReadAllText(file);
+                    activity = JsonSerializer.Deserialize<ActivityState>(raw);
+                }
+            }
+            catch { }
             if (activity?.State == null)
             {
                 return "ready";
@@ -555,7 +868,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            var pending = ReadPendingApproval(this.PendingFor(session.SessionKey));
+            var pendingPath = this.PendingFor(session.SessionKey);
+            var pending = ReadPendingApproval(pendingPath, out var observedAt, out var raw);
             if (pending == null)
             {
                 // Waiting, but nothing is pending — so this is Claude asking for input at an idle
@@ -572,7 +886,16 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             session.PendingTool = pending.Value.Tool;
             session.PendingCommand = pending.Value.Command;
+            session.ApprovalObservedAtUtc = String.IsNullOrEmpty(pending.Value.Tool) ? null : observedAt;
             session.Risk = RiskClassifier.Classify(pending.Value.Tool, pending.Value.Command);
+            if (!String.IsNullOrEmpty(pending.Value.Tool))
+            {
+                var times = ObservationTimes(raw, approval: true);
+                session.ApprovalObservationStartedAtUtc = times.Started;
+                session.ApprovalSourceEventAtUtc = times.Event;
+                session.ApprovalSourcePath = pendingPath;
+                session.ApprovalSourceRaw = raw;
+            }
         }
 
         private void ApplyApprovalAcknowledgement(GridSession session)
@@ -592,6 +915,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             session.PendingTool = null;
             session.PendingCommand = null;
+            ClearApprovalMetadata(session);
             session.Risk = ApprovalRisk.None;
             if (session.State == "waiting")
             {
@@ -611,8 +935,13 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// payload. Parsed defensively on purpose: these payloads have demonstrably changed shape
         /// between Claude Code versions, and a badge is never worth throwing on.
         /// </summary>
-        internal static (String Tool, String Command)? ReadPendingApproval(String path)
+        internal static (String Tool, String Command)? ReadPendingApproval(String path) =>
+            ReadPendingApproval(path, out _, out _);
+
+        private static (String Tool, String Command)? ReadPendingApproval(String path, out DateTime observedAt, out String raw)
         {
+            observedAt = DateTime.MinValue;
+            raw = null;
             try
             {
                 var fi = new FileInfo(path);
@@ -621,7 +950,9 @@ namespace Loupedeck.ClaudeConsolePlugin
                     return null;
                 }
 
-                using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                var writtenBeforeRead = fi.LastWriteTimeUtc;
+                raw = File.ReadAllText(path);
+                using var doc = JsonDocument.Parse(raw);
                 var root = doc.RootElement;
                 if (root.ValueKind != JsonValueKind.Object)
                 {
@@ -642,12 +973,88 @@ namespace Loupedeck.ClaudeConsolePlugin
                     }
                 }
 
-                return tool == null && command == null ? null : (tool, command);
+                if (tool == null && command == null)
+                {
+                    return null;
+                }
+                observedAt = writtenBeforeRead;
+                return (tool, command);
             }
             catch
             {
                 return null;   // mid-write or an unfamiliar shape
             }
+        }
+
+        private static void ClearApprovalMetadata(GridSession session)
+        {
+            session.ApprovalObservedAtUtc = null;
+            session.ApprovalObservationStartedAtUtc = null;
+            session.ApprovalSourceEventAtUtc = null;
+            session.ApprovalSourcePath = null;
+            session.ApprovalSourceRaw = null;
+        }
+
+        private static (DateTime? Started, DateTime? Event) ObservationTimes(String raw, Boolean approval)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(raw);
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object) { return (null, null); }
+                var transport = root.TryGetProperty("transport", out var value) && value.ValueKind == JsonValueKind.String
+                    ? value.GetString() : null;
+                if (String.IsNullOrEmpty(transport) || transport == "hook")
+                {
+                    var started = Timestamp(root, "hookStartedUtcTicks");
+                    return (started, started);
+                }
+                if (transport == "rollout-code-mode" || (!approval && transport == "rollout"))
+                {
+                    return (Timestamp(root, "observationStartedUtcTicks"), Timestamp(root, "rolloutEventUtcTicks"));
+                }
+            }
+            catch { }
+            return (null, null);
+        }
+
+        private static DateTime? Timestamp(JsonElement root, String name) =>
+            root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
+            value.TryGetInt64(out var ticks) && ticks > 0 && ticks <= DateTime.MaxValue.Ticks
+                ? new DateTime(ticks, DateTimeKind.Utc) : null;
+
+        /// <summary>Press-time revalidation of the exact state the user is about to answer.</summary>
+        internal Boolean IsApprovalSourceCurrent(String sessionKey)
+        {
+            GridSession session;
+            lock (_lock)
+            {
+                if (sessionKey == null || !_sessions.TryGetValue(sessionKey, out session) ||
+                    String.IsNullOrEmpty(session.PendingTool)) { return false; }
+            }
+            if (!SourceMatches(session.ApprovalSourcePath, session.ApprovalSourceRaw, session.ApprovalObservedAtUtc) ||
+                (session.StateSourcePath != session.ApprovalSourcePath &&
+                 !SourceMatches(session.StateSourcePath, session.StateSourceRaw, session.StateSourceWrittenAtUtc)))
+            {
+                return false;
+            }
+            lock (_lock)
+            {
+                return _sessions.TryGetValue(sessionKey, out var current) && ReferenceEquals(current, session) &&
+                    !String.IsNullOrEmpty(current.PendingTool);
+            }
+        }
+
+        private static Boolean SourceMatches(String path, String raw, DateTime? written)
+        {
+            if (path == null || raw == null || written == null) { return false; }
+            try
+            {
+                var info = new FileInfo(path);
+                if (!info.Exists || info.Length > MaxFileBytes || info.LastWriteTimeUtc != written.Value) { return false; }
+                return File.ReadAllText(path) == raw && File.GetLastWriteTimeUtc(path) == written.Value;
+            }
+            catch { return false; }
         }
 
         internal static Int32? ContextPercent(ClaudeState state)

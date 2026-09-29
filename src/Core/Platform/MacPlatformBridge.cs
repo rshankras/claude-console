@@ -18,6 +18,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         private readonly Dictionary<String, String> _sessionDirectories = new();
         public IReadOnlyDictionary<String, String> SessionDirectories => _sessionDirectories;
         internal Func<Int32, String> ProcessDirectoryReader { get; set; } = MacProcessDirectory.Read;
+        private readonly Dictionary<String, DateTime> _sessionStarts = new();
+        public IReadOnlyDictionary<String, DateTime> SessionStartTimes => _sessionStarts;
+        internal Func<Int32, DateTime?> ProcessStartReader { get; set; } = MacProcessDirectory.StartTimeUtc;
 
         public Boolean IsSupported => OperatingSystem.IsMacOS();
 
@@ -94,20 +97,35 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // from _cliCommand, never a literal: these two were consts hardcoding "claude" long after
         // the rest of the bridge had learned the agent's name, so the Codex keypad's New key
         // opened a claude session — found only when a user read the key label.
-        private String NewAgentTabScript() =>
+        // The shell command travels as an osascript ARGUMENT (item 1 of argv), not interpolated
+        // into the source: since #113 it may carry a `cd` to a project folder, and folder names
+        // legitimately contain quotes and backslashes — the same discipline LaunchShellCommand uses.
+        private const String NewAgentTabScript =
+            "on run argv\n" +
+            "set shellCommand to item 1 of argv\n" +
             "tell application \"Terminal\"\n" +
             "  activate\n" +
             "  tell application \"System Events\" to key code 17 using command down\n" +
             "  delay 0.5\n" +
-            "  do script \"" + this._cliCommand + "\" in front window\n" +
-            "end tell";
+            "  do script shellCommand in front window\n" +
+            "end tell\n" +
+            "end run";
 
         // New WINDOW running the agent: `do script` with no "in" target opens a fresh window.
-        private String NewAgentWindowScript() =>
+        private const String NewAgentWindowScript =
+            "on run argv\n" +
+            "set shellCommand to item 1 of argv\n" +
             "tell application \"Terminal\"\n" +
             "  activate\n" +
-            "  do script \"" + this._cliCommand + "\"\n" + // no target → new window
-            "end tell";
+            "  do script shellCommand\n" + // no target → new window
+            "end tell\n" +
+            "end run";
+
+        /// <summary>The agent, started in <paramref name="directory"/> when the bridge chose one (#113).</summary>
+        private String AgentShellCommand(String directory) =>
+            String.IsNullOrWhiteSpace(directory)
+                ? this._cliCommand
+                : "cd " + ShellQuote(directory) + " && " + this._cliCommand;
 
         // Test seam: when set, replaces the real osascript invocation so the unit tests can assert
         // on the exact script + arguments a key press would send without driving the window server.
@@ -144,8 +162,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
 
             var found = AgentProcessWatcher.Discover(output, this._matcher, this.DrivableOwner);
             _sessionDirectories.Clear();
+            _sessionStarts.Clear();
             // Codex may omit SessionStart until its first prompt. Ask the live process for cwd;
-            // no directory scan, extra ps, or external command is needed.
+            // no directory scan, extra ps, or external command is needed. Its start time rides
+            // along from the same syscall family: with the shared daemon routing every session's
+            // hooks through one terminal, folder plus start time is how the registry puts an
+            // envelope back on the terminal it belongs to.
             if (_cliCommand == "codex")
             {
                 foreach (var row in AgentProcessWatcher.Parse(output, _matcher))
@@ -154,6 +176,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                     {
                         var directory = ProcessDirectoryReader(pid);
                         if (!String.IsNullOrWhiteSpace(directory)) { _sessionDirectories[row.Tty] = directory; }
+                        var started = ProcessStartReader(pid);
+                        if (started.HasValue) { _sessionStarts[row.Tty] = started.Value; }
                     }
                 }
             }
@@ -443,16 +467,29 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
                 wantOutput: true);
         }
 
-        public void Navigate(TerminalAction action)
+        public void Navigate(TerminalAction action, String directory = null)
         {
+            // The two gestures that START the agent carry the shell command as an argument. A
+            // plain New Tab stays Cmd+T: Terminal's own "new tabs open in" preference applies,
+            // and typing a `cd` into a tab the user asked to be empty would be noise.
+            if (action is TerminalAction.NewClaudeTab or TerminalAction.NewClaudeWindow)
+            {
+                if (!this.CanRun())
+                {
+                    return;
+                }
+
+                var launch = action == TerminalAction.NewClaudeTab ? NewAgentTabScript : NewAgentWindowScript;
+                this.RunOsascriptCore(new List<String> { "-e", launch, this.AgentShellCommand(directory) }, 15000, wantOutput: false);
+                return;
+            }
+
             var script = action switch
             {
                 TerminalAction.Activate => "tell application \"Terminal\" to activate",
                 TerminalAction.NewTab => ActivateThen + "key code 17 using {command down}",                // Cmd+T (key code, not "t" — see KeyCodeT)
-                TerminalAction.NewClaudeTab => this.NewAgentTabScript(),
                 TerminalAction.NextTab => ActivateThen + "key code 48 using {control down}",              // Ctrl+Tab
                 TerminalAction.PreviousTab => ActivateThen + "key code 48 using {control down, shift down}",
-                TerminalAction.NewClaudeWindow => this.NewAgentWindowScript(),
                 TerminalAction.NextWindow => ActivateThen + "key code 50 using {command down}",           // Cmd+`
                 TerminalAction.PreviousWindow => ActivateThen + "key code 50 using {command down, shift down}",
                 _ => null,

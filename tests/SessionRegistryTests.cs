@@ -539,5 +539,236 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Equal(25, SessionRegistry.ContextPercent(state));
         }
+
+        // --- Codex's shared daemon: envelopes under the wrong key --------------------------------
+        //
+        // Codex 0.158 runs every session in one app-server daemon; a hook run there reports the
+        // terminal that STARTED the daemon, so every session's events land in that tty's file.
+        // The registry re-keys them from the process table (folder, then start time).
+
+        private String CodexEnvelope(String sessionId, String cwd, String hookEvent, String command = null)
+        {
+            var tool = command == null ? "" : $@",""tool_name"":""Bash"",""tool_input"":{{""command"":""{command}""}}";
+            return $@"{{""schema"":1,""agent"":""codex-cli"",""event"":""{hookEvent}"",""ts"":1,""payload"":{{""session_id"":""{sessionId}"",""cwd"":""{cwd}""{tool}}}}}";
+        }
+
+        private String WriteEnvelope(String tty, String raw, DateTime writtenAt)
+        {
+            var path = this.StateFor(tty);
+            File.WriteAllText(path, raw);
+            File.SetLastWriteTimeUtc(path, writtenAt);
+            return raw;
+        }
+
+        private static Dictionary<String, String> Dirs(params (String Tty, String Dir)[] pairs) =>
+            pairs.ToDictionary(p => p.Tty, p => p.Dir, StringComparer.Ordinal);
+
+        [Fact]
+        public void Daemon_hosted_approval_is_shown_on_the_terminal_that_runs_in_its_folder()
+        {
+            var t0 = DateTime.UtcNow.AddSeconds(-30);
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/p/console"), ("ttys003", "/p/alert"));
+            var live = new HashSet<String> { "ttys001", "ttys003" };
+
+            // ttys001's own news first, so the registry knows what that terminal is doing.
+            WriteEnvelope("ttys001", CodexEnvelope("S1", "/p/console", "Stop"), t0);
+            registry.Refresh(live);
+            Assert.NotEqual("waiting", registry.LiveSessions().Single(s => s.SessionKey == "ttys001").State);
+
+            // Then the daemon writes AlertWala's approval under ttys001.
+            var raw = WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "touch x"), t0.AddSeconds(5));
+            registry.Refresh(live);
+
+            var alert = registry.LiveSessions().Single(s => s.SessionKey == "ttys003");
+            Assert.Equal("waiting", alert.State);
+            Assert.Equal("Bash", alert.PendingTool);
+            Assert.Equal("/p/alert", alert.ProjectDir);
+            Assert.Equal("S2", alert.SessionId);
+            Assert.True(registry.IsApprovalSourceCurrent("ttys003"));
+            Assert.Equal(raw, File.ReadAllText(this.StateFor("ttys003")));
+            Assert.Equal(t0.AddSeconds(5), File.GetLastWriteTimeUtc(this.StateFor("ttys003")));
+
+            // The daemon's terminal keeps its own last state and wears no approval.
+            var console = registry.LiveSessions().Single(s => s.SessionKey == "ttys001");
+            Assert.NotEqual("waiting", console.State);
+            Assert.Equal("console", console.Project);
+            Assert.Equal("S1", console.SessionId);
+            Assert.Null(console.PendingTool);
+            Assert.False(registry.IsApprovalSourceCurrent("ttys001"));
+        }
+
+        [Fact]
+        public void Re_keyed_approval_stays_answered_until_that_session_writes_again()
+        {
+            var t0 = DateTime.UtcNow.AddSeconds(-30);
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/p/console"), ("ttys003", "/p/alert"));
+            var live = new HashSet<String> { "ttys001", "ttys003" };
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "touch x"), t0);
+            registry.Refresh(live);
+            Assert.Equal("Bash", registry.LiveSessions().Single(s => s.SessionKey == "ttys003").PendingTool);
+
+            Assert.True(registry.ClearPendingApproval("ttys003"));
+            var written = File.GetLastWriteTimeUtc(this.StateFor("ttys003"));
+            registry.Refresh(live);   // the same envelope still sits under ttys001
+            registry.Refresh(live);
+            var alert = registry.LiveSessions().Single(s => s.SessionKey == "ttys003");
+            Assert.Null(alert.PendingTool);
+            Assert.Equal("ready", alert.State);
+            Assert.Equal(written, File.GetLastWriteTimeUtc(this.StateFor("ttys003")));   // not rewritten
+
+            // Codex moves on: the daemon writes S2's Stop under ttys001; ttys003 follows.
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "Stop"), t0.AddSeconds(10));
+            registry.Refresh(live);
+            alert = registry.LiveSessions().Single(s => s.SessionKey == "ttys003");
+            Assert.NotEqual("waiting", alert.State);
+            Assert.Null(alert.PendingTool);
+            Assert.Equal(t0.AddSeconds(10), File.GetLastWriteTimeUtc(this.StateFor("ttys003")));
+        }
+
+        [Fact]
+        public void Two_terminals_in_the_folder_hold_the_event_back_rather_than_guess()
+        {
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/p/console"), ("ttys003", "/p/alert"), ("ttys004", "/p/alert"));
+            var live = new HashSet<String> { "ttys001", "ttys003", "ttys004" };
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "touch x"), DateTime.UtcNow.AddSeconds(-5));
+            registry.Refresh(live);
+
+            Assert.All(registry.LiveSessions(), s => Assert.Null(s.PendingTool));
+            Assert.All(registry.LiveSessions(), s => Assert.NotEqual("waiting", s.State));
+            Assert.False(File.Exists(this.StateFor("ttys003")));
+            Assert.False(File.Exists(this.StateFor("ttys004")));
+            Assert.True(registry.LiveSessions().Single(s => s.SessionKey == "ttys001").IsProvisional);
+        }
+
+        [Fact]
+        public void Start_times_pick_the_terminal_that_started_just_before_the_session()
+        {
+            // A UUIDv7 session id minted half a second after ttys003's process started.
+            var processStart = new DateTime(2026, 9, 28, 13, 38, 1, DateTimeKind.Utc);
+            var sessionStart = processStart.AddMilliseconds(500);
+            var ms = (Int64)(sessionStart - DateTime.UnixEpoch).TotalMilliseconds;
+            var sessionId = ms.ToString("x12") + "7000" + "8000" + "000000000000";   // 32 hex digits, version nibble 7
+
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/p/console"), ("ttys003", "/p/alert"), ("ttys004", "/p/alert"));
+            registry.DiscoveredSessionStarts = new Dictionary<String, DateTime>(StringComparer.Ordinal)
+            {
+                ["ttys003"] = processStart,
+                ["ttys004"] = processStart.AddSeconds(90),
+            };
+            var live = new HashSet<String> { "ttys001", "ttys003", "ttys004" };
+            WriteEnvelope("ttys001", CodexEnvelope(sessionId, "/p/alert", "PermissionRequest", "touch x"), DateTime.UtcNow.AddSeconds(-5));
+            registry.Refresh(live);
+
+            Assert.Equal("Bash", registry.LiveSessions().Single(s => s.SessionKey == "ttys003").PendingTool);
+            Assert.Null(registry.LiveSessions().Single(s => s.SessionKey == "ttys004").PendingTool);
+        }
+
+        [Fact]
+        public void A_terminal_known_to_run_another_conversation_is_not_a_candidate()
+        {
+            var t0 = DateTime.UtcNow.AddSeconds(-30);
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/p/console"), ("ttys003", "/p/alert"));
+            var live = new HashSet<String> { "ttys001", "ttys003" };
+            WriteEnvelope("ttys003", CodexEnvelope("S3", "/p/alert", "Stop"), t0);
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "touch x"), t0.AddSeconds(5));
+            registry.Refresh(live);
+
+            var alert = registry.LiveSessions().Single(s => s.SessionKey == "ttys003");
+            Assert.Equal("S3", alert.SessionId);
+            Assert.Null(alert.PendingTool);
+            Assert.NotEqual("waiting", alert.State);
+            Assert.All(registry.LiveSessions(), s => Assert.NotEqual("waiting", s.State));
+        }
+
+        [Fact]
+        public void Shared_file_events_reach_the_unique_terminal_in_their_folder()
+        {
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys003", "/p/alert"));
+            WriteEnvelope("shared", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "touch x"), DateTime.UtcNow.AddSeconds(-5));
+            registry.Refresh(new HashSet<String> { "ttys003" });
+
+            var alert = registry.LiveSessions().Single(s => s.SessionKey == "ttys003");
+            Assert.Equal("Bash", alert.PendingTool);
+            Assert.True(registry.IsApprovalSourceCurrent("ttys003"));
+            Assert.True(File.Exists(this.StateFor("shared")));   // never ours to remove
+        }
+
+        [Fact]
+        public void Hook_folder_still_wins_when_no_other_terminal_is_in_that_folder()
+        {
+            // The process hint can be stale (a resumed conversation); with nothing to re-key to and
+            // nothing saying this is another conversation, the hook is believed as before.
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/p/console"));
+            WriteEnvelope("ttys001", CodexEnvelope("S1", "/p/elsewhere", "Stop"), DateTime.UtcNow.AddSeconds(-5));
+            registry.Refresh(new HashSet<String> { "ttys001" });
+
+            var s = registry.LiveSessions().Single();
+            Assert.Equal("elsewhere", s.Project);
+            Assert.Equal("S1", s.SessionId);
+        }
+
+        [Fact]
+        public void Claude_sessions_are_never_re_keyed_by_folder()
+        {
+            var registry = this.NewRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/Users/x/other"), ("ttys002", "/Users/x/proj"));
+            WriteSession("ttys001", "/Users/x/proj", 10);
+            WriteActivity("ttys001", "waiting");
+            registry.Refresh(new HashSet<String> { "ttys001", "ttys002" });
+
+            Assert.Equal("waiting", registry.LiveSessions().Single(s => s.SessionKey == "ttys001").State);
+            Assert.False(File.Exists(this.StateFor("ttys002")));
+        }
+
+        [Fact]
+        public void A_re_keyed_session_is_announced_once_however_many_events_follow()
+        {
+            var t0 = DateTime.UtcNow.AddSeconds(-30);
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/p/console"), ("ttys003", "/p/alert"));
+            var live = new HashSet<String> { "ttys001", "ttys003" };
+
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "touch x"), t0);
+            registry.Refresh(live);
+            registry.Refresh(live);
+            Assert.Equal(1, registry.RoutingNoticesLogged);
+
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "Stop"), t0.AddSeconds(5));
+            registry.Refresh(live);
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "rm x"), t0.AddSeconds(10));
+            registry.Refresh(live);
+            Assert.Equal(1, registry.RoutingNoticesLogged);
+            Assert.Equal("Bash", registry.LiveSessions().Single(s => s.SessionKey == "ttys003").PendingTool);
+
+            // A different conversation on the same terminals is news again.
+            WriteEnvelope("ttys001", CodexEnvelope("S9", "/p/alert", "Stop"), t0.AddSeconds(15));
+            registry.Refresh(live);
+            Assert.Equal(2, registry.RoutingNoticesLogged);
+        }
+
+        [Fact]
+        public void An_event_written_before_a_terminal_started_is_held_not_handed_to_it()
+        {
+            var written = DateTime.UtcNow.AddMinutes(-6);
+            var registry = this.NewCodexRegistry();
+            registry.DiscoveredProjectDirs = Dirs(("ttys001", "/p/console"), ("ttys005", "/p/alert"));
+            registry.DiscoveredSessionStarts = new Dictionary<String, DateTime>(StringComparer.Ordinal)
+            {
+                ["ttys001"] = DateTime.UtcNow.AddDays(-3),
+                ["ttys005"] = DateTime.UtcNow.AddMinutes(-1),
+            };
+            WriteEnvelope("ttys001", CodexEnvelope("S2", "/p/alert", "PermissionRequest", "touch x"), written);
+            registry.Refresh(new HashSet<String> { "ttys001", "ttys005" });
+
+            Assert.All(registry.LiveSessions(), s => Assert.Null(s.PendingTool));
+            Assert.False(File.Exists(this.StateFor("ttys005")));
+        }
     }
 }

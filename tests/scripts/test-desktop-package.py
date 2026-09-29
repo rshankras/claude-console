@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='vizhi-package-test-') as temp:
     staged = build / 'bin/desktop/VizhiAxBridge'
     staged.parent.mkdir(parents=True)
     staged.write_text('stale helper must not ship')
-    env = dict(os.environ, ROOT=str(root), BUILD_DIR=str(build), SHIPS_DESKTOP='1', SIGN_IDENTITY='-')
+    env = dict(os.environ, ROOT=str(root), BUILD_DIR=str(build), SHIPS_DESKTOP='1', SHIPS_WINDOWS='0', PRODUCT='VizhiDesktop', SIGN_IDENTITY='-')
     subprocess.run(['bash', '-euc', block], env=env, check=True)
     subprocess.run(['codesign', '--verify', '--strict', str(staged)], check=True)
     help_text = subprocess.check_output([str(staged), '--help'], text=True)

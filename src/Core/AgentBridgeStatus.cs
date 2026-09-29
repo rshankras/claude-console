@@ -13,6 +13,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         AwaitingTrust = 1,
         InstallFailed = 2,
         ForeignConfiguration = 3,
+        HelperUnavailable = 4,
     }
 
     /// <summary>User-facing words for an agent bridge that needs attention (#69).</summary>
@@ -29,6 +30,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 AgentBridgeStatus.AwaitingTrust => "Run /hooks",
                 AgentBridgeStatus.InstallFailed => "Setup failed",
                 AgentBridgeStatus.ForeignConfiguration => "Merge hooks",
+                AgentBridgeStatus.HelperUnavailable => "Blocked",
                 _ => null,
             };
 
@@ -38,6 +40,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 AgentBridgeStatus.AwaitingTrust => "Trust the Vizhi hooks in Codex",
                 AgentBridgeStatus.InstallFailed => "Vizhi could not install its Codex hooks",
                 AgentBridgeStatus.ForeignConfiguration => "Vizhi left your Codex hooks unchanged",
+                AgentBridgeStatus.HelperUnavailable => "Windows hook helper unavailable",
                 _ => null,
             };
 
@@ -50,6 +53,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     "Vizhi could not install its Codex lifecycle hooks. Prompt, navigation and voice actions still work, but live session state and approval indicators are unavailable. Reinstall the plugin, then run /hooks in Codex.",
                 AgentBridgeStatus.ForeignConfiguration =>
                     "Vizhi found a hooks.json file it does not own and left it unchanged. Prompt, navigation and voice actions still work. Merge the Vizhi hook entries manually to enable live session state and approval indicators.",
+                AgentBridgeStatus.HelperUnavailable =>
+                    "The plugin's Windows helper (claude-console-hook.exe) is missing or failed to run, so live values and the Yes/No keys are blocked. Security software may have removed it: ask IT to allow it, or reinstall the plugin. The keys recover on their own at the next hook event.",
                 _ => null,
             };
     }

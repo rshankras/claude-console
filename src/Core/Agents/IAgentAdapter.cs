@@ -73,6 +73,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// in which case the key hides rather than typing something the agent will reject.
         /// </summary>
         String SlashCommand(AgentVerb verb);
+
+        /// <summary>
+        /// When the agent encodes a session's creation time in its session id, that instant
+        /// (UTC); null otherwise. Lets the registry tell two terminals in one folder apart by
+        /// which one started just before the session did.
+        /// </summary>
+        DateTime? SessionStartedAtUtc(String sessionId) => null;
     }
 
     /// <summary>

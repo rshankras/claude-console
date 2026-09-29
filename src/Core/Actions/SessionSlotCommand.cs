@@ -48,6 +48,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             _bridge.Grid.OnGridChanged += this.OnGridChanged;
             _bridge.OnLiveStatusChanged += _ => this.OnGridChanged();   // the setup word comes and goes with the wiring (#58)
             _bridge.OnAgentBridgeStatusChanged += _ => this.OnGridChanged();
+            _bridge.OnHelperHealthChanged += this.OnGridChanged;
         }
 
         private void OnGridChanged()
@@ -71,8 +72,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return;   // empty key is inert; nothing to focus
             }
 
-            _bridge.SelectSlot(slot);
-            this.ActionImageChanged();
+            // #112: the Windows focus helper outlives the SDK's 1,000 ms action budget, so the
+            // selection runs off this thread. Repaint now so the bar reads "Selecting", and again
+            // when it lands. Yes/No and other routed input are ignored until selection finishes.
+            if (_bridge.BeginSelectSlot(slot, () => this.ActionImageChanged()))
+            {
+                this.ActionImageChanged();
+            }
         }
 
         // The name is drawn centred in the bitmap, so the service's own label
@@ -90,14 +96,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
                 return KeyImage.RenderSessionSlot(imageSize, null, null, KeyImage.Gray, darkText: false);
             }
 
-            var active = session.SessionKey == _bridge.RoutingTty();
+            var active = _bridge.SelectingSlot == 0 && session.SessionKey == _bridge.RoutingTty();
             var name = String.IsNullOrWhiteSpace(session.Project) ? _bridge.Agent.DisplayName : session.Project;
             // Routing stays the cue: inactive sessions remain grey. Only the selected bar follows
             // product identity, which the product declares — the engine does not know whose it is.
             var barColor = active ? KeyImage.SessionBar : KeyImage.Gray;
+            // "Blocked" comes only from the bridge (an observed helper failure). A session that
+            // has not reported since the helper recovered keeps the last state it did report; the
+            // approval gate decides whether Yes/No may act on it, not this face.
             var setupWord = AgentBridgeNotice.FaceLabel(_bridge.AgentBridgeState)
                 ?? LiveStatusFace.SessionBarWord(_bridge.LiveStatusApplies, _bridge.LiveStatus);
-            return KeyImage.RenderSessionSlot(imageSize, name, StateWord(session, setupWord, _bridge.Agent.Id), barColor, darkText: false);
+            // A press that is still focusing its tab says so (#112); the setup word still wins,
+            // since nothing about the selection changes what the wiring can report.
+            var word = setupWord == null && _bridge.SelectingSlot == slot
+                ? "Selecting"
+                : StateWord(session, setupWord, _bridge.Agent.Id);
+            return KeyImage.RenderSessionSlot(imageSize, name, word, barColor, darkText: false);
         }
 
         // Colour communicates routing; this word communicates session state. Keeping those two

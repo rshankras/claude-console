@@ -77,7 +77,14 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             BridgeManager.Instance.PluginAssemblyFilePath = this.AssemblyFilePath;
 
+            // The hook status read inside WireStateBridge takes the helper's latched version
+            // floor (#125) from the health monitor, so the monitor must exist first — and be built
+            // before the health event is subscribed, or its first refresh would evaluate the
+            // status ahead of EnsureInstalled (#69). Nothing to do on macOS.
+            BridgeManager.Instance.PrimeHelperHealth();
+
             BridgeManager.Instance.Grid.OnGridChanged += this.OnGridChanged;
+            BridgeManager.Instance.OnHelperHealthChanged += this.RefreshStateBridgeStatus;
 
             // Codex reports nothing until its hooks are installed AND trusted. Installing is ours;
             // trusting is the user's, in /hooks, and cannot be automated — so log which of the two
@@ -161,18 +168,15 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         private void OnGridChanged()
         {
-            // The first trusted hook event creates or changes a grid session. Recheck then so the
-            // setup face and warning clear without a plugin reload (#69).
-            if (_reportedBridgeStatus != CodexBridgeStatus.Active)
-            {
-                this.RefreshStateBridgeStatus();
-            }
+            // Active is evidence of an earlier delivery, not permanent health. Recheck after
+            // later grid changes as well, and when helper health changes without a grid repaint.
+            this.RefreshStateBridgeStatus();
         }
 
         private void RefreshStateBridgeStatus()
         {
             var bridge = this._agent.StateBridge;
-            var status = bridge.Status;
+            var status = bridge.StatusFor(OperatingSystem.IsWindows(), BridgeManager.Instance.HookHealth);
             if (_reportedBridgeStatus == status)
             {
                 return;
@@ -198,8 +202,13 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                 case CodexBridgeStatus.Active:
                     BridgeManager.Instance.SetAgentBridgeStatus(AgentBridgeStatus.Ready);
-                    BridgeManager.Instance.Notify?.Invoke(Loupedeck.PluginStatus.Normal, null, null, null);
                     PluginLog.Info("VizhiCodexPlugin: state bridge active");
+                    break;
+
+                case CodexBridgeStatus.HelperUnavailable:
+                    // The shared health monitor owns this warning and its recovery. Caching it
+                    // as an unrelated product notice would leave it visible after recovery.
+                    BridgeManager.Instance.SetAgentBridgeStatus(AgentBridgeStatus.HelperUnavailable);
                     break;
 
                 default:
@@ -212,16 +221,12 @@ namespace Loupedeck.ClaudeConsolePlugin
         private void ReportBridgeProblem(AgentBridgeStatus status)
         {
             BridgeManager.Instance.SetAgentBridgeStatus(status);
-            BridgeManager.Instance.Notify?.Invoke(
-                Loupedeck.PluginStatus.Warning,
-                AgentBridgeNotice.Message(status),
-                AgentBridgeNotice.PublicHelpUrl,
-                AgentBridgeNotice.Title(status));
         }
 
         public override void Unload()
         {
             BridgeManager.Instance.Grid.OnGridChanged -= this.OnGridChanged;
+            BridgeManager.Instance.OnHelperHealthChanged -= this.RefreshStateBridgeStatus;
             BridgeManager.Instance.StopPolling();
             PluginLog.Info("VizhiCodexPlugin: Unloaded");
         }

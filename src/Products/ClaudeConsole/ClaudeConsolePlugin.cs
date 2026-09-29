@@ -143,18 +143,35 @@ namespace Loupedeck.ClaudeConsolePlugin
             return output.Contains("button returned:" + yes, StringComparison.Ordinal);
         }
 
+        private static ClaudePluginLifecycle Lifecycle => new ClaudePluginLifecycle(
+            BridgeManager.HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+
+        public override Boolean Uninstall() =>
+            !OperatingSystem.IsWindows() || Lifecycle.Uninstall();
+
+        public override Boolean Install()
+        {
+            if (OperatingSystem.IsWindows()) { Lifecycle.Restore(this.AssemblyFilePath); }
+            // The host removes the NEW package if Install returns false. A temporarily locked
+            // settings file should defer integration restoration, not destroy a valid install.
+            // The receipt and log survive; Load retries the same idempotent transaction.
+            return true;
+        }
+
         public override void Load()
         {
             // Hand the SDK's real on-disk plugin path to the bridge (Assembly.Location is empty in
             // the SDK's load context) so it can locate the in-package voice payload on first use.
             BridgeManager.Instance.PluginAssemblyFilePath = this.AssemblyFilePath;
 
+            if (OperatingSystem.IsWindows()) { Lifecycle.Restore(this.AssemblyFilePath); }
+
             // All actions are auto-discovered; we just start the IPC bridge.
             BridgeManager.Instance.StartPolling();
 
             // Self-install the status-line + activity scripts (the plugin's own folder), honour an Off
-            // marker, and read what settings.json says about the live keys. It never edits that file:
-            // the user does, by pressing Enable Live Status (#31). Background thread, idempotent.
+            // marker, and read what settings.json says about the live keys. This adds no new wiring;
+            // it may migrate existing owned commands. Background thread, idempotent.
             BridgeManager.Instance.EnsureBridgeAutoWired();
 
             // No application registration to write, heal, or sweep: this is a universal plugin

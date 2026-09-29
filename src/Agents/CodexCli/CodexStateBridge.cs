@@ -28,6 +28,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// or another tool's, are not ours to rewrite — and the plugin explains the manual step.
         /// </summary>
         ForeignHooksFile = 3,
+        HelperUnavailable = 4,
     }
 
     /// <summary>
@@ -105,26 +106,33 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         internal String HookExe
         {
-            get => this._hookExe ?? Platform.PluginPaths.PackagedFile("claude-console-hook.exe") ?? "claude-console-hook.exe";
+            get => this._hookExe ?? (Platform.PluginPaths.PluginDirectory is String directory
+                ? Path.Combine(directory, "claude-console-hook.exe") : "claude-console-hook.exe");
             set => this._hookExe = value;
         }
 
         /// <summary>
         /// The command Codex runs for one lifecycle event. Split by OS because the launch vehicle
-        /// differs (sh script vs exe verb); both are STABLE strings, which trust-by-hash requires.
-        /// The OS-free overload exists so tests can pin both shapes from any machine.
+        /// differs (sh script vs guarded exe launcher); both are STABLE strings that depend only
+        /// on the install path, which trust-by-hash requires. The OS-free overload exists so
+        /// tests can pin both shapes from any machine.
         /// </summary>
         internal String HookCommand(String eventName) =>
             this.HookCommand(eventName, OperatingSystem.IsWindows());
 
         internal String HookCommand(String eventName, Boolean windows) =>
             windows
-                // Codex runs commandWindows through PowerShell. A quoted path by itself is only a
-                // string expression there, so the following `codex` token produces a parser error
-                // and exit code 1 before the helper starts. The call operator makes the quoted
-                // path executable; single-quote escaping keeps ordinary Windows profile names
-                // (including apostrophes or dollar signs) literal.
-                ? $"& '{this.HookExe.Replace("'", "''")}' codex {eventName}"
+                // Until 1.6.1 this was `& '<exe>' codex <event>`, run by Codex through PowerShell
+                // directly. A quarantined or execution-blocked exe then failed without a trace:
+                // nothing the plugin reads was written, so the keys stayed Healthy and every
+                // Yes/No press logged "no pending approval" — QA's 18 September report (#126).
+                // The Claude Code launcher records missing / launch-failed / nonzero-exit under
+                // the product's hook-health directory, which is what turns that into Blocked and
+                // a warning; Codex now runs the same launcher aimed at its own IPC root. The
+                // command changed once for this, so existing users re-trust it once in /hooks.
+                ? Platform.BridgeWiring.WindowsLauncherScript(this.HookExe,
+                    eventName == "SessionEnd" ? Platform.BridgeWiring.LauncherProfile.CodexSessionEnd : Platform.BridgeWiring.LauncherProfile.Codex,
+                    "codex", eventName)
                 : $"/bin/sh '{this.HookScript}' {eventName}";
 
         /// <summary>
@@ -164,48 +172,56 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             }
         }
 
-        public CodexBridgeStatus Status
+        public CodexBridgeStatus Status => this.StatusFor(OperatingSystem.IsWindows());
+
+        internal CodexBridgeStatus StatusFor(Boolean windows, WindowsHookHealth hookHealth = null)
         {
-            get
+            try
             {
-                try
+                if (!File.Exists(this.HooksFile))
                 {
-                    if (!File.Exists(this.HooksFile))
-                    {
-                        return CodexBridgeStatus.NotInstalled;
-                    }
-
-                    if (!this.IsOurs(File.ReadAllText(this.HooksFile)))
-                    {
-                        return CodexBridgeStatus.ForeignHooksFile;
-                    }
-
-                    // The only honest evidence that Codex is actually running our hook is that it
-                    // has run it. Trust state itself is Codex's business and not ours to read.
-                    // Windows also has rollout-derived state. Only an envelope explicitly written
-                    // by the hook proves the hook was trusted and executed.
-                    // An event from an older hook version does not prove the CURRENT script is
-                    // trusted. EnsureInstalled may replace the launcher while deliberately leaving
-                    // the stable hooks command alone; Codex can then require trust again while an
-                    // old envelope is still on disk. Only an event at or after the newest bridge
-                    // component proves this installation has actually run (#69).
-                    var launcher = OperatingSystem.IsWindows() ? this.HookExe : this.HookScript;
-                    var installedAt = new[] { this.HooksFile, launcher }
-                        .Where(File.Exists)
-                        .Select(File.GetLastWriteTimeUtc)
-                        .DefaultIfEmpty(DateTime.MinValue)
-                        .Max();
-                    var seen = Directory.Exists(this._sessionsDir)
-                        && Directory.EnumerateFiles(this._sessionsDir, "*.json").Any(path =>
-                            IsHookEnvelope(path) && File.GetLastWriteTimeUtc(path) >= installedAt);
-
-                    return seen ? CodexBridgeStatus.Active : CodexBridgeStatus.AwaitingTrust;
-                }
-                catch (Exception ex)
-                {
-                    PluginLog.Info($"CodexStateBridge: status check failed — {ex.Message}");
                     return CodexBridgeStatus.NotInstalled;
                 }
+
+                if (!this.IsOurs(File.ReadAllText(this.HooksFile)))
+                {
+                    return CodexBridgeStatus.ForeignHooksFile;
+                }
+
+                if (windows && !File.Exists(this.HookExe))
+                {
+                    return CodexBridgeStatus.HelperUnavailable;
+                }
+
+                // The only honest evidence that Codex is actually running our hook is that it
+                // has run it. Trust state itself is Codex's business and not ours to read.
+                // Windows also has rollout-derived state. Only an envelope explicitly written
+                // by the hook proves the hook was trusted and executed.
+                // An event from an older hook version does not prove the CURRENT script is
+                // trusted. EnsureInstalled may replace the launcher while deliberately leaving
+                // the stable hooks command alone; Codex can then require trust again while an
+                // old envelope is still on disk. Only an event at or after the newest bridge
+                // component proves this installation has actually run (#69).
+                var launcher = windows ? this.HookExe : this.HookScript;
+                // On Windows the exe's mtime is the package's ZIP time read as local time and can
+                // sit hours ahead of the clock (#125); the health monitor latches a usable floor
+                // for it, so take that when it has one. hooks.json is written here and is honest.
+                var launcherAt = windows && hookHealth != null && hookHealth.HelperVersionUtc > DateTime.MinValue
+                    ? hookHealth.HelperVersionUtc
+                    : File.Exists(launcher) ? File.GetLastWriteTimeUtc(launcher) : DateTime.MinValue;
+                var hooksAt = File.Exists(this.HooksFile) ? File.GetLastWriteTimeUtc(this.HooksFile) : DateTime.MinValue;
+                var installedAt = hooksAt > launcherAt ? hooksAt : launcherAt;
+                var seen = (windows && hookHealth?.HasCurrentObservationSince(installedAt) == true)
+                    || (Directory.Exists(this._sessionsDir)
+                        && Directory.EnumerateFiles(this._sessionsDir, "*.json").Any(path =>
+                            IsHookEnvelope(path) && File.GetLastWriteTimeUtc(path) >= installedAt));
+
+                return seen ? CodexBridgeStatus.Active : CodexBridgeStatus.AwaitingTrust;
+            }
+            catch (Exception ex)
+            {
+                PluginLog.Info($"CodexStateBridge: status check failed — {ex.Message}");
+                return CodexBridgeStatus.NotInstalled;
             }
         }
 
@@ -264,6 +280,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                     // applying commandWindows. Make the required command native on Windows too,
                     // so either path reaches the same helper instead of trying /bin/sh.
                     ["command"] = this.HookCommand(e, windows),
+                    // Codex clamps SessionEnd to 3s, including all shell and helper startup.
                     ["timeout"] = e == "SessionEnd" ? 3 : 5,
                 };
                 if (windows)

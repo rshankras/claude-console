@@ -39,6 +39,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             _gate = new LiveStatusGate(_bridge, "Activity", () => this.ActionImageChanged());
             _bridge.OnActivityChanged += (_) => this.Refresh();
             _bridge.OnStateChanged += (_) => this.Refresh();
+            _bridge.OnHelperHealthChanged += this.Refresh;
         }
 
         // Map the activity flag to a face + word.
@@ -61,7 +62,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Actions
             var target = _bridge.RoutingTty();
             var waitingApproval = !String.IsNullOrEmpty(target)
                 && _bridge.Grid.Sessions.TryGetValue(target, out var session)
-                && session.Risk != ApprovalRisk.None;
+                && session.Risk != ApprovalRisk.None
+                && _bridge.IsSessionApprovalCurrent(target);
 
             if (waitingApproval || activity == "waiting")
             {

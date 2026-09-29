@@ -57,8 +57,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// writes the outer custom tool call before showing its menu and the matching output after
         /// the user answers, but does not run PermissionRequest for that nested exec_command.
         /// </summary>
-        private readonly Dictionary<String, String> _pendingApprovalCalls =
-            new Dictionary<String, String>(StringComparer.OrdinalIgnoreCase);
+        private sealed record PendingRolloutApproval(String CallId, String Command, Int64? EventUtcTicks, Boolean AuthorityPublished = false);
+        private readonly Dictionary<String, PendingRolloutApproval> _pendingApprovalCalls =
+            new Dictionary<String, PendingRolloutApproval>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Rollout metadata is immutable; read its first record at most once per file.</summary>
         private readonly Dictionary<String, (DateTime? StartedUtc, String Cwd)> _metadata =
@@ -77,6 +78,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
         /// yesterday, and everything older is dead weight on every poll.
         /// </summary>
         internal Func<DateTime> Now { get; set; } = () => DateTime.Now;
+
+        /// <summary>UTC observation clock, independent of the local date used to find rollouts.</summary>
+        internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
 
         /// <summary>
         /// The live sessions discovery found, as (key, startTime). Set by the caller each poll;
@@ -159,6 +163,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
 
         private Int32 PollOne(String path)
         {
+            // Capture before any file access: a read already in progress when health failed must
+            // not acquire the authority of a later read merely by publishing its result late.
+            var observationStartedUtcTicks = this.UtcNow().ToUniversalTime().Ticks;
             FileInfo info;
             try
             {
@@ -200,6 +207,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             // Truncated or rotated underneath us — start over from where it now ends.
             if (info.Length < known)
             {
+                if (this._pendingApprovalCalls.Remove(path, out var previousPending))
+                {
+                    // Its call/output ordering belonged to the old file. Preserve the ordinary
+                    // fallback face, but never confirm that cached request against the new EOF.
+                    this.WriteState(path, "PermissionRequest", pendingCommand: previousPending.Command,
+                        transport: "rollout-code-mode", observationStartedUtcTicks: observationStartedUtcTicks);
+                }
                 known = 0;
             }
 
@@ -234,6 +248,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             var lastNewline = text.LastIndexOf('\n');
             if (lastNewline < 0)
             {
+                if (this._pendingApprovalCalls.TryGetValue(path, out var incompletePending) && incompletePending.AuthorityPublished)
+                {
+                    var revoked = this.WriteState(path, "PermissionRequest", pendingCommand: incompletePending.Command,
+                        transport: "rollout-code-mode", observationStartedUtcTicks: observationStartedUtcTicks);
+                    if (revoked) { this._pendingApprovalCalls[path] = incompletePending with { AuthorityPublished = false }; }
+                    return revoked ? 1 : 0;
+                }
                 return 0;   // nothing complete yet; leave the offset where it was
             }
 
@@ -275,7 +296,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // before the menu and its matching output only after Yes/No/Escape resolves it.
                 if (TryCodeModeApproval(line, out var approvalCallId, out var command))
                 {
-                    this._pendingApprovalCalls[path] = approvalCallId;
+                    this._pendingApprovalCalls[path] = new PendingRolloutApproval(
+                        approvalCallId, command, this.ApprovalEventUtcTicks(line));
                     activity = "PermissionRequest";
                     pendingCommand = command;
                     transport = "rollout-code-mode";
@@ -283,7 +305,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 }
                 else if (TryCodeModeOutput(line, out var completedCallId)
                     && this._pendingApprovalCalls.TryGetValue(path, out var pendingCallId)
-                    && String.Equals(completedCallId, pendingCallId, StringComparison.Ordinal))
+                    && String.Equals(completedCallId, pendingCallId.CallId, StringComparison.Ordinal))
                 {
                     this._pendingApprovalCalls.Remove(path);
                     activity = CodexStateBridge.BusyEvent;
@@ -299,6 +321,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 }
             }
 
+            // A bounded batch can contain a request whose matching output is still unread. Keep
+            // the familiar waiting display, but supply approval authority only at complete EOF.
+            // If the request was in an earlier batch, catching up must publish its ORIGINAL event
+            // timestamp; reading an old request today must never make it a new approval today.
+            var completeAtEnd = this.IsAtCompleteEnd(path, this._offsets[path]);
+            if (this._pendingApprovalCalls.TryGetValue(path, out var pending) &&
+                (!completeAtEnd || !pending.AuthorityPublished) && !resolvesApproval)
+            {
+                activity = "PermissionRequest";
+                pendingCommand = pending.Command;
+                transport = "rollout-code-mode";
+            }
+
             if (activity == null)
             {
                 // Windows can keep LastWriteTime frozen while Codex appends through an open file
@@ -308,7 +343,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 if (this._activities.TryGetValue(path, out var current)
                     && String.Equals(current, CodexStateBridge.BusyEvent, StringComparison.Ordinal))
                 {
-                    return this.WriteState(path, current, preserveWaiting: true) ? 1 : 0;
+                    return this.WriteState(path, current, preserveWaiting: true,
+                        observationStartedUtcTicks: observationStartedUtcTicks) ? 1 : 0;
                 }
 
                 // A long active turn can push task_started outside the catch-up tail. Once the
@@ -317,7 +353,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 // this per-session: metadata from one rollout must not replace shared activity.
                 // Naming a session is never grounds for discarding a live approval on its key.
                 return firstSighting
-                    && this.WriteState(path, "SessionStart", writeShared: false, preserveWaiting: true)
+                    && this.WriteState(path, "SessionStart", writeShared: false, preserveWaiting: true,
+                        observationStartedUtcTicks: observationStartedUtcTicks)
                         ? 1 : 0;
             }
 
@@ -332,9 +369,44 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
                 String.Equals(activity, CodexStateBridge.BusyEvent, StringComparison.Ordinal)
                 && !resolvesApproval;
 
-            return this.WriteState(
+            Int64? rolloutEventUtcTicks = null;
+            if (transport == "rollout-code-mode" && pending != null && completeAtEnd && pending.EventUtcTicks.HasValue)
+            {
+                rolloutEventUtcTicks = pending.EventUtcTicks;
+            }
+            var wrote = this.WriteState(
                 path, activity, preserveWaiting: preserveWaiting,
-                pendingCommand: pendingCommand, transport: transport) ? 1 : 0;
+                pendingCommand: pendingCommand, transport: transport,
+                rolloutEventUtcTicks: rolloutEventUtcTicks,
+                observationStartedUtcTicks: observationStartedUtcTicks);
+            if (wrote && transport == "rollout-code-mode" && pending != null)
+            {
+                this._pendingApprovalCalls[path] = pending with { AuthorityPublished = rolloutEventUtcTicks.HasValue };
+            }
+            return wrote ? 1 : 0;
+        }
+
+        private Boolean IsAtCompleteEnd(String path, Int64 completeOffset)
+        {
+            try { return new FileInfo(path).Length == completeOffset; }
+            catch { return false; }
+        }
+
+        private Int64? ApprovalEventUtcTicks(String line)
+        {
+            try
+            {
+                using var json = JsonDocument.Parse(line);
+                if (json.RootElement.TryGetProperty("timestamp", out var stamp) && stamp.ValueKind == JsonValueKind.String &&
+                    DateTimeOffset.TryParse(stamp.GetString(), CultureInfo.InvariantCulture,
+                        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var timestamp) &&
+                    timestamp.UtcDateTime.Ticks > 0 && timestamp.UtcDateTime.Ticks <= this.UtcNow().ToUniversalTime().Ticks)
+                {
+                    return timestamp.UtcDateTime.Ticks;
+                }
+            }
+            catch (JsonException) { }
+            return null;
         }
 
         /// <summary>
@@ -728,7 +800,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             Boolean writeShared = true,
             Boolean preserveWaiting = false,
             String pendingCommand = null,
-            String transport = null)
+            String transport = null,
+            Int64? rolloutEventUtcTicks = null,
+            Int64? observationStartedUtcTicks = null)
         {
             // Two payload fields this transport can honestly supply, and the reader wants both:
             // cwd names the key with the project folder instead of a generic label, and
@@ -755,10 +829,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Agents
             }
             var payload = "{" + String.Join(",", fields) + "}";
 
+            var authority = observationStartedUtcTicks.HasValue
+                ? ",\"observationStartedUtcTicks\":" + observationStartedUtcTicks.Value : String.Empty;
+            if (rolloutEventUtcTicks.HasValue) { authority += ",\"rolloutEventUtcTicks\":" + rolloutEventUtcTicks.Value; }
             var envelope =
                 "{\"schema\":1,\"agent\":\"codex-cli\",\"transport\":\"" +
                 JsonEscape(transport ?? "rollout") + "\",\"event\":\"" + activityEvent + "\",\"ts\":" +
-                DateTimeOffset.UtcNow.ToUnixTimeSeconds() + ",\"payload\":" + payload + "}\n";
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds() + authority + ",\"payload\":" + payload + "}\n";
 
             try
             {

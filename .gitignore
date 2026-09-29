@@ -412,6 +412,10 @@ tools/desktop/VizhiAxBridge
 # Secrets / signing keys — never commit (App Store Connect API keys, certs, etc.)
 *.p8
 *.pem
+# The ONE public certificate we do commit: Certum's issuing CA, embedded in every Windows
+# signature (tools/windows/signing/README.md). It is a CA certificate, not a key — the
+# signing key never leaves Certum's cloud. Anything else matching *.pem stays ignored.
+!tools/windows/signing/certum-code-signing-2021-ca.pem
 *.key
 *.p12
 *.mobileprovision

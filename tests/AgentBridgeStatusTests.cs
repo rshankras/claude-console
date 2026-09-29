@@ -55,11 +55,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("AgentBridgeStatus.InstallFailed", product);
             Assert.Contains("Grid.OnGridChanged += this.OnGridChanged", product);
             Assert.Contains("SetAgentBridgeStatus(AgentBridgeStatus.Ready)", product);
-            Assert.Contains("PluginStatus.Normal, null, null, null", product);
+            // The shared manager owns warning recovery; a blanket Normal here would erase an
+            // unrelated voice/terminal warning when Codex becomes active again.
+            Assert.DoesNotContain("PluginStatus.Normal, null, null, null", product);
 
             var wire = product.IndexOf("this.WireStateBridge();", StringComparison.Ordinal);
             var poll = product.IndexOf("BridgeManager.Instance.StartPolling();", StringComparison.Ordinal);
             Assert.True(wire >= 0 && poll > wire, "polling must start after the initial hook status is established");
+
+            // #125 at load: the status read inside WireStateBridge takes the monitor's latched floor,
+            // so the monitor must exist first — and be built before the health event is subscribed,
+            // or its first refresh would evaluate the status ahead of EnsureInstalled (#69).
+            var prime = product.IndexOf("BridgeManager.Instance.PrimeHelperHealth();", StringComparison.Ordinal);
+            var subscribe = product.IndexOf("OnHelperHealthChanged += this.RefreshStateBridgeStatus", StringComparison.Ordinal);
+            Assert.True(prime >= 0 && subscribe > prime && wire > subscribe,
+                "the helper-health monitor must be primed before the health event is subscribed and the hook status is read");
         }
 
         [Fact]

@@ -2,7 +2,7 @@
 
 Path to a submittable `.lplug4` for the [Logitech Marketplace](https://marketplace.logitech.com/contribute), per the [Actions SDK approval guidelines](https://logitech.github.io/actions-sdk-docs/marketplace-approval-guidelines/).
 
-**Status (2026-09-16):** **Claude Console 2.2.2** is the current Marketplace submission (submitted 2026-09-13; the copy as entered is in [docs/marketplace-listing.md](docs/marketplace-listing.md)). **2.2.3** is built and packaged from main `9b7595a` but is NOT submitted and has had no macOS device pass — it exists because Vizhi 1.6.1's shared-engine work also reaches Claude Console, so 2.2.2 stays exactly what QA holds. **Vizhi for Codex 1.6.1** is prepared for its FIRST Marketplace submission: validated on macOS and Windows (issue #105), listing copy in [docs/marketplace-listing-vizhi.md](docs/marketplace-listing-vizhi.md), open items are listing screenshots, the EULA counsel review, and the unsigned Windows helpers. History: 2.0.0 submitted 2026-08-12, QA flagged the bundled `PluginApi.dll` (host-provided, must not ship); resubmitted as 2.0.1 on 2026-08-13 with `<Private>false</Private>`; 2.2.1 submitted 2026-09-04. Review takes ~10 working days.
+**Status (2026-09-28):** **Claude Console 2.3.1** is the current Marketplace submission (submitted 2026-09-24, under review); **2.3.2** (every Windows PE code-signed, #110; Blocked faces, #120) is published on GitHub as `v2.3.2` and its Marketplace submission is the owner's call once Logitech's verdict on the signed helpers is in. The copy as entered is in [docs/marketplace-listing.md](docs/marketplace-listing.md). **Vizhi for Codex 1.6.1** was submitted 2026-09-16 (first submission, validated in issue #105); **1.6.2** is the signed follow-up cut 2026-09-28 (#125 #126 #112 #113, every Windows PE signed) — listing copy in [docs/marketplace-listing-vizhi.md](docs/marketplace-listing-vizhi.md); open items are the EULA counsel review and Logitech's verdicts. History: 2.0.0 submitted 2026-08-12, QA flagged the bundled `PluginApi.dll` (host-provided, must not ship); resubmitted as 2.0.1 on 2026-08-13 with `<Private>false</Private>`; 2.2.1 submitted 2026-09-04. Review takes ~10 working days.
 
 **Before submitting 2.2.0, decide two things that are cheaper to settle now than to re-version:**
 
@@ -18,6 +18,7 @@ Path to a submittable `.lplug4` for the [Logitech Marketplace](https://marketpla
 - [x] **Bundle whisper.cpp** (see below) — `tools/voice/bundle-whisper.sh` vendors Homebrew's `whisper-cli` + its dylib closure into a self‑contained `~/.claude/claude-console/whisper-bin/`, **Developer‑ID signed + hardened‑runtime + notarized** via `tools/voice/sign-and-notarize.sh`, and **shipped inside the `.lplug4`** by `tools/voice/pack-release.sh` (installed to the runtime home on first use, quarantine stripped, by `BridgeManager.EnsureVoiceRuntimeInstalled`).
 - [x] **Fetch the model** (~142 MB) — the plugin downloads `ggml-base.en.bin` on first use and verifies its sha256 (`BridgeManager.EnsureVoiceModel` / `DownloadVoiceModel`). No manual step, no package bloat.
 - [x] **Sign + notarize `ClaudeVoiceHelper.app`** — done via `tools/voice/sign-and-notarize.sh` (Developer ID + hardened runtime + mic entitlement; notarized & **stapled**; `spctl` → *accepted, source = Notarized Developer ID*).
+- [x] **Sign every Windows executable and DLL** (#110) — `tools/voice/pack-release.sh` runs `tools/windows/sign-windows-payload.sh` on the staged `bin/` (both helpers, the plugin DLL, `whisper-cli.exe` and the ggml DLLs): Authenticode via jsign through Certum's SimplySign cloud certificate (`CN=Ravi Shankar S`, OV, individual), SHA-256, RFC 3161 timestamp from `time.certum.pl`, the Certum intermediate embedded. `tools/verify-package.sh` **refuses** a package with an unsigned or untimestamped Windows PE, or files signed by more than one certificate. Per release: be logged in to SimplySign Desktop (e-mail + the code from the SimplySign phone app). Details, renewal and the reasoning in [tools/windows/signing/README.md](tools/windows/signing/README.md). Added 2026-09-27 after Logitech QA's CrowdStrike quarantined the unsigned hook; a signed package still needs their device pass — signing lets their IT allow-list the publisher, it does not exempt us from scanning.
 - [x] Do **not** bundle ffmpeg/sox (GPL/LGPL). The runtime uses AVFoundation; they're dev‑only.
 - [x] Do **not** bundle `PluginApi.dll` or its dependency closure (ExCSS, Svg.\*, Newtonsoft.Json, YamlDotNet, …) — the host provides them at load time, and Marketplace QA rejects packages that ship them. Enforced by `<Private>false</Private>` on the `PluginApi` reference in the csproj (QA feedback, 2.0.0 submission).
 - [x] Privacy policy and EULA publicly reachable — https://vizhi.dev/privacy/ and https://vizhi.dev/eula/, mirrored from [PRIVACY.md](PRIVACY.md) / [EULA.md](EULA.md). (Formal legal review of the EULA remains open.)
@@ -48,6 +49,26 @@ are notarized so the online check passes regardless.)
 
 The ~142 MB model is **not** bundled — it downloads on first use (see the checklist above), which
 keeps the package small and within any Marketplace size limit.
+
+## Sign the Windows helpers — automated
+
+Every `.exe` and `.dll` a Windows machine loads from the package is Authenticode-signed at pack
+time; nothing ships unsigned (#110). The certificate is Certum's *Standard Code Signing in the
+cloud*; SimplySign Desktop presents it to the Mac as a PKCS#11 token, jsign signs through it,
+osslsigncode verifies each file against a public root bundle, and `verify-package.sh` repeats
+that check on the packed files.
+
+```bash
+brew install jsign osslsigncode opensc        # one-time
+# per release: SimplySign Desktop → Log in (e-mail + code from the SimplySign phone app)
+bash tools/voice/pack-release.sh <ver> <Product>   # signs, packs, verifies
+bash tools/windows/verify-windows-signatures.sh <dir>   # the gate, on any tree
+WINDOWS_SIGNING=skip bash tools/voice/pack-release.sh <ver>   # dev pack → *-unsigned.lplug4
+```
+
+The signing recipe, the bundled intermediate and the renewal notes are in
+[tools/windows/signing/README.md](tools/windows/signing/README.md). The certificate is valid to
+2027-09-27; renew a month early, same subject name, or Logitech's allow-list stops matching.
 
 ## Sign + notarize the voice helper — automated
 

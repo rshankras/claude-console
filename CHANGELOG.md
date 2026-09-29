@@ -366,6 +366,80 @@
 All notable changes to Claude Console are documented here. Format based on
 [Keep a Changelog](https://keepachangelog.com/); this project uses [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Windows: a helper dated in the future no longer withholds Yes/No and live values after
+  install (#125).** The installer keeps the package's ZIP timestamp, and ZIP times carry no
+  zone, so a helper packed at 11:34 IST reads 11:34 *local* on any machine — hours ahead of the
+  clock on one behind IST. The helper-health gate from 2.3.2 used that time as its freshness
+  floor, so until the clock caught up every hook receipt counted as stale: Yes/No were refused
+  with only a log line, Cost and Context stayed blank, and nothing said Blocked because nothing
+  had failed. The floor now latches to the earlier of the file time and the moment the file was
+  first seen, and a future-dated latch survives a plugin restart. Found in review on the release
+  day, before any QA run; not visible on the owner's laptop, which shares the packing Mac's zone.
+  Restoring a future-dated helper first seen missing keeps **Blocked** until a fresh hook succeeds;
+  its first-sighting timestamp is not treated as proof of an upgrade.
+- **Windows: pressing a session key no longer reports "action failed" for a pin that worked
+  (#112).** The press ran the tab-focus helper inside the SDK's 1,000 ms action budget; the
+  helper takes 1.3 to 1.8 s, so the service logged a timeout and a failure while the pin went
+  through. The selection now runs off the action thread: the key reads **Selecting** until the
+  tab is focused, then the pin and the other keys' target change as before. A second session
+  key pressed during that second is ignored rather than queued, so the keypad never pins a
+  session you did not mean. Yes/No also show **Selecting** during the wait. Approval, text,
+  key and navigation actions pressed meanwhile are ignored with an alert; press again once
+  selection finishes. They cannot act on the previous session or clear its pending approval.
+- **New Tab, New Claude and New Claude (Window) open where you work (#113).** Since #85 they
+  opened in your home folder, which is not where projects live. They now open in the pinned
+  (or single obvious) session's project folder; with no such session, in the first usable
+  folder listed in `~/.claude/claude-console/project-roots`; and only then in your home folder,
+  with a log line saying why. The profile root and the plugin service's own folder never
+  qualify. On macOS a plain New Tab stays Cmd+T, following Terminal's own "new tabs open in"
+  preference; the two session-starting keys carry a `cd` into the same command.
+
+## [2.3.2] — 2026-09-28
+
+### Fixed
+- **Windows: a helper that security software removed no longer fails silently (#120).** When
+  `claude-console-hook.exe` is missing, will not launch, or crashes, the live keys, Yes/No and
+  the session slots read **Blocked**, Options+ shows one warning naming the file and what to do,
+  and the plugin stops trusting state it cached before the failure. Yes/No act only on an
+  approval that same session delivered after recovery, so a menu answered late cannot approve
+  the wrong thing. Everything recovers by itself at the next hook event. Only an observed
+  failure counts: a fresh install, a new day, an upgraded helper or no open session keeps the
+  normal faces. Codex's installed hook command is unchanged, so nothing has to be re-trusted.
+- The Windows hook launcher records why it failed (helper missing, launch failed, nonzero exit,
+  input timeout) and the helper stamps every write with its own start time; the plugin sweeps
+  those records. Existing Claude Code wiring is upgraded in place on load.
+
+### Changed
+- **Every Windows executable and DLL in the package is now code-signed (#110).** The two
+  helpers, the plugin DLL, `whisper-cli.exe` and the ggml DLLs carry an Authenticode signature
+  from Certum (publisher *Ravi Shankar S*), SHA-256 with an RFC 3161 timestamp, and the package
+  verifier refuses a package with an unsigned or untimestamped Windows file. Logitech QA's
+  CrowdStrike had quarantined the unsigned hook helper; a signed publisher can be allow-listed
+  once. Signing happens on the Mac at pack time through Certum's SimplySign cloud certificate.
+
+## [2.3.1] — 2026-09-24
+
+### Fixed
+- **Windows uninstall removes Claude Console's live-status wiring (#55).** The SDK's
+  `Plugin.Uninstall()` callback removes only owned hooks and restores a chained status line
+  before package deletion. This works without a prior `Load()`; ordinary unload/restart
+  does not remove wiring. No additional executable or background service is needed.
+- **Windows upgrades retain the previous live-status setup.** The host runs uninstall and
+  install during replacement, so a receipt stores only owned wiring outside the package.
+  Install (or a later load after a transient failure) merges it back, preserves unrelated
+  edits, and honors the Off marker. The receipt is honoured only within 10 minutes of the
+  uninstall: a reinstall after a real uninstall is a fresh install, adds no wiring, and the
+  live keys ask again (#31).
+- Settings transactions wait up to 2 s for another writer's lock instead of failing at once
+  (the uninstall callback gets one try), serialize cooperating writers, require a successful rolling backup,
+  preserve source formatting, check for concurrent edits, and atomically replace the file.
+  Cleanup failures are recorded in `~/.claude/claude-console/lifecycle.log`; the host does
+  **not** cancel package deletion when cleanup reports failure. Existing missing-helper
+  guards remain in place. Options+ device acceptance is tracked in
+  [the verification plan](docs/windows-uninstall-2.3.1-plan.md).
 ## [0.12.9] — Vizhi Desktop — 2026-09-19
 
 - Speak Query on macOS uses a stronger local Whisper Turbo model, downloaded and verified
@@ -508,6 +582,83 @@ blue and its relabelled keys stay with Vizhi.
 - **Log lines carry the product name**, so two consoles writing to one log can be told apart.
 - The voice helper's microphone permission string no longer names a single product. It reaches
   an installed helper only when the helper is re-signed.
+
+## Vizhi for Codex [1.6.2] — 2026-09-28
+
+### Fixed
+- **A stale approval is never handed to a terminal that opened after it.** With the daemon
+  routing above, an approval left behind by a session that has since closed could be moved onto a
+  new terminal opened in the same folder, where Yes would type into a prompt that does not exist.
+  A terminal whose process started after the event was written no longer qualifies; the event is
+  held instead. A hook run whose payload never arrived no longer counts as a delivery, matching
+  the helper's own rule, and a real session whose arguments mention `~/.codex/plugins` is no
+  longer mistaken for Codex App's plugin runtime. Found in review of the Windows fixes.
+- **Windows: Yes/No answer an approval that arrived through Codex's shared daemon (#131).** The
+  first Windows pass of this release refused every Yes on a real, delivered approval with "needs
+  fresh approval state after helper failure". The 2.3.2 safety gate wants proof that the installed
+  hook helper ran for *that* session since its last failure, and took it only from a receipt the
+  helper writes when it can find the session's own `codex.exe` in its ancestry — which, under the
+  daemon, it never can. The hook's envelope already carries the helper's own start stamp, and the
+  daemon routing above already says which session it belongs to, so the plugin now records that
+  as the session's delivery. Same record, same checks: a stamp from before a helper failure, or
+  from before the installed helper, still counts for nothing.
+- **Windows: Codex's daemon processes no longer occupy session keys (#132).** Since 0.157 two
+  `codex.exe` processes run the app-server daemon; they matched the session scan by name, took
+  slots 1 and 2, and pressing one failed to focus a tab that does not exist. They are excluded the
+  way `codex sandbox` workers already were. So is the daemon's plugin runtime — Codex App's
+  bundled `node.exe` running a script out of `~/.codex/plugins/cache` — which the scan had taken
+  for an npm-installed CLI; it runs in the session's own folder, so the daemon routing above
+  then credited the session's events to it.
+- **An approval no longer lights another session's key when Codex runs its shared daemon.**
+  Codex 0.158 runs every session inside one app-server daemon, and its hooks run there. The hook
+  finds "its" terminal by walking the process ancestry, which for a daemon ends at whichever
+  terminal started it — so every session's events landed in that terminal's file: its key took
+  the other session's project and approval, and Yes would have typed into the wrong tab. Seen on
+  the release day with two sessions in different folders. The plugin already knows each Codex
+  terminal's real folder and start time from the process table, so an event whose folder is not
+  the file's own terminal's is now shown on the one terminal that runs in that folder (when two
+  do, the one that started just before the session did, since Codex session ids carry their
+  creation time); with no unique match the event is held back and logged once rather than
+  guessed, and the daemon's own terminal keeps its last state. Events the hook could attach to no
+  terminal at all (`shared.json`, once the daemon outlives its terminal) are routed the same way.
+  Both platforms; the hooks themselves are unchanged, so nothing has to be re-trusted.
+- **Windows: a helper dated in the future no longer reads as Run /hooks after install (#125).**
+  Same cause as Claude Console's entry above: the packaged helper's file time is hours ahead on a
+  machine behind IST, and the bridge measured "an event since the install" against it. Until the
+  clock caught up, trusted and firing hooks still showed **Run /hooks** and Yes/No were refused.
+  The bridge now takes the health monitor's latched floor for the exe. Restoring a future-dated
+  helper first seen missing keeps **Blocked** until a fresh hook succeeds, including after restart.
+  The status evaluated at plugin load reads the same floor: it previously ran ahead of the
+  monitor, so each service start inside the window flashed **Run /hooks** and its Options+ card
+  until the first poll corrected it (found in review on the release day).
+- **Windows: a hook helper that is quarantined or blocked from running now shows Blocked (#126).**
+  The Windows hook command ran the exe directly, so when security software removed or blocked
+  it nothing was written anywhere the plugin reads: the keys stayed on their last state and
+  every Yes/No press logged "no pending approval". Replicated on 28 September: a missing and an
+  unlaunchable helper both exit 1 and leave zero files. The command is now the same guarded
+  PowerShell launcher Claude Console uses, aimed at Vizhi's own IPC root, so a missing,
+  unlaunchable or crashing helper leaves the record that turns the keys **Blocked** with one
+  Options+ warning, and recovers on the next hook that runs. The launcher also forwards
+  whatever payload arrived when Codex leaves stdin open, instead of dropping the event.
+  It runs directly in Codex's PowerShell shell. SessionEnd uses a 500 ms input wait so a cold
+  launch fits Codex's three-second limit; other events retain the 1.5 s input wait.
+  **Because the command changed, Codex asks you to trust the Vizhi hooks once more in
+  `/hooks` after this update**; the keys read **Run /hooks** until you do.
+- **Windows: pressing a session key no longer reports "action failed" for a pin that worked
+  (#112, QA item 5).** Same change as Claude Console's entry above: the focus helper runs off
+  the action thread, the key reads **Selecting** meanwhile, and a second press during that
+  second is ignored rather than queued. Yes/No show **Selecting** too. Routed actions pressed
+  during selection are ignored with an alert, so a quick session-key/Yes sequence cannot approve
+  the previous session; press Yes again after selection finishes.
+- **New Tab, New Codex and New Codex (Window) open where you work (#113, QA item 4).** QA found them
+  opening in the user profile root, which Codex then registered as a trusted project. They now
+  open in the pinned (or single obvious) session's project folder; with no such session, in the
+  first usable folder listed in `~/.claude/claude-console/project-roots`; and only then in the
+  home folder, with a log line saying why. The profile root and the plugin service's own folder
+  never qualify. Codex records a trusted-project entry per folder it is started in; the entry
+  1.5.3 left for the Logi service folder can be deleted from `config.toml` by hand. On Windows a
+  plain New Tab starts in the same folder; on macOS it stays Cmd+T, following Terminal's own
+  "new tabs open in" preference.
 
 ## Vizhi for Codex [1.6.1] — 2026-09-15
 

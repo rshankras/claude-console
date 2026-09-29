@@ -26,7 +26,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// Reads:  sessions/ + activity/ (statusline + hook data, per Terminal tab)
     /// Types:  keystrokes into the TTY-verified Claude tab in Terminal.app
     /// </summary>
-    public class BridgeManager
+    public partial class BridgeManager
     {
         // The private IPC layout lives in IpcPaths (shared with SessionRegistry). Local aliases keep
         // the rest of this file readable. They are PROPERTIES, not static readonly fields: the root
@@ -82,7 +82,6 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Live-status bridge — the scripts the plugin installs and the settings.json it edits on the
         // user's say-so (see the live-status section below).
         private static String SettingsFile => Path.Combine(ClaudeDir, "settings.json");
-        private static String SettingsBackup => Path.Combine(ClaudeDir, "settings.json.claude-console.bak");
         private static String ScriptsDir => Path.Combine(ClaudeConsoleHome, "scripts");
         private static String StatuslineScript => Path.Combine(ScriptsDir, "statusline-handler.sh");
         private static String ActivityScript => Path.Combine(ScriptsDir, "activity-hook.sh");
@@ -160,7 +159,15 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// that never installs it simply says nothing, as before.
         /// (status, message, supportUrl, supportUrlTitle). A null message means "clear to Normal".
         /// </summary>
-        internal Action<PluginStatus, String, String, String> Notify { get; set; }
+        internal Action<PluginStatus, String, String, String> Notify
+        {
+            get => _notificationSink == null ? null : this.ReportPluginStatus;
+            set
+            {
+                _notificationSink = value;
+                _publishedNotice = null;
+            }
+        }
 
         /// <summary>
         /// A system notification (#31): the Options+ card only helps someone who has Options+ open,
@@ -300,7 +307,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// Status of an agent-owned bridge that is not controlled by the live-status switch. Codex
         /// uses this for hook trust; Claude leaves it Ready and continues to use LiveStatus.
         /// </summary>
-        internal AgentBridgeStatus AgentBridgeState => _agentBridgeStatus;
+        internal AgentBridgeStatus AgentBridgeState => this.HookHelperUnavailable
+            ? AgentBridgeStatus.HelperUnavailable : _agentBridgeStatus;
 
         private AgentBridgeStatus _agentBridgeStatus = AgentBridgeStatus.Ready;
 
@@ -314,7 +322,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             _agentBridgeStatus = status;
-            OnAgentBridgeStatusChanged?.Invoke(status);
+            this.PublishBridgeHealth();
         }
 
         /// <summary>
@@ -486,6 +494,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         internal String ApprovalTty()
         {
+            if (this.SelectingSlot != 0) { return null; }
             if (this.Agent.Id != "codex-cli") { return this.RoutingTty(); }
 
             if (this.IsSelectableSession(_pinnedTty)) { return _pinnedTty; }
@@ -527,6 +536,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         public void StartPolling()
         {
             EnsureIpcRoot();
+            this.RefreshHelperHealth();
             CleanupLegacyIpcFiles();
             Grid.LoadPersisted();   // keep slot assignments across a plugin reload
             _pinnedTty = Grid.FocusedSession;   // ...and the session you had selected
@@ -556,6 +566,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         {
             try
             {
+                this.RefreshHelperHealth();
                 // ~Every 2s, refresh which Terminal tab is frontmost so the live keys follow the
                 // session you're actually looking at. Keep the last known tab when Terminal isn't
                 // frontmost, so glancing away (e.g. to a browser) doesn't reset the display. The
@@ -581,8 +592,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (liveTtys != null && this.Agent.Id == "codex-cli")
                 {
                     Grid.DiscoveredProjectDirs = _platform.SessionDirectories;
+                    Grid.DiscoveredSessionStarts = _platform.SessionStartTimes;
                 }
                 Grid.Refresh(liveTtys);
+                if (liveTtys != null) { _hookHealth?.PruneDeadSessions(liveTtys); }
+                this.RegisterAttributedDeliveries();   // #131: receipts for envelopes the registry attributed to a session
 
                 // A second Codex session means an approval can no longer be attributed on its own.
                 // Noted here, where the grid actually changes, rather than while painting a key.
@@ -599,8 +613,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // key. That is the redraw storm (#27): ~11 renders a second, each a full render plus
                 // an IPC push, continuing when no session was running and the keys were not even on
                 // screen. Byte equality is exact here because one writer rewrites the whole file.
-                var statePath = this.ActiveStateFile();
-                if (statePath == null)
+                var displayTarget = this.DisplayTty();
+                var statePath = this.ActiveStateFile(displayTarget);
+                var stateText = statePath == null ? null : ReadTextWithRetry(statePath);
+                if (!this.IsObservationPayloadCurrent(stateText, displayTarget)) { stateText = null; }
+                if (stateText == null)
                 {
                     // Nothing reported for the session on the display keys. Announce it ONCE, so the
                     // keys can show a dash instead of another session's numbers, and forget the last
@@ -609,11 +626,11 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         _displayStateKnown = false;
                         _lastStateText = null;
+                        _currentState = null;
                         OnStateUnavailable?.Invoke();
                     }
                 }
 
-                var stateText = statePath == null ? null : ReadTextWithRetry(statePath);
                 var stateChanged = stateText != null
                     && !String.Equals(stateText, _lastStateText, StringComparison.Ordinal);
 
@@ -732,19 +749,21 @@ namespace Loupedeck.ClaudeConsolePlugin
         // hourglass from a tab nobody was asking about.
         private ActivityState ReadActivity()
         {
-            var file = ActiveActivityFile();
+            var routing = this.RoutingTty();
+            var file = ActiveActivityFile(routing);
             if (!File.Exists(file))
             {
                 return null;
             }
 
-            var a = ReadJsonWithRetry<ActivityState>(file);
+            var text = ReadTextWithRetry(file);
+            if (!this.IsObservationPayloadCurrent(text, routing)) { return null; }
+            var a = Deserialize<ActivityState>(text);
             if (a == null)
             {
                 return null;
             }
 
-            var routing = this.RoutingTty();
             var transcript = !String.IsNullOrEmpty(routing)
                 && this.Grid.Sessions.TryGetValue(routing, out var routed)
                     ? routed.TranscriptPath
@@ -770,11 +789,17 @@ namespace Loupedeck.ClaudeConsolePlugin
         // tab has no per-TTY file yet, or when Terminal isn't the frontmost app.
         // ------------------------------------------------------------------------------------------
         // Cost / Model / Context read this one: it follows the tab you are looking at (#25).
-        private String ActiveStateFile() => PerTty(SessionsDir, StateFile, this.DisplayTty());
+        private String ActiveStateFile(String target)
+        {
+            return this.CurrentObservationFile(PerTty(SessionsDir, StateFile, target), target);
+        }
 
         // Activity follows the ROUTING target: "waiting" here is the approval the Yes key answers,
         // so the Activity face and the key that acts on it must describe the same session.
-        private String ActiveActivityFile() => PerTty(ActivityDir, ActivityFile, this.RoutingTty());
+        private String ActiveActivityFile(String target)
+        {
+            return this.CurrentObservationFile(PerTty(ActivityDir, ActivityFile, target), target);
+        }
 
         private String PerTty(String dir, String shared, String tty)
         {
@@ -976,9 +1001,16 @@ namespace Loupedeck.ClaudeConsolePlugin
         public void SelectSlot(Int32 slot)
         {
             if (slot < 1 || slot > this.SessionSlotCount) return;
-
             var session = Grid.SlotSession(slot);
-            if (session == null)
+            if (session != null) { this.SelectSlot(slot, session); }
+        }
+
+        private void SelectSlot(Int32 slot, GridSession session)
+        {
+            this.RefreshHelperHealth();
+            // A queued worker must select the session that was pressed, never a new occupant
+            // of a slot recycled by discovery before the worker could start.
+            if (Grid.SlotSession(slot)?.SessionKey != session.SessionKey)
             {
                 return;
             }
@@ -993,6 +1025,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                     BridgeNotice.SupportUrl, BridgeNotice.SupportTitle);
                 return;
             }
+
+            if (Grid.SlotSession(slot)?.SessionKey != session.SessionKey) { return; }
 
             // Pressing the slot that is ALREADY pinned releases it, and the keys go back to
             // following the frontmost tab. Until now a pin could only be MOVED, never dropped —
@@ -1012,6 +1046,97 @@ namespace Loupedeck.ClaudeConsolePlugin
             _activeTty = session.SessionKey;            // so a later un-pin falls back somewhere sensible
             OnTargetChanged?.Invoke();
         }
+
+        // #112: on Windows the focus helper takes 1.3–1.8 s, past the SDK's 1,000 ms action budget,
+        // so the service logged "Action timed out" and "action failed" for a pin that had worked
+        // (Logitech, 1.6.1 retest item 5). The press now returns at once and the selection lands
+        // on a background task. One selection at a time: a second press while one is in flight is
+        // dropped, not queued — the focus helper serialises anyway, and a queue would pin
+        // whichever session finished last rather than the one the user meant.
+        private Int32 _selectingSlot;
+        private readonly Object _routingGate = new Object();
+        private Int32 _routedActions;
+
+        /// <summary>The slot whose selection is in flight, or 0. Painted as "Selecting" by the slot key.</summary>
+        internal Int32 SelectingSlot => Volatile.Read(ref _selectingSlot);
+
+        /// <summary>
+        /// Start <see cref="SelectSlot"/> off the calling thread. Returns whether a selection was
+        /// started; <paramref name="completed"/> runs afterwards whatever the outcome, so the key
+        /// can repaint. An empty slot or a press during another selection or routed action starts nothing.
+        /// </summary>
+        internal Boolean BeginSelectSlot(Int32 slot, Action completed)
+        {
+            GridSession session;
+            lock (_routingGate)
+            {
+                if (slot < 1 || slot > this.SessionSlotCount || (session = Grid.SlotSession(slot)) == null)
+                {
+                    return false;
+                }
+                if (_selectingSlot != 0 || _routedActions != 0)
+                {
+                    PluginLog.Info($"BridgeManager: slot {slot} pressed during another selection or routed action — ignored");
+                    return false;
+                }
+                Volatile.Write(ref _selectingSlot, slot);
+            }
+
+            this.RepaintSelection();
+            Task.Run(() =>
+            {
+                try
+                {
+                    this.SelectSlot(slot, session);
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, $"BridgeManager: selecting slot {slot} failed");
+                }
+                finally
+                {
+                    lock (_routingGate) { Volatile.Write(ref _selectingSlot, 0); }
+                    this.RepaintSelection();
+                    try { completed?.Invoke(); }
+                    catch (Exception ex) { PluginLog.Verbose(ex, "BridgeManager: slot repaint after selection failed"); }
+                }
+            });
+            return true;
+        }
+
+        private void RepaintSelection()
+        {
+            try { OnTargetChanged?.Invoke(); }
+            catch (Exception ex) { PluginLog.Verbose(ex, "BridgeManager: selection repaint failed"); }
+        }
+
+        // Admission is atomic with beginning a selection. Never hold the lock across an OS call:
+        // a second SDK action must return promptly, including while the focus helper is running.
+        // An admitted action finishes before another selection may start, so even a target
+        // resolved before injection cannot be overtaken by a slot press.
+        private InjectionOutcome RunRoutedInput(Func<InjectionOutcome> action)
+        {
+            Boolean admitted;
+            lock (_routingGate)
+            {
+                admitted = _selectingSlot == 0;
+                if (admitted) { ++_routedActions; }
+            }
+            if (!admitted)
+            {
+                this.Alert();
+                PluginLog.Info("BridgeManager: session selection is still in progress — action ignored");
+                return InjectionOutcome.Skipped;
+            }
+            try { return action(); }
+            finally { lock (_routingGate) { --_routedActions; } }
+        }
+
+        internal void RunRoutedAction(Action action) => this.RunRoutedInput(() =>
+        {
+            action();
+            return InjectionOutcome.Ok;
+        });
 
         // Drop the pin and go back to following the frontmost tab. Called when the pinned session
         // exits, and when we deliberately start a session somewhere else (voice "go to project").
@@ -1100,27 +1225,37 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// <summary>
         /// Type text into the tracked Claude session and optionally press Return.
         /// </summary>
-        public void InjectText(String text, Boolean pressEnter) =>
+        public void InjectText(String text, Boolean pressEnter) => this.RunRoutedAction(() =>
+        {
+            this.RefreshHelperHealth();
             _platform.InjectText(RoutingTty(), text, pressEnter);
+        });
 
         /// <summary>
         /// Send a single key chord to the tracked Claude session, e.g. Shift+Tab to cycle modes.
         /// Returns the platform's outcome, so a caller that must act only on a keystroke that
         /// actually landed (the answer keys clearing a badge, #60) can tell.
         /// </summary>
-        public InjectionOutcome InjectKey(KeyStroke key) => this.InjectKeyTo(RoutingTty(), key);
+        public InjectionOutcome InjectKey(KeyStroke key) => this.RunRoutedInput(() => this.InjectKeyTo(RoutingTty(), key));
 
         /// <summary>
         /// Send a key to an already-resolved target. Approval actions use this so the session they
         /// acknowledge is exactly the session that received the decision, even if focus changes.
         /// </summary>
-        internal InjectionOutcome InjectKeyTo(String sessionKey, KeyStroke key) =>
-            _platform.InjectKey(sessionKey, key);
+        internal InjectionOutcome InjectKeyTo(String sessionKey, KeyStroke key) => this.RunRoutedInput(() =>
+        {
+            this.RefreshHelperHealth();
+            return _platform.InjectKey(sessionKey, key);
+        });
 
         /// <summary>
         /// Accept the highlighted autocomplete AND submit it in one press.
         /// </summary>
-        public void InjectTabThenEnter() => _platform.InjectTabThenEnter(RoutingTty());
+        public void InjectTabThenEnter() => this.RunRoutedAction(() =>
+        {
+            this.RefreshHelperHealth();
+            _platform.InjectTabThenEnter(RoutingTty());
+        });
 
         /// <summary>
         /// Optional per-poll pull of agent state, for a product whose agent cannot push it.
@@ -1131,7 +1266,83 @@ namespace Loupedeck.ClaudeConsolePlugin
         public Action PullState { get; set; }
 
         /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
-        public void Navigate(TerminalAction action) => _platform.Navigate(action);
+        public void Navigate(TerminalAction action) => this.RunRoutedAction(() =>
+        {
+            this.RefreshHelperHealth();
+            var opensSession = action is TerminalAction.NewTab or TerminalAction.NewClaudeTab or TerminalAction.NewClaudeWindow;
+            _platform.Navigate(action, opensSession ? this.NewSessionDirectory() : null);
+        });
+
+        /// <summary>Test seam for the roots file; null means the default under the runtime home.</summary>
+        internal String ProjectRootsFile { get; set; }
+
+        /// <summary>
+        /// Where New Tab, New &lt;agent&gt; and New &lt;agent&gt; (Window) open (#113, QA 1.6.1 item 4).
+        /// Until now: the home folder, since #85 moved them off the plugin service's own
+        /// directory. Neither is where projects live, and Codex trusts whatever folder it is
+        /// started in as a project — QA's config.toml gained the entire user profile as a
+        /// trusted project the second they pressed the key. In order:
+        ///   1. the routed (pinned, or single obvious) session's own project folder — "another
+        ///      session on what I am working on" is the common case;
+        ///   2. the first usable root in the project-roots file (#26) — the user's stated layout;
+        ///   3. null, i.e. the platform's default (home), with a log line saying why.
+        /// The profile root, the plugin service's working directory and the plugin's install
+        /// directory never qualify, whichever step produced them.
+        /// </summary>
+        internal String NewSessionDirectory()
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            var target = this.RoutingTty();
+            if (!String.IsNullOrEmpty(target) && Grid.Sessions.TryGetValue(target, out var session)
+                && IsProjectDirectory(session.ProjectDir, home))
+            {
+                PluginLog.Info($"BridgeManager: new session opens in {session.ProjectDir} (the routed session's folder)");
+                return session.ProjectDir;
+            }
+
+            var rootsFile = this.ProjectRootsFile ?? ProjectDiscovery.DefaultRootsFile(home);
+            foreach (var root in ProjectDiscovery.ReadRootsFile(rootsFile, home))
+            {
+                if (IsProjectDirectory(root, home))
+                {
+                    PluginLog.Info($"BridgeManager: new session opens in {root} (the first configured project root)");
+                    return root;
+                }
+            }
+
+            PluginLog.Info("BridgeManager: new session opens in the home folder — the routed session has no project folder and no configured project root exists (~/.claude/claude-console/project-roots)");
+            return null;
+        }
+
+        private static Boolean IsProjectDirectory(String path, String home)
+        {
+            if (String.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!Directory.Exists(path))
+                {
+                    return false;
+                }
+
+                var candidate = Normalize(path);
+                return candidate != Normalize(home)
+                    && candidate != Normalize(Environment.CurrentDirectory)
+                    && candidate != Normalize(PluginPaths.PluginDirectory);
+            }
+            catch
+            {
+                return false;
+            }
+
+            static String Normalize(String p) => String.IsNullOrWhiteSpace(p)
+                ? ""
+                : Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).ToUpperInvariant();
+        }
 
         /// <summary>
         /// Interactive screenshot into this product's IPC tree. Returns the file's path, or null
@@ -1151,7 +1362,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal Boolean TryCancelScreenshot() => _platform.TryCancelScreenshot();
 
         /// <summary>Open a terminal and start the agent with extra CLI args (e.g. -i shot.png).</summary>
-        public void LaunchAgentSession(params String[] extraArgs) => _platform.LaunchAgentSession(extraArgs);
+        public void LaunchAgentSession(params String[] extraArgs) =>
+            this.RunRoutedAction(() => _platform.LaunchAgentSession(extraArgs));
 
         // State/activity files are a few KB — refuse to slurp anything huge (corrupt or hostile).
         private const Int64 MaxIpcFileBytes = 1 << 20;
@@ -1871,6 +2083,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             _liveStatus = state;
             PluginLog.Info($"Live status: {state}");
+            this.RefreshHelperHealth();
             OnLiveStatusChanged?.Invoke(state);
         }
 
@@ -2283,176 +2496,12 @@ namespace Loupedeck.ClaudeConsolePlugin
             return true;
         }
 
-        /// <summary>
-        /// The one way settings.json is rewritten. <paramref name="mutate"/> edits the parsed document
-        /// in place and returns whether it changed anything: read → mutate → write, where the write
-        /// refuses if the file's bytes moved since the read (Claude Code itself writes this file), and
-        /// one retry runs the whole thing again from the fresh contents. Returns false when the file
-        /// could not be touched at all (symlink, invalid JSON, kept changing); <paramref name="changed"/>
-        /// reports whether a write actually happened — a mutate that finds nothing to do costs no
-        /// write and no backup.
-        /// </summary>
-        internal static Boolean RewriteSettings(Func<JsonObject, Boolean> mutate, out Boolean changed)
-        {
-            changed = false;
-            for (var attempt = 0; attempt < 2; attempt++)
-            {
-                var root = ReadSettingsForRewrite(out var fingerprint, out var layout, out var original);
-                if (root == null)
-                {
-                    return false;
-                }
-                var render = SettingsText.Capture(original, root, layout);
-                if (!mutate(root))
-                {
-                    return true;
-                }
-                if (WriteSettings(root, fingerprint, layout, render(root)))
-                {
-                    changed = true;
-                    return true;
-                }
-                PluginLog.Warning("Live status: settings.json changed while it was being edited — retrying from the new contents");
-            }
+        // The lifecycle callback uses this same transaction without constructing the bridge.
+        internal static Boolean RewriteSettings(Func<JsonObject, Boolean> mutate, out Boolean changed) =>
+            new ClaudeSettingsStore(UserHome).Rewrite(mutate, out changed);
 
-            PluginLog.Warning("Live status: settings.json kept changing — giving up; try again");
-            return false;
-        }
-
-        // SHA-256 of a file's bytes, or null when there is no file. The identity a write checks
-        // against: "the file I am about to replace is the file I read".
-        private static Byte[] Fingerprint(String path)
-        {
-            try
-            {
-                return File.Exists(path) ? SHA256.HashData(File.ReadAllBytes(path)) : null;
-            }
-            catch (Exception ex)
-            {
-                PluginLog.Warning(ex, "Live status: couldn't fingerprint settings.json");
-                return null;
-            }
-        }
-
-        private static Boolean SameBytes(Byte[] a, Byte[] b) =>
-            a == null ? b == null : b != null && a.AsSpan().SequenceEqual(b);
-
-        // settings.json as a document we may rewrite, or null when we must not touch it: a symlink
-        // (a planted link could redirect the rename-over-write), invalid JSON, or a non-object root.
-        // A missing or empty file is an empty object — wiring a fresh install is the common case.
-        // The fingerprint is of exactly the bytes that were parsed, so a write can prove nothing
-        // slipped in between.
         private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint) =>
-            ReadSettingsForRewrite(out fingerprint, out _, out _);
-
-        // The layout is read alongside the document so the write can hand the file back the way it
-        // was found (#72): same indentation, same line ending, same trailing newline.
-        private static JsonObject ReadSettingsForRewrite(out Byte[] fingerprint, out SettingsLayout layout, out String original)
-        {
-            original = null;
-            fingerprint = null;
-            layout = SettingsLayout.Default;
-            if (new FileInfo(SettingsFile).LinkTarget != null)
-            {
-                PluginLog.Warning("Live status: settings.json is a symlink — leaving it untouched");
-                return null;
-            }
-
-            if (!File.Exists(SettingsFile))
-            {
-                return new JsonObject();
-            }
-
-            var bytes = File.ReadAllBytes(SettingsFile);
-            fingerprint = SHA256.HashData(bytes);
-            String text;
-            using (var reader = new StreamReader(new MemoryStream(bytes), Encoding.UTF8, detectEncodingFromByteOrderMarks: true))
-            {
-                text = reader.ReadToEnd();
-            }
-            if (String.IsNullOrWhiteSpace(text))
-            {
-                return new JsonObject();
-            }
-            layout = SettingsLayout.Detect(bytes, text);
-            original = text;
-
-            JsonNode parsed;
-            try
-            {
-                parsed = JsonNode.Parse(text, documentOptions: new JsonDocumentOptions
-                {
-                    CommentHandling = JsonCommentHandling.Skip,
-                    AllowTrailingCommas = true,
-                });
-            }
-            catch (Exception ex)
-            {
-                PluginLog.Warning(ex, "Live status: settings.json isn't valid JSON — leaving it untouched");
-                return null;
-            }
-
-            if (parsed is not JsonObject root)
-            {
-                PluginLog.Warning("Live status: settings.json isn't a JSON object — leaving it untouched");
-                return null;
-            }
-
-            return root;
-        }
-
-        // Write atomically, but only over the file that was read. The temp name is unique per call
-        // so two writers can never truncate each other's temp; the file is re-fingerprinted at the
-        // last possible moment before the rename and the write is REFUSED on a mismatch — the caller
-        // (RewriteSettings) re-reads and tries once more. The backup is ROLLING — taken immediately
-        // before every write that goes ahead, overwriting the last one (#31). It used to be taken once,
-        // on the first load, and never again: on QA's machine it was a month stale, so "restore the
-        // backup" would have rolled back every unrelated change the user had made since. A backup
-        // that is always the state one write ago is the only kind worth telling people about.
-        //
-        // The bytes are laid out the way the file was found (#72). The default writer escaped every
-        // quote, ampersand, apostrophe, angle bracket and non-ASCII character to \uXXXX and dropped
-        // the trailing newline — valid JSON, but a whole-file diff for anyone who keeps ~/.claude in
-        // git, applied to every entry in the file including the ones the plugin does not own.
-        private static Boolean WriteSettings(JsonObject root, Byte[] expected, SettingsLayout layout, String json)
-        {
-            Directory.CreateDirectory(ClaudeDir);
-            var parsed = JsonNode.Parse(json, documentOptions: new JsonDocumentOptions
-            { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-            if (!JsonNode.DeepEquals(parsed, root))
-            { throw new InvalidOperationException("settings source edit disagrees with the intended values"); }
-            var tmp = SettingsFile + ".cc." + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                File.WriteAllText(tmp, json, layout.Encoding);
-
-                if (!SameBytes(Fingerprint(SettingsFile), expected))
-                {
-                    TryDelete(tmp);
-                    return false;
-                }
-
-                try
-                {
-                    if (File.Exists(SettingsFile))
-                    {
-                        File.Copy(SettingsFile, SettingsBackup, overwrite: true);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    PluginLog.Warning(ex, "Live status: couldn't back up settings.json (continuing)");
-                }
-
-                File.Move(tmp, SettingsFile, overwrite: true);
-                return true;
-            }
-            catch
-            {
-                TryDelete(tmp);
-                throw;
-            }
-        }
+            new ClaudeSettingsStore(UserHome).ReadSettingsForRewrite(out fingerprint);
 
         // Ensure a hook event's array contains an entry pointing at our activity handler; append if
         // missing. Returns true when it added one. Matches by command substring so a re-run is a
@@ -2644,7 +2693,12 @@ namespace Loupedeck.ClaudeConsolePlugin
         internal void DeliverDictation(String text, Boolean submit)
         {
             var intent = submit ? VoiceIntent.Send : VoiceIntent.Draft;
-            var target = RoutingTty();
+            String target = null;
+            var outcome = this.RunRoutedInput(() =>
+            {
+                target = RoutingTty();
+                return target == null ? InjectionOutcome.Skipped : _platform.InjectText(target, text, submit);
+            });
             if (target == null)
             {
                 this.ReportVoiceFailure(intent, VoiceFailure.NoTarget,
@@ -2652,7 +2706,6 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
-            var outcome = _platform.InjectText(target, text, submit);
             if (outcome != InjectionOutcome.Ok)
             {
                 this.ReportVoiceFailure(intent, VoiceFailure.NotTyped, $"dictation delivery failed: {outcome}");
@@ -3133,7 +3186,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Open the project in a terminal and start claude there. Where exactly (reuse an idle tab
         // vs open a new one) is the backend's call — it needs terminal-specific knowledge of what
         // "idle" means. What is platform-neutral, and stays here, is the pin bookkeeping.
-        internal void LaunchClaudeInProject(String path)
+        internal void LaunchClaudeInProject(String path) => this.RunRoutedAction(() =>
         {
             // Opening a project is an explicit "I'm working here now", and it starts a session in a
             // tab that has no key yet. Holding a pin from before would quietly send Yes / Clear /
@@ -3141,7 +3194,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             this.ClearPin();
 
             _platform.LaunchClaudeInProject(path);
-        }
+        });
 
         private static void TryDelete(String path)
         {

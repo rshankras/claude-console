@@ -26,11 +26,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         private const String Script = "#!/bin/bash\n# stable launcher\nprintf '{}'\n";
 
-        // InstallsHooks = true drives the hooks path on ANY host OS: these tests are about what
-        // the installer writes, not about which platform is running them. The Windows branch —
-        // install nothing at all — has its own test below.
-        private CodexStateBridge New() =>
-            new CodexStateBridge(this._home, this._sessions) { InstallsHooks = true };
+        // Supply the expected package file on every OS. Missing-helper behavior has dedicated
+        // tests; these installer/trust tests must also exercise the healthy path on Windows.
+        private CodexStateBridge New()
+        {
+            Directory.CreateDirectory(this._home);
+            var helper = Path.Combine(this._home, "claude-console-hook.exe");
+            if (!File.Exists(helper)) { File.WriteAllText(helper, "fixture"); }
+            return new CodexStateBridge(this._home, this._sessions) { InstallsHooks = true, HookExe = helper };
+        }
 
         public void Dispose()
         {
@@ -96,7 +100,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Assert.True(hooks.ContainsKey(evt), $"missing subscription: {evt}");
                 var command = hooks[evt][0]["hooks"][0]["command"].GetValue<String>();
                 Assert.Equal(b.HookCommand(evt), command);
-                Assert.EndsWith(" " + evt, command);
+                // Windows runs launcher source in the PowerShell that Codex supplies.
+                if (OperatingSystem.IsWindows())
+                {
+                    Assert.Contains($" 'codex' '{evt}'; ", command);
+                }
+                else
+                {
+                    Assert.EndsWith(" " + evt, command);
+                }
             }
         }
 
@@ -112,6 +124,41 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Assert.Equal(b.HookCommand(evt, windows: true), handler["command"].GetValue<String>());
                 Assert.Equal(b.HookCommand(evt, windows: true), handler["commandWindows"].GetValue<String>());
             }
+        }
+
+        /// <summary>
+        /// #126. Until 1.6.1 the Windows command ran the exe directly, so a quarantined or
+        /// execution-blocked helper failed without a trace and the keys stayed Healthy. The
+        /// command is now the same guarded launcher Claude Code uses, aimed at the codex-console
+        /// root, so a missing or unlaunchable helper leaves the marker the plugin turns into
+        /// Blocked. Pinned OS-free, since this is what every Windows user re-trusts once.
+        /// </summary>
+        [Fact]
+        public void Windows_hook_command_is_the_guarded_launcher_aimed_at_the_codex_root()
+        {
+            var b = this.New();
+            var command = b.HookCommand("PermissionRequest", windows: true);
+            Assert.StartsWith("# " + Platform.BridgeWiring.WindowsMarker + "\n", command);
+            var source = command;
+            Assert.Contains("'" + b.HookExe.Replace("'", "''") + "'", source);
+            Assert.Contains(" 'codex' 'PermissionRequest'; ", source);
+            Assert.Contains("'codex-console', 'hook-health', '" + WindowsHookHealth.HealthDirectoryName(b.HookExe) + "'", source);
+            Assert.DoesNotContain("'claude-console'", source);
+            Assert.Contains("Write-HookFailure 'missing' 'helper'", source);
+            Assert.Contains("Write-HookFailure 'launch-failed' 'helper'", source);
+            Assert.Contains("Write-HookFailure 'nonzero-exit' 'helper'", source);
+        }
+
+        /// <summary>
+        /// Codex trusts the command by hash. Two loads against the same install must produce the
+        /// same bytes, or every load is a fresh trust prompt; and fourteen copies of the launcher
+        /// must stay a size Codex reads without complaint.
+        /// </summary>
+        [Fact]
+        public void The_installed_windows_command_depends_only_on_the_helper_path()
+        {
+            Assert.Equal(this.New().HookCommand("Stop", windows: true), this.New().HookCommand("Stop", windows: true));
+            Assert.InRange(this.New().BuildHooksJson(windows: true).Length, 1, 80_000);
         }
 
         /// <summary>

@@ -1,6 +1,6 @@
 # Marketplace Listing Copy
 
-The exact text entered in the Logitech Marketplace submission form ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)). **The 2.2.2 copy below is current** (submitted 2026-09-13; the package and these texts as submitted are in `~/Downloads/Claude Console/ClaudeConsole-2.2.2-install/`); the 2.2.1 and 2.2.0 release notes it replaced follow it, and the 2.0.x copy is kept at the bottom for reference. Process and packaging steps live in [SUBMISSION.md](../SUBMISSION.md).
+The exact text entered in the Logitech Marketplace submission form ([marketplace.logitech.com/contribute](https://marketplace.logitech.com/contribute)). **The 2.3.1 copy below is current** (submitted 2026-09-24; the package and these texts as submitted are in `~/Downloads/Claude Console/ClaudeConsole-2.3.1-release/`); the 2.2.2, 2.2.1 and 2.2.0 release notes it replaced follow it, and the 2.0.x copy is kept at the bottom for reference. Process and packaging steps live in [SUBMISSION.md](../SUBMISSION.md).
 
 ## Auto-filled fields (from `LoupedeckPackage.yaml`)
 
@@ -12,7 +12,7 @@ These are read out of the uploaded `.lplug4` — the form fills them itself. To 
 | Author | S.Ravi Shankar |
 | Operating system | macOS, Windows (from `pluginFolderMac` + `pluginFolderWin`) |
 | Capabilities | `HasNoApplication` — universal, binds no application (#23) |
-| Version | 2.2.2 |
+| Version | 2.3.1 |
 | Content licence | Proprietary — https://vizhi.dev/eula/ (first submitted this way in 2.2.2; 2.2.1 as submitted said MIT — if the form's licence list has no "Proprietary" entry, pick the nearest and keep the EULA URL) |
 | Support | https://vizhi.dev/faq/ (from 2.2.2; 2.2.1 as submitted: the keypad-profiles issue tracker, which the FAQ still links to) |
 | Homepage | https://vizhi.dev/claude-console/ (from 2.2.2; 2.2.1 as submitted: the keypad-profiles site) |
@@ -22,21 +22,15 @@ Every user-facing link — these fields, the three card buttons baked into the p
 
 ## Teaser card description — limit 120 characters
 
-2.2.2 as submitted, 97 characters. This is the wording the portal already held, and it differs from the 2.0.x teaser this doc used to record; it was kept unchanged, although it names Apple Terminal only:
+2.3.1 as submitted, 117 characters. The portal had held a 97-character teaser that named Apple Terminal only, which is wrong for a release whose main fix is on Windows. The device wording ("MX Keypad or Creative Console") is kept from it:
 
 ```
-Physical hardware controls for Claude Code in Apple Terminal on the MX Keypad or Creative Console
-```
-
-The teaser this doc recorded before (108 characters), which names both terminals:
-
-```
-Physical hardware controls for Claude Code in Apple Terminal or Windows Terminal, on the MX Creative Keypad.
+Physical hardware controls for Claude Code in Apple Terminal or Windows Terminal on the MX Keypad or Creative Console
 ```
 
 ## Detail page description — limit 500 characters
 
-Markdown supported: **bold**, *cursive*, `-` lists, `1.` lists, `[links](url)`, emojis. 2.2.0 rewrite: the Answer line now describes what the keys actually do since #21, and "Voice" is dictation rather than a key name. 2.2.2 (482 characters): the Live status line reads *cost, context & activity* instead of *model, cost & context*, because the Model key stopped being a live display (#86). The portal holds the list separators as plain ` - ` hyphens, not em dashes, so that is how it is recorded here:
+Markdown supported: **bold**, *cursive*, `-` lists, `1.` lists, `[links](url)`, emojis. 2.2.0 rewrite: the Answer line now describes what the keys actually do since #21, and "Voice" is dictation rather than a key name. 2.2.2 (482 characters): the Live status line reads *cost, context & activity* instead of *model, cost & context*, because the Model key stopped being a live display (#86). 2.3.1: the portal carried the text over cut to 461 characters, ending "Works in Apple Terminal"; the final line was restored before submitting. The portal holds the list separators as plain ` - ` hyphens, not em dashes, so that is how it is recorded here:
 
 ```markdown
 **Physical hardware controls for Claude Code. Press a button. Ship code.**
@@ -52,6 +46,23 @@ Works in Apple Terminal or Windows Terminal.
 ```
 
 ## Release notes — limit 1000 characters
+
+2.3.1 (submitted 2026-09-24), 857 characters. Leads with the Windows uninstall fix Logitech named as the release blocker (#55), then includes the 2.2.3 engine fixes, which were never submitted on their own:
+
+```markdown
+**Windows uninstall now cleans up after itself.** When you uninstall Claude Console in Options+, it removes its hooks and status line from Claude Code's settings.json. You no longer need to turn live status off first. Your own settings, hooks and formatting are left as they were, and the previous file is backed up.
+
+**Updates keep live status on.** Updating the plugin puts your live-status setup back automatically. A reinstall after a real uninstall starts fresh, and the live keys ask before changing anything.
+
+**Also in this release:**
+- Go to Project handles folder names that contain an apostrophe.
+- A reused terminal tab no longer shows the previous session's project name.
+- The Context key shows a dash until the session reports, instead of 0%.
+- An empty prompts.json now removes every prompt key.
+- More reliable session detection on Windows.
+```
+
+## Release notes — 2.2.2 (superseded)
 
 2.2.2 (submitted 2026-09-13), 943 characters. Leads with the Windows Yes / No fix (#74, Windows retest item 2). The first draft ran to 1,028 characters and was trimmed to 980; the heading was then shortened to `**2.2.2**` in the form before submitting:
 
@@ -113,6 +124,8 @@ The PM offered (2026-09-04) to help with the description wording and asked for a
 - **Count characters, not bytes**: `wc -m` with a UTF-8 locale (em-dashes are 1 character but 3 bytes; `wc -c` overcounts). Leave ≥15 characters of headroom in case the form counts newlines differently.
 - **Feature order is the message**: sessions first, voice second — the differentiators no other keypad plugin has (per-session keys, amber/red approval lighting, fully offline voice).
 - Always name the supported terminals (Apple Terminal / Windows Terminal) — "your terminal" wrongly implies iTerm2/Ghostty/Warp work.
+- **Check the carried-over teaser and description every time.** The portal pre-fills them from the live listing, and it has come back both stale and cut short (2.3.1).
+- **No inline code in the form.** The preview drops backtick spans entirely, so `` `~/.claude/settings.json` `` rendered as "from .". Use plain text.
 - Homepage and Support URLs have their own form fields, so don't spend description characters on links.
 
 ---

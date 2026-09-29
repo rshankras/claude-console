@@ -15,6 +15,7 @@
 #   a build-machine path in the DLL or PDB    #26, #62
 #   a link in a card that does not resolve    #68, #71
 #   a voice helper that fails codesign        #66 — was a warning; macOS only
+#   an unsigned or untimestamped Windows PE   #110 — CrowdStrike quarantined the unsigned hook
 #
 # Errors reject the package; warnings print and pass. CC_VERIFY_OFFLINE=1 skips the link check
 # and says so. Needs python3, as pack-release.sh already does.
@@ -187,9 +188,30 @@ for n in under("bin/", ".pdb"):
             err(f"{n} contains '{needle.decode(errors='replace')}' (#62)")
 
 # --- links a user can click (#68, #71) ----------------------------------------------------------
+def without_authenticode(data):
+    """The PE minus its Authenticode signature block. A signed DLL (#110) carries the whole
+    certificate chain — Certum's CRL, OCSP and CPS URLs, and the publisher URL — as DER inside
+    the security directory; scanned as text they read as dead links with a length byte glued on
+    ("…/CPS0"). Only the managed strings are ours to check, so cut the block out first."""
+    try:
+        pe = int.from_bytes(data[0x3C:0x40], "little")
+        if data[pe:pe + 4] != b"PE\0\0":
+            return data
+        opt = pe + 24
+        magic = int.from_bytes(data[opt:opt + 2], "little")
+        dirs = opt + (96 if magic == 0x10B else 112)      # PE32 / PE32+
+        sec = dirs + 4 * 8                                   # data directory 4: security (raw offset, size)
+        off = int.from_bytes(data[sec:sec + 4], "little")
+        size = int.from_bytes(data[sec + 4:sec + 8], "little")
+        if off and size and off + size <= len(data):
+            return data[:off] + data[off + size:]
+    except Exception:
+        pass
+    return data
+
 urls = set()
 if product:
-    dll = read(plugin_dlls[0])
+    dll = without_authenticode(read(plugin_dlls[0]))
     for text in (dll.decode("utf-16-le", "ignore"), dll.decode("utf-8", "ignore")):
         for u in re.findall(r"https?://[A-Za-z0-9./#?=_%:-]+", text):
             urls.add(u.split("#", 1)[0].rstrip(".,)"))
@@ -248,6 +270,23 @@ if [ "$(uname)" = "Darwin" ] && command -v codesign >/dev/null 2>&1; then
   else
     echo "    warn  ditto could not extract the package — signature check skipped"
   fi
+fi
+
+# --- Windows signatures (#110): every .exe and .dll, chained to a public root, timestamped ------
+# Checked on the packed files, not the staging tree: the packer is the last thing that touched
+# them. Needs osslsigncode (brew); ALLOW_UNSIGNED_WINDOWS=1 downgrades unsigned files to warnings,
+# which pack-release sets only for a *-unsigned dev pack.
+WINTMP="$(mktemp -d)"
+trap 'rm -rf "$WINTMP" ${TMP:-}' EXIT
+if ! unzip -p "$PKG" metadata/LoupedeckPackage.yaml 2>/dev/null | grep -Eq '^pluginFolderWin:[[:space:]]*[^[:space:]]'; then
+  echo "    ok    no pluginFolderWin — a macOS-only package, Windows signatures not required"
+elif unzip -q "$PKG" 'bin/*' -d "$WINTMP" 2>/dev/null; then
+  if ! bash "$ROOT/tools/windows/verify-windows-signatures.sh" "$WINTMP/bin"; then
+    STATUS=1
+  fi
+else
+  echo "    FAIL  could not extract bin/ from the package to check Windows signatures"
+  STATUS=1
 fi
 
 if [ "$STATUS" -eq 0 ]; then

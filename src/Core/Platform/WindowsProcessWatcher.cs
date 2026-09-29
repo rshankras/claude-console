@@ -98,6 +98,35 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         /// node.exe lives under an OpenAI\Codex runtime directory, which used to satisfy the broad
         /// "\\codex" marker even when its only argument was an unrelated server.mjs.
         /// </summary>
+        /// <summary>The executable path and the first non-switch argument (an interpreter's script), newline-joined.</summary>
+        internal static String LeadingPaths(String commandLine)
+        {
+            if (String.IsNullOrWhiteSpace(commandLine)) { return String.Empty; }
+            var tokens = new System.Collections.Generic.List<String>();
+            var rest = commandLine.Trim();
+            while (rest.Length > 0 && tokens.Count < 16)
+            {
+                String token;
+                if (rest[0] == '"')
+                {
+                    var close = rest.IndexOf('"', 1);
+                    token = close < 0 ? rest.Substring(1) : rest.Substring(1, close - 1);
+                    rest = close < 0 ? String.Empty : rest.Substring(close + 1).TrimStart();
+                }
+                else
+                {
+                    var space = rest.IndexOfAny(new[] { ' ', '\t', '\r', '\n' });
+                    token = space < 0 ? rest : rest.Substring(0, space);
+                    rest = space < 0 ? String.Empty : rest.Substring(space + 1).TrimStart();
+                }
+                tokens.Add(token);
+                if (tokens.Count > 1 && !token.StartsWith("-", StringComparison.Ordinal)) { break; }
+            }
+            if (tokens.Count == 0) { return String.Empty; }
+            var script = tokens.Count > 1 && !tokens[^1].StartsWith("-", StringComparison.Ordinal) ? tokens[^1] : String.Empty;
+            return tokens[0] + "\n" + script;
+        }
+
         private static String InterpreterArguments(String commandLine)
         {
             if (String.IsNullOrWhiteSpace(commandLine))
@@ -227,6 +256,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             if (DesktopMarkers.Any(m => cmd.Contains(m, StringComparison.OrdinalIgnoreCase)))
             {
                 return false;
+            }
+
+            // The agent's own machinery (Codex App's plugin runtime, its plugin cache) is never a
+            // session either, however well its command line matches the hints below (#132).
+            // Only the executable and the script it runs are compared: a real session whose prompt
+            // or --cd mentions ~/.codex/plugins must stay a session (PR #133 review).
+            var markers = matcher?.NonSessionPathMarkers ?? Array.Empty<String>();
+            if (markers.Length > 0)
+            {
+                // A native CLI has no script: its first argument is a prompt or an option value.
+                var leading = LeadingPaths(cmd).Replace('/', '\\');
+                if (CliNames(matcher).Contains(RunningImageName(p.Name), StringComparer.OrdinalIgnoreCase))
+                {
+                    leading = leading.Split('\n')[0];
+                }
+                if (markers.Any(m => leading.Contains(m, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return false;
+                }
             }
 
             // The native CLI: <agent>.exe. Case-insensitive on purpose — Windows filesystems are —

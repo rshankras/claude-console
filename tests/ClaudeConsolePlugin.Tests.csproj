@@ -55,14 +55,19 @@
     <Compile Include="..\tools\windows\ClaudeConsoleInject\SessionInputLock.cs" />
     <Compile Include="..\tools\windows\ClaudeConsoleHook\WindowsHookProcessQuery.cs" />
     <Compile Include="..\src\Agents\**\*.cs" />
-    <!-- Each product's application binding. The desktop Plugin declaration is included too:
-         its HasNoApplication flag decides whether Options+ ever consults that binding. -->
+    <!-- Each product's application binding broke clean installs in 1.8.0-1.8.4 by naming a process
+         that doesn't exist on the running OS, so every product's belongs under test. The desktop
+         Plugin declaration is included too: its HasNoApplication flag decides whether Options+
+         ever consults that binding. -->
     <Compile Include="..\src\Products\*\*Application.cs" />
     <Compile Include="..\src\Products\VizhiDesktop\VizhiDesktopPlugin.cs" />
     <!-- Desktop-owned registration (see the header in those files). The product glob above
          deliberately compiles only *Application.cs; this is the one product folder whose
          logic the suite must cover, because nothing else in the engine exercises it. -->
     <Compile Include="..\src\Products\VizhiDesktop\Registration\**\*.cs" />
+    <!-- Exercise the uninstall override on a fresh object, without starting the live bridge. -->
+    <Compile Include="..\src\Products\ClaudeConsole\ClaudeConsolePlugin.cs" />
+    <Compile Include="..\src\Products\ClaudeConsole\ClaudePluginLifecycle.cs" />
   </ItemGroup>
 
   <ItemGroup>

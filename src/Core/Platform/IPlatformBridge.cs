@@ -69,6 +69,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
         // Optional directory hints from the same process discovery pass, never activity evidence.
         IReadOnlyDictionary<String, String> SessionDirectories => null;
 
+        // The UTC start time of each live session's CLI process, from the same pass; null where
+        // the platform does not report it. Read only to break a tie between two terminals in
+        // one folder (SessionRegistry), never as activity evidence.
+        IReadOnlyDictionary<String, DateTime> SessionStartTimes => null;
+
         /// <summary>
         /// The session id of the terminal tab the user is looking at, or null when the terminal
         /// isn't frontmost / isn't running. Called on the poll timer, so it must be cheap and
@@ -111,8 +116,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Platform
             return true;
         }
 
-        /// <summary>Drive a terminal navigation gesture (new tab, cycle windows, …).</summary>
-        void Navigate(TerminalAction action);
+        /// <summary>
+        /// Drive a terminal navigation gesture (new tab, cycle windows, …). For the gestures that
+        /// open a session, <paramref name="directory"/> is where it starts, or null for the
+        /// platform's default (the user's home) — the bridge decides which (#113).
+        /// </summary>
+        void Navigate(TerminalAction action, String directory = null);
 
         /// <summary>
         /// Open a terminal at <paramref name="projectDir"/> and start claude there, reusing an

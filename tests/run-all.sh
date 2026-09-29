@@ -72,6 +72,12 @@ if ! bash "$REPO/tests/scripts/test-codex-hook.sh"; then
 fi
 
 echo
+echo "▶ windows signing gate"
+if ! bash "$REPO/tests/scripts/test-windows-signing.sh"; then
+  STATUS=1
+fi
+
+echo
 echo "▶ detached Codex hook routing"
 if ! python3 "$REPO/tests/scripts/test-codex-detached-hook.py"; then STATUS=1; fi
 
