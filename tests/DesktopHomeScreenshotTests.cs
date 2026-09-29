@@ -14,6 +14,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             return Path.Combine(root.FullName, "src/Products/VizhiDesktop/package/profiles/DefaultProfile70.lp5");
         }
 
+        private static JsonArray Controls(JsonNode doc, String pageName) => doc["layout"]["layoutModes"].AsArray()
+            .Single(m => (String)m["modeName"] == "main")["workspaces"][0]["pressPages"].AsArray()
+            .Single(p => (String)p["displayName"] == pageName)["controls"].AsArray();
+
+        private static String[] Page(JsonNode doc, String pageName) =>
+            Controls(doc, pageName).OrderBy(c => (Int32)c["controlId"]).Select(c => (String)c["pressAction"]).ToArray();
+
+        private static void SetPage(JsonNode doc, String pageName, String[] bindings)
+        {
+            foreach (var c in Controls(doc, pageName)) c["pressAction"] = bindings[(Int32)c["controlId"]];
+        }
+
         private static JsonNode Key(JsonNode doc, String pageName) => doc["layout"]["layoutModes"].AsArray()
             .Single(m => (String)m["modeName"] == "main")["workspaces"][0]["pressPages"].AsArray()
             .Single(p => (String)p["displayName"] == pageName)["controls"].AsArray().Single(c => (Int32)c["controlId"] == 5);
@@ -77,6 +89,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 var app = Path.Combine(temp, "Loupedeck70", "@_vizhidesktop");
                 var file = Path.Combine(app, "Profiles", DesktopHomeScreenshotMigration.Profile, "ProfileInfo.json");
                 var doc = JsonNode.Parse(File.ReadAllText(file));
+                // A pre-0.17.14 install: the 0.17.14–0.17.15 pages with Screenshot and navigation
+                // still on their original sides. The whole migration chain must reach 0.17.18.
+                SetPage(doc, "Home", DesktopHomeToolsLayoutMigration.OldHome);
+                SetPage(doc, "Tools", DesktopHomeToolsLayoutMigration.StockTools[0]);
                 Key(doc, "Home")["pressAction"] = DesktopHomeScreenshotMigration.Navigation;
                 Key(doc, "Tools")["pressAction"] = DesktopHomeScreenshotMigration.Screenshot;
                 File.WriteAllText(file, doc.ToJsonString());
@@ -88,8 +104,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 var original = File.ReadAllText(appFile);
                 Assert.True(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(Package(), null, temp, windows: false));
                 doc = JsonNode.Parse(File.ReadAllText(file));
-                Assert.Equal(DesktopHomeScreenshotMigration.Screenshot, (String)Key(doc, "Home")["pressAction"]);
-                Assert.Equal(DesktopTasksMenuMigration.Search, (String)Key(doc, "Tools")["pressAction"]);
+                Assert.Equal(DesktopHomeToolsLayoutMigration.NewHome, Page(doc, "Home"));
+                Assert.Equal(DesktopHomeToolsLayoutMigration.NewTools, Page(doc, "Tools"));
                 Assert.Equal(original, File.ReadAllText(appFile));
                 Assert.False(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(Package(), null, temp, windows: false));
             }

@@ -206,7 +206,7 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
             var profilesDir = Path.Combine(appDir, "Profiles");
             var navigationUpdated = pluginName == "VizhiDesktop" && DesktopHomeNavigationMigration.Upgrade(appDir);
             navigationUpdated |= pluginName == "VizhiDesktop" && DesktopHomeScreenshotMigration.Upgrade(appDir);
-            navigationUpdated |= pluginName == "VizhiDesktop" && DesktopTasksMenuMigration.Upgrade(appDir);
+            navigationUpdated |= pluginName == "VizhiDesktop" && DesktopHomeToolsLayoutMigration.Upgrade(appDir);
             var profileDir = Path.Combine(profilesDir, nextProfile);
             var revisionFile = Path.Combine(appDir, ".vizhi-packaged-profile");
             // Keep package revision outside ApplicationInfo: Options+ rewrites that document,

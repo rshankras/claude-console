@@ -9,6 +9,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         private Boolean _loaded;
         private String _mode;
         private IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> _tasks = Array.Empty<DesktopWorkflowCommand.WorkflowDef>();
+        private IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> _prompts = Array.Empty<DesktopWorkflowCommand.WorkflowDef>();
         public DesktopSavedPromptsDynamicFolder()
         { this.DisplayName = "Saved Prompts"; this.Description = "Optional workflow favorites for the current app mode"; this.GroupName = "Tools"; }
         public override PluginDynamicFolderNavigation GetNavigationArea(DeviceType _) => PluginDynamicFolderNavigation.ButtonArea;
@@ -18,6 +19,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             {
                 _loaded = true;
                 _tasks = DesktopWorkflowCommand.LoadCodexFavorites();
+                _prompts = DesktopWorkflowCommand.LoadChatGptFavorites();
                 _mode = DesktopServices.Monitor.Current.Mode;
                 DesktopServices.OnMonitorChanged(state =>
                 {
@@ -29,10 +31,17 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             }
             return true;
         }
-        internal static String[] Actions(String plugin, String mode, IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> tasks = null)
+        // An open folder spends one key on Back, so a page holds eight. Continue is the ninth
+        // default in both modes and lives in Tools → More instead, keeping each menu on one page.
+        internal static String[] Actions(String plugin, String mode, IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> tasks = null,
+            IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> prompts = null)
         {
-            if (mode == "ChatGPT") return Enumerable.Range(1, 9)
-                .Select(i => ActionString.ToString(plugin, typeof(DesktopWorkflowCommand).FullName, "slot_" + i)).ToArray();
+            if (mode == "ChatGPT")
+            {
+                prompts ??= DesktopWorkflowCommand.ChatGptDefaults;
+                return Enumerable.Range(0, prompts.Count).Where(i => !IsMoreTask(prompts[i].Id))
+                    .Select(i => PromptAction(plugin, i)).ToArray();
+            }
             if (mode != "Codex") return Array.Empty<String>();
             tasks ??= DesktopWorkflowCommand.CodexDefaults;
             var slots = Enumerable.Range(0, tasks.Count).Where(i => !IsMoreTask(tasks[i].Id));
@@ -42,11 +51,13 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             return new[] { ActionString.ToString(plugin, typeof(DesktopControlCommand).FullName, "show_diff") }
                 .Concat(slots.Select(i => TaskAction(plugin, i))).ToArray();
         }
+        internal static String PromptAction(String plugin, Int32 index) =>
+            ActionString.ToString(plugin, typeof(DesktopWorkflowCommand).FullName, "slot_" + (index + 1));
         internal static String TaskAction(String plugin, Int32 index) =>
             ActionString.ToString(plugin, typeof(DesktopWorkflowCommand).FullName, "task_" + (index + 1));
         internal static Boolean IsMoreTask(String id) => id is "update_deps" or "continue";
         public override IEnumerable<String> GetButtonPressActionNames(DeviceType _) =>
-            DesktopServices.Declared ? Actions(this.Plugin.Name, DesktopServices.Monitor.Current.Mode, _tasks) : Array.Empty<String>();
+            DesktopServices.Declared ? Actions(this.Plugin.Name, DesktopServices.Monitor.Current.Mode, _tasks, _prompts) : Array.Empty<String>();
         public override String GetButtonDisplayName(PluginImageSize _) => Label;
         private static String Label => DesktopServices.Declared && DesktopServices.Monitor.Current.Mode == "Codex" ? "Tasks" : "Prompts";
         public override BitmapImage GetButtonImage(PluginImageSize size) => KeyImage.Render(size, Label, KeyImage.Blue, "writing");

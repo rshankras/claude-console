@@ -138,14 +138,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var chat = DesktopMoreDynamicFolder.Actions("VizhiDesktop", "ChatGPT");
             var codex = DesktopMoreDynamicFolder.Actions("VizhiDesktop", "Codex");
-            Assert.Equal(6, chat.Length); Assert.Equal(7, codex.Length);
-            Assert.DoesNotContain(codex, a => a.EndsWith("___return") || a.EndsWith("___clipboard") || a.EndsWith("___copy"));
+            Assert.Equal(4, chat.Length); Assert.Equal(6, codex.Length);
+            Assert.Contains(chat, a => a.EndsWith("DesktopWorkflowCommand___schedule"));
+            // Screens a keypad cannot finish stay out of the default menu (Plugins, Explore, Quick Chat).
+            Assert.DoesNotContain(chat.Concat(codex), a => a.EndsWith("___secondary_2") || a.EndsWith("___secondary_4"));
+            Assert.DoesNotContain(chat.Concat(codex), a => a.Contains("DesktopApprovalCommand")); // Approve/Deny are on Home
+            Assert.DoesNotContain(chat.Concat(codex), a => a.EndsWith("___return") || a.EndsWith("___clipboard") || a.EndsWith("___copy"));
             Assert.Contains(codex, a => a.EndsWith("___review_pr"));
             Assert.Contains(codex, a => a.EndsWith("___write_tests"));
             Assert.DoesNotContain(chat.Concat(codex), a => a.Contains("___output") || a.Contains("___show_diff"));
             Assert.Empty(DesktopMoreDynamicFolder.Actions("VizhiDesktop", ""));
-            Assert.Equal("TO CODEX", DesktopControlCommand.DestinationFor("ChatGPT"));
-            Assert.Equal("TO CHATGPT", DesktopControlCommand.DestinationFor("Codex"));
+            Assert.Equal("To Codex", DesktopControlCommand.DestinationFor("ChatGPT"));
+            Assert.Equal("To ChatGPT", DesktopControlCommand.DestinationFor("Codex"));
         }
     }
 }

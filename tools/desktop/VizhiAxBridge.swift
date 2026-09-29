@@ -365,7 +365,7 @@ func contextFocused(_ app: AXUIElement, _ window: AXUIElement) -> AXUIElement? {
 if verb.hasPrefix("context-") && verb != "context-copy" {
     guard AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": false] as CFDictionary) else { fail("not-trusted", 2) }
     let action = String(verb.dropFirst("context-".count))
-    guard ["selection", "clipboard", "screenshot", "return", "paste"].contains(action) else { fail("unsupported", 4) }
+    guard ["selection", "clipboard", "screenshot", "window", "return", "paste"].contains(action) else { fail("unsupported", 4) }
     if action == "return" || action == "paste" {
         guard let encoded = argValue("--source"), let data = Data(base64Encoded: encoded),
               let source = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -411,6 +411,44 @@ if verb.hasPrefix("context-") && verb != "context-copy" {
         _ = insertWholeText(text, editor: editor, pid: pid, original: value, caret: caret,
             currentValue: currentReply, confirmed: { comparableDraft($0) == comparableDraft(text) })
         emit([:], code: 0)
+    }
+    if action == "window" {
+        // Keypad-only capture, no picker. The Vizhi keys are on screen only while the chat app is
+        // frontmost, so the window that matters is the one just behind it: the app you were in.
+        // From a System page the chat app is not in front, and this is simply the front window.
+        // The window list is front-to-back; screencapture -l captures that window's own
+        // contents, even where the chat app covers it.
+        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else { fail("screen-permission", 4) }
+        let ownApp = argValue("--chat-app") ?? "com.openai.codex"
+        let listed = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+        var picked: (app: NSRunningApplication, number: Int)?
+        for info in listed {
+            guard let pid = info[kCGWindowOwnerPID as String] as? Int32, pid != ProcessInfo.processInfo.processIdentifier,
+                  (info[kCGWindowLayer as String] as? Int) == 0, ((info[kCGWindowAlpha as String] as? Double) ?? 1) > 0,
+                  let bounds = (info[kCGWindowBounds as String] as? [String: Any]).flatMap({ CGRect(dictionaryRepresentation: $0 as CFDictionary) }),
+                  bounds.width >= 80, bounds.height >= 80,
+                  let number = info[kCGWindowNumber as String] as? Int,
+                  let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular,
+                  app.bundleIdentifier != ownApp else { continue }
+            picked = (app, number); break
+        }
+        guard let target = picked else { fail("choose-source-app", 4) }
+        var result: [String: Any] = ["appName": target.app.localizedName ?? "Source app"]
+        let targetAX = AXUIElementCreateApplication(target.app.processIdentifier)
+        forceAccessibility(targetAX)
+        if let window = contextWindow(targetAX) { result["source"] = contextSource(target.app, window) }
+        let directory = captureDirectory()
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let image = directory.appendingPathComponent("Vizhi-\(UUID().uuidString).png")
+            let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            process.arguments = ["-x", "-o", "-l\(target.number)", image.path]
+            process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+            try process.run(); process.waitUntilExit()
+            guard process.terminationStatus == 0, let size = try? image.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 0 else { try? FileManager.default.removeItem(at: image); fail("capture-failed", 4) }
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: image.path)
+            result["image"] = image.path; emit(result, code: 0)
+        } catch { fail("capture-failed", 4) }
     }
     guard let front = NSWorkspace.shared.frontmostApplication, let bundle = front.bundleIdentifier,
           (bundleId == "@frontmost" || bundleId == bundle) else { fail("app-not-frontmost", 4) }

@@ -250,28 +250,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Assert.EndsWith($"DesktopConversationCommand___{slot}", pageOne[slot - 1]);
             }
 
-            // Middle row: browse + create + capture. Session state already lives in each card,
-            // so a second global Activity key would duplicate the grid.
-            Assert.Equal("$VizhiDesktop___#DynamicFolder___DynamicFolder#Loupedeck.ClaudeConsolePlugin.DesktopActions.AllChatsDynamicFolder", pageOne[3]);
-            Assert.EndsWith("DesktopControlCommand___new_chat", pageOne[4]);
-            Assert.EndsWith("DesktopCaptureCommand___screenshot", pageOne[5]);
+            // Middle row: the family approval row. Deny/Approve sit where Claude Console and Vizhi
+            // for Codex put No/Yes, so approving is the same reach on every keypad; New Chat takes
+            // the reset position (their Clear / Esc).
+            Assert.EndsWith("DesktopControlCommand___new_chat", pageOne[3]);
+            Assert.EndsWith("DesktopApprovalCommand___deny", pageOne[4]);
+            Assert.EndsWith("DesktopApprovalCommand___approve", pageOne[5]);
 
-            // Bottom row: Approve / Deny / Voice.
-            Assert.EndsWith("DesktopVoiceDraftCommand", pageOne[6]);
-            Assert.EndsWith("DesktopComposerCommand___send_stop", pageOne[7]);
-            Assert.EndsWith("DesktopVoiceChatCommand", pageOne[8]);
+            // Bottom row: Screenshot / Dictate / Send-Stop (Codex's Screenshot · voice order).
+            Assert.EndsWith("DesktopCaptureCommand___screenshot", pageOne[6]);
+            Assert.EndsWith("DesktopVoiceDraftCommand", pageOne[7]);
+            Assert.EndsWith("DesktopComposerCommand___send_stop", pageOne[8]);
             Assert.Equal("Vizhi Home", (String)profile["displayName"]);
             Assert.NotEqual("6CA374714642475581835B05D0E6F7AC", (String)profile["name"]);
 
             var pageTwo = pages[1]["controls"].AsArray().Select(c => (String)c["pressAction"]).ToList();
             Assert.Equal("Tools", (String)pages[1]["displayName"]);
+            // Getting around · content in and out · modes and menus.
             Assert.EndsWith("DesktopControlCommand___mode", pageTwo[0]);
-            Assert.EndsWith("DesktopToolsCommand___approve", pageTwo[1]);
-            Assert.EndsWith("DesktopToolsCommand___deny", pageTwo[2]);
+            Assert.Contains("AllChatsDynamicFolder", pageTwo[1]);
+            Assert.EndsWith("DesktopNavigateCommand___find", pageTwo[2]);
             Assert.Contains("DesktopFilesDynamicFolder", pageTwo[3]);
             Assert.EndsWith("DesktopCaptureCommand___clipboard", pageTwo[4]);
-            Assert.EndsWith("DesktopNavigateCommand___search", pageTwo[5]);
-            Assert.EndsWith("DesktopCaptureCommand___copy", pageTwo[6]);
+            Assert.EndsWith("DesktopCaptureCommand___copy", pageTwo[5]);
+            Assert.EndsWith("DesktopVoiceChatCommand", pageTwo[6]);
             Assert.Contains("DesktopSavedPromptsDynamicFolder", pageTwo[7]);
             Assert.Contains("DesktopMoreDynamicFolder", pageTwo[8]);
         }

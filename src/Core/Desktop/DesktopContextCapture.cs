@@ -68,7 +68,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             Changed?.Invoke();
             try
             {
-                if (action is "selection" or "clipboard" or "screenshot" or "clear" && DraftPending()) return "Insert Draft First";
+                if (action is "selection" or "clipboard" or "screenshot" or "window" or "clear" && DraftPending()) return "Insert Draft First";
                 String source, reply; Int32 count;
                 lock (_gate) { source = _source; reply = _reply; count = _items.Count; }
                 if (action == "clear")
@@ -93,8 +93,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                     TraceCopy("copied");
                     return "Copied";
                 }
-                if (action is not ("selection" or "clipboard" or "screenshot")) return "Unavailable";
-                if (action == "screenshot") return ScreenshotIntoChat();
+                if (action is not ("selection" or "clipboard" or "screenshot" or "window")) return "Unavailable";
+                if (action is "screenshot" or "window") return ScreenshotIntoChat(action);
                 if (action != "clipboard" && count >= 8) return "8 Sources Max";
                 var captured = _automation.Context(action);
                 if (!captured.Ok) return Problem(captured.Error);
@@ -131,7 +131,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             finally { _attachingImage = false; Volatile.Write(ref _busy, 0); Changed?.Invoke(); }
         }
 
-        private String ScreenshotIntoChat()
+        // "screenshot" is the system area picker; "window" captures the app you were just in (the
+        // window behind the chat app) with no pointer — the keypad-only path, from holding Screenshot.
+        private String ScreenshotIntoChat(String action)
         {
             var state = _automation.Status();
             if (!state.SurfaceAvailable || String.IsNullOrEmpty(state.Mode)) return "Open Chat";
@@ -139,17 +141,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             // a delayed capture. Preparing an append target permits an existing text draft.
             var target = _automation.PrepareAppend(state.Mode, out var error);
             if (target == null) return Problem(error);
-            var captured = _automation.Context("screenshot");
+            var captured = _automation.Context(action);
             if (!captured.Ok) return Problem(captured.Error);
             if (String.IsNullOrEmpty(captured.Image)) return "Image Not Added";
+            // Where the image came from is known the moment it is captured, whether or not the
+            // app then confirms the attachment ("Check Image"), so Return to App / Copy Reply's
+            // "Back to" can always lead there.
+            lock (_gate)
+            {
+                if (_items.Count == 0 && !String.IsNullOrEmpty(captured.Source))
+                { _source = captured.Source; _sourceName = captured.AppName; _reply = null; }
+            }
+            if (!String.IsNullOrEmpty(captured.Source)) PluginLog.Info($"DesktopContextCapture: {action} recorded a source window");
             _attachingImage = true; Changed?.Invoke();
             if (!_automation.FocusApp()) return "Open Chat";
             if (!_automation.AttachPreparedImage(captured.Image, state.Mode, target.Target, out error))
                 return error == "attachment-unconfirmed" ? "Check Image" : Problem(error);
-            lock (_gate)
-            {
-                if (_items.Count == 0) { _source = captured.Source; _sourceName = captured.AppName; _reply = null; }
-            }
             // The image is already in the app. Do not stage it for Dictate, add hidden prompt
             // text, or retry an uncertain attachment as part of a later workflow.
             return "Attached";

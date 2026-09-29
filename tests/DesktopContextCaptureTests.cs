@@ -132,6 +132,34 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Holding_screenshot_captures_the_window_through_the_same_pinned_attach_path()
+        {
+            var fake = new DesktopCommandRig.Automation { Next = new() { Mode = "ChatGPT", SurfaceAvailable = true } };
+            var context = new DesktopContextCapture(fake); var voice = new VoiceCaptureState();
+            fake.CaptureResult = _ =>
+            {
+                // Same order as the picker: the chat is pinned before anything is captured.
+                Assert.Equal(new[] { "status", "prepare-append", "context:window" }, fake.Calls.Select(c => c.Name));
+                return new() { Ok = true, Image = "/fixture/window.png" };
+            };
+            fake.Attacher = (path, mode, target) => { Assert.Equal("/fixture/window.png", path); return (true, null); };
+            Assert.Equal("Attached", context.Execute("window", voice));
+            Assert.DoesNotContain(fake.Calls, c => c.Name is "write" or "append" or "send");
+        }
+
+        [Fact]
+        public void A_captured_window_is_the_way_back_even_when_the_attach_is_unconfirmed()
+        {
+            var fake = new DesktopCommandRig.Automation { Next = new() { Mode = "ChatGPT", SurfaceAvailable = true } };
+            var context = new DesktopContextCapture(fake); var voice = new VoiceCaptureState();
+            fake.CaptureResult = _ => new() { Ok = true, Image = "/fixture/window.png", Source = "mail-source", AppName = "Mail" };
+            fake.Attacher = (path, mode, target) => (false, "attachment-unconfirmed");
+            Assert.Equal("Check Image", context.Execute("window", voice));
+            Assert.True(context.HasSource);                 // Return to App still knows the way back
+            Assert.Equal("Mail", context.SourceName);
+        }
+
+        [Fact]
         public void Cancelling_the_picker_never_attaches_or_focuses_or_stages_anything()
         {
             var fake = new DesktopCommandRig.Automation { Next = new() { Mode = "ChatGPT", SurfaceAvailable = true },

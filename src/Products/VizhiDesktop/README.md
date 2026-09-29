@@ -20,9 +20,9 @@ product. *(Not an OpenAI product; ChatGPT and Codex are trademarks of OpenAI.)*
 
 ## Status
 
-**Preview, macOS package only. Version 0.17.17 groups code review in Tasks:** two pages, Home and Tools.
-Screenshot is the middle-right Home key in both modes. Find Chat remains middle-right on Tools in ChatGPT; Codex uses Tools → Tasks → View Changes.
-Only the stock Tools navigation binding and untouched review label migrate, with backups.
+**Preview, macOS package only. Version 0.17.18 puts Approve/Deny on Home:** two pages, Home and Tools.
+Approve and Deny take the family positions on Home in both modes; All Chats joins Find Chat on Tools, and Voice Chat moves to Tools.
+Stock Home and Tools pages migrate together, with a backup; a customized key on either page leaves both as they were.
 Custom assignments and the optional Adaptive 3 layout are preserved.
 Spoken workflows now show **Your request** first, then a shorter labeled task instruction.
 Debug investigates before fixing and can report no bug found. Unchanged stock recipes upgrade
@@ -50,9 +50,12 @@ Attach Files now lists recent Downloads on the keypad. Select files and press At
 opens the app's picker for files elsewhere. Paste into Chat accepts copied text, images, or files.
 Existing input is preserved. Summarize and Explain use supplied material and prepare a draft
 for review instead of rejecting it as an existing draft.
-Home keeps Screenshot in the same position in both modes. Tools keeps Attach Files and
-Paste into Chat, with Find Chat in ChatGPT and Copy Reply below. Codex approvals remain at the top; its task prompts are
-under Tasks. Clear Added and source-less Return are absent from default menus.
+Home keeps Screenshot in the same position in both modes. ChatGPT's More has **Schedule**: speak what and when,
+review, Send. Plugins, Explore and Quick Chat are no longer in More (they need a pointer or typing). Tools keeps Attach Files,
+Paste into Chat and Copy Reply together. Approvals are on Home; Codex task prompts are
+under Tasks. Continue is in More in both modes, so Prompts and Tasks each fit one page; Clear Added appears in
+More once something is staged. Return to App is not in a default menu; assign it in Options+ if you
+use the Ask ChatGPT page.
 The stability changes from 0.16.1 move slow work off keypad callbacks, limit background polling, and clean up
 subscriptions and timers on unload. See the [stability notes](../../../docs/vizhi-desktop-stability-2026-09-21.md).
 The Tools middle key is now **Paste into Chat**: copied text appears immediately in the input,
@@ -129,15 +132,18 @@ nothing rather than searching another window.
 
 | Page | Top row | Middle row | Bottom row |
 |---|---|---|---|
-| Home — ChatGPT | Recent chat 1 · 2 · 3 | Chats · New Chat · Screenshot | Dictate · Send/Stop · Voice Chat |
-| Home — Codex | Recent task 1 · 2 · 3 | Chats · New Task · Screenshot | Dictate · Send/Stop · Voice Chat |
-| Tools — ChatGPT | Mode · — · — | Attach Files · Paste into Chat · Find Chat | Copy Reply · Prompts · More |
-| Tools — Codex | Mode · Approve · Deny | Attach Files · Paste into Chat · — | Copy Reply · Tasks · More |
+| Home — ChatGPT | Recent chat 1 · 2 · 3 | New Chat · Deny · Approve | Screenshot · Dictate · Send/Stop |
+| Home — Codex | Recent task 1 · 2 · 3 | New Task · Deny · Approve | Screenshot · Dictate · Send/Stop |
+| Tools — ChatGPT | To Codex · All Chats · Find Chat | Attach Files · Paste into Chat · Copy Reply | Voice Chat · Prompts · More |
+| Tools — Codex | To ChatGPT · All Chats · View Changes | Attach Files · Paste into Chat · Copy Reply | Voice Chat · Tasks · More |
 
-The two pages stay in place across mode changes. Dictate and Send/Stop keep their physical
-positions; native Voice Chat moves directly onto Home. The Mode key names the current mode and
-shows **TO CODEX** or **TO CHATGPT**. Approve/Deny retain their old Actions-page positions on Tools,
-including the request guard, risk badge and second confirmation for a high-risk request.
+The two pages stay in place across mode changes. Home follows the family layout: Deny and
+Approve sit where Claude Console and Vizhi for Codex put No and Yes, in both modes, with the
+request guard, risk badge and second confirmation, drawn as the same green and red decision
+tiles; the corner badge shows when a request is waiting. Tools groups getting around (mode, All Chats, Find Chat — View Changes in Codex),
+content in and out (Attach, Paste, Copy Reply), and modes and menus (Voice Chat, Prompts or
+Tasks, More). The Mode key names what a press does — **To Codex** or **To ChatGPT**. No key is
+blank in either mode.
 
 **Send/Stop:** the key shows Send when an existing draft can be submitted, Stop while a response
 is running, and a disabled state when neither action is available. It executes the displayed verb:

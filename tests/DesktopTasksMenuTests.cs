@@ -23,10 +23,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.DoesNotContain(more, a => a.EndsWith("___show_diff"));
             for (var slot = 1; slot <= 9; slot++)
                 Assert.Single(tasks.Concat(more), a => a.EndsWith("___task_" + slot));
-            Assert.All(DesktopSavedPromptsDynamicFolder.Actions("VizhiDesktop", "ChatGPT"), a => Assert.Contains("___slot_", a));
-            Assert.Contains(DesktopSavedPromptsDynamicFolder.Actions("VizhiDesktop", "ChatGPT"), a => a.EndsWith("___slot_9"));
-            Assert.DoesNotContain(DesktopMoreDynamicFolder.Actions("VizhiDesktop", "ChatGPT"), a => a.Contains("___task_"));
+            // ChatGPT Prompts fits one page too (eight plus Back); Continue, the ninth, is in More.
+            var prompts = DesktopSavedPromptsDynamicFolder.Actions("VizhiDesktop", "ChatGPT");
+            var chatMore = DesktopMoreDynamicFolder.Actions("VizhiDesktop", "ChatGPT");
+            Assert.Equal(Enumerable.Range(1, 8).Select(i => "slot_" + i), prompts.Select(a => ActionString.FromString(a).ActionParameter));
+            Assert.Contains(chatMore, a => a.EndsWith("DesktopWorkflowCommand___slot_9"));
+            for (var slot = 1; slot <= 9; slot++)
+                Assert.Single(prompts.Concat(chatMore), a => a.EndsWith("___slot_" + slot));
+            Assert.DoesNotContain(chatMore, a => a.Contains("___task_"));
             Assert.Empty(DesktopSavedPromptsDynamicFolder.Actions("VizhiDesktop", null));
+        }
+
+        [Fact]
+        public void A_reordered_chatgpt_continue_moves_to_more_from_its_own_slot()
+        {
+            var configured = Workflow.ChatGptDefaults.ToArray();
+            (configured[1], configured[8]) = (configured[8], configured[1]);   // Continue now in slot 2
+            var prompts = DesktopSavedPromptsDynamicFolder.Actions("VizhiDesktop", "ChatGPT", prompts: configured);
+            var more = DesktopMoreDynamicFolder.Actions("VizhiDesktop", "ChatGPT", prompts: configured);
+            Assert.Equal(8, prompts.Length);
+            Assert.DoesNotContain(prompts, a => a.EndsWith("___slot_2"));
+            Assert.Contains(prompts, a => a.EndsWith("___slot_9"));
+            Assert.Single(more, a => a.EndsWith("DesktopWorkflowCommand___slot_2"));
         }
 
         [Fact]
@@ -105,40 +123,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Assert.True(JsonNode.DeepEquals(doc, JsonNode.Parse(File.ReadAllText(path))));
                 var once = File.ReadAllText(path); Workflow.LoadWorkflows(path).ToArray();
                 Assert.Equal(once, File.ReadAllText(path));
-            }
-            finally { Directory.Delete(directory, true); }
-        }
-
-        [Theory]
-        [InlineData(false, false, true)]
-        [InlineData(false, true, true)]
-        [InlineData(true, false, false)]
-        public void Profile_upgrade_changes_only_stock_tools_navigation(Boolean customized, Boolean reordered, Boolean changed)
-        {
-            var directory = Path.Combine(Path.GetTempPath(), "vizhi-task-profile-" + Guid.NewGuid());
-            try
-            {
-                var root = new DirectoryInfo(AppContext.BaseDirectory);
-                while (!File.Exists(Path.Combine(root.FullName, "tools/make-desktop-profile.py"))) root = root.Parent;
-                using var zip = ZipFile.OpenRead(Path.Combine(root.FullName, "src/Products/VizhiDesktop/package/profiles/DefaultProfile70.lp5"));
-                using var reader = new StreamReader(zip.GetEntry("ProfileInfo.json").Open());
-                var doc = JsonNode.Parse(reader.ReadToEnd());
-                var pages = doc["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"].AsArray();
-                var key = pages.Single(p => (String)p["displayName"] == "Tools")["controls"].AsArray().Single(c => (Int32)c["controlId"] == 5);
-                key["pressAction"] = customized ? "my-custom-action" : DesktopHomeNavigationMigration.NewBinding;
-                key["custom-metadata"] = "preserved";
-                if (reordered) { var first = pages[0]; pages.RemoveAt(0); pages.Add(first); }
-                var file = Path.Combine(directory, "Profiles", DesktopTasksMenuMigration.Profile, "ProfileInfo.json");
-                Directory.CreateDirectory(Path.GetDirectoryName(file)); var original = doc.ToJsonString(); File.WriteAllText(file, original);
-                Assert.Equal(changed, DesktopTasksMenuMigration.Upgrade(directory));
-                if (changed)
-                {
-                    key["pressAction"] = DesktopTasksMenuMigration.Search;
-                    Assert.Equal(original, File.ReadAllText(file + ".before-0.17.16"));
-                }
-                else Assert.False(File.Exists(file + ".before-0.17.16"));
-                Assert.True(JsonNode.DeepEquals(doc, JsonNode.Parse(File.ReadAllText(file))));
-                Assert.False(DesktopTasksMenuMigration.Upgrade(directory));
             }
             finally { Directory.Delete(directory, true); }
         }

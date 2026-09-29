@@ -57,10 +57,10 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             var (label, icon) = parameter switch
             {
-                "selection" => ("Use Selection", "document"), "clipboard" => ("Paste into Chat", "copy"),
+                "selection" => ("Use Selection", "document"), "clipboard" => ("Paste into Chat", "paste"),
                 "screenshot" => ("Screenshot", "screenshot"), "copy" => ("Copy Reply", "copy"),
                 "return" => ("Return to App", "quick_chat"), "paste" => ("Paste Reply", "writing"),
-                _ => ("Clear Added", "stop"),
+                _ => ("Clear Added", "clear"),   // not "stop": that square is Send/Stop's on Home
             };
             var footer = parameter switch
             {

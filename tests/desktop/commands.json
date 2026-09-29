@@ -1167,6 +1167,27 @@
       }
     },
     {
+      "id": "workflow.schedule",
+      "command": "DesktopWorkflowCommand",
+      "parameter": "schedule",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": "Schedule",
+      "prepare": "Open a disposable ChatGPT conversation in ChatGPT mode.",
+      "action": "Press Schedule (Tools → More), speak what to schedule and when (for example \"every Monday at 9 remind me to review the week\"), tap to finish.",
+      "expectedApp": "The composer holds the spoken request under a schedule instruction and is NOT sent. Nothing is created until you press Send; ChatGPT then confirms timing before creating the task. In Codex mode the key refuses with \"Use ChatGPT\".",
+      "expectedKey": "Schedule, then the spoken-workflow states (listening, preparing, draft ready).",
+      "kind": "workflow",
+      "smoke": false,
+      "capability": "supported",
+      "submits": {
+        "ChatGPT": false,
+        "Codex": false
+      }
+    },
+    {
       "id": "composer.send_stop",
       "command": "DesktopComposerCommand",
       "parameter": "send_stop",
@@ -1180,6 +1201,26 @@
       "expectedApp": "The displayed action is requested once. Stop never submits a waiting draft if the response already ended.",
       "expectedKey": "Send / REVIEW FIRST or Stop / RESPONSE.",
       "kind": "composer",
+      "smoke": true,
+      "capability": "supported"
+    },
+    {
+      "id": "tools.clear_approve",
+      "command": "DesktopToolsCommand",
+      "parameter": "clear_approve",
+      "modes": [
+        "ChatGPT",
+        "Codex"
+      ],
+      "title": {
+        "ChatGPT": "Clear Added",
+        "Codex": "Approve"
+      },
+      "prepare": "Use disposable content and the matching app mode. In ChatGPT stage a source first (Paste into Chat or Attach Files); in Codex show a test request.",
+      "action": "Press the highlighted Tools key once. Also change app mode before pressing and confirm it refuses the obsolete displayed action.",
+      "expectedApp": "Only the action displayed for this mode runs. Capture never submits. Review/Tests follow configured task behavior. Approvals retain request and risk guards.",
+      "expectedKey": "The matching mode-specific label and accurate outcome.",
+      "kind": "tools",
       "smoke": true,
       "capability": "supported"
     },

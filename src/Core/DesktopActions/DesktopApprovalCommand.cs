@@ -29,6 +29,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         public DesktopApprovalCommand()
             : base()
         {
+            // A widget draws its own label (the decision tile), so Options+ adds no caption.
+            this.SetWidget(true);
             this.AddParameter(Approve, "Approve", "Agent")
                 .SetDescription("Approve the pending request (Allow once) — the app stays in the background");
             this.AddParameter(Deny, "Deny", "Agent")
@@ -93,19 +95,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             }
         }
 
-        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
-            this.FaceLabel(actionParameter);
+        protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) => "\u200B";
 
-        // The face carries IDENTITY when it is knowable: the open conversation's short title
-        // over the generic verb, so "Approve" always refers to one nameable request. When
-        // several conversations wait and the open one is not knowable, the generic verb plus
-        // the badge is the honest maximum. Armed red overrides everything: "Press again".
-        private String FaceLabel(String actionParameter)
-        {
-            var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
-            return LabelFor(actionParameter, state, _confirmation, DateTime.UtcNow);
-        }
-
+        // The verb stays the label; "Press again" overrides it once armed.
         internal static String LabelFor(String actionParameter, DesktopState state,
             DesktopApprovalConfirmation confirmation, DateTime now)
         {
@@ -115,30 +107,36 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 return "Press again";
             }
 
-            if (actionParameter == Approve && pending && !String.IsNullOrEmpty(state.ActiveTitle))
-            {
-                var t = DesktopConversationLabels.Display(state.Mode, state.ActiveTitle);
-                return t.Length <= 18 ? t : t.Substring(0, 17) + "…";
-            }
-
             return actionParameter == Approve ? "Approve" : "Deny";
         }
 
+        // IDENTITY when it is knowable: the open conversation's title, as the tile's small
+        // caption, so "Approve" always refers to one nameable request. It used to replace the
+        // verb, which wrapped onto two cramped lines on the decision tile. When the open
+        // conversation is not knowable, the verb plus the badge is the honest maximum.
+        internal static String TargetFor(String actionParameter, DesktopState state) =>
+            actionParameter == Approve && state.Activity == DesktopActivity.WaitingApproval && !String.IsNullOrEmpty(state.ActiveTitle)
+                ? DesktopConversationLabels.Display(state.Mode, state.ActiveTitle) : null;
+
+        // The family decision tile, as on Claude Console and Vizhi for Codex: solid green / red
+        // with the white check / cross, coloured whether or not a request waits (their Yes/No
+        // are too). The corner badge is the "something is waiting" cue; grey means the app
+        // cannot be read at all.
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
+            var face = FaceFor(actionParameter, state, _confirmation, DateTime.UtcNow);
+            return KeyImage.RenderDecisionTile(imageSize, face.Label, face.Color,
+                approve: actionParameter == Approve, risk: face.Risk, targetLabel: TargetFor(actionParameter, state));
+        }
+
+        internal static (String Label, BitmapColor Color, ApprovalRisk Risk) FaceFor(String actionParameter,
+            DesktopState state, DesktopApprovalConfirmation confirmation, DateTime now)
+        {
+            var label = LabelFor(actionParameter, state, confirmation, now);
+            if (!state.Available) return (label, KeyImage.Gray, ApprovalRisk.None);
             var pending = state.Activity == DesktopActivity.WaitingApproval;
-            var icon = actionParameter == Approve ? "yes" : "no";
-
-            if (pending)
-            {
-                return KeyImage.RenderWithApprovalBadge(
-                    imageSize, this.FaceLabel(actionParameter),
-                    actionParameter == Approve ? KeyImage.Green : KeyImage.Red, icon, state.Risk);
-            }
-
-            return KeyImage.Render(
-                imageSize, actionParameter == Approve ? "Approve" : "Deny", KeyImage.Gray, icon + "_idle");
+            return (label, actionParameter == Approve ? KeyImage.Green : KeyImage.Red, pending ? state.Risk : ApprovalRisk.None);
         }
 
         // WHY THE CARD TEXT IS NOT ON THE KEY. It was, until hardware said otherwise: the card's

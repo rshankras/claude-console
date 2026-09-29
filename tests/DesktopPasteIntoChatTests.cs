@@ -115,10 +115,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [Fact]
         public void Paste_faces_describe_visible_delivery_and_keep_errors_in_the_footer()
         {
-            Assert.Equal(("Paste into Chat", "copy", "CLIPBOARD"), DesktopCaptureCommand.Face("clipboard", null));
-            Assert.Equal(("Pasted", "copy", "REVIEW · SEND"), DesktopCaptureCommand.Face("clipboard", null, "Pasted"));
-            Assert.Equal(("Paste into Chat", "copy", "Check Draft"), DesktopCaptureCommand.Face("clipboard", null, "Check Draft"));
-            Assert.Equal(("Pasting", "copy", "TEXT · WAIT"), DesktopCaptureCommand.Face("clipboard", null, working: true));
+            Assert.Equal(("Paste into Chat", "paste", "CLIPBOARD"), DesktopCaptureCommand.Face("clipboard", null));
+            Assert.Equal(("Pasted", "paste", "REVIEW · SEND"), DesktopCaptureCommand.Face("clipboard", null, "Pasted"));
+            Assert.Equal(("Paste into Chat", "paste", "Check Draft"), DesktopCaptureCommand.Face("clipboard", null, "Check Draft"));
+            Assert.Equal(("Pasting", "paste", "TEXT · WAIT"), DesktopCaptureCommand.Face("clipboard", null, working: true));
         }
 
         [Theory]

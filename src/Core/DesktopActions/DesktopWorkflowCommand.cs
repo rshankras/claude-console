@@ -58,6 +58,15 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             new WorkflowDef { Id = "write_tests", Label = "Write Tests", Icon = "write_tests", Prompt = "Write tests for the most recent changes — the uncommitted diff if there is one, otherwise the last commit. Use the project's test framework and conventions, cover the happy path, edge cases, and failure modes, then run the suite and fix any failures.", Scope = "DIFF", Submit = false },
         };
 
+        // ChatGPT creates scheduled tasks from an ordinary chat request, so scheduling needs no
+        // app screen: speak what and when, review the draft, press Send. The Scheduled screen
+        // itself is a list you browse and edit with a pointer.
+        internal static readonly WorkflowDef ScheduleWorkflow = new WorkflowDef
+        {
+            Id = "schedule", Label = "Schedule", Icon = "scheduled", Submit = false, Input = "voice", Scope = "BRIEF",
+            Prompt = "Your request:\n{brief}\n\nSchedule task:\nSet this up as a scheduled task. Before creating it, confirm what it will do, when and how often it runs, and the time zone. If the timing is unclear, ask.",
+        };
+
         private readonly Dictionary<String, WorkflowDef> _codexById = new Dictionary<String, WorkflowDef>();
         private readonly IReadOnlyList<WorkflowDef> _codexWorkflows;
         private readonly IReadOnlyList<WorkflowDef> _chatGptWorkflows;
@@ -92,6 +101,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                         : "Drafts this brief in the composer for you to scope, then send: " + w.Prompt);
             }
 
+            this.AddParameter("schedule", "Schedule (ChatGPT)", "Context").SetDescription("Speak what to schedule and when; review the draft, then press Send. ChatGPT sets up the scheduled task.");
             this.AddParameter("draft_reply", "Draft Reply", "Context").SetDescription("Use captured source material and a spoken instruction to draft a reply in ChatGPT mode.");
 
             for (var slot = 1; slot <= 9; slot++)
@@ -118,6 +128,10 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         internal static IEnumerable<WorkflowDef> LoadChatGptWorkflows(String configFile)
             => LoadWorkflows(configFile, ChatGptDefaults);
+
+        // The same list slot_N resolves against in ChatGPT mode, so menu positions line up.
+        internal static IReadOnlyList<WorkflowDef> LoadChatGptFavorites() =>
+            LoadChatGptWorkflows(ChatGptConfigFile).Where(IsUsable).Take(9).ToArray();
 
         private static IEnumerable<WorkflowDef> LoadWorkflows(String configFile, WorkflowDef[] defaults)
         {
@@ -209,8 +223,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             Action<VoiceIntent, Func<String, String>> toggle = null, DesktopContextCapture context = null)
         {
             var mode = automation.Status().Mode;
-            if (actionParameter == "draft_reply" && mode != "ChatGPT") return "Use ChatGPT";
-            if (actionParameter != "draft_reply" && !IsSlot(actionParameter) && mode != "Codex")
+            if (actionParameter is "draft_reply" or "schedule" && mode != "ChatGPT") return "Use ChatGPT";
+            if (actionParameter is not ("draft_reply" or "schedule") && !IsSlot(actionParameter) && mode != "Codex")
             {
                 return "Use Codex";
             }
@@ -300,6 +314,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             IReadOnlyDictionary<String, WorkflowDef> named)
         {
             if (actionParameter == "draft_reply") return chatGpt.FirstOrDefault(w => w.Id == "draft");
+            if (actionParameter == "schedule") return mode == "ChatGPT" ? ScheduleWorkflow : null;
             if (TryReadTaskSlot(actionParameter, out var task)) return mode == "Codex" ? WorkflowAt(mode, task, chatGpt, codex) : null;
             if (TryReadSlot(actionParameter, out var slot))
             {

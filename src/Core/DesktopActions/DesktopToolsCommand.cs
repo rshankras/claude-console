@@ -27,6 +27,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             DesktopServices.Lifetime.OnStop(() => { _working = null; Volatile.Write(ref _busy, 0); });
             _tasks = Array.Empty<DesktopWorkflowCommand.WorkflowDef>();
             if (!DesktopServices.Declared) return;
+            this.AddParameter("clear_approve", "Clear Added / Approve", "Tools")
+                .SetDescription("ChatGPT: clear staged sources. Codex: approve the displayed request (press twice)");
             this.AddParameter("copy_approve", "Copy Reply / Approve", "Tools");
             this.AddParameter("return_deny", "Return to App / Deny", "Tools");
             this.AddParameter("deny", "Deny (Codex)", "Tools")
@@ -47,6 +49,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         internal static (String Kind, String Id) Resolve(String parameter, String mode) => (parameter, mode) switch
         {
+            ("clear_approve", "ChatGPT") => ("capture", "clear"), ("clear_approve", "Codex") => ("approval", "approve"),
             ("copy_approve", "ChatGPT") => ("capture", "copy"), ("copy_approve", "Codex") => ("approval", "approve"),
             ("return_deny", "ChatGPT") => ("capture", "return"), ("return_deny", "Codex") => ("approval", "deny"),
             ("deny", "Codex") => ("approval", "deny"),

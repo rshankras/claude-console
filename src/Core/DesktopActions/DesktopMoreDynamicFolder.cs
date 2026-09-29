@@ -11,6 +11,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         private DesktopContextCapture _context;
         private Boolean _cleanupRegistered;
         private IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> _tasks;
+        private IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> _prompts;
         public DesktopMoreDynamicFolder()
         { this.DisplayName = "More"; this.Description = "Additional app tools and workflows"; this.GroupName = "Agent"; }
         public override PluginDynamicFolderNavigation GetNavigationArea(DeviceType _) => PluginDynamicFolderNavigation.ButtonArea;
@@ -21,6 +22,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 if (!_cleanupRegistered)
                 { DesktopServices.Lifetime.OnStop(() => Deactivate()); _cleanupRegistered = true; }
                 _tasks ??= DesktopWorkflowCommand.LoadCodexFavorites();
+                _prompts ??= DesktopWorkflowCommand.LoadChatGptFavorites();
                 if (_monitor != null) _monitor.OnChanged -= OnChanged;
                 _monitor = DesktopServices.Monitor;
                 _monitor.OnChanged += OnChanged;
@@ -39,28 +41,33 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         }
         private void OnChanged(DesktopState _) => this.ButtonActionNamesChanged();
         private void OnContextChanged() => this.ButtonActionNamesChanged();
-        internal static String[] Actions(String plugin, String mode, DesktopControl available = (DesktopControl)(-1), Boolean approval = true, Boolean staged = false,
-            IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> tasks = null)
+        internal static String[] Actions(String plugin, String mode, DesktopControl available = (DesktopControl)(-1), Boolean staged = false,
+            IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> tasks = null, IReadOnlyList<DesktopWorkflowCommand.WorkflowDef> prompts = null)
         {
             if (mode is not ("ChatGPT" or "Codex")) return Array.Empty<String>();
-            var context = mode == "ChatGPT" ? new[] { "secondary_1", "secondary_2", "secondary_3", "secondary_4" }
-                : new[] { "secondary_1", "secondary_3", "secondary_4" };
+            // Only app screens a keypad can finish: Projects/Scheduled (ChatGPT), Permissions/Pull
+            // Requests (Codex). Plugins, Explore and Quick Chat open screens that need a pointer or
+            // typing; they stay assignable but are not in the default menu.
+            var context = new[] { "secondary_1", "secondary_3" };
             var actions = context.Where(p => DesktopContextCommand.FaceFor(p, mode, available).Enabled)
                 .Select(p => ActionString.ToString(plugin, typeof(DesktopContextCommand).FullName, p));
+            // Scheduling by voice, beside the Scheduled list it creates entries in.
+            if (mode == "ChatGPT") actions = actions.Append(ActionString.ToString(plugin, typeof(DesktopWorkflowCommand).FullName, "schedule"));
             if (mode == "Codex") actions = actions.Concat(new[] { "review_pr", "write_tests" }
                 .Select(p => ActionString.ToString(plugin, typeof(DesktopWorkflowCommand).FullName, p)))
                 .Concat((tasks ?? DesktopWorkflowCommand.CodexDefaults).Select((w, i) => (w, i))
                     .Where(item => DesktopSavedPromptsDynamicFolder.IsMoreTask(item.w.Id))
                     .Select(item => DesktopSavedPromptsDynamicFolder.TaskAction(plugin, item.i)));
+            // ChatGPT's Continue: the ninth prompt, kept here so Prompts fits one page.
+            if (mode == "ChatGPT") actions = actions.Concat((prompts ?? DesktopWorkflowCommand.ChatGptDefaults).Select((w, i) => (w, i))
+                    .Where(item => DesktopSavedPromptsDynamicFolder.IsMoreTask(item.w.Id))
+                    .Select(item => DesktopSavedPromptsDynamicFolder.PromptAction(plugin, item.i)));
             if (staged) actions = actions.Append(ActionString.ToString(plugin, typeof(DesktopCaptureCommand).FullName, "clear"));
-            return actions.Concat(mode == "ChatGPT" && approval
-                ? new[] { "approve", "deny" }.Select(p => ActionString.ToString(plugin, typeof(DesktopApprovalCommand).FullName, p))
-                : Array.Empty<String>()).ToArray();
+            return actions.ToArray();
         }
         public override IEnumerable<String> GetButtonPressActionNames(DeviceType _) =>
             DesktopServices.Declared ? Actions(this.Plugin.Name, DesktopServices.Monitor.Current.Mode,
-                DesktopServices.Monitor.Current.AvailableControls, DesktopServices.Monitor.Current.Activity == DesktopActivity.WaitingApproval,
-                DesktopServices.Context.Count > 0, _tasks) : Array.Empty<String>();
+                DesktopServices.Monitor.Current.AvailableControls, DesktopServices.Context.Count > 0, _tasks, _prompts) : Array.Empty<String>();
         public override String GetButtonDisplayName(PluginImageSize _) => "More";
         public override BitmapImage GetButtonImage(PluginImageSize size) => KeyImage.Render(size, "More", KeyImage.Blue, "more");
     }

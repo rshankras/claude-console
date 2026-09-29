@@ -156,15 +156,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                     Func<String, String> sink = null;
                     var result = Workflow.Execute(parameter, fake, (p, m) => Workflow.Resolve(p, m, gpt, codex, named),
                         spoken, capture, new(fake), (i, callback) => { capture.Press(i, DateTime.UnixEpoch); sink = callback; });
-                    if (mode == "Codex" && parameter == "draft_reply") { Assert.Equal("Use ChatGPT", result); break; }
-                    if (mode == "ChatGPT" && parameter != "draft_reply" && !parameter.StartsWith("slot_"))
+                    if (mode == "Codex" && parameter is "draft_reply" or "schedule") { Assert.Equal("Use ChatGPT", result); break; }
+                    if (mode == "ChatGPT" && parameter is not ("draft_reply" or "schedule") && !parameter.StartsWith("slot_"))
                     {
                         Assert.Equal("Use Codex", result);
                         Assert.Equal("status", Assert.Single(fake.Calls).Name);
                         break;
                     }
                     var expected = parameter.StartsWith("slot_") || parameter.StartsWith("task_")
-                        ? (mode == "ChatGPT" ? gpt : codex)[Int32.Parse(parameter[5..]) - 1] : parameter == "draft_reply" ? gpt.Single(w => w.Id == "draft") : named[parameter];
+                        ? (mode == "ChatGPT" ? gpt : codex)[Int32.Parse(parameter[5..]) - 1] : parameter == "draft_reply" ? gpt.Single(w => w.Id == "draft") : parameter == "schedule" ? Workflow.ScheduleWorkflow : named[parameter];
                     if (expected.RequiresSpeech)
                     {
                         Assert.DoesNotContain(fake.Calls, x => x.Name is "write" or "send");
@@ -216,7 +216,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                     }
                     break;
                 case "saved-prompts":
-                    Assert.Equal(mode == "Codex" ? 8 : 9,DesktopSavedPromptsDynamicFolder.Actions("VizhiDesktop", mode).Length);
+                    Assert.Equal(8,DesktopSavedPromptsDynamicFolder.Actions("VizhiDesktop", mode).Length);
                     Assert.Empty(fake.Calls);
                     break;
                 case "capture":

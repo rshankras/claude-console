@@ -129,7 +129,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 var mode = DesktopServices.Monitor.Current.Mode;
                 if (!String.IsNullOrEmpty(mode))
                 {
-                    return mode;   // the key names the mode you're IN; pressing goes to the other
+                    // Name what the press does, in one line. The current mode used to be the label with
+                    // the destination in the small status strip, which the keypad bezel clips.
+                    return DestinationFor(mode);
                 }
             }
 
@@ -163,11 +165,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 _ => null,
             };
             var status = _feedback.IsActive && _feedbackParameter == actionParameter ? _feedback.Text
-                : actionParameter == Mode ? DestinationFor(label) : null;
+                : null;
             return KeyImage.RenderControlTile(imageSize, label, icon, true, status);
         }
 
         internal static String DestinationFor(String mode) => mode switch
-        { "ChatGPT" => "TO CODEX", "Codex" => "TO CHATGPT", _ => "Open App" };
+        { "ChatGPT" => "To Codex", "Codex" => "To ChatGPT", _ => "Open App" };
     }
 }

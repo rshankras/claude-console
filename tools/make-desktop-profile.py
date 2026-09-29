@@ -115,12 +115,20 @@ CONTEXT_PAGE = [act("DesktopCaptureCommand", p) for p in ["selection", "clipboar
 ] + [act("DesktopCaptureCommand", p) for p in ["copy", "return", "paste"]]
 
 
-HOME = PAGE_ONE[:5] + [act("DesktopCaptureCommand", "screenshot")] + [
-    act("DesktopVoiceDraftCommand"), act("DesktopComposerCommand", "send_stop"), act("DesktopVoiceChatCommand")]
+# Home follows the family layout (Claude Console, Vizhi for Codex): recent sessions on top and
+# No/Yes in the middle and right of the middle row, so approving is the same reach on every
+# keypad. New Chat takes the reset position (Claude Console's Clear, Codex's Esc) and the bottom
+# row mirrors Codex's Screenshot · voice. Home is identical in both modes.
+HOME = PAGE_ONE[:3] + [
+    act("DesktopControlCommand", "new_chat"), act("DesktopApprovalCommand", "deny"), act("DesktopApprovalCommand", "approve"),
+    act("DesktopCaptureCommand", "screenshot"), act("DesktopVoiceDraftCommand"), act("DesktopComposerCommand", "send_stop")]
+# Tools rows read as groups: getting around (mode, every chat, search — View Changes in Codex),
+# content in and out (Attach, Paste, Copy Reply), then modes and menus. No key is blank in
+# either mode: a blank key reads as a failed plugin.
 TOOLS = [
-    act("DesktopControlCommand", "mode"), act("DesktopToolsCommand", "approve"), act("DesktopToolsCommand", "deny"),
-    folder("DesktopFilesDynamicFolder"), act("DesktopCaptureCommand", "clipboard"), act("DesktopNavigateCommand", "search"),
-    act("DesktopCaptureCommand", "copy"), folder("DesktopSavedPromptsDynamicFolder"), folder("DesktopMoreDynamicFolder")]
+    act("DesktopControlCommand", "mode"), folder("AllChatsDynamicFolder"), act("DesktopNavigateCommand", "find"),
+    folder("DesktopFilesDynamicFolder"), act("DesktopCaptureCommand", "clipboard"), act("DesktopCaptureCommand", "copy"),
+    act("DesktopVoiceChatCommand"), folder("DesktopSavedPromptsDynamicFolder"), folder("DesktopMoreDynamicFolder")]
 
 def build_profile(out, guid, display_name, home, entries, controls=PAGE_TWO) -> None:
     entries = dict(entries)
@@ -181,11 +189,16 @@ def build_profile(out, guid, display_name, home, entries, controls=PAGE_TWO) -> 
         {"additionalPluginNames": [PLUGIN]}).encode()
 
     # Cosmetic preview has the home-page controls; live faces are rendered by the plugin.
-    labels = ["Conversation 1", "Conversation 2", "Conversation 3", "Chats", "New Chat",
-              "Screenshot" if guid == GUID else "Find Chat / View Changes"] + (["Dictate · DRAFT", "Send / Stop", "Voice Chat · TALK"] if guid == GUID
-                                      else ["Approve", "Deny", "Voice Chat · TALK"])
-    icons = ["all_chats", "all_chats", "all_chats", "all_chats", "new_chat", "screenshot" if guid == GUID else "search"] + (
-        ["voice_draft", "send", "voice_chat"] if guid == GUID else ["yes_idle", "no_idle", "voice_chat"])
+    if guid == GUID:
+        labels = ["Conversation 1", "Conversation 2", "Conversation 3", "New Chat", "Deny", "Approve",
+                  "Screenshot", "Dictate · DRAFT", "Send / Stop"]
+        icons = ["all_chats", "all_chats", "all_chats", "new_chat", "no_idle", "yes_idle",
+                 "screenshot", "voice_draft", "send"]
+    else:
+        labels = ["Conversation 1", "Conversation 2", "Conversation 3", "Chats", "New Chat",
+                  "Find Chat / View Changes", "Approve", "Deny", "Voice Chat · TALK"]
+        icons = ["all_chats", "all_chats", "all_chats", "all_chats", "new_chat", "search",
+                 "yes_idle", "no_idle", "voice_chat"]
     icon_dir = ROOT / "src/Products/VizhiDesktop/Resources/desktop_icons"
     def icon_bytes(icon):
         path = icon_dir / f"{icon}.png"

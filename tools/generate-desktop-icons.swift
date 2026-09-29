@@ -55,7 +55,7 @@ for file in files {
 // Desktop-only symbols share the designer pack's 43-unit geometry. --ux-only avoids touching
 // the established PNG set while iterating these additions.
 for (svg, name) in [("DesktopStop", "stop"), ("DesktopSwitchMode", "switch_mode"),
-                    ("DesktopWriting", "writing"), ("DesktopCopy", "copy"),
+                    ("DesktopWriting", "writing"), ("DesktopCopy", "copy"), ("DesktopPaste", "paste"),
                     ("DesktopVoiceChat", "voice_chat"), ("VoiceDictation", "voice_draft"),
                     ("DesktopAllChats", "all_chats"),
                     ("DesktopQuickChat", "quick_chat"), ("DesktopNewChat", "new_chat"),
@@ -79,7 +79,7 @@ for (svg, name) in [("DesktopStop", "stop"), ("DesktopSwitchMode", "switch_mode"
 
 // Pending approvals keep their identity glyph and risk badge; idle glyphs are visibly grey.
 for name in ["yes", "no", "search", "diff", "project", "security", "model", "attach",
-             "scheduled", "create_pr", "explore", "quick_chat", "send", "copy", "status", "voice"] {
+             "scheduled", "create_pr", "explore", "quick_chat", "send", "copy", "paste", "clear", "status", "voice"] {
     if let onlyIcon, name != onlyIcon { continue }
     guard let image = NSImage(contentsOf: output.appendingPathComponent("\(name).png")) else {
         fatalError("Missing approval glyph: \(name)")

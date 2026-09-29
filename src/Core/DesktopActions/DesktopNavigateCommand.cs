@@ -15,7 +15,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             this.AddParameter("find", "Find Chat / View Changes", "Conversations")
                 .SetDescription("ChatGPT: find a conversation. Codex: open the diff without changing the keypad page.");
             this.AddParameter("search", "Find Chat (ChatGPT)", "Conversations")
-                .SetDescription("Find a ChatGPT conversation; blank in Codex, whose View Changes key is inside Tasks.");
+                .SetDescription("Find a ChatGPT conversation; blank in Codex. The default layout uses Find Chat / View Changes.");
             _feedback = new FailureFace(() => this.ActionImageChanged(), holdMs: 1800);
             DesktopServices.Lifetime.OnStop(_feedback.Dispose);
             if (DesktopServices.Declared) DesktopServices.OnMonitorChanged(_ => this.ActionImageChanged());

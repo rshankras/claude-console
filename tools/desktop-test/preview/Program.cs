@@ -37,27 +37,29 @@ foreach (var mode in new[] { "ChatGPT", "Codex" })
     for (var i = 0; i < 3; i++)
         Save(home, mode + "-home-" + i, "RenderConversationSlot", PluginImageSize.Width90,
             new[] { "Project update", "Research notes", "Next work plan" }[i], "Ready", new BitmapColor(0x5A,0x5A,0x60), false);
-    Save(home, mode + "-all", "Render", PluginImageSize.Width90, "All Chats", new BitmapColor(0x60,0xA5,0xFA), "all_chats");
+    // Home, in key order: the family approval row sits where Claude Console / Codex put No · Yes.
+    var risk = assembly.GetType("Loupedeck.ClaudeConsolePlugin.ApprovalRisk")!;
     Control(home, mode + "-new", mode == "Codex" ? "New Task" : "New Chat", "new_chat");
+    var green = (BitmapColor)key.GetField("Green", flags)!.GetValue(null)!;
+    var red = (BitmapColor)key.GetField("Red", flags)!.GetValue(null)!;
+    Save(home, mode + "-deny", "RenderDecisionTile", PluginImageSize.Width90, "Deny", red, false, Enum.Parse(risk,"None"), null);
+    Save(home, mode + "-approve", "RenderDecisionTile", PluginImageSize.Width90, "Approve", green, true, Enum.Parse(risk,"None"), null);
     Intent(home, mode + "-screenshot", "Screenshot", "screenshot", "ADD TO CHAT");
     Intent(home, mode + "-voice", "Dictate", "voice_draft", "DRAFT");
     Control(home, mode + "-send", "Send", "send", true, "REVIEW FIRST");
-    Control(home, mode + "-native-home", "Voice Chat", "voice_chat", true, "TOGGLE");
+    Save(home, mode + "-deny-pending", "RenderDecisionTile", PluginImageSize.Width90, "Deny", red, false, Enum.Parse(risk,"Normal"), null);
+    Save(home, mode + "-approve-pending", "RenderDecisionTile", PluginImageSize.Width90, "Approve", green, true, Enum.Parse(risk,"Normal"), "Project update notes");
+    Save(home, mode + "-approve-armed", "RenderDecisionTile", PluginImageSize.Width90, "Press again", green, true, Enum.Parse(risk,"High"), null);
+    // Tools, in key order: getting around · content in and out · modes and menus.
     var page = mode + " Tools";
-    Control(page, mode + "-mode", mode, "switch_mode", true, mode == "ChatGPT" ? "TO CODEX" : "TO CHATGPT");
-    if (mode == "ChatGPT") {
-        Save(page, mode + "-unused-approve", "Render", PluginImageSize.Width90, "", new BitmapColor(0x60,0xA5,0xFA), null);
-        Save(page, mode + "-unused", "Render", PluginImageSize.Width90, "", new BitmapColor(0x60,0xA5,0xFA), null);
-    } else {
-        var risk = assembly.GetType("Loupedeck.ClaudeConsolePlugin.ApprovalRisk")!;
-        Save(page, "codex-approve", "RenderApprovalTile", PluginImageSize.Width90, "Approve", "yes", "REVIEW REQUEST", Enum.Parse(risk,"Normal"));
-        Save(page, "codex-deny", "RenderApprovalTile", PluginImageSize.Width90, "Deny", "no", "REVIEW REQUEST", Enum.Parse(risk,"Normal"));
-    }
-    Control(page, mode + "-attach", "Attach Files", "attach");
-    Intent(page, mode + "-clipboard", "Paste into Chat", "copy", "CLIPBOARD");
+    Control(page, mode + "-mode", mode == "ChatGPT" ? "To Codex" : "To ChatGPT", "switch_mode");
+    Save(page, mode + "-all", "Render", PluginImageSize.Width90, "All Chats", new BitmapColor(0x60,0xA5,0xFA), "all_chats");
     if (mode == "ChatGPT") Control(page, mode + "-navigation", "Find Chat", "search");
-    else Save(page, mode + "-navigation", "Render", PluginImageSize.Width90, "", new BitmapColor(0x60,0xA5,0xFA), null);
+    else Control(page, mode + "-navigation", "View Changes", "diff");
+    Control(page, mode + "-attach", "Attach Files", "attach");
+    Intent(page, mode + "-clipboard", "Paste into Chat", "paste", "CLIPBOARD");
     Control(page, mode + "-copy", "Copy Reply", "copy", true, "LATEST ANSWER");
+    Control(page, mode + "-native-home", "Voice Chat", "voice_chat", true, "TOGGLE");
     Save(page, mode + "-saved", "Render", PluginImageSize.Width90, mode == "ChatGPT" ? "Prompts" : "Tasks", new BitmapColor(0x60,0xA5,0xFA), "writing");
     Save(page, mode + "-more", "Render", PluginImageSize.Width90, "More", new BitmapColor(0x60,0xA5,0xFA), "more");
 }
@@ -65,7 +67,7 @@ foreach (var mode in new[] { "ChatGPT", "Codex" })
 var workflowType = assembly.GetType("Loupedeck.ClaudeConsolePlugin.DesktopActions.DesktopWorkflowCommand")!;
 var taskFolderType = assembly.GetType("Loupedeck.ClaudeConsolePlugin.DesktopActions.DesktopSavedPromptsDynamicFolder")!;
 var defaults = (Array)workflowType.GetField("CodexDefaults", flags)!.GetValue(null)!;
-var taskActions = (string[])taskFolderType.GetMethod("Actions", flags)!.Invoke(null, new object[] { "VizhiDesktop", "Codex", defaults })!;
+var taskActions = (string[])taskFolderType.GetMethod("Actions", flags)!.Invoke(null, new object[] { "VizhiDesktop", "Codex", defaults, null })!;
 foreach (var action in taskActions)
 {
     var parameter = ActionString.FromString(action).ActionParameter;

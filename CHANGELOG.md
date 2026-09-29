@@ -1,3 +1,15 @@
+## Vizhi Desktop 0.17.18 — Approve and Deny on Home
+
+- Home follows the family layout: Deny and Approve sit where Claude Console and Vizhi for Codex put No and Yes, in both modes. They use the family decision tiles — solid green Approve and red Deny with the white check and cross — with the corner badge while a request waits, the chat's title as a small caption, the second confirmation, and "Allow once" only. They turn grey only when the app cannot be read. New Chat takes the reset position; the bottom row is Screenshot · Dictate · Send/Stop.
+- Tools groups getting around (mode, All Chats, Find Chat — View Changes in Codex), content in and out (Attach, Paste, Copy Reply), and modes and menus (Voice Chat, Prompts/Tasks, More). No key is blank in either mode; ChatGPT previously had two, Codex one.
+- The Mode key says what a press does, "To Codex" or "To ChatGPT", in one line instead of a clipped status strip.
+- Paste into Chat gets a clipboard glyph (it shared Copy Reply's), and Clear Added a trash glyph (it shared Stop's square).
+- More: Continue joins ChatGPT's list; its duplicate Approve/Deny are removed, and Return to App is no longer in a default menu (still assignable). Continue was the ninth ChatGPT prompt and spilled onto a second Prompts page (an open folder spends one key on Back), so ChatGPT Prompts now fits one page like Codex Tasks. A reordered Continue moves from its own slot; prompt text and order are unchanged.
+- Keypad-only review:
+  - **Schedule** (ChatGPT, in More): speak what to schedule and when; review the draft, then Send. ChatGPT sets up the task — no Scheduled screen needed. The Scheduled list stays in More for viewing.
+  - More no longer offers Plugins, Explore (ChatGPT) or Quick Chat (Codex) by default: each opens a screen that needs a pointer or typing. They remain assignable in Options+.
+- Installed Vizhi Home profiles move to the new layout when both Home and Tools are still stock, with a `.before-0.17.18` backup. A customized key on either page leaves both as they were. This supersedes the 0.17.16 Tasks migration.
+
 ## Vizhi Desktop 0.17.17 — Continue in More
 
 - Move Codex Continue from Tasks to More, keeping the default Tasks menu to eight clear actions and an unused bottom-right position.
