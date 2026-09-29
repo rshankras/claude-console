@@ -12,7 +12,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         private readonly DesktopContextCapture _context;
         private String _owner, _mode, _target, _failure;
         private DesktopAppendTarget _appendTarget;
-        private Boolean _waiting, _ready, _recovering;
+        private Boolean _waiting, _ready, _recovering, _pendingHasWords;
         private Int64 _generation, _lastSend = Int64.MinValue;
         private Int64? _pending;
         private Int64 _contextRevision;
@@ -30,9 +30,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             };
         }
 
+        private void DiscardPendingPrompt()
+        {
+            if (_recovery.PendingId is Int64 id) _recovery.Discard(id);   // raises Discarded -> Reset
+            PluginLog.Info("Desktop workflow: discarded a retained fixed prompt");
+            Reset();
+        }
+
         internal void Reset()
         {
-            lock (_gate) { _owner = _mode = _target = _failure = null; _appendTarget = null; _waiting = _ready = false; _pending = null; _generation++; }
+            lock (_gate) { _owner = _mode = _target = _failure = null; _appendTarget = null; _waiting = _ready = _pendingHasWords = false; _pending = null; _generation++; }
             Changed?.Invoke();
         }
 
@@ -85,6 +92,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                     // Dictate remains Dictate after insertion: a fresh tap adds another instruction.
                     Reset();
                 }
+                // A retained FIXED prompt (no spoken brief, no added material) holds none of the
+                // user's words. It must never block other keys: 2026-09-29 one unconfirmed Summarize
+                // left every prompt on a silent "Insert Draft" until a restart. Spoken or sourced
+                // drafts keep waiting for an explicit retry or hold-to-discard.
+                if (_recovery.Pending && !_pendingHasWords
+                    && (_owner != workflow.Id || _mode != mode || _pending != _recovery.PendingId))
+                    DiscardPendingPrompt();
                 if (_recovery.Pending)
                 {
                     if (_owner != workflow.Id || _mode != mode || _pending != _recovery.PendingId) return "Insert Draft";
@@ -103,6 +117,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                         return (success, why);
                     }); }
                     finally { _recovering = false; }
+                    // Its chat is gone, so this retry can never land; a fixed prompt starts afresh
+                    // in the current chat instead of looping on "Chat Changed".
+                    if (outcome == "Chat Changed" && !_pendingHasWords)
+                    {
+                        DiscardPendingPrompt();
+                        return Press(workflow, mode, capture, voice, toggle, allowSend, append, null, submitImmediately);
+                    }
                     if (outcome == "Draft Ready") { _context?.Consume(_contextRevision); _ready = true; _target = target; _pending = null; _failure = null; }
                     Changed?.Invoke();
                     return outcome;
@@ -156,6 +177,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 if (!inserted)
                 {
                     _recovery.Retain(composed, insertionError ?? "unclassified"); _pending = _recovery.PendingId; _failure = "Insert Draft";
+                    _pendingHasWords = brief != null || !String.IsNullOrEmpty(context);
                     Changed?.Invoke(); return _failure;
                 }
                 _context?.Consume(contextRevision);

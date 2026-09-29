@@ -21,7 +21,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             "composer-focus-changed" or "app-not-frontmost" => "FOCUS CHAT INPUT",
             "composer-selection-changed" => "CURSOR NOT READY",
             "draft-changed" or "draft-exists" => "INPUT CHANGED",
-            "composer-target-changed" or "mode-changed" => "CHAT CHANGED",
+            // A retry goes to the original chat only; once that is gone it cannot succeed.
+            "composer-target-changed" or "mode-changed" => "HOLD TO DISCARD",
             "append-unconfirmed" => "CHECK CHAT INPUT",
             "composer-unavailable" => "CHAT IS BUSY",
             _ => "HOLD TO DISCARD",

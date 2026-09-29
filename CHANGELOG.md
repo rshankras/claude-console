@@ -1,3 +1,9 @@
+## Vizhi Desktop 0.17.23 — One failed prompt no longer blocks the rest
+
+- If a one-press prompt (Summarize, Explain, Review Code, …) could not confirm its text reached the chat, every other prompt then showed "Insert Draft" and did nothing until the plugin was restarted. A stuck fixed prompt is now dropped as soon as you press a different prompt, or when its chat is gone, and the new request goes ahead. It holds none of your words, so nothing is lost.
+- Dictated and source-based drafts still wait for you: tap to retry, hold to discard. When the chat they came from is gone, the key now says HOLD TO DISCARD.
+- Retries in the same chat still never duplicate or auto-send a prompt.
+
 ## Vizhi Desktop 0.17.22 — Find Chat opens again
 
 - Tools → Find Chat opens its search page. The key was a command asking Options+ to open the Find Chat folder, and Options+ ignores that request from a command, so the key stayed on "Opening". It is now the folder itself, which opens natively; in Codex mode the same key is View Changes, opening the review panel as before.

@@ -68,6 +68,41 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.DoesNotContain(app.Calls, c => c.Name is "write" or "prompt" or "send");
         }
 
+        // 2026-09-29 on the owner's keypad: one unconfirmed Summarize left every prompt on a silent
+        // "Insert Draft" until the plugin was restarted.
+        [Fact]
+        public void An_unconfirmed_fixed_prompt_never_blocks_a_different_prompt()
+        {
+            var app = App(); app.Next = new() { SurfaceAvailable = true, Mode = "Codex" };
+            var first = DesktopWorkflowCommand.CodexDefaults.Single(w => w.Id == "review_changes");
+            var second = DesktopWorkflowCommand.CodexDefaults.Single(w => w.Id == "run_tests");
+            var recovery = new DesktopDraftRecovery(app); var flow = new DesktopWorkflowVoice(app, recovery); var voice = new VoiceCaptureState();
+            app.Appender = (text, mode, target, retry) => text == first.Prompt ? (false, "append-unconfirmed") : (true, null);
+            String Tap(String slot, DesktopWorkflowCommand.WorkflowDef w) =>
+                DesktopWorkflowCommand.Execute(slot, app, (_, _) => w, flow, voice, new(app), (_, _) => Assert.Fail());
+            Assert.Equal("Insert Draft", Tap("slot_1", first)); Assert.True(recovery.Pending);
+            Assert.NotEqual("Insert Draft", Tap("slot_4", second));
+            Assert.False(recovery.Pending);
+            Assert.Contains(app.Calls, c => c.Name == "append" && c.Text == second.Prompt);
+        }
+
+        [Fact]
+        public void A_fixed_prompt_whose_chat_is_gone_starts_again_in_the_current_chat()
+        {
+            var app = App(); app.Next = new() { SurfaceAvailable = true, Mode = "Codex" };
+            var recipe = DesktopWorkflowCommand.CodexDefaults.Single(w => w.Id == "review_changes");
+            var recovery = new DesktopDraftRecovery(app); var flow = new DesktopWorkflowVoice(app, recovery); var voice = new VoiceCaptureState();
+            app.Appender = (text, mode, target, retry) => retry ? (false, "composer-target-changed") : (false, "append-unconfirmed");
+            String Tap() => DesktopWorkflowCommand.Execute("slot_1", app, (_, _) => recipe, flow, voice, new(app), (_, _) => Assert.Fail());
+            Assert.Equal("Insert Draft", Tap());
+            // The user opened a new chat meanwhile: the stale prompt is dropped and written afresh
+            // into the current chat, waiting for Send (never auto-sent after a failure).
+            Assert.Equal("Draft Ready", Tap());
+            Assert.False(recovery.Pending);
+            Assert.Contains(app.Calls, c => c.Name == "write" && c.Text == recipe.Prompt);
+            Assert.DoesNotContain(app.Calls, c => c.Send || c.Name is "send" or "send-prompt");
+        }
+
         [Theory]
         [InlineData(false)]
         [InlineData(true)]
