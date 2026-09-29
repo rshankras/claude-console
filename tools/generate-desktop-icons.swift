@@ -55,7 +55,7 @@ for file in files {
 // Desktop-only symbols share the designer pack's 43-unit geometry. --ux-only avoids touching
 // the established PNG set while iterating these additions.
 for (svg, name) in [("DesktopStop", "stop"), ("DesktopSwitchMode", "switch_mode"),
-                    ("DesktopWriting", "writing"), ("DesktopCopy", "copy"), ("DesktopPaste", "paste"),
+                    ("DesktopWriting", "writing"), ("DesktopCopy", "copy"), ("DesktopPaste", "paste"), ("DesktopRunTests", "run_tests"),
                     ("DesktopVoiceChat", "voice_chat"), ("VoiceDictation", "voice_draft"),
                     ("DesktopAllChats", "all_chats"),
                     ("DesktopQuickChat", "quick_chat"), ("DesktopNewChat", "new_chat"),

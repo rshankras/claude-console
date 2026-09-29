@@ -1,3 +1,7 @@
+## Vizhi Desktop 0.17.21 — Run Tests gets its own icon
+
+- Run Tests (Codex Tasks) shows a flask instead of borrowing Write Tests' clipboard glyph, so the two keys are no longer mistaken for each other. Applies whenever Run Tests still has its stock icon; a custom icon is kept.
+
 ## Vizhi Desktop 0.17.20 — Speak Query uses the shared speech model
 
 - Speak Query now uses the same offline speech model as Dictate, Claude Console and Vizhi for Codex (base.en, about 148 MB, downloaded once on the first voice press). The separate 574 MB Whisper Turbo download is gone.

@@ -116,6 +116,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Run_tests_no_longer_borrows_write_tests_glyph()
+        {
+            var run = DesktopWorkflowCommand.CodexDefaults.Single(w => w.Id == "run_tests");
+            var write = DesktopWorkflowCommand.ExtraWorkflows.Single(w => w.Id == "write_tests");
+            Assert.Equal("run_tests", DesktopWorkflowCommand.WorkflowIcon(run, "Codex"));      // stock icon → flask
+            Assert.Equal("write_tests", DesktopWorkflowCommand.WorkflowIcon(write, "Codex"));
+            var custom = DesktopWorkflowCommand.CodexDefaults.Single(w => w.Id == "run_tests").WithPrompt(run.Prompt);
+            custom.Icon = "deploy";                                                            // a user's own choice stays
+            Assert.Equal("deploy", DesktopWorkflowCommand.WorkflowIcon(custom, "Codex"));
+        }
+
+        [Fact]
         public void Clear_added_and_approve_share_one_assignable_key()
         {
             Assert.Equal(("capture", "clear"), DesktopToolsCommand.Resolve("clear_approve", "ChatGPT"));

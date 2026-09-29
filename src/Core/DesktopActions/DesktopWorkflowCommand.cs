@@ -301,6 +301,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 ("ChatGPT", "draft", "voice_draft") => "writing",
                 ("ChatGPT", "rewrite", "document") => "rewrite",
                 (_, "continue", "enter") => "continue",
+                // Run Tests shipped with Write Tests' glyph; a flask tells them apart (stock icon only).
+                (_, "run_tests", "write_tests") => "run_tests",
                 _ => workflow?.Icon ?? "status",
             };
 
