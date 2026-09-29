@@ -251,8 +251,10 @@ if [ "$SHIPS_DESKTOP" = "1" ]; then
     echo ">>> notarizing desktop AX helper (can take a few minutes)"
     NOTARY_ZIP="$(mktemp -d)/VizhiAxBridge.zip"
     ditto -c -k "$PKG_DESKTOP/VizhiAxBridge" "$NOTARY_ZIP"
-    xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "${NOTARY_PROFILE:-claude-console-notary}" --wait \
-      | tee /dev/stderr | grep -q "status: Accepted" \
+    # Capture, then check: piping into `grep -q` would SIGPIPE the writer under pipefail.
+    NOTARY_OUT="$(xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "${NOTARY_PROFILE:-claude-console-notary}" --wait 2>&1)" || true
+    echo "$NOTARY_OUT"
+    grep -q "status: Accepted" <<<"$NOTARY_OUT" \
       || { echo "error: desktop AX helper was not accepted by the notary service" >&2; exit 1; }
     rm -f "$NOTARY_ZIP"
   fi
