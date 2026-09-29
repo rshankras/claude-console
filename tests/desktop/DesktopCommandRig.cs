@@ -48,7 +48,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                     var legacyFinder = new DesktopSearch(fake);
                     Assert.Equal(mode == "ChatGPT", FindChatDynamicFolder.Open(fake, App, legacyFinder));
                     Assert.Equal(mode == "ChatGPT" && success, legacyFinder.Current.Available);
-                    if (mode == "Codex") Assert.Equal("status", Assert.Single(fake.Calls).Name);
+                    // Codex: the folder is View Changes. It reads status and never searches.
+                    if (mode == "Codex") { Assert.Equal("status", fake.Calls[0].Name); Assert.DoesNotContain(fake.Calls, c => c.Name.StartsWith("search")); }
                     break;
                 case "find-chat-only":
                     if (DesktopNavigateCommand.IsHidden(parameter, mode)) { Assert.Empty(fake.Calls); break; }

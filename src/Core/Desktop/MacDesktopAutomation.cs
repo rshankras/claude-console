@@ -47,7 +47,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         public Boolean HasVoiceShortcut => _voiceShortcut != null;
         internal Func<Boolean> IsEnabled { get; set; } = () => true;
-        private String Invoke(List<String> args, Int32 timeoutMs) => IsEnabled() ? Runner(args, timeoutMs) : null;
+        private String Invoke(List<String> args, Int32 timeoutMs)
+        {
+            if (!IsEnabled()) return null;
+            // .NET refuses to start a process whose argument list holds a null, so the action
+            // would fail with an opaque launch error. Refuse it here and name the empty flag.
+            var missing = args.IndexOf(null);
+            if (missing >= 0)
+            {
+                PluginLog.Warning($"MacDesktopAutomation: {args[0]} not run: no value for {(missing > 0 ? args[missing - 1] : "an argument")}");
+                return "{\"ok\":false,\"error\":\"missing-argument\"}";
+            }
+            return Runner(args, timeoutMs);
+        }
 
         public Boolean? IsAppFrontmost()
         {

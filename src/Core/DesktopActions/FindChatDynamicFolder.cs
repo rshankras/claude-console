@@ -6,7 +6,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     using System.Threading;
     using Loupedeck.ClaudeConsolePlugin.Desktop;
 
-    /// <summary>ChatGPT search content, opened from the adaptive Home command.</summary>
+    /// <summary>
+    /// Find Chat in ChatGPT, View Changes in Codex. Bound directly to a key: Options+ opens a
+    /// folder only from a key binding; a command asking it to open one (the old Find Chat /
+    /// View Changes command) is received and ignored, which left that key on "Opening".
+    /// </summary>
     public sealed class FindChatDynamicFolder : PluginDynamicFolder
     {
         private Timer _timer;
@@ -45,6 +49,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             var state = automation.Status();
             if (!state.SurfaceAvailable) return false;
+            // Codex: this key is View Changes. Open the review panel; the folder then closes.
+            if (String.Equals(state.Mode, "Codex", StringComparison.OrdinalIgnoreCase))
+            {
+                if (state.AvailableControls.HasFlag(DesktopControl.Changes)) DesktopNavigateCommand.OpenChanges(automation);
+                return false;
+            }
             if (!String.Equals(state.Mode, "ChatGPT", StringComparison.OrdinalIgnoreCase)) return false;
             search.Begin(); // Keep the retry/Use App page visible if the app's layout is unsupported.
             return true;
@@ -119,8 +129,21 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 .Select(p => ActionString.ToString(plugin, typeof(DesktopSearchCommand).FullName, p)).ToArray();
         public override IEnumerable<String> GetButtonPressActionNames(DeviceType _) =>
             DesktopServices.Declared ? Actions(this.Plugin.Name, DesktopServices.Search) : Array.Empty<String>();
-        public override String GetButtonDisplayName(PluginImageSize _) => "Find Chat";
-        public override BitmapImage GetButtonImage(PluginImageSize size) =>
-            KeyImage.Render(size, "Find Chat", KeyImage.Blue, "search");
+        public override String GetButtonDisplayName(PluginImageSize _) => Face(CurrentState()).Label;
+        public override BitmapImage GetButtonImage(PluginImageSize size)
+        {
+            var face = Face(CurrentState());
+            return KeyImage.Render(size, face.Label, KeyImage.Blue, face.Icon);
+        }
+
+        private static DesktopState CurrentState() =>
+            DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
+
+        internal static (String Label, String Icon) Face(DesktopState state)
+        {
+            if (state.Mode != "Codex") return ("Find Chat", "search");
+            var review = DesktopNavigateCommand.ReviewFace(state);
+            return (review.Label, review.Enabled ? review.Icon : review.Icon + "_idle");
+        }
     }
 }

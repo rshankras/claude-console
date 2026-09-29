@@ -1,3 +1,9 @@
+## Vizhi Desktop 0.17.22 — Find Chat opens again
+
+- Tools → Find Chat opens its search page. The key was a command asking Options+ to open the Find Chat folder, and Options+ ignores that request from a command, so the key stayed on "Opening". It is now the folder itself, which opens natively; in Codex mode the same key is View Changes, opening the review panel as before.
+- Installed Vizhi Home profiles from 0.17.18–0.17.21 switch that one key when the Tools page is still stock, with a `.before-0.17.22` backup.
+- A helper action with a missing value (for example no chat target) now reports it on the key and names it in the log, instead of failing to launch.
+
 ## Vizhi Desktop 0.17.21 — Run Tests gets its own icon
 
 - Run Tests (Codex Tasks) shows a flask instead of borrowing Write Tests' clipboard glyph, so the two keys are no longer mistaken for each other. Applies whenever Run Tests still has its stock icon; a custom icon is kept.

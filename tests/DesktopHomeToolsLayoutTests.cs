@@ -165,6 +165,53 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
         }
 
+        [Fact]
+        public void The_0_17_18_layout_only_swaps_its_find_command_for_the_folder()
+        {
+            var directory = Path.Combine(Path.GetTempPath(), "vizhi-layout-find-" + Guid.NewGuid());
+            try
+            {
+                var doc = PackagedProfile();
+                SetPage(doc, "Home", DesktopHomeToolsLayoutMigration.NewHome);
+                SetPage(doc, "Tools", DesktopHomeToolsLayoutMigration.ToolsWithFindCommand);
+                var file = Write(directory, doc);
+                var original = File.ReadAllText(file);
+
+                Assert.True(DesktopHomeToolsLayoutMigration.Upgrade(directory));
+                var after = JsonNode.Parse(File.ReadAllText(file));
+                Assert.Equal(DesktopHomeToolsLayoutMigration.NewHome, Page(after, "Home"));
+                Assert.Equal(DesktopHomeToolsLayoutMigration.NewTools, Page(after, "Tools"));
+                Assert.Equal(original, File.ReadAllText(file + ".before-0.17.22"));
+                Assert.False(DesktopHomeToolsLayoutMigration.Upgrade(directory));
+
+                // A customised Tools page keeps its keys, including the old command.
+                SetPage(doc, "Tools", DesktopHomeToolsLayoutMigration.ToolsWithFindCommand);
+                Controls(doc, "Tools").Single(c => (Int32)c["controlId"] == 8)["pressAction"] = "my-custom-action";
+                File.WriteAllText(file, doc.ToJsonString());
+                Assert.False(DesktopHomeToolsLayoutMigration.Upgrade(directory));
+            }
+            finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+        }
+
+        [Fact]
+        public void Find_chat_key_is_view_changes_in_codex()
+        {
+            Assert.Equal(("Find Chat", "search"), FindChatDynamicFolder.Face(new Desktop.DesktopState { Mode = "ChatGPT", Activity = Desktop.DesktopActivity.Ready }));
+            var codex = new Desktop.DesktopState { Mode = "Codex", Activity = Desktop.DesktopActivity.Ready, AvailableControls = Desktop.DesktopControl.Changes };
+            Assert.Equal(("View Changes", "diff"), FindChatDynamicFolder.Face(codex));
+            Assert.Equal(("View Changes", "diff_idle"), FindChatDynamicFolder.Face(new Desktop.DesktopState { Mode = "Codex", Activity = Desktop.DesktopActivity.Ready }));
+        }
+
+        [Fact]
+        public void A_helper_call_with_an_empty_argument_is_refused_before_launch()
+        {
+            var launched = 0;
+            var auto = new Desktop.MacDesktopAutomation(new Desktop.OpenAiDesktopAdapter()) { Runner = (_, _) => { launched++; return "{\"ok\":true}"; } };
+            Assert.False(auto.AttachPreparedFiles(Array.Empty<Desktop.DesktopFile>(), "ChatGPT", target: null, out var error));
+            Assert.Equal(0, launched);                    // never handed to Process.Start
+            Assert.Equal("missing-argument", error);
+        }
+
         [Theory]
         [InlineData("Home", 8)]    // e.g. Voice Chat replaced on Home
         [InlineData("Tools", 1)]   // e.g. a custom key where Approve was

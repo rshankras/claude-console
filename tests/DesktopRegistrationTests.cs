@@ -269,7 +269,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             // Getting around · content in and out · modes and menus.
             Assert.EndsWith("DesktopControlCommand___mode", pageTwo[0]);
             Assert.Contains("AllChatsDynamicFolder", pageTwo[1]);
-            Assert.EndsWith("DesktopNavigateCommand___find", pageTwo[2]);
+            Assert.Contains("FindChatDynamicFolder", pageTwo[2]);   // a folder binding: Options+ opens it natively
             Assert.Contains("DesktopFilesDynamicFolder", pageTwo[3]);
             Assert.EndsWith("DesktopCaptureCommand___clipboard", pageTwo[4]);
             Assert.EndsWith("DesktopCaptureCommand___copy", pageTwo[5]);

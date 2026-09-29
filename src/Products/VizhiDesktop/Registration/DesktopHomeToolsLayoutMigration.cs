@@ -51,12 +51,18 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
             Act("DesktopCaptureCommand", "screenshot"), Act("DesktopVoiceDraftCommand"), Act("DesktopComposerCommand", "send_stop"),
         }).ToArray();
 
-        internal static readonly String[] NewTools =
+        private static String[] Tools(String navigation) => new[]
         {
-            Act("DesktopControlCommand", "mode"), Folder("AllChatsDynamicFolder"), Act("DesktopNavigateCommand", "find"),
+            Act("DesktopControlCommand", "mode"), Folder("AllChatsDynamicFolder"), navigation,
             Folder("DesktopFilesDynamicFolder"), Act("DesktopCaptureCommand", "clipboard"), Act("DesktopCaptureCommand", "copy"),
             Act("DesktopVoiceChatCommand"), Folder("DesktopSavedPromptsDynamicFolder"), Folder("DesktopMoreDynamicFolder"),
         };
+
+        // 0.17.18 – 0.17.21 put the Find Chat / View Changes COMMAND here. Options+ ignores a
+        // command's request to open a folder, so in ChatGPT the key sat on "Opening"; 0.17.22
+        // binds the folder itself, which opens natively and handles Codex's View Changes.
+        internal static readonly String[] ToolsWithFindCommand = Tools(Act("DesktopNavigateCommand", "find"));
+        internal static readonly String[] NewTools = Tools(Folder("FindChatDynamicFolder"));
 
         internal static Boolean Upgrade(String applicationDirectory)
         {
@@ -84,14 +90,22 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
                 if (home == null || tools == null) return false;
                 var homeBindings = home.Select(c => (String)c["pressAction"]).ToArray();
                 var toolsBindings = tools.Select(c => (String)c["pressAction"]).ToArray();
-                if (!homeBindings.SequenceEqual(OldHome) || !StockTools.Any(stock => toolsBindings.SequenceEqual(stock))) return false;
-
-                for (var i = 0; i < 9; i++)
+                String backup;
+                if (homeBindings.SequenceEqual(OldHome) && StockTools.Any(stock => toolsBindings.SequenceEqual(stock)))
                 {
-                    home[i]["pressAction"] = NewHome[i];
-                    tools[i]["pressAction"] = NewTools[i];
+                    for (var i = 0; i < 9; i++)
+                    {
+                        home[i]["pressAction"] = NewHome[i];
+                        tools[i]["pressAction"] = NewTools[i];
+                    }
+                    backup = file + ".before-0.17.18";
                 }
-                var backup = file + ".before-0.17.18";
+                else if (toolsBindings.SequenceEqual(ToolsWithFindCommand))
+                {
+                    tools[2]["pressAction"] = NewTools[2];   // only the Find Chat key; the page is otherwise stock
+                    backup = file + ".before-0.17.22";
+                }
+                else return false;
                 if (!File.Exists(backup)) File.Copy(file, backup);
                 temp = file + ".layout-" + Guid.NewGuid().ToString("N");
                 File.WriteAllText(temp, doc.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));

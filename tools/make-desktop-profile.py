@@ -126,7 +126,7 @@ HOME = PAGE_ONE[:3] + [
 # content in and out (Attach, Paste, Copy Reply), then modes and menus. No key is blank in
 # either mode: a blank key reads as a failed plugin.
 TOOLS = [
-    act("DesktopControlCommand", "mode"), folder("AllChatsDynamicFolder"), act("DesktopNavigateCommand", "find"),
+    act("DesktopControlCommand", "mode"), folder("AllChatsDynamicFolder"), folder("FindChatDynamicFolder"),
     folder("DesktopFilesDynamicFolder"), act("DesktopCaptureCommand", "clipboard"), act("DesktopCaptureCommand", "copy"),
     act("DesktopVoiceChatCommand"), folder("DesktopSavedPromptsDynamicFolder"), folder("DesktopMoreDynamicFolder")]
 
