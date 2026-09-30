@@ -20,6 +20,12 @@ pack time); the device pass with the installed package is what remains before a 
   checked without sending a message or starting a voice call is listed for the device pass.
 
 ### Changed
+- **Windows: Screenshot picks from the app you were in.** Windows' region picker freezes the
+  screen and closes the moment another window is activated — switching to the browser under it
+  cancelled the capture (found in the device pass). The key now brings the window behind ChatGPT
+  forward before the picker opens, so the region is picked from that app; ChatGPT comes back to
+  the front with the image attached. To capture a different app, switch to it, then to ChatGPT,
+  then press Screenshot. Holding Screenshot still captures that window whole, with no picker.
 - **Windows: a press hands focus back.** Chromium performs a UI Automation press as a click,
   which brings the ChatGPT window to the front; the helper reports it and a second invocation
   gives the foreground back to the window that had it, so Approve from your editor leaves you

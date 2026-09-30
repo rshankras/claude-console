@@ -33,8 +33,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public Boolean? IsAppFrontmost()
         {
             // A process check only: passive polling backs off in other apps without asking
-            // Chromium to build or traverse its accessibility tree.
-            var json = this.Runner(BaseArgs("frontmost"), 1000);
+            // Chromium to build or traverse its accessibility tree. Two seconds, not one: a
+            // 14 MB single-file helper can take over a second to start after the machine has
+            // been idle, and a killed check reads as a false "not in front" (seen 2026-09-30).
+            var json = this.Runner(BaseArgs("frontmost"), 2000);
             return TryParseOk(json, out var root) && root.TryGetProperty("frontmost", out var front)
                 && front.ValueKind is JsonValueKind.True or JsonValueKind.False ? front.GetBoolean() : null;
         }

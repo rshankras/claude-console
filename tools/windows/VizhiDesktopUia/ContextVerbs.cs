@@ -305,12 +305,20 @@ internal static partial class Program
 
     private static Int32 ContextScreenshot()
     {
-        // The window behind the chat app is where the region will be picked from: remember it
-        // before the picker appears, so Return to App can lead back there.
+        // The window behind the chat app is where the region will be picked from: the app you
+        // were in before you switched to the chat. Windows' picker freezes the screen as it is
+        // and closes the moment another window is activated (switching apps under it cancels
+        // it — unlike the macOS picker), so bring that window forward BEFORE the picker opens.
+        // Remembered either way, so Return to App can lead back there.
         var front = Win32.GetForegroundWindow();
         var frontPid = Win32.PidOf(front);
         var source = _appPids.Contains(frontPid) ? WindowBehind()
             : Win32.IsAppWindow(front) ? new SourceWindow(frontPid, front.ToInt64(), Win32.WindowTitle(front)) : null;
+        if (source != null && _appPids.Contains(frontPid))
+        {
+            // A fresh, UIA-free process is allowed to move the foreground (see restore-front).
+            Raise(new IntPtr(source.Hwnd));
+        }
         var image = CaptureRegion();
         if (image == null) return Fail("cancelled", ExitNoMatch);
         var result = new Dictionary<String, Object?> { ["image"] = image, ["appName"] = source == null ? "Source app" : AppName(source.Pid) };
