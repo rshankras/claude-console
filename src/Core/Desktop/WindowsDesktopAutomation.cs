@@ -407,13 +407,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             if (source != null) args.AddRange(new[] { "--source", source });
             if (text != null) args.AddRange(new[] { "--text", text });
             var json = this.Runner(args, action == "screenshot" ? 130000 : 6000);
+            var result = DesktopCaptureResult.Parse(json);
             if (action is "screenshot" or "window")
             {
                 // What the picker was shown over is the whole point on Windows; keep the record.
                 var record = json == null ? "no output" : json.Length > 400 ? json[..400] : json;
                 PluginLog.Info($"WindowsDesktopAutomation.Context({action}): {record}");
             }
-            return DesktopCaptureResult.Parse(json);
+            else
+            {
+                // Outcome only: the copied answer and the clipboard are the user's.
+                PluginLog.Info($"WindowsDesktopAutomation.Context({action}): {(result.Ok ? "ok" : result.Error ?? "no output")}"
+                    + (result.Ok && !String.IsNullOrEmpty(result.AppName) ? $" (source app: {result.AppName})" : ""));
+            }
+            return result;
         }
 
         private void AddReplyLabels(List<String> args)
