@@ -27,6 +27,14 @@ Automation through its COM interface (`UiaInterop.cs`) rather than the WPF wrapp
   under it. `status` reports `surface:false` for that, never an empty page; the keys read Hidden.
 - A cache request scoped to the subtree fetches the whole tree in one cross-process call:
   ~320 ms for 365 nodes, against ~2 s walking it property by property.
+- **A UIA press activates the app's window.** Chromium performs Invoke as a click and a click
+  focuses; the Mac's AXPress does not. Verified with the terminal in front: after `press`,
+  ChatGPT is in front. The process that made the UIA call is then refused
+  `SetForegroundWindow`, while a fresh process is accepted at once — so `press` reports
+  `frontMoved` and `frontBeforeHwnd`, and the client runs `restore-front` as a second
+  invocation (~150 ms). The conversation key skips that, since it shows the chat on purpose.
+- The composer accepts a direct value write (`write` → ValuePattern.SetValue, ~600 ms), after
+  which Send appears and `canSend` reads true.
 
 ## Running it by hand
 

@@ -21,7 +21,11 @@
 //                                           content is not being served (screen locked, window
 //                                           hidden) — report it, never guess
 //   press   --label <text>... [--expect-near <card>] [--conversation <marker>] [--expect-mode <mode>]
+//           -> {"matched":..,"frontMoved":bool,"frontBeforeHwnd":N}: a press is a click to
+//           Chromium and a click activates the window; frontMoved says the app took the
+//           foreground from another window, and frontBeforeHwnd is what restore-front needs.
 //   press-exact --label <text>...           one enabled button with exactly that label
+//   restore-front --hwnd <N>                hand the foreground back after a press moved it
 //   write   --text <text> [--send-label <label>]
 //   focus                                   the ONE deliberate foreground activation
 //
@@ -84,6 +88,11 @@ internal static class Program
                 // Passive polling backs off while another app is in front without asking
                 // Chromium to build or traverse its accessibility tree.
                 return Emit(new Dictionary<String, Object?> { ["frontmost"] = pids.Contains(ForegroundPid()) });
+            }
+
+            if (verb == "restore-front")
+            {
+                return RestoreFront(Value(options, "--hwnd"), pids);
             }
 
             if (verb == "inspect" && Values(options, "--window").Count == 0 && Values(options, "--process").Count == 0)
@@ -568,17 +577,75 @@ internal static class Program
             return Emit(new Dictionary<String, Object?> { ["matched"] = candidate.Text, ["dry"] = true });
         }
 
+        var beforeWindow = GetForegroundWindow();
         var before = ProcessName(ForegroundPid());
         if (!Invoke(candidate))
         {
             return Fail("press-failed", ExitError);
         }
+
+        // Chromium performs a UIA press as a click, and a click activates its window — unlike
+        // the macOS AXPress, which leaves the front app alone. Report the move so the caller
+        // can hand focus back with restore-front; this process cannot (see there).
+        var afterPid = ForegroundPid();
+        var beforePid = ForegroundPidOf(beforeWindow);
         return Emit(new Dictionary<String, Object?>
         {
             ["matched"] = candidate.Text,
             ["frontBefore"] = before,
-            ["frontAfter"] = ProcessName(ForegroundPid()),
+            ["frontAfter"] = ProcessName(afterPid),
+            ["frontBeforeHwnd"] = beforeWindow.ToInt64(),
+            ["frontMoved"] = beforeWindow != IntPtr.Zero && beforePid != target.Pid && afterPid == target.Pid,
         });
+    }
+
+    /// <summary>
+    /// Give the foreground back to the window named by --hwnd, as reported by a press's
+    /// frontBeforeHwnd. A separate invocation on purpose: measured live, the process that made
+    /// the UIA call is refused SetForegroundWindow afterwards and a fresh one is accepted at
+    /// once. Touches no UIA and synthesises no input.
+    /// </summary>
+    private static Int32 RestoreFront(String? handle, HashSet<Int32> appPids)
+    {
+        if (!Int64.TryParse(handle, out var raw) || raw == 0)
+        {
+            return Fail("no --hwnd given", ExitNoMatch);
+        }
+        var previous = new IntPtr(raw);
+        if (!IsWindowVisible(previous))
+        {
+            return Fail("window-gone", ExitNoMatch);
+        }
+        if (GetForegroundWindow() == previous)
+        {
+            return Emit(new Dictionary<String, Object?> { ["restored"] = false, ["already"] = true });
+        }
+        // Only hand focus back from the app this helper drives: never move it off whatever
+        // else the user has since switched to.
+        if (!appPids.Contains(ForegroundPid()))
+        {
+            return Emit(new Dictionary<String, Object?> { ["restored"] = false, ["frontElsewhere"] = true });
+        }
+        var accepted = SetForegroundWindow(previous);
+        if (!accepted)
+        {
+            SwitchToThisWindow(previous, true);
+        }
+        for (var attempt = 0; attempt < 6; attempt++)
+        {
+            Thread.Sleep(50);
+            if (GetForegroundWindow() == previous)
+            {
+                return Emit(new Dictionary<String, Object?> { ["restored"] = true, ["accepted"] = accepted });
+            }
+        }
+        return Fail("restore-refused", ExitError);
+    }
+
+    private static Int32 ForegroundPidOf(IntPtr hwnd)
+    {
+        GetWindowThreadProcessId(hwnd, out var pid);
+        return (Int32)pid;
     }
 
     /// <summary>

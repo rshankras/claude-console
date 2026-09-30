@@ -74,6 +74,37 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void A_press_that_activated_the_app_hands_the_foreground_back_from_a_fresh_process()
+        {
+            var (auto, calls) = Build(
+                "{\"ok\":true,\"matched\":\"Allow once\",\"frontMoved\":true,\"frontBeforeHwnd\":7014446}",
+                "{\"ok\":true,\"restored\":true}");
+            Assert.True(auto.PressGuarded(new[] { "Allow once" }, "npm install", out var matched, out _));
+            Assert.Equal("Allow once", matched);
+            Assert.Equal(2, calls.Count);
+            Assert.Equal("restore-front", calls[1][0]);
+            Assert.Equal("7014446", calls[1][calls[1].IndexOf("--hwnd") + 1]);
+            Assert.Contains("ChatGPT", calls[1]);
+
+            // Already in front, or the app had the foreground before: nothing to hand back.
+            var (still, stillCalls) = Build("{\"ok\":true,\"matched\":\"Stop\",\"frontMoved\":false,\"frontBeforeHwnd\":1}");
+            Assert.True(still.PressExact(new[] { "Stop" }));
+            Assert.Single(stillCalls);
+
+            // A refused restore is logged, never a failed press: the press already landed.
+            var (refused, refusedCalls) = Build(
+                "{\"ok\":true,\"matched\":\"Deny\",\"frontMoved\":true,\"frontBeforeHwnd\":5}",
+                "{\"ok\":false,\"error\":\"restore-refused\"}");
+            Assert.True(refused.Press(new[] { "Deny" }, out _));
+            Assert.Equal(2, refusedCalls.Count);
+
+            // The conversation key brings the app forward on purpose: no hand-back.
+            var (open, openCalls) = Build("{\"ok\":true,\"matched\":\"Plan\",\"frontMoved\":true,\"frontBeforeHwnd\":5}");
+            Assert.True(open.PressConversation("Plan"));
+            Assert.Single(openCalls);
+        }
+
+        [Fact]
         public void Frontmost_is_a_process_check_that_degrades_to_unknown()
         {
             var (auto, calls) = Build("{\"ok\":true,\"frontmost\":false}", "", "{\"ok\":false,\"error\":\"app-not-running\"}");
@@ -135,7 +166,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var source = File.ReadAllText(RepoFile(
                 "tools", "windows", "VizhiDesktopUia", "Program.cs"));
 
-            foreach (var verb in new[] { "inspect", "frontmost", "status", "press", "press-exact", "write", "focus" })
+            foreach (var verb in new[] { "inspect", "frontmost", "status", "press", "press-exact", "restore-front", "write", "focus" })
             {
                 Assert.Contains($"\"{verb}\"", source);
             }
