@@ -31,10 +31,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         // Window-title discovery is deliberately weaker than an Options+ application binding,
         // but safe for reconnaissance and dev testing: the helper refuses ambiguous matches.
-        // Replace/augment with the confirmed executable identity after the Windows capture.
         public String[] WindowsWindowTitles => new[] { "ChatGPT", "Codex" };
 
-        public String[] WindowsProcessNames => Array.Empty<String>(); // filled from W0 inspect output
+        // Confirmed on the live app, 2026-09-30 (W0): the Windows app is the Store package
+        // OpenAI.Codex (family OpenAI.Codex_2p2nqsd0c76g0, display name "ChatGPT"), one package
+        // carrying both surfaces like the Mac bundle, whose executable is app\ChatGPT.exe. One
+        // process of that name owns the window; the others are Chromium's helpers.
+        public String[] WindowsProcessNames => new[] { "ChatGPT" };
+
+        /// <summary>The Store package family the app installs as; what the install probe looks for.</summary>
+        public static String WindowsPackageFamily => "OpenAI.Codex_2p2nqsd0c76g0";
 
         public String[] ApproveLabels => new[] { "Allow once" };
 

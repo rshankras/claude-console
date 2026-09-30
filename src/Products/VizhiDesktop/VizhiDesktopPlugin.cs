@@ -107,9 +107,8 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             if (OperatingSystem.IsWindows() && _app.WindowsProcessNames.Length == 0)
             {
-                // Do not start polling or self-register a guessed application. The standalone
-                // helper's inspect verb is the only enabled Windows path until W0 supplies the
-                // real executable name.
+                // Never poll for, or self-register, a guessed application: an adapter without a
+                // confirmed executable name keeps its product disabled on Windows.
                 PluginLog.Warning("VizhiDesktopPlugin: Windows app identity unconfirmed — run vizhi-desktop-uia inspect; plugin remains disabled");
                 return;
             }

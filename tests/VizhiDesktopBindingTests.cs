@@ -54,29 +54,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void MacOS_names_the_real_process_and_windows_deliberately_names_none()
+        public void Both_platforms_name_the_real_process()
         {
+            // The Mac bundle's process and the Windows Store package's ChatGPT.exe were both
+            // read off the installed app, and agree with the adapter the helper is aimed at.
             var name = Invoke("GetProcessName");
-
-            if (OperatingSystem.IsWindows())
-            {
-                // Not a guess, not a placeholder: empty until recon W0 finds the real identity.
-                Assert.Equal("", name);
-            }
-            else
-            {
-                Assert.Equal("ChatGPT", name);
-                Assert.DoesNotContain(".exe", name, StringComparison.OrdinalIgnoreCase);
-            }
+            Assert.Equal("ChatGPT", name);
+            Assert.DoesNotContain(".exe", name, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(name, Assert.Single(new Desktop.OpenAiDesktopAdapter().WindowsProcessNames));
         }
 
         [Fact]
-        public void The_install_probe_answers_honestly_from_disk()
+        public void The_install_probe_answers_honestly_from_the_machine()
         {
             var app = new VizhiDesktopApplication();
             var status = app.GetApplicationStatus();
 
-            if (OperatingSystem.IsMacOS() && Directory.Exists("/Applications/ChatGPT.app"))
+            if ((OperatingSystem.IsMacOS() && Directory.Exists("/Applications/ChatGPT.app"))
+                || (OperatingSystem.IsWindows() && VizhiDesktopApplication.WindowsPackageInstalled()))
             {
                 Assert.Equal(ClientApplicationStatus.Installed, status);
             }
@@ -85,6 +80,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 // Unlike Terminal, this app may genuinely be absent — and unlike the terminal
                 // products, "Unknown" is not an honest answer for an installable app.
                 Assert.Equal(ClientApplicationStatus.NotInstalled, status);
+            }
+        }
+
+        [Fact]
+        public void The_windows_probe_looks_for_the_store_package_family()
+        {
+            // Package folders sit under WindowsApps, which a plain process may not list; the
+            // per-user package repository is the readable record. The family name is the
+            // identity, not the version in between.
+            var family = Desktop.OpenAiDesktopAdapter.WindowsPackageFamily;
+            Assert.Equal("OpenAI.Codex_2p2nqsd0c76g0", family);
+            if (!OperatingSystem.IsWindows())
+            {
+                Assert.False(VizhiDesktopApplication.WindowsPackageInstalled());
             }
         }
     }

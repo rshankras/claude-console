@@ -47,15 +47,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         String MacProcessName { get; }
 
         /// <summary>
-        /// Visible top-level window titles used to discover the app on Windows without guessing
-        /// an executable identity. The UIA reconnaissance verb reports the real process name;
-        /// packaging remains Windows-disabled until that identity is confirmed on hardware.
+        /// Visible top-level window titles used to discover the app on Windows without an
+        /// executable identity — the helper's reconnaissance path only. Plugin actions never
+        /// use it: a browser tab titled like the app would match too.
         /// </summary>
         String[] WindowsWindowTitles { get; }
 
         /// <summary>
-        /// Confirmed Windows executable names without .exe. Empty until reconnaissance proves
-        /// them; the helper then uses visible titles and refuses ambiguity instead of guessing.
+        /// Windows executable names without .exe, read off the installed app, never guessed.
+        /// Empty means the identity is unconfirmed and the plugin stays disabled on Windows.
         /// </summary>
         String[] WindowsProcessNames { get; }
 
