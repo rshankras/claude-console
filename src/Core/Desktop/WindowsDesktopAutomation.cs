@@ -66,6 +66,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             AddContextLabels(args);
             AddEach(args, "--voice-start", _app.StartVoiceLabels);
             AddEach(args, "--voice-end", _app.EndVoiceLabels);
+            this.AddReplyLabels(args);
             AddOne(args, "--send-label", _app.SendLabel);
 
             // The cached subtree fetch measured ~320 ms for the live app's 365 nodes; the margin
@@ -132,6 +133,83 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             {
                 PluginLog.Warning($"WindowsDesktopAutomation: the press activated the app and focus could not be handed back: {Describe(json)}");
             }
+        }
+
+        public Boolean PressInMode(String[] labels, String mode, out String matched)
+        {
+            matched = null;
+            if (String.IsNullOrEmpty(mode) || String.IsNullOrEmpty(_app.ModePrefix) || labels?.Length is not > 0)
+            {
+                return false;
+            }
+            var args = BaseArgs("press");
+            AddOne(args, "--mode-prefix", _app.ModePrefix);
+            AddOne(args, "--expect-mode", mode);
+            AddEach(args, "--label", labels);
+            if (!TryParseOk(this.Runner(args, 4000), out var root)) { return false; }
+            matched = ReadString(root, "matched");
+            this.KeepFront(root);
+            return true;
+        }
+
+        public Boolean SetVoiceChat(Boolean active, out String error)
+        {
+            if (_app.StartVoiceLabels.Length == 0 || _app.EndVoiceLabels.Length == 0)
+            {
+                error = "unsupported";
+                return false;
+            }
+            var args = BaseArgs("voice");
+            AddOne(args, "--action", active ? "start" : "end");
+            AddEach(args, "--voice-start", _app.StartVoiceLabels);
+            AddEach(args, "--voice-end", _app.EndVoiceLabels);
+            var json = this.Runner(args, 4000);
+            error = TryParseOk(json, out _) ? null : Describe(json);
+            return error == null;
+        }
+
+        internal Action<String> ChangesTrace { get; set; }
+
+        public Boolean OpenChanges(out String error)
+        {
+            void Trace(String code) { try { ChangesTrace?.Invoke(DesktopChangesTrace.SafeCode(code)); } catch { } }
+            Trace("requested");
+            var args = BaseArgs("open-panel");
+            AddOne(args, "--mode-prefix", _app.ModePrefix);
+            AddOne(args, "--expect-mode", "Codex");
+            AddEach(args, "--panel-open", _app.ShowDiffLabels);
+            AddEach(args, "--panel-visible", _app.ChangesPanelLabels);
+            AddOne(args, "--conv-marker", _app.ConversationItemMarker);
+            var json = this.Runner(args, 5000);
+            if (!TryParseOk(json, out var result) || !result.TryGetProperty("opened", out var opened) || opened.ValueKind != JsonValueKind.True)
+            {
+                error = TryParseOk(json, out _) ? "panel-unconfirmed" : DesktopChangesTrace.ErrorFrom(json);
+                Trace(error);
+                return false;
+            }
+            Trace(result.TryGetProperty("alreadyOpen", out var already) && already.ValueKind == JsonValueKind.True ? "already-open" : "opened");
+            error = null;
+            return true;
+        }
+
+        public DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null)
+        {
+            var args = BaseArgs("search");
+            AddOne(args, "--action", action);
+            AddOne(args, "--mode-prefix", _app.ModePrefix);
+            AddOne(args, "--expect-mode", "ChatGPT");
+            AddEach(args, "--search", _app.ControlLabels(DesktopControl.Search));
+            AddEach(args, "--search-field", _app.SearchFieldLabels);
+            AddEach(args, "--result-host", _app.SearchResultHosts);
+            AddEach(args, "--result-path", _app.SearchResultPaths);
+            // An empty query is a real value here (the field just opened), so these are added
+            // whenever the caller supplied them, empty or not.
+            if (target != null) args.AddRange(new[] { "--target", target });
+            if (query != null) args.AddRange(new[] { "--query", query });
+            if (value != null) args.AddRange(new[] { "--value", value });
+            if (title != null) args.AddRange(new[] { "--title", title });
+            if (origin != null) args.AddRange(new[] { "--origin", origin });
+            return DesktopSearchSnapshot.Parse(this.Runner(args, 5000));
         }
 
         public Boolean PressConversation(String title)
@@ -222,6 +300,110 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         public Boolean WritePreparedPrompt(String text, String mode, String target, Boolean send, out String error)
             => this.WriteComposer(text, send, false, out error, mode, target);
+
+        public Boolean SupportsAppend => true;
+
+        private List<String> AppendArgs(String verb, String mode)
+        {
+            var args = BaseArgs(verb);
+            AddOne(args, "--composer-send-label", _app.SendLabel);
+            this.AddDraftTarget(args, mode);
+            AddEach(args, "--draft-placeholder", _app.ComposerPlaceholderLabels);
+            AddEach(args, "--stop", _app.StopLabels);
+            AddEach(args, "--approve", _app.ApproveLabels);
+            AddEach(args, "--voice-end", _app.EndVoiceLabels);
+            return args;
+        }
+
+        public DesktopAppendTarget PrepareAppend(String mode, out String error)
+        {
+            var json = this.Runner(this.AppendArgs("append-target", mode), 4000);
+            error = TryParseOk(json, out var root) ? null : Describe(json);
+            if (error != null) return null;
+            var target = ReadString(root, "target");
+            var fingerprint = ReadString(root, "fingerprint");
+            if (String.IsNullOrEmpty(target) || String.IsNullOrEmpty(fingerprint))
+            { error = "composer-target-changed"; return null; }
+            return new() { Target = target, Fingerprint = fingerprint,
+                HasContent = root.TryGetProperty("hasContent", out var content) && content.ValueKind == JsonValueKind.True };
+        }
+
+        public Boolean AppendPreparedDraft(String text, String mode, DesktopAppendTarget target, Boolean retry, out String error)
+        {
+            if (target == null || String.IsNullOrWhiteSpace(text)) { error = "empty-text"; return false; }
+            var args = this.AppendArgs("append", mode);
+            args.AddRange(new[] { "--text", text, "--expect-target", target.Target, "--expect-draft", target.Fingerprint });
+            if (retry) args.Add("--accept-existing");
+            var json = this.Runner(args, 8000);
+            error = TryParseOk(json, out _) ? null : Describe(json);
+            return error == null;
+        }
+
+        public Boolean AttachPreparedImage(String path, String mode, String target, out String error)
+        {
+            var args = this.AppendArgs("attach-image", mode);
+            args.AddRange(new[] { "--image", path, "--expect-target", target });
+            var json = this.Runner(args, 6000);
+            error = TryParseOk(json, out _) ? null : Describe(json);
+            if (error != null && !TryReadHelperError(json)) error = "attachment-unconfirmed";
+            return error == null;
+        }
+
+        public Boolean AttachPreparedFiles(DesktopFile[] files, String mode, String target, out String error)
+        {
+            var args = this.AppendArgs("attach-files", mode);
+            args.AddRange(new[] { "--expect-target", target, "--files", JsonSerializer.Serialize(files) });
+            var json = this.Runner(args, 8000);
+            error = TryParseOk(json, out _) ? null : Describe(json);
+            if (error != null && !TryReadHelperError(json)) error = "attachment-unconfirmed";
+            return error == null;
+        }
+
+        private static Boolean TryReadHelperError(String json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json ?? "{}");
+                return doc.RootElement.TryGetProperty("error", out var value) && value.ValueKind == JsonValueKind.String
+                    && !String.IsNullOrEmpty(value.GetString());
+            }
+            catch (JsonException) { return false; }
+        }
+
+        /// <summary>
+        /// Context in and out: copy the latest answer, capture the clipboard, a selection, a
+        /// screen region or the window behind the app, return to the source app, paste a reply
+        /// there. The same verbs and results as macOS; on Windows the region picker is the
+        /// shared toolkit's snip, run by the helper.
+        /// </summary>
+        public DesktopCaptureResult Context(String action, String source = null, String text = null)
+        {
+            var args = BaseArgs(action == "copy" ? "copy-reply" : "context-" + action);
+            if (action == "copy")
+            {
+                this.AddReplyLabels(args);
+                AddEach(args, "--stop", _app.StopLabels);
+                AddEach(args, "--approve", _app.ApproveLabels);
+                AddEach(args, "--voice-end", _app.EndVoiceLabels);
+                AddEach(args, "--state-running", _app.ConversationRunningTexts);
+                AddOne(args, "--state-awaiting", _app.ConversationAwaitingText);
+                AddOne(args, "--conv-marker", _app.ConversationItemMarker);
+                AddOne(args, "--mode-prefix", _app.ModePrefix);
+            }
+            if (source != null) args.AddRange(new[] { "--source", source });
+            if (text != null) args.AddRange(new[] { "--text", text });
+            return DesktopCaptureResult.Parse(this.Runner(args, action == "screenshot" ? 130000 : 6000));
+        }
+
+        private void AddReplyLabels(List<String> args)
+        {
+            AddEach(args, "--copy-response", _app.CopyResponseLabels);
+            AddEach(args, "--copy-button", _app.CopyButtonLabels);
+            AddEach(args, "--copy-completed", _app.CopyCompletedLabels);
+            AddEach(args, "--response-action", _app.ResponseActionLabels);
+            AddEach(args, "--assistant-heading", _app.AssistantHeadingLabels);
+            AddEach(args, "--user-heading", _app.UserHeadingLabels);
+        }
 
         public Boolean SendComposer(out String error)
             => this.SendPreparedDraft(null, null, null, out error);

@@ -59,7 +59,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 Index = i, Depth = n.Depth, Role = n.Role, Text = n.Text, Labels = n.Labels, Pressable = n.Pressable,
                 Enabled = n.Enabled, AriaRole = n.AriaRole, AriaProperties = n.AriaProperties, Value = n.Value,
-                HasValue = n.HasValue, ReadOnly = n.ReadOnly, Selected = n.Selected,
+                HasValue = n.HasValue, ReadOnly = n.ReadOnly, Selected = n.Selected, Bounds = n.Bounds,
+                RuntimeId = n.RuntimeId.Length > 0 ? n.RuntimeId : "r" + i,
             }).ToList();
         }
 
@@ -361,6 +362,121 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.False(UiaMatching.ComposerBlocked(Window(new[] { N(3, "Button", "Stop", pressable: true, enabled: false) }), blocking));
             Assert.True(UiaMatching.ComposerBlocked(Window(new[] { N(3, "Group", "Save?", aria: "alertdialog") }), blocking));
             Assert.True(UiaMatching.ComposerBlocked(Window(new[] { N(3, "Window", "Open", pressable: false) }), blocking));
+        }
+
+        [Fact]
+        public void An_append_is_confirmed_by_the_original_fingerprint_and_a_real_separator()
+        {
+            var before = UiaMatching.Fingerprint("first line");
+            Assert.True(UiaMatching.AppendedDraftMatches("first line\n\nsecond", before, "second"));
+            Assert.True(UiaMatching.AppendedDraftMatches("first line\nsecond\n", before, " second "));
+            Assert.False(UiaMatching.AppendedDraftMatches("first linesecond", before, "second"));      // no separator
+            Assert.False(UiaMatching.AppendedDraftMatches("other\n\nsecond", before, "second"));       // original changed
+            Assert.False(UiaMatching.AppendedDraftMatches("first line\n\nsecond", before, ""));
+            // Into an empty composer there is nothing to separate from.
+            Assert.True(UiaMatching.AppendedDraftMatches("second", UiaMatching.Fingerprint(""), "second"));
+        }
+
+        private static readonly UiaMatching.ReplyRules Rules = new(
+            new[] { "ChatGPT said:" }, new[] { "You said:" }, new[] { "Copy response" }, new[] { "Copy" }, new[] { "Copied" },
+            new[] { "Fork chat from here", "Rate response", "More actions" }, new[] { "Stop" }, new[] { "Stop voice chat" },
+            new[] { "Allow once" }, "Pin chat", new[] { "Awaiting approval" }, new[] { "Working" });
+
+        private static UiaNode B(Int32 depth, String text, Double x, Double y = 100, Double w = 24, Double h = 24) => new UiaNode
+        {
+            Depth = depth, Role = "Button", Text = text, Labels = new[] { text }, Pressable = true, Enabled = true,
+            AriaRole = "button", Bounds = new[] { x, y, w, h }, RuntimeId = "b" + text.GetHashCode(),
+        };
+
+        // The live Windows layout (2026-09-30): each footer button in its own pressable group,
+        // headings as text with an aria heading role.
+        private static IEnumerable<UiaNode> Turn(Boolean assistant, String body, Boolean footer = true)
+        {
+            yield return N(4, "Text", assistant ? "ChatGPT said:" : "You said:", aria: "heading");
+            yield return N(4, "Group", "");
+            yield return N(5, "Text", body, aria: "description");
+            if (!footer) yield break;
+            yield return N(4, "Group", "", pressable: true);
+            yield return B(5, assistant ? "Copy" : "Copy message", 10);
+            if (assistant)
+            {
+                yield return N(4, "Group", "", pressable: true);
+                yield return B(5, "Rate response", 40);
+                yield return N(4, "Group", "", pressable: true);
+                yield return B(5, "Fork chat from here", 70);
+            }
+        }
+
+        [Fact]
+        public void Copy_reply_finds_the_latest_answer_through_the_wrapped_footer_row()
+        {
+            var nodes = Window(Turn(false, "question"), Turn(true, "answer one"), Turn(false, "follow-up"), Turn(true, "answer two"));
+            var (node, error) = UiaMatching.ReplyTarget(nodes, Rules);
+            Assert.Equal("", error);
+            Assert.NotNull(node);
+            // The last answer's Copy, not the first's: same label, different row.
+            Assert.Equal("Copy", node.Text);
+            Assert.Equal(nodes.Count - 5, UiaMatching.IndexOf(nodes, node));
+        }
+
+        [Fact]
+        public void Copy_reply_refuses_when_the_latest_turn_is_the_user_or_a_task_is_live()
+        {
+            Assert.Equal("no-answer", UiaMatching.ReplyTarget(Window(Turn(true, "a"), Turn(false, "b")), Rules).Error);
+            Assert.Equal("reply-unrecognized", UiaMatching.ReplyTarget(Window(new[] { N(3, "Group", "") }), Rules).Error);
+            Assert.Equal("answer-not-ready", UiaMatching.ReplyTarget(Window(Turn(true, "a"), new[] { N(3, "Button", "Stop", pressable: true) }), Rules).Error);
+            Assert.Equal("reply-dialog-open", UiaMatching.ReplyTarget(Window(Turn(true, "a"), new[] { N(3, "Group", "Confirm", aria: "dialog") }), Rules).Error);
+            Assert.Equal("reply-copy-not-found", UiaMatching.ReplyTarget(Window(Turn(true, "a", footer: false)), Rules).Error);
+            // A running open conversation is not a finished answer.
+            var running = Window(Row(3, "A", "Working", props: "current=page"), Turn(true, "a"));
+            Assert.Equal("answer-not-ready", UiaMatching.ReplyTarget(running, Rules).Error);
+        }
+
+        [Fact]
+        public void A_generic_copy_needs_two_distinct_actions_beside_it_in_one_compact_row()
+        {
+            // Copy with only one action: not a footer.
+            var one = Window(new[] { N(3, "Text", "ChatGPT said:", aria: "heading"), N(3, "Group", "", pressable: true), B(4, "Copy", 10),
+                N(3, "Group", "", pressable: true), B(4, "Rate response", 40) });
+            Assert.Equal("reply-action-row-unrecognized", UiaMatching.ReplyTarget(one, Rules).Error);
+            // Two actions but on another line: not a row.
+            var apart = Window(new[] { N(3, "Text", "ChatGPT said:", aria: "heading"), N(3, "Group", "", pressable: true), B(4, "Copy", 10),
+                N(3, "Group", "", pressable: true), B(4, "Rate response", 40), N(3, "Group", "", pressable: true), B(4, "Fork chat from here", 70, y: 200) });
+            Assert.Equal("reply-action-row-unrecognized", UiaMatching.ReplyTarget(apart, Rules).Error);
+            Assert.False(UiaMatching.SameReplyControlRow(new[] { new[] { 0d, 0, 24, 24 }, new[] { 30d, 0, 24, 24 }, new[] { 300d, 0, 24, 24 } }));
+            Assert.True(UiaMatching.SameReplyControlRow(new[] { new[] { 0d, 0, 24, 24 }, new[] { 30d, 2, 24, 24 }, new[] { 60d, 0, 24, 30 } }));
+        }
+
+        [Fact]
+        public void Search_rules_recognise_the_command_menu_and_its_list_items()
+        {
+            var names = new[] { "Search", "Search chats" };
+            var field = new UiaNode { Role = "ComboBox", Text = "Command menu", Labels = new[] { "Command menu", "Search chats" }, AriaRole = "combobox", HasValue = true, Pressable = true };
+            Assert.True(UiaMatching.IsSearchField(field, names));
+            Assert.False(UiaMatching.IsSearchField(N(3, "Edit", "Work with ChatGPT", aria: "textbox", value: ""), names));
+            Assert.True(UiaMatching.IsSearchField(new UiaNode { Role = "Edit", AriaRole = "searchbox" }, names));
+
+            var nodes = Window(new[]
+            {
+                N(3, "Window", "Command menu", aria: "dialog"),
+                N(4, "ComboBox", "Command menu", aria: "combobox", value: "vizhi", labels: new[] { "Command menu", "Search chats" }),
+                N(4, "List", "Suggestions"),
+                N(5, "ListItem", "Read vizhi handoff claude-console Alt+1 snippet", pressable: true, aria: "option"),
+                N(6, "Group", "", pressable: true),
+                N(7, "Text", "Read vizhi handoff", aria: "description"),
+                N(5, "ListItem", "Other chat Alt+2", pressable: true, aria: "option"),
+                N(6, "Text", "Other chat", aria: "description"),
+                N(5, "ListItem", "Other chat Alt+2", pressable: true, aria: "option"),   // duplicate: dropped
+                N(5, "Hyperlink", "A link", pressable: true, value: "https://chatgpt.com/c/abc"),
+                N(5, "Hyperlink", "Not a chat", pressable: true, value: "https://example.com/c/abc"),
+            });
+            var fieldIndex = nodes.FindIndex(n => n.Role == "ComboBox");
+            Assert.Equal(nodes.FindIndex(n => n.AriaRole == "dialog"), UiaMatching.SearchContainer(fieldIndex, nodes));
+            var results = UiaMatching.SearchResults(nodes, "vizhi", new[] { "chatgpt.com" }, new[] { "/c/" });
+            Assert.Equal(new[] { "Read vizhi handoff", "A link" }, results.Select(r => r.Title));
+            Assert.StartsWith("item:", results[0].Id);
+            Assert.Equal("https://chatgpt.com/c/abc", results[1].Id);
+            Assert.Empty(UiaMatching.SearchResults(nodes, "", new[] { "chatgpt.com" }, new[] { "/c/" }));
         }
 
         [Fact]

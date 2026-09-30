@@ -12,7 +12,9 @@
 //
 // The JSON contract mirrors the macOS helper field for field, so the monitor and every key
 // consume the same snapshot on both operating systems. The matching rules live in
-// UiaMatching.cs, where the test suite can reach them.
+// UiaMatching.cs, where the test suite can reach them. Verbs are spread over the partial files
+// by concern: this one (target, scan, status, press, focus), ComposerVerbs.cs (drafts, writes,
+// send, attachments), ContextVerbs.cs (clipboard, screenshots, Copy Reply) and SearchVerbs.cs.
 //
 // Verbs (each takes --process <exe name>... --require-process; --window <title> is recon only):
 //   inspect [--all]                         candidate windows, or the target's control tree
@@ -26,12 +28,18 @@
 //           foreground from another window, and frontBeforeHwnd is what restore-front needs.
 //   press-exact --label <text>...           one enabled button with exactly that label
 //   restore-front --hwnd <N>                hand the foreground back after a press moved it
+//   voice   --action start|end --voice-start <label>... --voice-end <label>...
+//   open-panel --expect-mode <m> --mode-prefix <p> --panel-open <label>... --panel-visible <label>...
 //   draft-target --mode-prefix <p> --expect-mode <m> [--conv-marker <m>] [--allow-existing]
 //           -> {"target":<token>} naming this window, mode, editor and open conversation
+//   append-target (same) -> {"target","fingerprint","hasContent"} of the current draft
 //   write   --text <text> [--expect-target <token>] [--accept-existing] [--send-label <label>]
 //           -> {"method":"value"|"existing","sent":bool}; into an EMPTY composer only
+//   append  --text <text> --expect-target <token> --expect-draft <fingerprint> [--accept-existing]
 //   send    --send-label <label> [--expect-target <token>] [--expect-text <text>]
-//           -> {"sent":true}; submits the existing draft, refuses an ambiguous target
+//   attach-image --image <png> / attach-files --files <json>   (both need --expect-target)
+//   context-selection|clipboard|screenshot|window|return|paste, copy-reply, search: see the
+//           other files
 //   focus                                   the ONE deliberate foreground activation
 //
 // Exit codes: 0 ok · 3 app not running · 4 no match / not found · 5 UIA error · 6 ambiguous or changed.
@@ -45,7 +53,7 @@ using System.Text.Json;
 namespace VizhiDesktopUia;
 
 [SupportedOSPlatform("windows")]
-internal static class Program
+internal static partial class Program
 {
     private const Int32 MaxDepth = 40;
     private const Int32 MaxNodes = 4000;
@@ -56,12 +64,12 @@ internal static class Program
 
     private static readonly Int32[] CachedProperties =
     {
-        UiaIds.RuntimeId, UiaIds.ProcessId, UiaIds.ControlType, UiaIds.Name, UiaIds.IsEnabled, UiaIds.AutomationId,
+        UiaIds.RuntimeId, UiaIds.BoundingRectangle, UiaIds.ProcessId, UiaIds.ControlType, UiaIds.Name, UiaIds.IsEnabled, UiaIds.AutomationId,
         UiaIds.ClassName, UiaIds.HelpText, UiaIds.NativeWindowHandle, UiaIds.IsOffscreen,
         UiaIds.IsExpandCollapseAvailable, UiaIds.IsInvokeAvailable, UiaIds.IsSelectionItemAvailable,
         UiaIds.IsToggleAvailable, UiaIds.IsValueAvailable, UiaIds.ValueValue, UiaIds.ValueIsReadOnly,
         UiaIds.SelectionItemIsSelected, UiaIds.LegacyDescription, UiaIds.AriaRole, UiaIds.AriaProperties,
-        UiaIds.FullDescription,
+        UiaIds.FullDescription, UiaIds.HasKeyboardFocus,
     };
 
     private sealed record Target(IntPtr Hwnd, Int32 Pid, String Title);
@@ -74,32 +82,40 @@ internal static class Program
     private static IUIAutomation? _uia;
     private static IUIAutomation Uia => _uia ??= (IUIAutomation)new CUIAutomation();
     private static HashSet<Int32> _appPids = new();
-    private const Int32 MaxDraftLength = 50000;
+    private static Dictionary<String, List<String>> _options = new();
 
+    [STAThread]
     private static Int32 Main(String[] args)
     {
         try
         {
             var verb = args.FirstOrDefault() ?? "help";
             var options = ParseOptions(args.Skip(1).ToArray());
+            _options = options;
 
             if (verb is "help" or "--help")
             {
-                Console.WriteLine("vizhi-desktop-uia <inspect|frontmost|status|press|press-exact|write|focus> [options]");
+                Console.WriteLine("vizhi-desktop-uia <verb> [options] — see the source header for the verbs");
                 return 0;
             }
 
             var pids = ProcessIds(Values(options, "--process"));
+            _appPids = pids;
             if (verb == "frontmost")
             {
                 // Passive polling backs off while another app is in front without asking
                 // Chromium to build or traverse its accessibility tree.
-                return Emit(new Dictionary<String, Object?> { ["frontmost"] = pids.Contains(ForegroundPid()) });
+                return Emit(new Dictionary<String, Object?> { ["frontmost"] = pids.Contains(Win32.ForegroundPid()) });
             }
 
             if (verb == "restore-front")
             {
                 return RestoreFront(Value(options, "--hwnd"), pids);
+            }
+
+            if (verb.StartsWith("context-", StringComparison.Ordinal))
+            {
+                return Context(verb["context-".Length..], options);
             }
 
             if (verb == "inspect" && Values(options, "--window").Count == 0 && Values(options, "--process").Count == 0)
@@ -114,16 +130,23 @@ internal static class Program
                 return Fail(error!, error == "ambiguous-app" ? ExitChanged : ExitNotRunning);
             }
 
-            _appPids = pids;
             return verb switch
             {
                 "inspect" => InspectTarget(target, options.ContainsKey("--all")),
                 "status" => Status(target, options),
                 "press" => Press(target, options, exact: false),
                 "press-exact" => Press(target, options, exact: true),
+                "voice" => Voice(target, options),
+                "open-panel" => OpenPanel(target, options),
                 "draft-target" => DraftTarget(target, options),
-                "write" => Write(target, options),
+                "append-target" => AppendTarget(target, options),
+                "write" => Write(target, options, appending: false),
+                "append" => Write(target, options, appending: true),
                 "send" => Send(target, options),
+                "attach-image" => Attach(target, options, image: true),
+                "attach-files" => Attach(target, options, image: false),
+                "copy-reply" => CopyReply(target, options),
+                "search" => Search(target, options),
                 "focus" => Focus(target),
                 _ => Fail($"unknown-verb {verb}", ExitNoMatch),
             };
@@ -197,31 +220,15 @@ internal static class Program
     }
 
     /// <summary>
-    /// The app's top-level windows a user could switch to, front to back: visible, unowned,
-    /// uncloaked, titled, and not a tool window. The app can have more than one open (one per
-    /// mode); every read and press is scoped to the one in front, else the one it activated
-    /// last, so a control in a background window is never pressed.
+    /// The app's top-level windows a user could switch to, front to back. The app can have
+    /// more than one open (one per mode); every read and press is scoped to the one in front,
+    /// else the one it activated last, so a control in a background window is never pressed.
     /// </summary>
-    private static List<Target> AppWindows(HashSet<Int32> pids)
-    {
-        var windows = new List<Target>();
-        EnumWindows((hwnd, _) =>
-        {
-            GetWindowThreadProcessId(hwnd, out var pid);
-            if (!pids.Contains((Int32)pid) || !IsWindowVisible(hwnd) || GetWindow(hwnd, GW_OWNER) != IntPtr.Zero
-                || (GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64() & WS_EX_TOOLWINDOW) != 0 || IsCloaked(hwnd))
-            {
-                return true;
-            }
-            var title = WindowTitle(hwnd);
-            if (title.Length > 0)
-            {
-                windows.Add(new Target(hwnd, (Int32)pid, title));
-            }
-            return true;
-        }, IntPtr.Zero);
-        return windows;
-    }
+    private static List<Target> AppWindows(HashSet<Int32> pids) =>
+        Win32.TopLevelWindows()
+            .Where(hwnd => pids.Contains(Win32.PidOf(hwnd)) && Win32.IsAppWindow(hwnd))
+            .Select(hwnd => new Target(hwnd, Win32.PidOf(hwnd), Win32.WindowTitle(hwnd)))
+            .ToList();
 
     private static (Target? Target, String? Error) FindTarget(HashSet<Int32> pids, Boolean byProcess,
         IReadOnlyList<String> titles, Boolean requireProcess)
@@ -237,7 +244,7 @@ internal static class Program
             {
                 return (null, "app-not-running");
             }
-            var foreground = GetForegroundWindow();
+            var foreground = Win32.GetForegroundWindow();
             return (windows.FirstOrDefault(w => w.Hwnd == foreground) ?? windows[0], null);
         }
 
@@ -252,23 +259,12 @@ internal static class Program
 
         // Recon only: a browser tab titled like the app would match too, which is why plugin
         // actions must name the process.
-        var matches = new List<Target>();
-        EnumWindows((hwnd, _) =>
-        {
-            if (!IsWindowVisible(hwnd))
-            {
-                return true;
-            }
-            var title = WindowTitle(hwnd);
-            if (title.Length > 0 && titles.Any(t => String.Equals(title, t, StringComparison.OrdinalIgnoreCase)
-                    || title.Contains(t, StringComparison.OrdinalIgnoreCase)))
-            {
-                GetWindowThreadProcessId(hwnd, out var pid);
-                matches.Add(new Target(hwnd, (Int32)pid, title));
-            }
-            return true;
-        }, IntPtr.Zero);
-
+        var matches = Win32.TopLevelWindows()
+            .Where(Win32.IsWindowVisible)
+            .Select(hwnd => new Target(hwnd, Win32.PidOf(hwnd), Win32.WindowTitle(hwnd)))
+            .Where(w => w.Title.Length > 0 && titles.Any(t => String.Equals(w.Title, t, StringComparison.OrdinalIgnoreCase)
+                || w.Title.Contains(t, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
         var processes = matches.Select(m => m.Pid).Distinct().ToList();
         if (processes.Count == 0)
         {
@@ -281,14 +277,11 @@ internal static class Program
         return (matches[0], null);
     }
 
+    private static Boolean AppIsFrontmost(Target target) => Win32.ForegroundPid() == target.Pid;
+
     // ---- scan --------------------------------------------------------------
 
-    /// <summary>
-    /// One cross-process call fetches the whole subtree with every property this helper reads
-    /// (a cache request scoped to the subtree); the walk below is then in-process. Per-node
-    /// property reads, the WPF wrapper's way, cost ~2 s for a 365-node tree on the live app.
-    /// </summary>
-    private static Scan ScanTarget(Target target)
+    private static IUIAutomationCacheRequest CacheRequest()
     {
         var request = Uia.CreateCacheRequest();
         foreach (var id in CachedProperties)
@@ -298,8 +291,19 @@ internal static class Program
         request.TreeScope = UiaIds.TreeScopeSubtree;
         request.TreeFilter = Uia.RawViewCondition;
         request.AutomationElementMode = UiaIds.ElementModeFull;
+        return request;
+    }
 
-        var root = Uia.ElementFromHandleBuildCache(target.Hwnd, request);
+    /// <summary>
+    /// One cross-process call fetches the whole subtree with every property this helper reads
+    /// (a cache request scoped to the subtree); the walk below is then in-process. Per-node
+    /// property reads, the WPF wrapper's way, cost ~2 s for a 365-node tree on the live app.
+    /// </summary>
+    private static Scan ScanTarget(Target target) => ScanWindow(target.Hwnd);
+
+    private static Scan ScanWindow(IntPtr hwnd)
+    {
+        var root = Uia.ElementFromHandleBuildCache(hwnd, CacheRequest());
         var nodes = new List<UiaNode>();
         var complete = true;
 
@@ -365,13 +369,15 @@ internal static class Program
             HasValue = hasValue,
             ReadOnly = Flag(UiaIds.ValueIsReadOnly),
             Selected = Flag(UiaIds.SelectionItemIsSelected),
+            Focused = Flag(UiaIds.HasKeyboardFocus),
             RuntimeId = element.GetCachedPropertyValue(UiaIds.RuntimeId) is Int32[] id ? String.Join(".", id) : "",
+            Bounds = element.GetCachedPropertyValue(UiaIds.BoundingRectangle) is Double[] { Length: 4 } rect ? rect : null,
             Handle = element,
         };
     }
 
-    // Bounded wait for the web content — used by press/write (which must not act on a half
-    // tree), NOT by status (a status poll reports surface=false immediately and cheaply).
+    // Bounded wait for the web content — used by the acting verbs (which must not act on a
+    // half tree), NOT by status (a status poll reports surface=false immediately and cheaply).
     private static Scan? WaitForSurface(Target target, Int32 milliseconds)
     {
         var deadline = Stopwatch.StartNew();
@@ -388,35 +394,23 @@ internal static class Program
         return null;
     }
 
+    private static Boolean SameElement(UiaNode a, UiaNode b) => a.RuntimeId.Length > 0 && a.RuntimeId == b.RuntimeId;
+
     // ---- verbs -------------------------------------------------------------
 
     private static Int32 InspectWindows()
     {
-        var windows = new List<Dictionary<String, Object?>>();
-        EnumWindows((hwnd, _) =>
-        {
-            if (!IsWindowVisible(hwnd))
+        var windows = Win32.TopLevelWindows().Where(Win32.IsWindowVisible)
+            .Select(hwnd => new { Hwnd = hwnd, Title = Win32.WindowTitle(hwnd) })
+            .Where(w => w.Title.Length > 0)
+            .Select(w => new Dictionary<String, Object?>
             {
-                return true;
-            }
-            var title = WindowTitle(hwnd);
-            if (title.Length == 0)
-            {
-                return true;
-            }
-            GetWindowThreadProcessId(hwnd, out var pid);
-            windows.Add(new Dictionary<String, Object?>
-            {
-                ["title"] = title,
-                ["pid"] = (Int32)pid,
-                ["process"] = ProcessName((Int32)pid),
-                ["class"] = WindowClass(hwnd),
-                ["owned"] = GetWindow(hwnd, GW_OWNER) != IntPtr.Zero,
-                ["toolWindow"] = (GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64() & WS_EX_TOOLWINDOW) != 0,
-                ["cloaked"] = IsCloaked(hwnd),
-            });
-            return true;
-        }, IntPtr.Zero);
+                ["title"] = w.Title,
+                ["pid"] = Win32.PidOf(w.Hwnd),
+                ["process"] = ProcessName(Win32.PidOf(w.Hwnd)),
+                ["class"] = Win32.WindowClass(w.Hwnd),
+                ["appWindow"] = Win32.IsAppWindow(w.Hwnd),
+            }).ToList();
         return Emit(new Dictionary<String, Object?> { ["windows"] = windows });
     }
 
@@ -428,7 +422,7 @@ internal static class Program
         var scan = ScanTarget(target);
         var elapsed = timer.ElapsedMilliseconds;
         var interesting = scan.Nodes.Where(n => all || n.Pressable
-                || n.Role is "Image" or "ProgressBar" or "Edit" or "Document" or "StatusBar" or "Window" or "Menu")
+                || n.Role is "Image" or "ProgressBar" or "Edit" or "Document" or "StatusBar" or "Window" or "Menu" or "Hyperlink" or "ComboBox")
             .Select(n => new Dictionary<String, Object?>
             {
                 ["depth"] = n.Depth,
@@ -442,6 +436,8 @@ internal static class Program
                 ["hasValue"] = n.HasValue,
                 ["readOnly"] = n.ReadOnly,
                 ["selected"] = n.Selected,
+                ["focused"] = n.Focused,
+                ["value"] = all && n.Role is "Hyperlink" or "Edit" or "ComboBox" ? n.Value : "",
             }).ToList();
         return Emit(new Dictionary<String, Object?>
         {
@@ -486,6 +482,7 @@ internal static class Program
         }
 
         var panelMode = Value(options, "--panel-mode") ?? "";
+        var reply = UiaMatching.ReplyTarget(nodes, ReplyRules(options));
         return Emit(new Dictionary<String, Object?>
         {
             ["surface"] = true,
@@ -496,9 +493,8 @@ internal static class Program
             ["voiceChat"] = UiaMatching.VoiceState(nodes, Values(options, "--voice-start"), Values(options, "--voice-end")),
             ["canSend"] = UiaMatching.SendTarget(nodes, Value(options, "--send-label") ?? "",
                 Values(options, "--stop"), Values(options, "--approve")) != null,
-            // Copy Reply is not ported yet: the key must read unavailable, never guess.
-            ["canCopyAnswer"] = false,
-            ["copyAnswerError"] = "unsupported",
+            ["canCopyAnswer"] = reply.Node != null,
+            ["copyAnswerError"] = reply.Error,
             ["searchPresent"] = Present("--search"),
             ["changesPresent"] = mode.Length > 0 && mode == panelMode && UiaMatching.PanelRouteAvailable(nodes,
                 modePrefix + mode, Values(options, "--changes"), Values(options, "--panel-visible")),
@@ -588,8 +584,8 @@ internal static class Program
             return Emit(new Dictionary<String, Object?> { ["matched"] = candidate.Text, ["dry"] = true });
         }
 
-        var beforeWindow = GetForegroundWindow();
-        var before = ProcessName(ForegroundPid());
+        var beforeWindow = Win32.GetForegroundWindow();
+        var before = ProcessName(Win32.ForegroundPid());
         if (!Invoke(candidate))
         {
             return Fail("press-failed", ExitError);
@@ -598,8 +594,8 @@ internal static class Program
         // Chromium performs a UIA press as a click, and a click activates its window — unlike
         // the macOS AXPress, which leaves the front app alone. Report the move so the caller
         // can hand focus back with restore-front; this process cannot (see there).
-        var afterPid = ForegroundPid();
-        var beforePid = ForegroundPidOf(beforeWindow);
+        var afterPid = Win32.ForegroundPid();
+        var beforePid = Win32.PidOf(beforeWindow);
         return Emit(new Dictionary<String, Object?>
         {
             ["matched"] = candidate.Text,
@@ -623,40 +619,47 @@ internal static class Program
             return Fail("no --hwnd given", ExitNoMatch);
         }
         var previous = new IntPtr(raw);
-        if (!IsWindowVisible(previous))
+        if (!Win32.IsWindowVisible(previous))
         {
             return Fail("window-gone", ExitNoMatch);
         }
-        if (GetForegroundWindow() == previous)
+        if (Win32.GetForegroundWindow() == previous)
         {
             return Emit(new Dictionary<String, Object?> { ["restored"] = false, ["already"] = true });
         }
         // Only hand focus back from the app this helper drives: never move it off whatever
         // else the user has since switched to.
-        if (!appPids.Contains(ForegroundPid()))
+        if (!appPids.Contains(Win32.ForegroundPid()))
         {
             return Emit(new Dictionary<String, Object?> { ["restored"] = false, ["frontElsewhere"] = true });
         }
-        var accepted = SetForegroundWindow(previous);
-        if (!accepted)
-        {
-            SwitchToThisWindow(previous, true);
-        }
-        for (var attempt = 0; attempt < 6; attempt++)
-        {
-            Thread.Sleep(50);
-            if (GetForegroundWindow() == previous)
-            {
-                return Emit(new Dictionary<String, Object?> { ["restored"] = true, ["accepted"] = accepted });
-            }
-        }
-        return Fail("restore-refused", ExitError);
+        return Raise(previous) ? Emit(new Dictionary<String, Object?> { ["restored"] = true }) : Fail("restore-refused", ExitError);
     }
 
-    private static Int32 ForegroundPidOf(IntPtr hwnd)
+    /// <summary>Bring a window to the foreground and wait for it to arrive.</summary>
+    private static Boolean Raise(IntPtr hwnd)
     {
-        GetWindowThreadProcessId(hwnd, out var pid);
-        return (Int32)pid;
+        if (Win32.IsIconic(hwnd))
+        {
+            Win32.ShowWindow(hwnd, Win32.SW_RESTORE);
+        }
+        // Windows refuses SetForegroundWindow for a background helper under the foreground
+        // lock. This is always the direct result of a physical key press, so use the same
+        // explicit-user-intent fallback as ClaudeConsoleFocus.
+        if (!Win32.SetForegroundWindow(hwnd))
+        {
+            Win32.SwitchToThisWindow(hwnd, true);
+        }
+        var pid = Win32.PidOf(hwnd);
+        for (var attempt = 0; attempt < 6; attempt++)
+        {
+            Thread.Sleep(100);
+            if (Win32.ForegroundPid() == pid)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -701,275 +704,109 @@ internal static class Program
         return false;
     }
 
-    // ---- the composer --------------------------------------------------------
-    //
-    // A draft target names the composer a caller may write to later: this window, this mode,
-    // this editor, this open conversation. Every write and send that carries --expect-target
-    // is refused when any of those has changed since the target was issued, so a prompt or a
-    // transcript never lands in an editor the user has since navigated away from.
-
-    private sealed record Composer(UiaNode Node, IUIAutomationElement Element, IUIAutomationValuePattern Value);
-
-    private static String? Origin(Target target, Dictionary<String, List<String>> options)
+    private static Int32 Voice(Target target, Dictionary<String, List<String>> options)
     {
-        // The window is identified by title, so the title must be unique among the app's.
-        if (AppWindows(_appPids).Count(w => w.Title == target.Title) != 1)
+        var action = Value(options, "--action") ?? "";
+        if (action is not ("start" or "end"))
         {
-            return null;
+            return Fail("invalid-voice-action", ExitNoMatch);
         }
-        var identity = String.Join("\n", target.Pid.ToString(), target.Title, target.Hwnd.ToInt64().ToString(),
-            Value(options, "--mode-prefix") ?? "", Value(options, "--expect-mode") ?? "");
-        return UiaMatching.Fingerprint(identity);
-    }
-
-    private static String? UniqueComposerError(IReadOnlyList<UiaNode> nodes, out Composer? composer)
-    {
-        composer = null;
-        var composers = UiaMatching.Composers(nodes);
-        if (composers.Count == 0) return "no-composer";
-        if (composers.Count > 1) return "ambiguous-composer";
-        if (composers[0].Handle is not IUIAutomationElement element
-            || element.GetCurrentPattern(UiaIds.ValuePattern) is not IUIAutomationValuePattern value)
-        {
-            return "no-composer";
-        }
-        composer = new Composer(composers[0], element, value);
-        return null;
-    }
-
-    private static Int32 FailComposer(String error) =>
-        Fail(error, error is "ambiguous-composer" or "composer-target-changed" or "mode-changed" or "mode-unavailable" ? ExitChanged : ExitNoMatch);
-
-    /// <summary>The target token for this scan, or the reason there is none.</summary>
-    private static String? DraftTargetToken(Target target, IReadOnlyList<UiaNode> nodes,
-        Dictionary<String, List<String>> options, out String? error)
-    {
-        error = UiaMatching.ModeError(UiaMatching.ReportedModes(nodes, Value(options, "--mode-prefix") ?? ""),
-            Value(options, "--expect-mode") ?? "", pinned: false);
-        if (error != null) return null;
-        error = UniqueComposerError(nodes, out var composer);
-        if (error != null) return null;
-        var origin = Origin(target, options);
-        var conversation = UiaMatching.SelectedConversation(nodes, Value(options, "--conv-marker") ?? "");
-        if (origin == null || conversation == null)
-        {
-            error = "composer-target-changed";
-            return null;
-        }
-        return UiaMatching.Fingerprint(origin + ":" + composer!.Node.RuntimeId + ":" + conversation);
-    }
-
-    /// <summary>Null when the scan still matches the target the caller prepared, else why not.</summary>
-    private static String? PreparedDraftError(Target target, IReadOnlyList<UiaNode> nodes,
-        Dictionary<String, List<String>> options)
-    {
-        var expected = Value(options, "--expect-target");
-        if (expected == null)
-        {
-            return null;
-        }
-        var token = DraftTargetToken(target, nodes, options, out var error);
-        return token == null ? error : token == expected ? null : "composer-target-changed";
-    }
-
-    private static Boolean PreparedDraftMatches(Target target, IReadOnlyList<UiaNode> nodes,
-        Dictionary<String, List<String>> options) => PreparedDraftError(target, nodes, options) == null;
-
-    private static List<String> BlockingLabels(Dictionary<String, List<String>> options) =>
-        Values(options, "--stop").Concat(Values(options, "--approve")).Concat(Values(options, "--voice-end")).ToList();
-
-    private static Boolean SendEnabled(IReadOnlyList<UiaNode> nodes, Dictionary<String, List<String>> options) =>
-        UiaMatching.ExactButtons(nodes, Values(options, "--composer-send-label")).Any(n => n.Enabled);
-
-    private static String ComposerDraft(Composer composer, IReadOnlyList<UiaNode> nodes, Dictionary<String, List<String>> options)
-    {
-        var raw = composer.Value.CurrentValue ?? "";
-        return UiaMatching.IsPlaceholderDraft(raw, Values(options, "--draft-placeholder"), SendEnabled(nodes, options)) ? "" : raw;
-    }
-
-    private static Int32 DraftTarget(Target target, Dictionary<String, List<String>> options)
-    {
-        var scan = WaitForSurface(target, 2000);
-        if (scan == null)
+        var starts = Values(options, "--voice-start");
+        var ends = Values(options, "--voice-end");
+        var initial = WaitForSurface(target, 2000);
+        if (initial == null)
         {
             return Fail("surface-unavailable", ExitError);
         }
-        var token = DraftTargetToken(target, scan.Nodes, options, out var error);
-        if (token == null)
+        var candidate = UiaMatching.VoiceTarget(action, initial.Nodes, starts, ends);
+        if (candidate == null)
         {
-            return FailComposer(error!);
+            return Fail("voice-state-changed", ExitChanged);
         }
-        UniqueComposerError(scan.Nodes, out var composer);
-        var draft = ComposerDraft(composer!, scan.Nodes, options);
-        if (!options.ContainsKey("--allow-existing") && UiaMatching.ComparableDraft(draft).Length > 0)
-        {
-            return Fail("draft-exists", ExitNoMatch);
-        }
-        return Emit(new Dictionary<String, Object?> { ["target"] = token });
-    }
-
-    /// <summary>
-    /// Put text into an EMPTY composer, or report that a draft already exists: the value
-    /// pattern replaces the whole value, so this never appends and never overwrites. The
-    /// desktop injection law: the text lands in the composer the caller targeted, or
-    /// nowhere, and the failure is named.
-    /// </summary>
-    private static Int32 Write(Target target, Dictionary<String, List<String>> options)
-    {
-        var text = Value(options, "--text") ?? "";
-        var expectedText = UiaMatching.ComparableDraft(text);
-        if (expectedText.Length == 0)
-        {
-            return Fail("empty-text", ExitNoMatch);
-        }
-        if (text.Length > MaxDraftLength)
-        {
-            return Fail("text-too-long", ExitNoMatch);
-        }
-
-        var scan = WaitForSurface(target, 2000);
-        if (scan == null)
-        {
-            return Fail("surface-unavailable", ExitError);
-        }
-        var error = PreparedDraftError(target, scan.Nodes, options);
-        if (error != null)
-        {
-            return FailComposer(error);
-        }
-        if (UiaMatching.ComposerBlocked(scan.Nodes, BlockingLabels(options)))
-        {
-            return Fail("composer-unavailable", ExitNoMatch);
-        }
-        error = UniqueComposerError(scan.Nodes, out var composer);
-        if (error != null)
-        {
-            return FailComposer(error);
-        }
-
-        var original = ComposerDraft(composer!, scan.Nodes, options);
-        var sendLabel = Value(options, "--send-label");
-        if (options.ContainsKey("--accept-existing") && sendLabel == null
-            && UiaMatching.ComparableDraft(original) == expectedText)
-        {
-            return Emit(new Dictionary<String, Object?> { ["method"] = "existing", ["sent"] = false });
-        }
-        if (UiaMatching.ComparableDraft(original).Length > 0)
-        {
-            return Fail("draft-exists", ExitNoMatch);
-        }
-
-        composer!.Value.SetValue(text);
-        var applied = false;
-        for (var attempt = 0; attempt < 10 && !applied; attempt++)
-        {
-            Thread.Sleep(100);
-            applied = UiaMatching.ComparableDraft(composer.Value.CurrentValue) == expectedText;
-        }
-        if (!applied)
-        {
-            return Fail("write-not-applied", ExitError);
-        }
-
-        var sent = false;
-        if (sendLabel != null)
-        {
-            var latest = ScanTarget(target);
-            var send = latest.Surface && PreparedDraftMatches(target, latest.Nodes, options)
-                && !UiaMatching.ComposerBlocked(latest.Nodes, BlockingLabels(options))
-                && latest.Nodes.Any(n => n.Role == "Edit" && n.RuntimeId == composer.Node.RuntimeId)
-                && UiaMatching.ComparableDraft(composer.Value.CurrentValue) == expectedText
-                ? UiaMatching.SendTarget(latest.Nodes, sendLabel, Values(options, "--stop"), Values(options, "--approve"))
-                : null;
-            if (send == null)
-            {
-                return Fail("no-sendable-draft", ExitNoMatch);
-            }
-            if (!Invoke(send))
-            {
-                return Fail("send-press-failed", ExitError);
-            }
-            sent = true;
-        }
-
-        return Emit(new Dictionary<String, Object?> { ["method"] = "value", ["sent"] = sent });
-    }
-
-    /// <summary>Submit the existing draft without replacing it; refuse an ambiguous target.</summary>
-    private static Int32 Send(Target target, Dictionary<String, List<String>> options)
-    {
-        var scan = WaitForSurface(target, 2000);
-        if (scan == null)
-        {
-            return Fail("surface-unavailable", ExitError);
-        }
-        var prepared = PreparedDraftError(target, scan.Nodes, options);
-        if (prepared != null)
-        {
-            return FailComposer(prepared);
-        }
-        var sendLabel = Value(options, "--send-label") ?? "";
-        var first = UiaMatching.SendTarget(scan.Nodes, sendLabel, Values(options, "--stop"), Values(options, "--approve"));
-        var error = UniqueComposerError(scan.Nodes, out var composer);
-        if (first == null || error != null)
-        {
-            return Fail("no-sendable-draft", ExitNoMatch);
-        }
-        var draft = composer!.Value.CurrentValue ?? "";
-        var expected = Value(options, "--expect-text");
-        if (expected != null && (UiaMatching.ComparableDraft(expected).Length == 0
-            || UiaMatching.ComparableDraft(draft) != UiaMatching.ComparableDraft(expected)))
-        {
-            return Fail("draft-changed", ExitChanged);
-        }
-
-        // A second look before the press: the same window, target, composer and draft, and
-        // the same Send.
+        // A second look: the same window, the same button.
         var latest = ScanTarget(target);
-        var confirmed = latest.Surface && PreparedDraftMatches(target, latest.Nodes, options)
-            && latest.Nodes.Any(n => n.Role == "Edit" && n.RuntimeId == composer.Node.RuntimeId)
-            && (composer.Value.CurrentValue ?? "") == draft
-            ? UiaMatching.SendTarget(latest.Nodes, sendLabel, Values(options, "--stop"), Values(options, "--approve"))
-            : null;
-        if (confirmed == null || confirmed.RuntimeId != first.RuntimeId)
+        var confirmed = latest.Surface && Win32.WindowTitle(target.Hwnd) == target.Title
+            ? UiaMatching.VoiceTarget(action, latest.Nodes, starts, ends) : null;
+        if (confirmed == null || !SameElement(candidate, confirmed))
         {
-            return Fail("composer-target-changed", ExitChanged);
+            return Fail("voice-state-changed", ExitChanged);
         }
         if (!Invoke(confirmed))
         {
-            return Fail("send-press-failed", ExitError);
+            return Fail("voice-press-failed", ExitError);
         }
-        return Emit(new Dictionary<String, Object?> { ["sent"] = true });
+        // Request accepted is all we know. Setup dialogs, connection failure, or user
+        // cancellation can follow; only later status observations may render an active session.
+        return Emit(new Dictionary<String, Object?> { ["requested"] = action });
     }
 
-    private static Int32 Focus(Target target)
+    private static Int32 OpenPanel(Target target, Dictionary<String, List<String>> options)
     {
-        var hwnd = target.Hwnd;
-        if (IsIconic(hwnd))
+        var expectedMode = Value(options, "--expect-mode") ?? "";
+        var prefix = Value(options, "--mode-prefix") ?? "";
+        var openers = Values(options, "--panel-open");
+        var visibleLabels = Values(options, "--panel-visible");
+        if (expectedMode.Length == 0 || prefix.Length == 0 || openers.Count == 0 || visibleLabels.Count == 0)
         {
-            ShowWindow(hwnd, SW_RESTORE);
+            return Fail("panel-arguments", ExitNoMatch);
+        }
+        if (!AppIsFrontmost(target) || WaitForSurface(target, 1000) == null)
+        {
+            return Fail("panel-unavailable", ExitNoMatch);
+        }
+        var marker = Value(options, "--conv-marker") ?? "";
+        var conversation = UiaMatching.SelectedConversation(ScanTarget(target).Nodes, marker);
+
+        (List<UiaNode>? Content, String? Error, Int32 Code) Checked()
+        {
+            if (!AppIsFrontmost(target)) return (null, "panel-foreground-changed", ExitChanged);
+            if (Win32.WindowTitle(target.Hwnd) != target.Title) return (null, "panel-window-changed", ExitChanged);
+            var scan = ScanTarget(target);
+            if (!scan.Surface) return (null, "panel-surface-missing", ExitChanged);
+            if (UiaMatching.SelectedConversation(scan.Nodes, marker) != conversation) return (null, "panel-conversation-changed", ExitChanged);
+            var modes = scan.Nodes.Where(n => n.Text.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+            if (modes.Count != 1 || modes[0].Text != prefix + expectedMode) return (null, "mode-changed", ExitChanged);
+            if (UiaMatching.PanelObstructed(scan.Nodes)) return (null, "panel-obstructed", ExitNoMatch);
+            var owners = UiaMatching.Documents(scan.Nodes).Where(area => area.Any(n => n.Text == prefix + expectedMode)).ToList();
+            return owners.Count == 1 ? (owners[0], null, 0) : (null, "panel-not-available", ExitNoMatch);
         }
 
-        // Windows refuses SetForegroundWindow for a background helper under the foreground
-        // lock. This command is always the direct result of a physical key press, so use the
-        // same explicit-user-intent fallback as ClaudeConsoleFocus.
-        if (!SetForegroundWindow(hwnd))
-        {
-            SwitchToThisWindow(hwnd, true);
-        }
+        Int32 Visible(List<UiaNode> content) => UiaMatching.ExactButtons(content, visibleLabels).Count;
 
-        // The app may activate a different owned top-level window, so compare process identity
-        // instead of demanding the exact handle be foreground. Activation is asynchronous.
-        for (var attempt = 0; attempt < 6; attempt++)
+        var (nodes, error, code) = Checked();
+        if (nodes == null) return Fail(error!, code);
+        if (Visible(nodes) > 1) return Fail("panel-ambiguous", ExitNoMatch);
+        if (Visible(nodes) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
+
+        var candidates = UiaMatching.PanelOpeners(nodes, openers);
+        if (candidates.Count > 1) return Fail("panel-opener-multiple", ExitNoMatch);
+        // A conversation may have no review capability. Absence is not a clean working
+        // tree, and must not trigger a guessed shortcut, toggle, or text entry.
+        if (candidates.Count != 1) return Fail("panel-not-available", ExitNoMatch);
+
+        var (fresh, freshError, freshCode) = Checked();
+        if (fresh == null) return Fail(freshError!, freshCode);
+        if (Visible(fresh) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
+        var confirmed = UiaMatching.PanelOpeners(fresh, openers);
+        if (confirmed.Count != 1 || !SameElement(candidates[0], confirmed[0])) return Fail("panel-target-changed", ExitChanged);
+        if (!Invoke(confirmed[0])) return Fail("panel-press-failed", ExitError);
+
+        var deadline = Stopwatch.StartNew();
+        while (deadline.ElapsedMilliseconds < 1200)
         {
-            Thread.Sleep(100);
-            if (ForegroundPid() == target.Pid)
+            Thread.Sleep(80);
+            var (again, againError, againCode) = Checked();
+            if (again == null) return Fail(againError!, againCode);
+            if (Visible(again) == 1)
             {
-                return Emit(new Dictionary<String, Object?>());
+                return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = false, ["method"] = "button" });
             }
         }
-        return Fail("focus-failed", ExitError);
+        return Fail("panel-unconfirmed", ExitError);
     }
+
+    private static Int32 Focus(Target target) =>
+        Raise(target.Hwnd) ? Emit(new Dictionary<String, Object?>()) : Fail("focus-failed", ExitError);
 
     // ---- output ------------------------------------------------------------
 
@@ -1030,85 +867,9 @@ internal static class Program
     private static Int32 Fail(String error, Int32 code) =>
         Emit(new Dictionary<String, Object?> { ["error"] = error }, code);
 
-    // ---- Win32 -------------------------------------------------------------
-
-    private const Int32 SW_RESTORE = 9;
-    private const UInt32 GW_OWNER = 4;
-    private const Int32 GWL_EXSTYLE = -20;
-    private const Int64 WS_EX_TOOLWINDOW = 0x80;
-    private const Int32 DWMWA_CLOAKED = 14;
-
-    private delegate Boolean EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
-
     private static String ProcessName(Int32 pid)
     {
         try { using var process = Process.GetProcessById(pid); return process.ProcessName; }
         catch { return ""; }
     }
-
-    private static Int32 ForegroundPid()
-    {
-        GetWindowThreadProcessId(GetForegroundWindow(), out var pid);
-        return (Int32)pid;
-    }
-
-    private static String WindowTitle(IntPtr hwnd)
-    {
-        var buffer = new StringBuilder(512);
-        var length = GetWindowTextW(hwnd, buffer, buffer.Capacity);
-        return length > 0 ? buffer.ToString(0, length) : "";
-    }
-
-    private static String WindowClass(IntPtr hwnd)
-    {
-        var buffer = new StringBuilder(256);
-        var length = GetClassNameW(hwnd, buffer, buffer.Capacity);
-        return length > 0 ? buffer.ToString(0, length) : "";
-    }
-
-    private static Boolean IsCloaked(IntPtr hwnd) =>
-        DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out var cloaked, sizeof(Int32)) == 0 && cloaked != 0;
-
-    [DllImport("user32.dll")]
-    private static extern Boolean EnumWindows(EnumWindowsProc callback, IntPtr lParam);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    private static extern UInt32 GetWindowThreadProcessId(IntPtr hwnd, out UInt32 processId);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern Boolean IsWindowVisible(IntPtr hwnd);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetWindow(IntPtr hwnd, UInt32 command);
-
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
-    private static extern IntPtr GetWindowLongPtr(IntPtr hwnd, Int32 index);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern Int32 GetWindowTextW(IntPtr hwnd, StringBuilder text, Int32 max);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-    private static extern Int32 GetClassNameW(IntPtr hwnd, StringBuilder text, Int32 max);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern Boolean SetForegroundWindow(IntPtr hwnd);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern Boolean ShowWindow(IntPtr hwnd, Int32 command);
-
-    [DllImport("user32.dll")]
-    private static extern void SwitchToThisWindow(IntPtr hwnd, Boolean altTab);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern Boolean IsIconic(IntPtr hwnd);
-
-    [DllImport("dwmapi.dll")]
-    private static extern Int32 DwmGetWindowAttribute(IntPtr hwnd, Int32 attribute, out Int32 value, Int32 size);
 }

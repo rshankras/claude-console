@@ -29,6 +29,9 @@ internal sealed class UiaNode
     public Boolean HasValue { get; init; }
     public Boolean ReadOnly { get; init; }
     public Boolean Selected { get; init; }
+    public Boolean Focused { get; init; }
+    /// <summary>Screen rectangle as left, top, width, height; null when the element has none.</summary>
+    public Double[]? Bounds { get; init; }
     /// <summary>UIA's runtime id, stable for the element's lifetime: what a draft target is keyed on.</summary>
     public String RuntimeId { get; init; } = "";
     /// <summary>The live element; opaque to everything in this file.</summary>
@@ -405,6 +408,27 @@ internal static class UiaMatching
     }
 
     /// <summary>
+    /// After an append: the value ends with the addition, and what precedes it is the original
+    /// (by fingerprint) followed by a real line break. The editor may render the paragraph gap
+    /// as one newline or two; the count is not the test, the original content is.
+    /// </summary>
+    public static Boolean AppendedDraftMatches(String value, String before, String addition)
+    {
+        value = ComparableDraft(value);
+        addition = ComparableDraft(addition);
+        if (addition.Length == 0 || !value.EndsWith(addition, StringComparison.Ordinal))
+        {
+            return false;
+        }
+        var prefix = value[..^addition.Length];
+        if (before != Fingerprint("") && !(prefix.EndsWith('\n') || prefix.EndsWith('\r')))
+        {
+            return false;
+        }
+        return Fingerprint(prefix) == before;
+    }
+
+    /// <summary>
     /// A value that spells one of the adapter's composer hints, with no enabled Send beside
     /// it, is the empty composer's hint rendered into its value, not a draft. A literal draft
     /// spelling the same words has Send enabled and survives.
@@ -483,6 +507,313 @@ internal static class UiaMatching
     /// <summary>A modal, or a task that is running or waiting, means the composer is not ready.</summary>
     public static Boolean ComposerBlocked(IReadOnlyList<UiaNode> nodes, IReadOnlyList<String> blockingLabels) =>
         nodes.Any(IsDialog) || ExactButtons(nodes, blockingLabels).Any(n => n.Enabled);
+
+    // ---- Copy Reply ------------------------------------------------------------
+    //
+    // Speaker headings and the response-only Copy control are adapter-owned semantics. Never
+    // use selected text, the last generic Copy button, or scrape message text.
+
+    public sealed record ReplyRules(
+        IReadOnlyList<String> AssistantHeadings, IReadOnlyList<String> UserHeadings,
+        IReadOnlyList<String> CopyResponse, IReadOnlyList<String> CopyButton, IReadOnlyList<String> CopyCompleted,
+        IReadOnlyList<String> ResponseActions, IReadOnlyList<String> Stop, IReadOnlyList<String> VoiceEnd,
+        IReadOnlyList<String> Approve, String ConversationMarker, IReadOnlyList<String> Awaiting, IReadOnlyList<String> Running);
+
+    private static readonly String[] ActionRoles = { "Button", "SplitButton" };
+
+    public static Boolean IsHeading(UiaNode node) => node.AriaRole == "heading";
+
+    public static String SpeakerLabel(Int32 index, IReadOnlyList<UiaNode> nodes)
+    {
+        var heading = nodes[index];
+        if (!IsHeading(heading))
+        {
+            return "";
+        }
+        var text = heading.Text;
+        if (text.Length == 0)
+        {
+            var parts = new List<String>();
+            for (var i = index + 1; i < SubtreeEnd(nodes, index); i++)
+            {
+                if (nodes[i].Role == "Text") parts.Add(nodes[i].Text);
+            }
+            text = String.Join(" ", parts);
+        }
+        return NormalizeLabel(text);
+    }
+
+    /// <summary>
+    /// The run of sibling controls a Copy sits in. Web accessibility may omit ordinary div
+    /// wrappers, so a contiguous run of sibling controls counts as well as a named group.
+    /// Message text, headings and the composer terminate the run: a code Copy cannot borrow
+    /// a response action across that content boundary.
+    /// </summary>
+    public static List<UiaNode> ReplyActionRun(Int32 index, Int32 heading, IReadOnlyList<UiaNode> nodes)
+    {
+        if (index <= heading) return new List<UiaNode>();
+        var parent = -1;
+        for (var i = index - 1; i >= 0; i--)
+        {
+            if (nodes[i].Depth < nodes[index].Depth) { parent = i; break; }
+        }
+        if (parent < 0 || nodes[parent].Role is not ("Group" or "Document")) return new List<UiaNode>();
+        var end = SubtreeEnd(nodes, parent);
+        var peers = Enumerable.Range(parent + 1, end - parent - 1).Where(i => nodes[i].Depth == nodes[index].Depth).ToList();
+        var position = peers.IndexOf(index);
+        if (position < 0) return new List<UiaNode>();
+        Boolean Control(Int32 i) => peers[i] > heading && ActionRoles.Contains(nodes[peers[i]].Role);
+        var first = position;
+        var last = position;
+        while (first > 0 && Control(first - 1)) first--;
+        while (last + 1 < peers.Count && Control(last + 1)) last++;
+        var stop = last + 1 < peers.Count ? peers[last + 1] : end;
+        return nodes.Skip(peers[first]).Take(stop - peers[first]).ToList();
+    }
+
+    /// <summary>
+    /// A fallback for independently wrapped footer controls (each button in its own group, as
+    /// the live Windows app lays them out): THREE distinct icon buttons — Copy plus two
+    /// different response actions — aligned in one compact horizontal row. Coordinates
+    /// establish their relationship only; activation still goes through the button.
+    /// </summary>
+    public static Boolean SameReplyControlRow(IReadOnlyList<Double[]> frames)
+    {
+        if (frames.Count != 3 || frames.Any(f => f.Length != 4 || f.Any(v => !Double.IsFinite(v))
+            || f[2] < 8 || f[2] > 96 || f[3] < 8 || f[3] > 96))
+        {
+            return false;
+        }
+        var height = frames.Min(f => f[3]);
+        if (frames.Max(f => f[3]) > height * 1.5) return false;
+        var midY = frames.Select(f => f[1] + f[3] / 2).ToList();
+        if (midY.Max() - midY.Min() > height * 0.25) return false;
+        var ordered = frames.OrderBy(f => f[0]).ToList();
+        if (ordered[0][0] + ordered[0][2] > ordered[1][0] || ordered[1][0] + ordered[1][2] > ordered[2][0]) return false;
+        return ordered[2][0] + ordered[2][2] - ordered[0][0] <= height * 8;
+    }
+
+    public static Boolean PositionedReplyRow(UiaNode candidate, IReadOnlyList<UiaNode> nodes, IReadOnlyList<String> responseActions)
+    {
+        if (candidate.Bounds == null) return false;
+        var actions = ExactButtons(nodes, responseActions, ActionRoles).Where(n => !ReferenceEquals(n, candidate) && n.Bounds != null).ToList();
+        if (actions.Count < 2) return false;
+        var known = responseActions.Select(NormalizeLabel).ToHashSet(StringComparer.Ordinal);
+        HashSet<String> Semantics(UiaNode node) => node.Labels.Select(NormalizeLabel).Where(known.Contains).ToHashSet(StringComparer.Ordinal);
+        for (var first = 0; first < actions.Count - 1; first++)
+        {
+            for (var second = first + 1; second < actions.Count; second++)
+            {
+                if (Semantics(actions[first]).Overlaps(Semantics(actions[second]))) continue;
+                if (SameReplyControlRow(new[] { candidate.Bounds, actions[first].Bounds!, actions[second].Bounds! })) return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// A diff or preview can expose another document in the same window. Identify the
+    /// conversation by its speaker headings, not by which document happens to have Copy.
+    /// </summary>
+    public static List<UiaNode>? ReplyConversationNodes(IReadOnlyList<UiaNode> nodes, ISet<String> speakerLabels)
+    {
+        var areas = Documents(nodes);
+        if (areas.Count == 1) return areas[0];
+        var conversations = areas.Where(area => Enumerable.Range(0, area.Count).Any(i => speakerLabels.Contains(SpeakerLabel(i, area)))).ToList();
+        return conversations.Count == 1 ? conversations[0] : null;
+    }
+
+    public static (UiaNode? Node, String Error) ReplyTarget(IReadOnlyList<UiaNode> windowNodes, ReplyRules rules, UiaNode? copiedTarget = null)
+    {
+        var assistants = rules.AssistantHeadings.Select(NormalizeLabel).ToList();
+        var users = rules.UserHeadings.Select(NormalizeLabel).ToList();
+        if (assistants.Count == 0 || users.Count == 0 || rules.CopyResponse.Count == 0) return (null, "unsupported");
+        if (!windowNodes.Any(n => n.Role == "Document")) return (null, "reply-web-area-missing");
+        if (windowNodes.Any(IsDialog)) return (null, "reply-dialog-open");
+        if (ExactButtons(windowNodes, rules.Stop.Concat(rules.VoiceEnd).ToList()).Count > 0
+            || FirstPressable(windowNodes, rules.Approve) != null) return (null, "answer-not-ready");
+        if (rules.ConversationMarker.Length > 0)
+        {
+            var selected = 0;
+            foreach (var (row, index, end) in ConversationRows(windowNodes, rules.ConversationMarker))
+            {
+                if (!IsCurrent(row)) continue;
+                selected++;
+                var state = ConversationRowState(row.Text, windowNodes.Skip(index + 1).Take(end - index - 1),
+                    rules.Awaiting, Array.Empty<String>(), rules.Running, null);
+                if (state is "running" or "awaiting") return (null, "answer-not-ready");
+            }
+            if (selected > 1) return (null, "reply-selection-multiple");
+        }
+        var speakers = new HashSet<String>(assistants.Concat(users), StringComparer.Ordinal);
+        var nodes = ReplyConversationNodes(windowNodes, speakers);
+        if (nodes == null) return (null, "reply-web-area-multiple");
+
+        (Int32 Index, Boolean Assistant)? lastSpeaker = null;
+        for (var i = 0; i < nodes.Count; i++)
+        {
+            if (!IsHeading(nodes[i])) continue;
+            var label = SpeakerLabel(i, nodes);
+            if (assistants.Contains(label)) lastSpeaker = (i, true);
+            else if (users.Contains(label)) lastSpeaker = (i, false);
+        }
+        if (lastSpeaker == null) return (null, "reply-unrecognized");
+        var latest = lastSpeaker.Value;
+        if (!latest.Assistant) return (null, "no-answer");
+
+        // No fallback to an earlier answer when the newest turn has no completed copy action.
+        var tail = nodes.Skip(latest.Index + 1).ToList();
+        var matches = ExactButtons(tail, rules.CopyResponse);
+        Boolean Known(UiaNode candidate) => matches.Any(m => ReferenceEquals(m, candidate));
+        // Some app versions expose the response-specific text only as a tooltip. A generic
+        // Copy is accepted only in the same small action row as an adapter-owned sibling action.
+        // A code-block Copy would have to climb past the message heading, and is rejected.
+        foreach (var candidate in ExactButtons(tail, rules.CopyButton))
+        {
+            if (Known(candidate)) continue;
+            var index = IndexOf(nodes, candidate);
+            if (index < 0) continue;
+            var run = ReplyActionRun(index, latest.Index, nodes);
+            if (ExactButtons(run, rules.CopyButton).Count == 1 && ExactButtons(run, rules.ResponseActions, ActionRoles).Count > 0)
+            {
+                matches.Add(candidate);
+                continue;
+            }
+            var controlLabels = rules.CopyButton.Concat(rules.CopyCompleted).Concat(rules.ResponseActions)
+                .Select(NormalizeLabel).ToHashSet(StringComparer.Ordinal);
+            for (var parent = index - 1; parent >= 0; parent--)
+            {
+                if (nodes[parent].Depth >= candidate.Depth) continue;
+                var end = SubtreeEnd(nodes, parent);
+                if (end <= index) continue;
+                var scope = nodes.Skip(parent).Take(end - parent).ToList();
+                if (scope.Any(n => IsHeading(n) || n.Role is "Edit" or "Document")) break;
+                // The heading can be outside the Markdown container. Do not let a code Copy
+                // climb through response text to borrow More actions from a different footer.
+                if (scope.Any(n => n.Role == "Text" && n.Text.Length > 0 && !controlLabels.Contains(NormalizeLabel(n.Text)))) break;
+                if (nodes[parent].Role == "Group" && ExactButtons(scope, rules.CopyButton).Count == 1
+                    && ExactButtons(scope, rules.ResponseActions, ActionRoles).Count > 0)
+                {
+                    matches.Add(candidate);
+                }
+                break;
+            }
+            if (!Known(candidate) && PositionedReplyRow(candidate, tail, rules.ResponseActions))
+            {
+                matches.Add(candidate);
+            }
+        }
+        // The same pressed button changes its accessible label to Copied for two seconds.
+        // This is acknowledgement only, never an alternative target for a fresh request.
+        if (copiedTarget != null)
+        {
+            var acknowledged = ExactButtons(tail, rules.CopyCompleted).FirstOrDefault(n => n.RuntimeId == copiedTarget.RuntimeId);
+            if (acknowledged != null && !matches.Any(m => m.RuntimeId == copiedTarget.RuntimeId)) matches.Add(acknowledged);
+        }
+        if (matches.Count > 1) return (null, "reply-copy-multiple");
+        if (matches.Count == 0)
+        {
+            // Report which selector condition failed, without emitting labels, message text
+            // or element identities.
+            var names = rules.CopyResponse.Concat(rules.CopyButton).Select(NormalizeLabel).ToHashSet(StringComparer.Ordinal);
+            Boolean NamedCopy(UiaNode node) => (node.Pressable || ActionRoles.Contains(node.Role))
+                && node.Labels.Any(l => names.Contains(NormalizeLabel(l)));
+            var named = tail.Where(NamedCopy).ToList();
+            if (named.Count == 0) return (null, nodes.Any(NamedCopy) ? "reply-copy-outside-latest" : "reply-copy-not-found");
+            if (!named.Any(n => n.Role == "Button")) return (null, "reply-copy-wrong-role");
+            if (ExactButtons(tail, rules.CopyResponse.Concat(rules.CopyButton).ToList()).Count == 0) return (null, "reply-copy-nested-control");
+            if (ExactButtons(tail, rules.ResponseActions, ActionRoles).Count == 0) return (null, "reply-action-not-found");
+            return (null, "reply-action-row-unrecognized");
+        }
+        var target = matches[0];
+        return target.Pressable && target.Enabled ? (target, "") : (null, "answer-not-ready");
+    }
+
+    // ---- Find Chat ------------------------------------------------------------
+    //
+    // Search never uses the message composer, arbitrary pressable rows, or Return. Unknown
+    // layouts are deliberately unsupported. All discovery stays inside one dialog.
+
+    public static String NormalizeSearchLabel(String label) => NormalizeLabel(label).Trim('.', '…', ' ');
+
+    public static Boolean IsSearchField(UiaNode node, IReadOnlyList<String> names)
+    {
+        if (node.Role is not ("Edit" or "ComboBox")) return false;
+        if (node.AriaRole == "searchbox") return true;
+        var expected = names.Select(NormalizeSearchLabel).Where(x => x.Length > 0).ToHashSet(StringComparer.Ordinal);
+        return node.Labels.Concat(new[] { node.Text }).Any(l => NormalizeSearchLabel(l).Length > 0 && expected.Contains(NormalizeSearchLabel(l)));
+    }
+
+    /// <summary>The dialog or search landmark the field sits in; the window is the hard boundary.</summary>
+    public static Int32? SearchContainer(Int32 index, IReadOnlyList<UiaNode> nodes)
+    {
+        var depth = nodes[index].Depth;
+        for (var i = index - 1; i >= 0; i--)
+        {
+            if (nodes[i].Depth >= depth) continue;
+            depth = nodes[i].Depth;
+            if (IsDialog(nodes[i]) || nodes[i].AriaRole == "search") return i;
+            if (nodes[i].Role == "Window") break;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// A result's id: a conversation link's canonical URL, or — the Windows app lists results
+    /// as pressable list items with no URL — the item's title, fingerprinted. Duplicate titles
+    /// are dropped by the caller, so an id always names one item.
+    /// </summary>
+    public static String? SearchResultId(UiaNode node, IReadOnlyList<String> hosts, IReadOnlyList<String> paths)
+    {
+        if (!node.Pressable || String.IsNullOrWhiteSpace(node.Text)) return null;
+        if (node.Role == "ListItem")
+        {
+            return "item:" + Fingerprint(node.Text)[..16];
+        }
+        if (node.Role != "Hyperlink" || node.Value.Length == 0) return null;
+        if (!Uri.TryCreate(node.Value, UriKind.RelativeOrAbsolute, out var url)) return null;
+        String path;
+        if (url.IsAbsoluteUri)
+        {
+            if (url.Scheme != "https" || !hosts.Contains(url.Host.ToLowerInvariant()) || url.Query.Length > 0 || url.Fragment.Length > 0) return null;
+            path = url.AbsolutePath;
+        }
+        else
+        {
+            if (!node.Value.StartsWith('/') || node.Value.Contains('?') || node.Value.Contains('#')) return null;
+            path = node.Value;
+        }
+        var matches = paths.Any(prefix => path.StartsWith(prefix, StringComparison.Ordinal)
+            && path.Length > prefix.Length && !path[prefix.Length..].Contains('/'));
+        return matches ? node.Value : null;
+    }
+
+    /// <summary>
+    /// A result's title for the key: a list item's accessible name runs the chat title, its
+    /// project, a shortcut and a snippet together, so the item's first text — the title the
+    /// sidebar shows — is what the key displays. A link keeps its own text.
+    /// </summary>
+    public static String SearchResultTitle(UiaNode node, IReadOnlyList<UiaNode> nodes)
+    {
+        if (node.Role != "ListItem") return node.Text;
+        var index = IndexOf(nodes, node);
+        if (index < 0) return node.Text;
+        for (var i = index + 1; i < SubtreeEnd(nodes, index); i++)
+        {
+            if (nodes[i].Role == "Text" && !String.IsNullOrWhiteSpace(nodes[i].Text)) return nodes[i].Text;
+        }
+        return node.Text;
+    }
+
+    public static List<(UiaNode Node, String Id, String Title)> SearchResults(IReadOnlyList<UiaNode> surfaceNodes, String query,
+        IReadOnlyList<String> hosts, IReadOnlyList<String> paths)
+    {
+        if (String.IsNullOrWhiteSpace(query)) return new List<(UiaNode, String, String)>();
+        var matches = surfaceNodes.Select(n => (Node: n, Id: SearchResultId(n, hosts, paths))).Where(x => x.Id != null)
+            .Select(x => (x.Node, x.Id!, SearchResultTitle(x.Node, surfaceNodes))).ToList();
+        var counts = matches.GroupBy(m => m.Item2, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        return matches.Where(m => counts[m.Item2] == 1).Take(100).ToList();
+    }
 
     public static Boolean IsDialog(UiaNode node) =>
         node.AriaRole is "dialog" or "alertdialog" || (node.Role == "Window" && node.Depth > 0);

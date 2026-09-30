@@ -105,6 +105,76 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void The_remaining_verbs_send_the_macOS_argument_shapes()
+        {
+            var (auto, calls) = Build(
+                "{\"ok\":true,\"target\":\"tok\",\"origin\":\"o\",\"query\":\"\",\"results\":[]}",
+                "{\"ok\":true,\"opened\":true,\"alreadyOpen\":false}",
+                "{\"ok\":true,\"requested\":\"start\"}",
+                "{\"ok\":true,\"target\":\"tok\",\"fingerprint\":\"f\",\"hasContent\":true}",
+                "{\"ok\":true,\"method\":\"value\",\"sent\":false}",
+                "{\"ok\":true,\"attached\":true}",
+                "{\"ok\":false,\"error\":\"files-changed\"}",
+                "{\"ok\":true,\"text\":\"the answer\"}",
+                "{\"ok\":true,\"image\":\"C:\\\\shot.png\",\"appName\":\"Mail\"}",
+                "{\"ok\":true,\"matched\":\"Changes\"}");
+
+            var search = auto.Search("open");
+            Assert.True(search.Available);
+            Assert.Equal("search", calls[0][0]);
+            Assert.Equal("ChatGPT", calls[0][calls[0].IndexOf("--expect-mode") + 1]);
+            Assert.Contains("--search-field", calls[0]);
+            Assert.Contains("--result-host", calls[0]);
+
+            Assert.True(auto.OpenChanges(out _));
+            Assert.Equal("open-panel", calls[1][0]);
+            Assert.Equal("Codex", calls[1][calls[1].IndexOf("--expect-mode") + 1]);
+            Assert.Contains("--panel-open", calls[1]);
+            Assert.Contains("--panel-visible", calls[1]);
+
+            Assert.True(auto.SetVoiceChat(true, out _));
+            Assert.Equal("voice", calls[2][0]);
+            Assert.Equal("start", calls[2][calls[2].IndexOf("--action") + 1]);
+
+            Assert.True(auto.SupportsAppend);
+            var target = auto.PrepareAppend("ChatGPT", out _);
+            Assert.Equal("append-target", calls[3][0]);
+            Assert.True(target.HasContent);
+            Assert.True(auto.AppendPreparedDraft("more", "ChatGPT", target, retry: false, out _));
+            Assert.Equal("append", calls[4][0]);
+            Assert.Equal("f", calls[4][calls[4].IndexOf("--expect-draft") + 1]);
+            Assert.DoesNotContain("--accept-existing", calls[4]);
+
+            Assert.True(auto.AttachPreparedImage("C:\\a.png", "ChatGPT", "tok", out _));
+            Assert.Equal("attach-image", calls[5][0]);
+            Assert.False(auto.AttachPreparedFiles(new[] { new DesktopFile("C:\\a.txt", 3, 4) }, "ChatGPT", "tok", out var error));
+            Assert.Equal("files-changed", error);
+            Assert.Equal("attach-files", calls[6][0]);
+            Assert.Contains("--files", calls[6]);
+
+            var copied = auto.Context("copy");
+            Assert.Equal("the answer", copied.Text);
+            Assert.Equal("copy-reply", calls[7][0]);
+            Assert.Contains("--assistant-heading", calls[7]);
+
+            var shot = auto.Context("screenshot");
+            Assert.Equal("C:\\shot.png", shot.Image);
+            Assert.Equal("context-screenshot", calls[8][0]);
+
+            Assert.True(auto.PressInMode(new[] { "Changes" }, "Codex", out var matched));
+            Assert.Equal("Changes", matched);
+            Assert.Equal("Codex", calls[9][calls[9].IndexOf("--expect-mode") + 1]);
+        }
+
+        [Fact]
+        public void An_unconfirmed_attachment_is_reported_as_such_when_the_helper_says_nothing()
+        {
+            var (auto, _) = Build("");
+            Assert.False(auto.AttachPreparedImage("C:\\a.png", "ChatGPT", "tok", out var error));
+            Assert.Equal("attachment-unconfirmed", error);
+        }
+
+        [Fact]
         public void Frontmost_is_a_process_check_that_degrades_to_unknown()
         {
             var (auto, calls) = Build("{\"ok\":true,\"frontmost\":false}", "", "{\"ok\":false,\"error\":\"app-not-running\"}");
@@ -162,8 +232,6 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("draft-changed", error);
             Assert.DoesNotContain("--expect-target", calls[3]);
 
-            // An unsupported family stays honest: appending is not ported yet.
-            Assert.False(auto.SupportsAppend);
             Assert.False(auto.SendPreparedPrompt("", "Codex", "tok", out error));
             Assert.Equal("empty-text", error);
         }
@@ -204,9 +272,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var source = File.ReadAllText(RepoFile(
                 "tools", "windows", "VizhiDesktopUia", "Program.cs"));
 
-            foreach (var verb in new[] { "inspect", "frontmost", "status", "press", "press-exact", "restore-front", "draft-target", "write", "send", "focus" })
+            var helperDir = Path.GetDirectoryName(RepoFile("tools", "windows", "VizhiDesktopUia", "Program.cs"));
+            var allSource = String.Join("\n", Directory.GetFiles(helperDir, "*.cs").Select(File.ReadAllText));
+            foreach (var verb in new[]
+            {
+                "inspect", "frontmost", "status", "press", "press-exact", "restore-front", "voice", "open-panel",
+                "draft-target", "append-target", "write", "append", "send", "attach-image", "attach-files",
+                "copy-reply", "search", "focus",
+            })
             {
                 Assert.Contains($"\"{verb}\"", source);
+            }
+            foreach (var action in new[] { "return", "paste", "window", "screenshot", "clipboard", "selection" })
+            {
+                Assert.Contains($"case \"{action}\"", allSource);
             }
             foreach (var argument in new[]
             {
@@ -215,23 +294,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 "--conv-marker", "--state-awaiting", "--state-unread", "--state-running", "--idle-images",
                 "--voice-start", "--voice-end", "--panel-visible", "--panel-mode",
                 "--label", "--text", "--send-label", "--expect-near", "--expect-mode", "--conversation",
+                "--expect-target", "--expect-draft", "--accept-existing", "--draft-placeholder", "--image", "--files",
+                "--copy-response", "--assistant-heading", "--search-field", "--result-host", "--source",
             })
             {
-                Assert.Contains($"\"{argument}\"", source);
+                Assert.Contains($"\"{argument}\"", allSource);
             }
 
-            Assert.Contains("ambiguous-app", source);
-            Assert.Contains("ambiguous-composer", source);
-            Assert.Contains("ambiguous-conversation", source);
-            Assert.Contains("card-changed", source);
-            Assert.Contains("mode-changed", source);
-            Assert.Contains("surface-unavailable", source);
-            Assert.Contains("SwitchToThisWindow", source);
+            foreach (var refusal in new[]
+            {
+                "ambiguous-app", "ambiguous-composer", "ambiguous-conversation", "card-changed", "mode-changed",
+                "surface-unavailable", "draft-exists", "draft-changed", "composer-target-changed", "attachment-unconfirmed",
+                "clipboard-busy", "answer-changed", "search-target-changed", "query-changed",
+            })
+            {
+                Assert.Contains($"\"{refusal}\"", allSource);
+            }
+            Assert.Contains("SwitchToThisWindow", allSource);
             Assert.Contains("ForegroundPid() == target.Pid", source);
             // The WPF wrapper is what made the helper framework-dependent (#83); COM only.
-            Assert.DoesNotContain("System.Windows.Automation", source);
-            Assert.DoesNotContain("Allow once", source); // app knowledge stays in the adapter
-            Assert.DoesNotContain("ChatGPT", source);
+            Assert.DoesNotContain("using System.Windows.Automation", allSource);
+            Assert.DoesNotContain("Allow once", allSource); // app knowledge stays in the adapter
+            Assert.DoesNotContain("ChatGPT", allSource);
+            // The only synthesised input is a chord posted after the focus was proven.
+            Assert.DoesNotContain("keybd_event", allSource);
 
             var project = File.ReadAllText(RepoFile("tools", "windows", "VizhiDesktopUia", "VizhiDesktopUia.csproj"));
             Assert.Contains("<SelfContained>true</SelfContained>", project);

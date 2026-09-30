@@ -20,13 +20,16 @@ internal static class UiaIds
 
     // Properties
     public const Int32 RuntimeId = 30000;
+    public const Int32 BoundingRectangle = 30001;
     public const Int32 ProcessId = 30002;
     public const Int32 ControlType = 30003;
     public const Int32 Name = 30005;
+    public const Int32 HasKeyboardFocus = 30008;
     public const Int32 IsEnabled = 30010;
     public const Int32 AutomationId = 30011;
     public const Int32 ClassName = 30012;
     public const Int32 HelpText = 30013;
+    public const Int32 IsPassword = 30019;
     public const Int32 NativeWindowHandle = 30020;
     public const Int32 IsOffscreen = 30022;
     public const Int32 IsExpandCollapseAvailable = 30028;
@@ -48,6 +51,7 @@ internal static class UiaIds
     public const Int32 ValuePattern = 10002;
     public const Int32 ExpandCollapsePattern = 10005;
     public const Int32 SelectionItemPattern = 10010;
+    public const Int32 TextPattern = 10014;
     public const Int32 TogglePattern = 10015;
 
     // ExpandCollapseState
@@ -102,7 +106,9 @@ internal interface IUIAutomation
 {
     void _VtblGap1_3();                                             // CompareElements, CompareRuntimeIds, GetRootElement
     IUIAutomationElement ElementFromHandle(IntPtr hwnd);
-    void _VtblGap2_3();                                             // ElementFromPoint, GetFocusedElement, GetRootElementBuildCache
+    void _VtblGap2_1();                                             // ElementFromPoint
+    IUIAutomationElement? GetFocusedElement();
+    void _VtblGap5_1();                                             // GetRootElementBuildCache
     IUIAutomationElement ElementFromHandleBuildCache(IntPtr hwnd, IUIAutomationCacheRequest cacheRequest);
     void _VtblGap3_6();                                             // ElementFromPointBuildCache … RawViewWalker
     IUIAutomationCondition RawViewCondition { get; }
@@ -185,4 +191,26 @@ internal interface IUIAutomationValuePattern
     void SetValue([MarshalAs(UnmanagedType.BStr)] String value);
     String? CurrentValue { [return: MarshalAs(UnmanagedType.BStr)] get; }
     Int32 CurrentIsReadOnly { get; }
+}
+
+[ComImport, Guid("32eba289-3583-42c9-9c59-3b6d9a1e9b6a"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IUIAutomationTextPattern
+{
+    void _VtblGap1_2();                                             // RangeFromPoint, RangeFromChild
+    IUIAutomationTextRangeArray? GetSelection();
+}
+
+[ComImport, Guid("ce4ae76a-e717-4c98-81ea-47371d028eb6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IUIAutomationTextRangeArray
+{
+    Int32 Length { get; }
+    IUIAutomationTextRange GetElement(Int32 index);
+}
+
+[ComImport, Guid("a543cc6a-f4ae-494b-8239-c814481187a8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IUIAutomationTextRange
+{
+    void _VtblGap1_9();                                             // Clone … GetEnclosingElement
+    [return: MarshalAs(UnmanagedType.BStr)]
+    String? GetText(Int32 maxLength);
 }
