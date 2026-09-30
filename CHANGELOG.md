@@ -1,3 +1,27 @@
+## Vizhi Desktop [Unreleased] — the Windows port, in progress
+
+Not packaged for Windows yet (`SHIPS_WINDOWS` stays off for this product until the device pass).
+
+### Added
+- **Windows: the app is found and read.** The Store package OpenAI.Codex ("ChatGPT",
+  `ChatGPT.exe`) is the confirmed identity; the install probe looks it up in the package
+  repository. The UI Automation helper is rebuilt on the COM interface — self-contained and
+  trimmed like every other Windows helper, 12 MB — and reads the whole window in one call
+  (~320 ms). Every label the Mac adapter uses reads the same on Windows.
+- **Windows: status, presses, New Chat, the chat keys, mode switch, Dictate, Send, Prompts
+  and Tasks** have their helper verbs: status with the full macOS snapshot, press with the
+  card, conversation and mode guards, draft targets, a guarded write into an empty composer,
+  and send. Copy Reply, Paste into Chat, Attach Files, Screenshot, Find Chat, View Changes and
+  Voice Chat are not ported yet and read unavailable.
+
+### Changed
+- **Windows: a press hands focus back.** Chromium performs a UI Automation press as a click,
+  which brings the ChatGPT window to the front; the helper reports it and a second invocation
+  gives the foreground back to the window that had it, so Approve from your editor leaves you
+  in your editor. The chat keys skip that, since they show the chat on purpose.
+- **Windows: a locked screen or hidden window reads Hidden, not resolved.** Chromium keeps the
+  document element while it serves no page; an empty document is not a surface.
+
 ## Vizhi Desktop [1.0.0] — 2026-09-29
 
 First release. Keypad controls for the ChatGPT desktop app on macOS, in both ChatGPT and Codex modes, on the Logitech MX Creative Keypad.
