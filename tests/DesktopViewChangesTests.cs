@@ -90,7 +90,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.DoesNotContain("--panel-key-code", call);
             Assert.DoesNotContain("--panel-modifiers", call);
             Assert.DoesNotContain("Toggle file diff", call);
-            Assert.Equal(new[] { "Changes", "This branch" }, new OpenAiDesktopAdapter().ShowDiffLabels);
+            Assert.Equal(new[] { "Changes", "This branch", "View changes" }, new OpenAiDesktopAdapter().ShowDiffLabels);
         }
 
         [Theory]

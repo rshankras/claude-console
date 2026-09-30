@@ -308,6 +308,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             });
             Assert.False(UiaMatching.PanelRouteAvailable(preview, modeLabel, open, visible));
             Assert.False(UiaMatching.PanelRouteAvailable(withOpener, "", open, visible));
+
+            // Seen live on Windows (app 26.928): the reply's edit summary offers "View changes"
+            // beside "View changed files"; only the first opens Review.
+            var reply = Window(new[]
+            {
+                N(3, "Button", modeLabel, pressable: true),
+                N(3, "Button", "View changed files", pressable: true),
+                N(3, "Button", "View changes", pressable: true),
+            });
+            Assert.False(UiaMatching.PanelRouteAvailable(reply, modeLabel, open, visible));
+            var withReply = new[] { "Changes", "This branch", "View changes" };
+            Assert.True(UiaMatching.PanelRouteAvailable(reply, modeLabel, withReply, visible));
+            Assert.Equal("View changes", Assert.Single(UiaMatching.PanelOpeners(reply, withReply)).Text);
         }
 
         [Fact]

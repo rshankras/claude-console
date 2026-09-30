@@ -81,6 +81,10 @@ What the Windows app does differently, and how the port answers it:
   UIA and proven focused, one Ctrl+V, attachment confirmed by name, clipboard given back.
 - The region screenshot is the shared toolkit's snip (`claude-console-tools.exe shot`), which
   ships beside this helper; the window-behind capture is `PrintWindow`.
+- App 26.928 shows no Changes summary row. The reply's edit summary carries "View changes",
+  which opens the same Changes tab; `open-panel` takes it as an opener and confirms by
+  "Show files" (2026-09-30: `alreadyOpen` on an open tab, `method: button` on a closed one).
+  "View changed files" beside it is the file disclosure and is never pressed.
 
 ## Not yet checked live (the device pass)
 
@@ -89,7 +93,8 @@ What the Windows app does differently, and how the port answers it:
 - `voice` (starts a real voice chat), `send` (sends a real message), `attach-image` and
   `attach-files` (need a real file to attach), `context-selection` (copies from another app),
   `context-paste`, `context-screenshot` (the snip overlay).
-- `open-panel` in Codex mode with a review available.
+- `open-panel` in a chat with two or more edited turns: if each turn keeps its own
+  "View changes", the helper sees several openers and refuses (`panel-opener-multiple`).
 - The tree when the window is on another virtual desktop.
 - Options+ binding to a Store app, and the Vizhi Home layout importing on Windows.
 

@@ -130,7 +130,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             DesktopControl.Search => new[] { "Search" },
             // The summary row opens Review. File disclosure and Show/Hide files controls
             // belong INSIDE Review and must never be used as opening fallbacks.
-            DesktopControl.Changes => new[] { "Changes", "This branch" },
+            // App 26.928 (seen live on Windows, 2026-09-30) has no summary row: the reply's
+            // edit summary carries "View changes", which opens the same Review tab. Its
+            // neighbour "View changed files" is the file disclosure and is not an opener.
+            DesktopControl.Changes => new[] { "Changes", "This branch", "View changes" },
             DesktopControl.Projects => new[] { "Projects" },
             DesktopControl.Plugins => new[] { "Plugins" },
             DesktopControl.AttachFiles => new[] { "Add files and more" },
