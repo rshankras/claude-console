@@ -1,18 +1,23 @@
-## Vizhi Desktop [Unreleased] — the Windows port, in progress
+## Vizhi Desktop [Unreleased] — the Windows port
 
-Not packaged for Windows yet (`SHIPS_WINDOWS` stays off for this product until the device pass).
+Packaged for Windows (`pluginFolderWin`, the toolkit and the UI Automation helper, signed at
+pack time); the device pass with the installed package is what remains before a release.
 
 ### Added
 - **Windows: the app is found and read.** The Store package OpenAI.Codex ("ChatGPT",
   `ChatGPT.exe`) is the confirmed identity; the install probe looks it up in the package
   repository. The UI Automation helper is rebuilt on the COM interface — self-contained and
-  trimmed like every other Windows helper, 12 MB — and reads the whole window in one call
+  trimmed like every other Windows helper, 14 MB — and reads the whole window in one call
   (~320 ms). Every label the Mac adapter uses reads the same on Windows.
-- **Windows: status, presses, New Chat, the chat keys, mode switch, Dictate, Send, Prompts
-  and Tasks** have their helper verbs: status with the full macOS snapshot, press with the
-  card, conversation and mode guards, draft targets, a guarded write into an empty composer,
-  and send. Copy Reply, Paste into Chat, Attach Files, Screenshot, Find Chat, View Changes and
-  Voice Chat are not ported yet and read unavailable.
+- **Windows: every key has its path.** Status with the full macOS snapshot; presses with the
+  card, conversation and mode guards; draft targets, a guarded write into an empty composer,
+  append beneath a fingerprinted draft, and send; Voice Chat; View Changes; Copy Reply (with
+  the geometry rule for the app's wrapped footer buttons); Screenshot through the shared
+  toolkit's snip and the window-behind capture; Paste into Chat from the clipboard or a
+  selection; Attach Files by a verified paste into the focused composer; Find Chat through the
+  app's command menu, whose results are list items — the key shows the chat's own title.
+  Each verb was checked against the live app where a check was safe; what could not be
+  checked without sending a message or starting a voice call is listed for the device pass.
 
 ### Changed
 - **Windows: a press hands focus back.** Chromium performs a UI Automation press as a click,

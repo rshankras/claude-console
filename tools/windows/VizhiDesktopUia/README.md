@@ -55,13 +55,43 @@ Open the ChatGPT app, then:
 `--dry` reports what a press would hit without pressing. `--all` includes message text; inspect
 the file before sharing it if the open conversation is sensitive.
 
-## Still to do before Windows packaging
+## Every macOS verb has its Windows counterpart
 
-1. Live checks of every verb, with the app in front, minimised, covered and on another virtual
-   desktop; `write` in particular (a Chromium composer may refuse a direct value write).
-2. The verbs the macOS helper has and this one does not yet: `draft-target`, `append-target`,
-   `append`, `send`, `search`, `open-panel`, `copy-reply`, `voice`, `attach-image`,
-   `attach-files`, `context-*`. Until each lands, the matching key reads unavailable.
-3. `SHIPS_WINDOWS=1` for VizhiDesktop in `tools/voice/pack-release.sh`, this helper in
-   `tools/windows/build-windows-payload.sh`, the signing list, `pluginFolderWin: bin` in the
-   package metadata, and a Windows whisper bundle with its `TRANSCRIPTION_SMOKE_OK` marker.
+`Program.cs` (target, scan, status, press, restore-front, voice, open-panel, focus),
+`ComposerVerbs.cs` (draft-target, append-target, write, append, send, attach-image,
+attach-files), `ContextVerbs.cs` (copy-reply, context-clipboard / selection / window /
+screenshot / return / paste) and `SearchVerbs.cs` (search). Checked live on 2026-09-30:
+status, presses, the focus hand-back, write, append, send's refusals, Copy Reply, the clipboard
+read, the window-behind capture, and the whole Find Chat flow (open, type, results, select).
+
+What the Windows app does differently, and how the port answers it:
+
+- The composer is written through the value pattern, which replaces the whole value. `write`
+  goes only into an empty composer; `append` writes original + separator + text and proves by
+  fingerprint that the original survived.
+- Footer buttons are each wrapped in their own group, so Copy is tied to its response actions
+  by the buttons' bounding boxes (the macOS geometry fallback, now the usual route).
+- Search results are list items with no URL: a result's id is its title's fingerprint, and the
+  key shows the item's first text — the chat title — not the accessible name that runs title,
+  project, shortcut and snippet together.
+- Attachments go in by a verified paste: file list on the clipboard, composer focused through
+  UIA and proven focused, one Ctrl+V, attachment confirmed by name, clipboard given back.
+- The region screenshot is the shared toolkit's snip (`claude-console-tools.exe shot`), which
+  ships beside this helper; the window-behind capture is `PrintWindow`.
+
+## Not yet checked live (the device pass)
+
+- A real approval card: Approve and Deny from another app, with the focus hand-back running
+  from LogiPluginService rather than a terminal.
+- `voice` (starts a real voice chat), `send` (sends a real message), `attach-image` and
+  `attach-files` (need a real file to attach), `context-selection` (copies from another app),
+  `context-paste`, `context-screenshot` (the snip overlay).
+- `open-panel` in Codex mode with a review available.
+- The tree when the window is minimised, fully covered or on another virtual desktop.
+- Options+ binding to a Store app, and the Vizhi Home layout importing on Windows.
+
+## Packaging
+
+`SHIPS_WINDOWS=1` for VizhiDesktop; `build-windows-payload.sh` stages this helper and the
+toolkit (no hook); `verify-package.sh` refuses a helper nothing launches; the package declares
+`pluginFolderWin: bin`. Packing and signing run on the Mac.
