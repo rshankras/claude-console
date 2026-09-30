@@ -29,6 +29,8 @@ internal sealed class UiaNode
     public Boolean HasValue { get; init; }
     public Boolean ReadOnly { get; init; }
     public Boolean Selected { get; init; }
+    /// <summary>UIA's runtime id, stable for the element's lifetime: what a draft target is keyed on.</summary>
+    public String RuntimeId { get; init; } = "";
     /// <summary>The live element; opaque to everything in this file.</summary>
     public Object? Handle { get; init; }
 }
@@ -391,6 +393,96 @@ internal static class UiaMatching
         }
         return null;
     }
+
+    // Rich editors can expose an empty or trailing paragraph through their value. Ignore only
+    // outer whitespace for eligibility and readback; never strip visible content.
+    public static String ComparableDraft(String? value) => (value ?? "").Trim();
+
+    public static String Fingerprint(String? value)
+    {
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ComparableDraft(value)));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// A value that spells one of the adapter's composer hints, with no enabled Send beside
+    /// it, is the empty composer's hint rendered into its value, not a draft. A literal draft
+    /// spelling the same words has Send enabled and survives.
+    /// </summary>
+    public static Boolean IsPlaceholderDraft(String value, IReadOnlyList<String> placeholders, Boolean sendEnabled) =>
+        !sendEnabled && placeholders.Contains(ComparableDraft(value), StringComparer.Ordinal);
+
+    /// <summary>
+    /// The mode labels the window reports, from controls only. Duplicate reports of one mode
+    /// are harmless; conflicting modes in one window are not.
+    /// </summary>
+    public static HashSet<String> ReportedModes(IReadOnlyList<UiaNode> nodes, String prefix)
+    {
+        var values = new HashSet<String>(StringComparer.Ordinal);
+        if (prefix.Length == 0)
+        {
+            return values;
+        }
+        for (var i = 0; i < nodes.Count; i++)
+        {
+            var node = nodes[i];
+            var control = node.Role is "Button" or "SplitButton" or "MenuItem" or "ComboBox";
+            if (!control && !(node.Role == "Group" && node.Pressable))
+            {
+                continue;
+            }
+            var labels = new List<String> { node.Text };
+            labels.AddRange(node.Labels);
+            if (control)
+            {
+                for (var j = i + 1; j < nodes.Count && nodes[j].Depth > node.Depth; j++)
+                {
+                    if (nodes[j].Role == "Text")
+                    {
+                        labels.Add(nodes[j].Text);
+                    }
+                }
+            }
+            foreach (var label in labels)
+            {
+                if (label.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    values.Add(label[prefix.Length..]);
+                }
+            }
+        }
+        return values;
+    }
+
+    /// <summary>Null when the expected mode is the one (and only) mode the window reports.</summary>
+    public static String? ModeError(HashSet<String> modes, String expected, Boolean pinned)
+    {
+        if (expected.Length == 0)
+        {
+            return "mode-unavailable";
+        }
+        if (modes.Count == 0)
+        {
+            return pinned ? null : "mode-unavailable";
+        }
+        return modes.Count == 1 && modes.Contains(expected) ? null : "mode-changed";
+    }
+
+    /// <summary>
+    /// The open conversation's identity, so a reused editor cannot silently receive a brief
+    /// after sidebar navigation. Empty when the app exposes none; null when it exposes more
+    /// than one, which no caller may act on.
+    /// </summary>
+    public static String? SelectedConversation(IReadOnlyList<UiaNode> nodes, String marker)
+    {
+        var selected = ConversationRows(nodes, marker).Where(r => IsCurrent(r.Row))
+            .Select(r => r.Row.Text + ":" + r.Row.RuntimeId).ToList();
+        return selected.Count > 1 ? null : selected.FirstOrDefault() ?? "";
+    }
+
+    /// <summary>A modal, or a task that is running or waiting, means the composer is not ready.</summary>
+    public static Boolean ComposerBlocked(IReadOnlyList<UiaNode> nodes, IReadOnlyList<String> blockingLabels) =>
+        nodes.Any(IsDialog) || ExactButtons(nodes, blockingLabels).Any(n => n.Enabled);
 
     public static Boolean IsDialog(UiaNode node) =>
         node.AriaRole is "dialog" or "alertdialog" || (node.Role == "Window" && node.Depth > 0);

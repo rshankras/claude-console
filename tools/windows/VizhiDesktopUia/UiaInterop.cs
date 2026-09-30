@@ -19,6 +19,7 @@ internal static class UiaIds
     public const Int32 ElementModeFull = 1;
 
     // Properties
+    public const Int32 RuntimeId = 30000;
     public const Int32 ProcessId = 30002;
     public const Int32 ControlType = 30003;
     public const Int32 Name = 30005;

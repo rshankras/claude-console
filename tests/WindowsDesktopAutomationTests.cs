@@ -124,10 +124,48 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("--send-label", args);
             Assert.Contains("--stop", args);
             Assert.Contains("--approve", args);
+            Assert.Contains("--voice-end", args);
+            Assert.Contains("--draft-placeholder", args);
+            Assert.Contains("--composer-send-label", args);
+            Assert.DoesNotContain("--expect-target", args);
 
             var (draft, draftCalls) = Build("{\"ok\":true,\"method\":\"value\",\"sent\":false}");
             Assert.True(draft.WriteComposer("hello", send: false, out _));
             Assert.DoesNotContain("--send-label", Assert.Single(draftCalls));
+        }
+
+        [Fact]
+        public void Prepared_drafts_carry_the_target_through_write_and_send_like_macOS()
+        {
+            var (auto, calls) = Build(
+                "{\"ok\":true,\"target\":\"tok\"}",
+                "{\"ok\":true,\"method\":\"value\",\"sent\":false}",
+                "{\"ok\":true,\"sent\":true}",
+                "{\"ok\":false,\"error\":\"draft-changed\"}");
+
+            Assert.Equal("tok", auto.PrepareDraft("Codex", requireEmpty: true, out var error));
+            Assert.Null(error);
+            Assert.Equal("draft-target", calls[0][0]);
+            Assert.Equal("Codex", calls[0][calls[0].IndexOf("--expect-mode") + 1]);
+            Assert.DoesNotContain("--allow-existing", calls[0]);
+
+            Assert.True(auto.WritePreparedDraft("hello", "Codex", "tok", retry: true, out _));
+            Assert.Equal("tok", calls[1][calls[1].IndexOf("--expect-target") + 1]);
+            Assert.Contains("--accept-existing", calls[1]);
+
+            Assert.True(auto.SendPreparedPrompt("hello", "Codex", "tok", out _));
+            Assert.Equal("send", calls[2][0]);
+            Assert.Equal("hello", calls[2][calls[2].IndexOf("--expect-text") + 1]);
+            Assert.Equal("tok", calls[2][calls[2].IndexOf("--expect-target") + 1]);
+
+            Assert.False(auto.SendComposer(out error));
+            Assert.Equal("draft-changed", error);
+            Assert.DoesNotContain("--expect-target", calls[3]);
+
+            // An unsupported family stays honest: appending is not ported yet.
+            Assert.False(auto.SupportsAppend);
+            Assert.False(auto.SendPreparedPrompt("", "Codex", "tok", out error));
+            Assert.Equal("empty-text", error);
         }
 
         [Fact]
@@ -166,7 +204,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var source = File.ReadAllText(RepoFile(
                 "tools", "windows", "VizhiDesktopUia", "Program.cs"));
 
-            foreach (var verb in new[] { "inspect", "frontmost", "status", "press", "press-exact", "restore-front", "write", "focus" })
+            foreach (var verb in new[] { "inspect", "frontmost", "status", "press", "press-exact", "restore-front", "draft-target", "write", "send", "focus" })
             {
                 Assert.Contains($"\"{verb}\"", source);
             }

@@ -300,6 +300,70 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void An_empty_composer_renders_its_hint_into_its_value_and_is_still_empty()
+        {
+            // Seen live on Windows: clearing the composer leaves "\nWork with ChatGPT" as its value.
+            var hints = new[] { "Work with ChatGPT", "Ask ChatGPT" };
+            Assert.True(UiaMatching.IsPlaceholderDraft("\nWork with ChatGPT", hints, sendEnabled: false));
+            // A literal draft spelling the hint has Send enabled beside it, and is a draft.
+            Assert.False(UiaMatching.IsPlaceholderDraft("Work with ChatGPT", hints, sendEnabled: true));
+            Assert.False(UiaMatching.IsPlaceholderDraft("Work with ChatGPT now", hints, sendEnabled: false));
+            Assert.Equal(UiaMatching.Fingerprint(""), UiaMatching.Fingerprint("  \n"));
+            Assert.NotEqual(UiaMatching.Fingerprint("a"), UiaMatching.Fingerprint("b"));
+            Assert.Equal(64, UiaMatching.Fingerprint("x").Length);
+        }
+
+        [Fact]
+        public void Reported_modes_come_from_controls_and_must_agree_with_the_expected_one()
+        {
+            var prefix = "Switch mode, current mode: ";
+            var one = Window(new[]
+            {
+                N(3, "Button", prefix + "Codex", pressable: true),
+                N(4, "Text", prefix + "Codex"),
+                N(3, "Text", prefix + "ChatGPT"),               // plain text is not a control's report
+            });
+            var modes = UiaMatching.ReportedModes(one, prefix);
+            Assert.Equal(new[] { "Codex" }, modes);
+            Assert.Null(UiaMatching.ModeError(modes, "Codex", pinned: false));
+            Assert.Equal("mode-changed", UiaMatching.ModeError(modes, "ChatGPT", pinned: false));
+            Assert.Equal("mode-unavailable", UiaMatching.ModeError(modes, "", pinned: false));
+
+            var none = new HashSet<String>();
+            Assert.Equal("mode-unavailable", UiaMatching.ModeError(none, "Codex", pinned: false));
+            Assert.Null(UiaMatching.ModeError(none, "Codex", pinned: true));
+
+            var conflicting = new HashSet<String> { "Codex", "ChatGPT" };
+            Assert.Equal("mode-changed", UiaMatching.ModeError(conflicting, "Codex", pinned: true));
+            Assert.Empty(UiaMatching.ReportedModes(one, ""));
+        }
+
+        [Fact]
+        public void The_selected_conversation_is_part_of_a_draft_target_and_two_are_a_refusal()
+        {
+            var none = Window(Row(3, "A"), Row(3, "B"));
+            Assert.Equal("", UiaMatching.SelectedConversation(none, "Pin chat"));
+
+            var one = Window(Row(3, "A", props: "current=page"), Row(3, "B"));
+            Assert.StartsWith("A:", UiaMatching.SelectedConversation(one, "Pin chat"));
+
+            var two = Window(Row(3, "A", selected: true), Row(3, "B", selected: true));
+            Assert.Null(UiaMatching.SelectedConversation(two, "Pin chat"));
+            Assert.Equal("", UiaMatching.SelectedConversation(two, ""));
+        }
+
+        [Fact]
+        public void A_dialog_or_a_live_task_blocks_the_composer()
+        {
+            var blocking = new[] { "Stop", "Allow once", "Stop voice chat" };
+            Assert.False(UiaMatching.ComposerBlocked(Window(new[] { N(3, "Button", "Send", pressable: true) }), blocking));
+            Assert.True(UiaMatching.ComposerBlocked(Window(new[] { N(3, "Button", "Stop", pressable: true) }), blocking));
+            Assert.False(UiaMatching.ComposerBlocked(Window(new[] { N(3, "Button", "Stop", pressable: true, enabled: false) }), blocking));
+            Assert.True(UiaMatching.ComposerBlocked(Window(new[] { N(3, "Group", "Save?", aria: "alertdialog") }), blocking));
+            Assert.True(UiaMatching.ComposerBlocked(Window(new[] { N(3, "Window", "Open", pressable: false) }), blocking));
+        }
+
+        [Fact]
         public void Normalisation_collapses_whitespace_and_case()
         {
             Assert.Equal("allow once", UiaMatching.NormalizeLabel("  Allow\n ONCE "));

@@ -147,7 +147,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             return TryParseOk(this.Runner(args, 4000), out _);
         }
 
-        public Boolean WriteComposer(String text, Boolean send, out String error)
+        public Boolean WriteComposer(String text, Boolean send, out String error) =>
+            this.WriteComposer(text, send, false, out error);
+
+        public Boolean RecoverDraft(String text, out String error) =>
+            this.WriteComposer(text, false, true, out error);
+
+        // The same argument shapes as the macOS client, so the two helpers apply the same
+        // guards: the prepared target, the composer hints, and the labels that mean the
+        // composer is not ready (a running task, a waiting approval, a voice session).
+        private Boolean WriteComposer(String text, Boolean send, Boolean acceptExisting, out String error,
+            String mode = null, String target = null)
         {
             error = null;
             if (String.IsNullOrWhiteSpace(text))
@@ -158,13 +168,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
             var args = BaseArgs("write");
             AddOne(args, "--text", text);
+            AddEach(args, "--draft-placeholder", _app.ComposerPlaceholderLabels);
+            AddOne(args, "--composer-send-label", _app.SendLabel);
+            if (target != null) this.AddDraftTarget(args, mode, target);
+            else
+            {
+                AddOne(args, "--mode-prefix", _app.ModePrefix);
+                AddOne(args, "--conv-marker", _app.ConversationItemMarker);
+            }
+            if (acceptExisting) { args.Add("--accept-existing"); }
+            AddEach(args, "--stop", _app.StopLabels);
+            AddEach(args, "--approve", _app.ApproveLabels);
+            AddEach(args, "--voice-end", _app.EndVoiceLabels);
             if (send)
             {
-                // Send is confirmed by the helper's exact, container-scoped rule, which also
-                // refuses while a task runs or an approval waits.
+                // Send is confirmed by the helper's exact, container-scoped rule.
                 AddOne(args, "--send-label", _app.SendLabel);
-                AddEach(args, "--stop", _app.StopLabels);
-                AddEach(args, "--approve", _app.ApproveLabels);
             }
 
             var json = this.Runner(args, 8000);
@@ -176,6 +195,57 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             }
 
             return true;
+        }
+
+        private void AddDraftTarget(List<String> args, String mode, String target = null)
+        {
+            AddOne(args, "--mode-prefix", _app.ModePrefix);
+            AddOne(args, "--expect-mode", mode);
+            AddOne(args, "--conv-marker", _app.ConversationItemMarker);
+            AddOne(args, "--expect-target", target);
+        }
+
+        public String PrepareDraft(String mode, Boolean requireEmpty, out String error)
+        {
+            var args = BaseArgs("draft-target");
+            AddOne(args, "--composer-send-label", _app.SendLabel);
+            AddEach(args, "--draft-placeholder", _app.ComposerPlaceholderLabels);
+            this.AddDraftTarget(args, mode);
+            if (!requireEmpty) args.Add("--allow-existing");
+            var json = this.Runner(args, 4000);
+            error = TryParseOk(json, out var root) ? null : Describe(json);
+            return error == null ? ReadString(root, "target") : null;
+        }
+
+        public Boolean WritePreparedDraft(String text, String mode, String target, Boolean retry, out String error)
+            => this.WriteComposer(text, false, retry, out error, mode, target);
+
+        public Boolean WritePreparedPrompt(String text, String mode, String target, Boolean send, out String error)
+            => this.WriteComposer(text, send, false, out error, mode, target);
+
+        public Boolean SendComposer(out String error)
+            => this.SendPreparedDraft(null, null, null, out error);
+
+        public Boolean SendPreparedDraft(String mode, String target, out String error)
+            => this.SendPreparedDraft(mode, target, null, out error);
+
+        public Boolean SendPreparedPrompt(String text, String mode, String target, out String error)
+        {
+            if (String.IsNullOrWhiteSpace(text) || String.IsNullOrEmpty(target)) { error = "empty-text"; return false; }
+            return this.SendPreparedDraft(mode, target, text, out error);
+        }
+
+        private Boolean SendPreparedDraft(String mode, String target, String expectedText, out String error)
+        {
+            var args = BaseArgs("send");
+            AddOne(args, "--send-label", _app.SendLabel);
+            if (target != null) this.AddDraftTarget(args, mode, target);
+            AddOne(args, "--expect-text", expectedText);
+            AddEach(args, "--stop", _app.StopLabels);
+            AddEach(args, "--approve", _app.ApproveLabels);
+            var json = this.Runner(args, 4000);
+            error = TryParseOk(json, out _) ? null : Describe(json);
+            return error == null;
         }
 
         public Boolean SwitchMode(String modeName)

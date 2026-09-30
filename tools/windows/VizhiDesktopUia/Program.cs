@@ -26,7 +26,12 @@
 //           foreground from another window, and frontBeforeHwnd is what restore-front needs.
 //   press-exact --label <text>...           one enabled button with exactly that label
 //   restore-front --hwnd <N>                hand the foreground back after a press moved it
-//   write   --text <text> [--send-label <label>]
+//   draft-target --mode-prefix <p> --expect-mode <m> [--conv-marker <m>] [--allow-existing]
+//           -> {"target":<token>} naming this window, mode, editor and open conversation
+//   write   --text <text> [--expect-target <token>] [--accept-existing] [--send-label <label>]
+//           -> {"method":"value"|"existing","sent":bool}; into an EMPTY composer only
+//   send    --send-label <label> [--expect-target <token>] [--expect-text <text>]
+//           -> {"sent":true}; submits the existing draft, refuses an ambiguous target
 //   focus                                   the ONE deliberate foreground activation
 //
 // Exit codes: 0 ok · 3 app not running · 4 no match / not found · 5 UIA error · 6 ambiguous or changed.
@@ -51,7 +56,7 @@ internal static class Program
 
     private static readonly Int32[] CachedProperties =
     {
-        UiaIds.ProcessId, UiaIds.ControlType, UiaIds.Name, UiaIds.IsEnabled, UiaIds.AutomationId,
+        UiaIds.RuntimeId, UiaIds.ProcessId, UiaIds.ControlType, UiaIds.Name, UiaIds.IsEnabled, UiaIds.AutomationId,
         UiaIds.ClassName, UiaIds.HelpText, UiaIds.NativeWindowHandle, UiaIds.IsOffscreen,
         UiaIds.IsExpandCollapseAvailable, UiaIds.IsInvokeAvailable, UiaIds.IsSelectionItemAvailable,
         UiaIds.IsToggleAvailable, UiaIds.IsValueAvailable, UiaIds.ValueValue, UiaIds.ValueIsReadOnly,
@@ -68,6 +73,8 @@ internal static class Program
 
     private static IUIAutomation? _uia;
     private static IUIAutomation Uia => _uia ??= (IUIAutomation)new CUIAutomation();
+    private static HashSet<Int32> _appPids = new();
+    private const Int32 MaxDraftLength = 50000;
 
     private static Int32 Main(String[] args)
     {
@@ -107,13 +114,16 @@ internal static class Program
                 return Fail(error!, error == "ambiguous-app" ? ExitChanged : ExitNotRunning);
             }
 
+            _appPids = pids;
             return verb switch
             {
                 "inspect" => InspectTarget(target, options.ContainsKey("--all")),
                 "status" => Status(target, options),
                 "press" => Press(target, options, exact: false),
                 "press-exact" => Press(target, options, exact: true),
+                "draft-target" => DraftTarget(target, options),
                 "write" => Write(target, options),
+                "send" => Send(target, options),
                 "focus" => Focus(target),
                 _ => Fail($"unknown-verb {verb}", ExitNoMatch),
             };
@@ -355,6 +365,7 @@ internal static class Program
             HasValue = hasValue,
             ReadOnly = Flag(UiaIds.ValueIsReadOnly),
             Selected = Flag(UiaIds.SelectionItemIsSelected),
+            RuntimeId = element.GetCachedPropertyValue(UiaIds.RuntimeId) is Int32[] id ? String.Join(".", id) : "",
             Handle = element,
         };
     }
@@ -690,12 +701,130 @@ internal static class Program
         return false;
     }
 
+    // ---- the composer --------------------------------------------------------
+    //
+    // A draft target names the composer a caller may write to later: this window, this mode,
+    // this editor, this open conversation. Every write and send that carries --expect-target
+    // is refused when any of those has changed since the target was issued, so a prompt or a
+    // transcript never lands in an editor the user has since navigated away from.
+
+    private sealed record Composer(UiaNode Node, IUIAutomationElement Element, IUIAutomationValuePattern Value);
+
+    private static String? Origin(Target target, Dictionary<String, List<String>> options)
+    {
+        // The window is identified by title, so the title must be unique among the app's.
+        if (AppWindows(_appPids).Count(w => w.Title == target.Title) != 1)
+        {
+            return null;
+        }
+        var identity = String.Join("\n", target.Pid.ToString(), target.Title, target.Hwnd.ToInt64().ToString(),
+            Value(options, "--mode-prefix") ?? "", Value(options, "--expect-mode") ?? "");
+        return UiaMatching.Fingerprint(identity);
+    }
+
+    private static String? UniqueComposerError(IReadOnlyList<UiaNode> nodes, out Composer? composer)
+    {
+        composer = null;
+        var composers = UiaMatching.Composers(nodes);
+        if (composers.Count == 0) return "no-composer";
+        if (composers.Count > 1) return "ambiguous-composer";
+        if (composers[0].Handle is not IUIAutomationElement element
+            || element.GetCurrentPattern(UiaIds.ValuePattern) is not IUIAutomationValuePattern value)
+        {
+            return "no-composer";
+        }
+        composer = new Composer(composers[0], element, value);
+        return null;
+    }
+
+    private static Int32 FailComposer(String error) =>
+        Fail(error, error is "ambiguous-composer" or "composer-target-changed" or "mode-changed" or "mode-unavailable" ? ExitChanged : ExitNoMatch);
+
+    /// <summary>The target token for this scan, or the reason there is none.</summary>
+    private static String? DraftTargetToken(Target target, IReadOnlyList<UiaNode> nodes,
+        Dictionary<String, List<String>> options, out String? error)
+    {
+        error = UiaMatching.ModeError(UiaMatching.ReportedModes(nodes, Value(options, "--mode-prefix") ?? ""),
+            Value(options, "--expect-mode") ?? "", pinned: false);
+        if (error != null) return null;
+        error = UniqueComposerError(nodes, out var composer);
+        if (error != null) return null;
+        var origin = Origin(target, options);
+        var conversation = UiaMatching.SelectedConversation(nodes, Value(options, "--conv-marker") ?? "");
+        if (origin == null || conversation == null)
+        {
+            error = "composer-target-changed";
+            return null;
+        }
+        return UiaMatching.Fingerprint(origin + ":" + composer!.Node.RuntimeId + ":" + conversation);
+    }
+
+    /// <summary>Null when the scan still matches the target the caller prepared, else why not.</summary>
+    private static String? PreparedDraftError(Target target, IReadOnlyList<UiaNode> nodes,
+        Dictionary<String, List<String>> options)
+    {
+        var expected = Value(options, "--expect-target");
+        if (expected == null)
+        {
+            return null;
+        }
+        var token = DraftTargetToken(target, nodes, options, out var error);
+        return token == null ? error : token == expected ? null : "composer-target-changed";
+    }
+
+    private static Boolean PreparedDraftMatches(Target target, IReadOnlyList<UiaNode> nodes,
+        Dictionary<String, List<String>> options) => PreparedDraftError(target, nodes, options) == null;
+
+    private static List<String> BlockingLabels(Dictionary<String, List<String>> options) =>
+        Values(options, "--stop").Concat(Values(options, "--approve")).Concat(Values(options, "--voice-end")).ToList();
+
+    private static Boolean SendEnabled(IReadOnlyList<UiaNode> nodes, Dictionary<String, List<String>> options) =>
+        UiaMatching.ExactButtons(nodes, Values(options, "--composer-send-label")).Any(n => n.Enabled);
+
+    private static String ComposerDraft(Composer composer, IReadOnlyList<UiaNode> nodes, Dictionary<String, List<String>> options)
+    {
+        var raw = composer.Value.CurrentValue ?? "";
+        return UiaMatching.IsPlaceholderDraft(raw, Values(options, "--draft-placeholder"), SendEnabled(nodes, options)) ? "" : raw;
+    }
+
+    private static Int32 DraftTarget(Target target, Dictionary<String, List<String>> options)
+    {
+        var scan = WaitForSurface(target, 2000);
+        if (scan == null)
+        {
+            return Fail("surface-unavailable", ExitError);
+        }
+        var token = DraftTargetToken(target, scan.Nodes, options, out var error);
+        if (token == null)
+        {
+            return FailComposer(error!);
+        }
+        UniqueComposerError(scan.Nodes, out var composer);
+        var draft = ComposerDraft(composer!, scan.Nodes, options);
+        if (!options.ContainsKey("--allow-existing") && UiaMatching.ComparableDraft(draft).Length > 0)
+        {
+            return Fail("draft-exists", ExitNoMatch);
+        }
+        return Emit(new Dictionary<String, Object?> { ["target"] = token });
+    }
+
+    /// <summary>
+    /// Put text into an EMPTY composer, or report that a draft already exists: the value
+    /// pattern replaces the whole value, so this never appends and never overwrites. The
+    /// desktop injection law: the text lands in the composer the caller targeted, or
+    /// nowhere, and the failure is named.
+    /// </summary>
     private static Int32 Write(Target target, Dictionary<String, List<String>> options)
     {
         var text = Value(options, "--text") ?? "";
-        if (text.Length == 0)
+        var expectedText = UiaMatching.ComparableDraft(text);
+        if (expectedText.Length == 0)
         {
-            return Fail("no --text given", ExitNoMatch);
+            return Fail("empty-text", ExitNoMatch);
+        }
+        if (text.Length > MaxDraftLength)
+        {
+            return Fail("text-too-long", ExitNoMatch);
         }
 
         var scan = WaitForSurface(target, 2000);
@@ -703,42 +832,114 @@ internal static class Program
         {
             return Fail("surface-unavailable", ExitError);
         }
-        var composers = UiaMatching.Composers(scan.Nodes);
-        if (composers.Count == 0)
+        var error = PreparedDraftError(target, scan.Nodes, options);
+        if (error != null)
         {
-            return Fail("no-composer", ExitNoMatch);
+            return FailComposer(error);
         }
-        if (composers.Count > 1)
+        if (UiaMatching.ComposerBlocked(scan.Nodes, BlockingLabels(options)))
         {
-            return Fail("ambiguous-composer", ExitChanged);
+            return Fail("composer-unavailable", ExitNoMatch);
+        }
+        error = UniqueComposerError(scan.Nodes, out var composer);
+        if (error != null)
+        {
+            return FailComposer(error);
         }
 
-        if (composers[0].Handle is not IUIAutomationElement composer
-            || composer.GetCurrentPattern(UiaIds.ValuePattern) is not IUIAutomationValuePattern value)
+        var original = ComposerDraft(composer!, scan.Nodes, options);
+        var sendLabel = Value(options, "--send-label");
+        if (options.ContainsKey("--accept-existing") && sendLabel == null
+            && UiaMatching.ComparableDraft(original) == expectedText)
         {
-            return Fail("no-composer", ExitNoMatch);
+            return Emit(new Dictionary<String, Object?> { ["method"] = "existing", ["sent"] = false });
         }
-        value.SetValue(text);
-        Thread.Sleep(200);
-        if (!(value.CurrentValue ?? "").Contains(text, StringComparison.Ordinal))
+        if (UiaMatching.ComparableDraft(original).Length > 0)
+        {
+            return Fail("draft-exists", ExitNoMatch);
+        }
+
+        composer!.Value.SetValue(text);
+        var applied = false;
+        for (var attempt = 0; attempt < 10 && !applied; attempt++)
+        {
+            Thread.Sleep(100);
+            applied = UiaMatching.ComparableDraft(composer.Value.CurrentValue) == expectedText;
+        }
+        if (!applied)
         {
             return Fail("write-not-applied", ExitError);
         }
 
         var sent = false;
-        var sendLabel = Value(options, "--send-label");
-        if (!String.IsNullOrEmpty(sendLabel))
+        if (sendLabel != null)
         {
             var latest = ScanTarget(target);
-            var send = UiaMatching.SendTarget(latest.Nodes, sendLabel, Values(options, "--stop"), Values(options, "--approve"));
-            if (send == null || !Invoke(send))
+            var send = latest.Surface && PreparedDraftMatches(target, latest.Nodes, options)
+                && !UiaMatching.ComposerBlocked(latest.Nodes, BlockingLabels(options))
+                && latest.Nodes.Any(n => n.Role == "Edit" && n.RuntimeId == composer.Node.RuntimeId)
+                && UiaMatching.ComparableDraft(composer.Value.CurrentValue) == expectedText
+                ? UiaMatching.SendTarget(latest.Nodes, sendLabel, Values(options, "--stop"), Values(options, "--approve"))
+                : null;
+            if (send == null)
             {
-                return Fail("send-not-found", ExitNoMatch);
+                return Fail("no-sendable-draft", ExitNoMatch);
+            }
+            if (!Invoke(send))
+            {
+                return Fail("send-press-failed", ExitError);
             }
             sent = true;
         }
 
         return Emit(new Dictionary<String, Object?> { ["method"] = "value", ["sent"] = sent });
+    }
+
+    /// <summary>Submit the existing draft without replacing it; refuse an ambiguous target.</summary>
+    private static Int32 Send(Target target, Dictionary<String, List<String>> options)
+    {
+        var scan = WaitForSurface(target, 2000);
+        if (scan == null)
+        {
+            return Fail("surface-unavailable", ExitError);
+        }
+        var prepared = PreparedDraftError(target, scan.Nodes, options);
+        if (prepared != null)
+        {
+            return FailComposer(prepared);
+        }
+        var sendLabel = Value(options, "--send-label") ?? "";
+        var first = UiaMatching.SendTarget(scan.Nodes, sendLabel, Values(options, "--stop"), Values(options, "--approve"));
+        var error = UniqueComposerError(scan.Nodes, out var composer);
+        if (first == null || error != null)
+        {
+            return Fail("no-sendable-draft", ExitNoMatch);
+        }
+        var draft = composer!.Value.CurrentValue ?? "";
+        var expected = Value(options, "--expect-text");
+        if (expected != null && (UiaMatching.ComparableDraft(expected).Length == 0
+            || UiaMatching.ComparableDraft(draft) != UiaMatching.ComparableDraft(expected)))
+        {
+            return Fail("draft-changed", ExitChanged);
+        }
+
+        // A second look before the press: the same window, target, composer and draft, and
+        // the same Send.
+        var latest = ScanTarget(target);
+        var confirmed = latest.Surface && PreparedDraftMatches(target, latest.Nodes, options)
+            && latest.Nodes.Any(n => n.Role == "Edit" && n.RuntimeId == composer.Node.RuntimeId)
+            && (composer.Value.CurrentValue ?? "") == draft
+            ? UiaMatching.SendTarget(latest.Nodes, sendLabel, Values(options, "--stop"), Values(options, "--approve"))
+            : null;
+        if (confirmed == null || confirmed.RuntimeId != first.RuntimeId)
+        {
+            return Fail("composer-target-changed", ExitChanged);
+        }
+        if (!Invoke(confirmed))
+        {
+            return Fail("send-press-failed", ExitError);
+        }
+        return Emit(new Dictionary<String, Object?> { ["sent"] = true });
     }
 
     private static Int32 Focus(Target target)
