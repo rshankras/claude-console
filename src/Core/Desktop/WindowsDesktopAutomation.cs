@@ -186,6 +186,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             AddOne(args, "--mode-prefix", _app.ModePrefix);
             AddOne(args, "--expect-mode", "Codex");
             AddEach(args, "--panel-open", _app.ShowDiffLabels);
+            AddEach(args, "--panel-open-turn", _app.ShowDiffTurnLabels);
             AddEach(args, "--panel-visible", _app.ChangesPanelLabels);
             AddOne(args, "--conv-marker", _app.ConversationItemMarker);
             var json = this.Runner(args, 5000);
@@ -497,6 +498,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             AddEach(args, "--search", _app.ControlLabels(DesktopControl.Search));
             AddEach(args, "--changes", _app.ControlLabels(DesktopControl.Changes));
+            AddEach(args, "--changes-turn", _app.ShowDiffTurnLabels);
             AddEach(args, "--panel-visible", _app.ChangesPanelLabels);
             AddOne(args, "--panel-mode", "Codex");
             AddEach(args, "--projects", _app.ControlLabels(DesktopControl.Projects));

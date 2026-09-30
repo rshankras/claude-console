@@ -127,6 +127,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         /// <summary>Controls that open the current task's diff/review surface. Empty hides the key.</summary>
         String[] ShowDiffLabels { get; }
+
+        /// <summary>
+        /// The ShowDiffLabels that every edited reply carries, so a chat shows one per turn.
+        /// Several of these are not an ambiguity: the latest reply's is the opener.
+        /// </summary>
+        String[] ShowDiffTurnLabels => Array.Empty<String>();
         String[] ChangesPanelLabels => Array.Empty<String>();
 
         /// <summary>

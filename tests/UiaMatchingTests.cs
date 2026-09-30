@@ -321,6 +321,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var withReply = new[] { "Changes", "This branch", "View changes" };
             Assert.True(UiaMatching.PanelRouteAvailable(reply, modeLabel, withReply, visible));
             Assert.Equal("View changes", Assert.Single(UiaMatching.PanelOpeners(reply, withReply)).Text);
+
+            // Seen live after a second edit: every edited reply keeps its own "View changes".
+            // Named as a turn label, the latest reply's is the opener; unnamed, two are refused.
+            var turn = new[] { "View changes" };
+            var twoTurns = Window(new[]
+            {
+                N(3, "Button", modeLabel, pressable: true),
+                N(3, "Button", "View changed files", pressable: true),
+                N(3, "Button", "View changes", pressable: true),
+                N(3, "Button", "View changed files", pressable: true),
+                N(3, "Button", "View changes", pressable: true),
+            });
+            Assert.False(UiaMatching.PanelRouteAvailable(twoTurns, modeLabel, withReply, visible));
+            Assert.True(UiaMatching.PanelRouteAvailable(twoTurns, modeLabel, withReply, visible, turn));
+            Assert.Equal(twoTurns.Count - 1, Assert.Single(UiaMatching.PanelOpeners(twoTurns, withReply, turn)).Index);
+
+            // A summary row outranks the replies' buttons, and two summary rows stay ambiguous.
+            var rowToo = Window(twoTurns.Skip(3).Append(N(3, "Button", "Changes +2 −0", pressable: true)));
+            Assert.Equal("Changes +2 −0", Assert.Single(UiaMatching.PanelOpeners(rowToo, withReply, turn)).Text);
+            var twoRows = Window(twoTurns.Skip(3).Concat(new[]
+            {
+                N(3, "Button", "Changes", pressable: true), N(3, "Button", "Changes", pressable: true),
+            }));
+            Assert.False(UiaMatching.PanelRouteAvailable(twoRows, modeLabel, withReply, visible, turn));
         }
 
         [Fact]

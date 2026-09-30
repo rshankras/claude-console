@@ -30,6 +30,7 @@
 //   restore-front --hwnd <N>                hand the foreground back after a press moved it
 //   voice   --action start|end --voice-start <label>... --voice-end <label>...
 //   open-panel --expect-mode <m> --mode-prefix <p> --panel-open <label>... --panel-visible <label>...
+//           [--panel-open-turn <label>...] openers each edited reply carries: the latest one is pressed
 //   draft-target --mode-prefix <p> --expect-mode <m> [--conv-marker <m>] [--allow-existing]
 //           -> {"target":<token>} naming this window, mode, editor and open conversation
 //   append-target (same) -> {"target","fingerprint","hasContent"} of the current draft
@@ -497,7 +498,8 @@ internal static partial class Program
             ["copyAnswerError"] = reply.Error,
             ["searchPresent"] = Present("--search"),
             ["changesPresent"] = mode.Length > 0 && mode == panelMode && UiaMatching.PanelRouteAvailable(nodes,
-                modePrefix + mode, Values(options, "--changes"), Values(options, "--panel-visible")),
+                modePrefix + mode, Values(options, "--changes"), Values(options, "--panel-visible"),
+                Values(options, "--changes-turn")),
             ["projectsPresent"] = Present("--projects"),
             ["pluginsPresent"] = Present("--plugins"),
             ["attachFilesPresent"] = Present("--attach-files"),
@@ -760,6 +762,7 @@ internal static partial class Program
         var expectedMode = Value(options, "--expect-mode") ?? "";
         var prefix = Value(options, "--mode-prefix") ?? "";
         var openers = Values(options, "--panel-open");
+        var turnOpeners = Values(options, "--panel-open-turn");
         var visibleLabels = Values(options, "--panel-visible");
         if (expectedMode.Length == 0 || prefix.Length == 0 || openers.Count == 0 || visibleLabels.Count == 0)
         {
@@ -793,7 +796,7 @@ internal static partial class Program
         if (Visible(nodes) > 1) return Fail("panel-ambiguous", ExitNoMatch);
         if (Visible(nodes) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
 
-        var candidates = UiaMatching.PanelOpeners(nodes, openers);
+        var candidates = UiaMatching.PanelOpeners(nodes, openers, turnOpeners);
         if (candidates.Count > 1) return Fail("panel-opener-multiple", ExitNoMatch);
         // A conversation may have no review capability. Absence is not a clean working
         // tree, and must not trigger a guessed shortcut, toggle, or text entry.
@@ -802,7 +805,7 @@ internal static partial class Program
         var (fresh, freshError, freshCode) = Checked();
         if (fresh == null) return Fail(freshError!, freshCode);
         if (Visible(fresh) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
-        var confirmed = UiaMatching.PanelOpeners(fresh, openers);
+        var confirmed = UiaMatching.PanelOpeners(fresh, openers, turnOpeners);
         if (confirmed.Count != 1 || !SameElement(candidates[0], confirmed[0])) return Fail("panel-target-changed", ExitChanged);
         if (!Invoke(confirmed[0])) return Fail("panel-press-failed", ExitError);
 

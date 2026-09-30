@@ -68,6 +68,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 Assert.Contains(flag, args);
             }
             Assert.Contains("Codex=2", args);
+            // Windows only so far: the replies' per-turn review buttons.
+            Assert.Equal("View changes", args[args.IndexOf("--changes-turn") + 1]);
             Assert.True(snapshot.SurfaceAvailable);
             Assert.True(snapshot.ApprovalPresent);
             Assert.Equal("Codex", snapshot.Mode);
@@ -130,6 +132,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("open-panel", calls[1][0]);
             Assert.Equal("Codex", calls[1][calls[1].IndexOf("--expect-mode") + 1]);
             Assert.Contains("--panel-open", calls[1]);
+            Assert.Equal("View changes", calls[1][calls[1].IndexOf("--panel-open-turn") + 1]);
             Assert.Contains("--panel-visible", calls[1]);
 
             Assert.True(auto.SetVoiceChat(true, out _));

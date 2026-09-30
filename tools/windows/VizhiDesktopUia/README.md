@@ -85,6 +85,10 @@ What the Windows app does differently, and how the port answers it:
   which opens the same Changes tab; `open-panel` takes it as an opener and confirms by
   "Show files" (2026-09-30: `alreadyOpen` on an open tab, `method: button` on a closed one).
   "View changed files" beside it is the file disclosure and is never pressed.
+  Every edited reply keeps its own "View changes", and each opens the same tab on the last
+  turn, so the adapter names it a turn label (`--changes-turn`, `--panel-open-turn`): with no
+  summary row the latest reply's button is pressed. The macOS helper does not take these
+  arguments yet; there, two edited turns are still refused as `panel-opener-multiple`.
 
 ## Not yet checked live (the device pass)
 
@@ -93,8 +97,6 @@ What the Windows app does differently, and how the port answers it:
 - `voice` (starts a real voice chat), `send` (sends a real message), `attach-image` and
   `attach-files` (need a real file to attach), `context-selection` (copies from another app),
   `context-paste`, `context-screenshot` (the snip overlay).
-- `open-panel` in a chat with two or more edited turns: if each turn keeps its own
-  "View changes", the helper sees several openers and refuses (`panel-opener-multiple`).
 - The tree when the window is on another virtual desktop.
 - Options+ binding to a Store app, and the Vizhi Home layout importing on Windows.
 

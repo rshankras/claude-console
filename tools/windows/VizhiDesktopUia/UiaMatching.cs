@@ -879,7 +879,18 @@ internal static class UiaMatching
 
     // Only the summary row opens the review panel. Counts may follow its exact name; an
     // arbitrary prefix match (Changes settings, a file disclosure) is not the destination.
-    public static List<UiaNode> PanelOpeners(IReadOnlyList<UiaNode> nodes, IReadOnlyList<String> labels)
+    // A turn label names an opener that every edited reply carries. Seen live (app 26.928):
+    // each one opens the same tab on the last turn, so several are not an ambiguity — with no
+    // summary row, the latest reply's is the opener. Two summary rows still are.
+    public static List<UiaNode> PanelOpeners(IReadOnlyList<UiaNode> nodes, IReadOnlyList<String> labels,
+        IReadOnlyList<String>? turnLabels = null)
+    {
+        turnLabels ??= Array.Empty<String>();
+        var summary = Openers(nodes, labels.Except(turnLabels, StringComparer.Ordinal).ToList());
+        return summary.Count > 0 ? summary : Openers(nodes, turnLabels).TakeLast(1).ToList();
+    }
+
+    private static List<UiaNode> Openers(IReadOnlyList<UiaNode> nodes, IReadOnlyList<String> labels)
     {
         const String integer = "[0-9]+(?:[,.٬ ][0-9]{2,3})*";
         var names = nodes.SelectMany(n => n.Labels)
@@ -891,7 +902,7 @@ internal static class UiaMatching
     }
 
     public static Boolean PanelRouteAvailable(IReadOnlyList<UiaNode> nodes, String modeLabel,
-        IReadOnlyList<String> openLabels, IReadOnlyList<String> visibleLabels)
+        IReadOnlyList<String> openLabels, IReadOnlyList<String> visibleLabels, IReadOnlyList<String>? turnLabels = null)
     {
         if (modeLabel.Length == 0 || PanelObstructed(nodes))
         {
@@ -903,6 +914,6 @@ internal static class UiaMatching
             return false;
         }
         var panels = ExactButtons(owners[0], visibleLabels);
-        return panels.Count != 0 ? panels.Count == 1 : PanelOpeners(owners[0], openLabels).Count == 1;
+        return panels.Count != 0 ? panels.Count == 1 : PanelOpeners(owners[0], openLabels, turnLabels).Count == 1;
     }
 }

@@ -123,6 +123,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         // Availability comes from exposed app-owned controls, not Codex mode alone.
         public String[] ShowDiffLabels => this.ControlLabels(DesktopControl.Changes);
+        // One "View changes" per edited reply; each opens the same tab on the last turn.
+        public String[] ShowDiffTurnLabels => new[] { "View changes" };
         public String[] ChangesPanelLabels => new[] { "Show files", "Hide files" };
 
         public String[] ControlLabels(DesktopControl control) => control switch
