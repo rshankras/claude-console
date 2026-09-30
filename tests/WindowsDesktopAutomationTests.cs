@@ -45,7 +45,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void Status_uses_windows_titles_and_the_same_snapshot_contract_as_macOS()
+        public void Status_names_the_process_and_asks_the_same_questions_as_macOS()
         {
             var (auto, calls) = Build(
                 "{\"ok\":true,\"surface\":true,\"approvalPresent\":true,\"stopPresent\":false,\"mode\":\"Codex\"}");
@@ -55,13 +55,48 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var args = Assert.Single(calls);
             Assert.Equal("status", args[0]);
             Assert.Contains("--require-process", args);
-            Assert.Contains("--window", args);
-            Assert.Contains("ChatGPT", args);
+            Assert.Equal("ChatGPT", args[args.IndexOf("--process") + 1]);
             Assert.Contains("--approve", args);
             Assert.Contains("Allow once", args);
+            // The macOS client's status arguments, so one helper contract serves both.
+            foreach (var flag in new[]
+            {
+                "--state-running", "--idle-images", "--voice-start", "--voice-end", "--send-label",
+                "--panel-visible", "--panel-mode", "--search", "--changes", "--quick-chat",
+            })
+            {
+                Assert.Contains(flag, args);
+            }
+            Assert.Contains("Codex=2", args);
             Assert.True(snapshot.SurfaceAvailable);
             Assert.True(snapshot.ApprovalPresent);
             Assert.Equal("Codex", snapshot.Mode);
+        }
+
+        [Fact]
+        public void Frontmost_is_a_process_check_that_degrades_to_unknown()
+        {
+            var (auto, calls) = Build("{\"ok\":true,\"frontmost\":false}", "", "{\"ok\":false,\"error\":\"app-not-running\"}");
+            Assert.False(auto.IsAppFrontmost());
+            Assert.Equal("frontmost", calls[0][0]);
+            Assert.Contains("--process", calls[0]);
+            Assert.Null(auto.IsAppFrontmost());
+            Assert.Null(auto.IsAppFrontmost());
+        }
+
+        [Fact]
+        public void Send_after_write_carries_the_guards_that_make_send_refuse()
+        {
+            var (auto, calls) = Build("{\"ok\":true,\"method\":\"value\",\"sent\":true}");
+            Assert.True(auto.WriteComposer("hello", send: true, out _));
+            var args = Assert.Single(calls);
+            Assert.Contains("--send-label", args);
+            Assert.Contains("--stop", args);
+            Assert.Contains("--approve", args);
+
+            var (draft, draftCalls) = Build("{\"ok\":true,\"method\":\"value\",\"sent\":false}");
+            Assert.True(draft.WriteComposer("hello", send: false, out _));
+            Assert.DoesNotContain("--send-label", Assert.Single(draftCalls));
         }
 
         [Fact]
@@ -100,7 +135,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var source = File.ReadAllText(RepoFile(
                 "tools", "windows", "VizhiDesktopUia", "Program.cs"));
 
-            foreach (var verb in new[] { "inspect", "status", "press", "write", "focus" })
+            foreach (var verb in new[] { "inspect", "frontmost", "status", "press", "press-exact", "write", "focus" })
             {
                 Assert.Contains($"\"{verb}\"", source);
             }
@@ -108,8 +143,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 "--window", "--approve", "--deny", "--stop", "--attention", "--mode-prefix",
                 "--process", "--require-process",
-                "--conv-marker", "--state-awaiting", "--state-unread", "--label", "--text",
-                "--send-label", "--expect-near",
+                "--conv-marker", "--state-awaiting", "--state-unread", "--state-running", "--idle-images",
+                "--voice-start", "--voice-end", "--panel-visible", "--panel-mode",
+                "--label", "--text", "--send-label", "--expect-near", "--expect-mode", "--conversation",
             })
             {
                 Assert.Contains($"\"{argument}\"", source);
@@ -117,10 +153,22 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             Assert.Contains("ambiguous-app", source);
             Assert.Contains("ambiguous-composer", source);
+            Assert.Contains("ambiguous-conversation", source);
             Assert.Contains("card-changed", source);
+            Assert.Contains("mode-changed", source);
+            Assert.Contains("surface-unavailable", source);
             Assert.Contains("SwitchToThisWindow", source);
-            Assert.Contains("foregroundPid == (UInt32)targetPid", source);
+            Assert.Contains("ForegroundPid() == target.Pid", source);
+            // The WPF wrapper is what made the helper framework-dependent (#83); COM only.
+            Assert.DoesNotContain("System.Windows.Automation", source);
             Assert.DoesNotContain("Allow once", source); // app knowledge stays in the adapter
+            Assert.DoesNotContain("ChatGPT", source);
+
+            var project = File.ReadAllText(RepoFile("tools", "windows", "VizhiDesktopUia", "VizhiDesktopUia.csproj"));
+            Assert.Contains("<SelfContained>true</SelfContained>", project);
+            Assert.Contains("<PublishTrimmed>true</PublishTrimmed>", project);
+            Assert.Contains("<BuiltInComInteropSupport>true</BuiltInComInteropSupport>", project);
+            Assert.DoesNotContain("<UseWPF>", project);
         }
 
         private static String RepoFile(params String[] parts)

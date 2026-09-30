@@ -30,8 +30,19 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         public WindowsDesktopAutomation(IDesktopAppAdapter app) => _app = app;
 
+        public Boolean? IsAppFrontmost()
+        {
+            // A process check only: passive polling backs off in other apps without asking
+            // Chromium to build or traverse its accessibility tree.
+            var json = this.Runner(BaseArgs("frontmost"), 1000);
+            return TryParseOk(json, out var root) && root.TryGetProperty("frontmost", out var front)
+                && front.ValueKind is JsonValueKind.True or JsonValueKind.False ? front.GetBoolean() : null;
+        }
+
         public DesktopSnapshot Status()
         {
+            // The same arguments the macOS client sends, so the two helpers answer the same
+            // questions from the same adapter and one snapshot contract serves both.
             var args = BaseArgs("status");
             AddEach(args, "--approve", _app.ApproveLabels);
             AddEach(args, "--deny", _app.DenyLabels);
@@ -42,10 +53,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             {
                 AddOne(args, "--conv-marker", _app.ConversationItemMarker);
                 AddOne(args, "--state-awaiting", _app.ConversationAwaitingText);
-                AddOne(args, "--state-unread", _app.ConversationUnreadText);
+                AddEach(args, "--state-unread", _app.ConversationUnreadTexts);
+                AddEach(args, "--state-running", _app.ConversationRunningTexts);
+            }
+            foreach (var mode in _app.ModeNames)
+            {
+                if (_app.ConversationIdleImages(mode) is Int32 count)
+                {
+                    AddOne(args, "--idle-images", $"{mode}={count}");
+                }
             }
             AddContextLabels(args);
+            AddEach(args, "--voice-start", _app.StartVoiceLabels);
+            AddEach(args, "--voice-end", _app.EndVoiceLabels);
+            AddOne(args, "--send-label", _app.SendLabel);
 
+            // The cached subtree fetch measured ~320 ms for the live app's 365 nodes; the margin
+            // covers a long conversation, not a hung window server — BoundedProcess kills those.
             return DesktopSnapshot.Parse(this.Runner(args, 3000));
         }
 
@@ -108,7 +132,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             AddOne(args, "--text", text);
             if (send)
             {
+                // Send is confirmed by the helper's exact, container-scoped rule, which also
+                // refuses while a task runs or an approval waits.
                 AddOne(args, "--send-label", _app.SendLabel);
+                AddEach(args, "--stop", _app.StopLabels);
+                AddEach(args, "--approve", _app.ApproveLabels);
             }
 
             var json = this.Runner(args, 8000);
@@ -160,6 +188,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             AddEach(args, "--search", _app.ControlLabels(DesktopControl.Search));
             AddEach(args, "--changes", _app.ControlLabels(DesktopControl.Changes));
+            AddEach(args, "--panel-visible", _app.ChangesPanelLabels);
+            AddOne(args, "--panel-mode", "Codex");
             AddEach(args, "--projects", _app.ControlLabels(DesktopControl.Projects));
             AddEach(args, "--plugins", _app.ControlLabels(DesktopControl.Plugins));
             AddEach(args, "--attach-files", _app.ControlLabels(DesktopControl.AttachFiles));

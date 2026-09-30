@@ -1,0 +1,310 @@
+namespace Loupedeck.ClaudeConsolePlugin.Tests
+{
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+
+    using VizhiDesktopUia;
+
+    using Xunit;
+
+    /// <summary>
+    /// The Windows desktop helper's matching rules, held to the same answers the macOS helper
+    /// gives (tools/desktop/VizhiAxBridge.swift). The trees below are shaped like the live
+    /// ChatGPT app's UIA tree as captured on 2026-09-30: a sidebar row is a Button whose
+    /// subtree carries the "Pin chat" control, the composer is an Edit with a value, and a
+    /// popup button exposes ExpandCollapse rather than Invoke.
+    /// </summary>
+    public sealed class UiaMatchingTests
+    {
+        private static UiaNode N(Int32 depth, String role, String text, Boolean pressable = false,
+            Boolean enabled = true, String aria = "", String props = "", String value = null, Boolean selected = false,
+            String[] labels = null) => new UiaNode
+        {
+            Depth = depth,
+            Role = role,
+            Text = text,
+            Labels = labels ?? (text.Length > 0 ? new[] { text } : Array.Empty<String>()),
+            Pressable = pressable,
+            Enabled = enabled,
+            AriaRole = aria,
+            AriaProperties = props,
+            Value = value ?? "",
+            HasValue = value != null,
+            Selected = selected,
+        };
+
+        private static List<UiaNode> Row(Int32 depth, String title, String state = null, Boolean selected = false, String props = "")
+        {
+            var row = new List<UiaNode>
+            {
+                N(depth, "Button", title, pressable: true, selected: selected, props: props),
+                N(depth + 1, "Group", ""),
+                N(depth + 2, "Button", "Chat actions", pressable: true),
+                N(depth + 2, "Button", "Pin chat", pressable: true),
+                N(depth + 1, "Text", title, aria: "description"),
+            };
+            if (state != null)
+            {
+                row.Add(N(depth + 1, "StatusBar", state, aria: "status"));
+            }
+            return row;
+        }
+
+        private static List<UiaNode> Window(params IEnumerable<UiaNode>[] parts)
+        {
+            var nodes = new List<UiaNode> { N(0, "Window", "ChatGPT"), N(1, "Pane", ""), N(2, "Document", "ChatGPT") };
+            foreach (var part in parts) nodes.AddRange(part);
+            return nodes.Select((n, i) => new UiaNode
+            {
+                Index = i, Depth = n.Depth, Role = n.Role, Text = n.Text, Labels = n.Labels, Pressable = n.Pressable,
+                Enabled = n.Enabled, AriaRole = n.AriaRole, AriaProperties = n.AriaProperties, Value = n.Value,
+                HasValue = n.HasValue, ReadOnly = n.ReadOnly, Selected = n.Selected,
+            }).ToList();
+        }
+
+        [Fact]
+        public void A_document_without_content_is_not_a_surface()
+        {
+            // Chromium keeps the document element while the screen is locked or the window is
+            // covered; the emptiness beneath it must read as "cannot see", never "resolved".
+            var hidden = Window();
+            Assert.False(UiaMatching.HasSurface(hidden, complete: true));
+
+            var shown = Window(new[] { N(3, "Group", "") });
+            Assert.True(UiaMatching.HasSurface(shown, complete: true));
+            Assert.False(UiaMatching.HasSurface(shown, complete: false));
+        }
+
+        [Fact]
+        public void First_pressable_matches_by_substring_and_ignores_case_and_unpressable_text()
+        {
+            var nodes = Window(new[]
+            {
+                N(3, "Text", "Allow once to continue"),
+                N(3, "Button", "Deny", pressable: true),
+                N(3, "Button", "Allow once", pressable: true),
+            });
+            Assert.Equal("Allow once", UiaMatching.FirstPressable(nodes, new[] { "allow ONCE" }).Text);
+            Assert.Null(UiaMatching.FirstPressable(nodes, new[] { "Always allow" }));
+            Assert.Null(UiaMatching.FirstPressable(nodes, new[] { "" }));
+        }
+
+        [Fact]
+        public void Exact_buttons_need_the_whole_label_and_no_nested_control()
+        {
+            var nodes = Window(
+                Row(3, "Stop"),                                     // a chat titled Stop is not the Stop button
+                new[] { N(3, "Button", "Stop generating", pressable: true) },
+                new[] { N(3, "Button", " stop ", pressable: true, labels: new[] { " stop " }) });
+
+            var stops = UiaMatching.ExactButtons(nodes, new[] { "Stop" });
+            Assert.Single(stops);
+            Assert.Equal(" stop ", stops[0].Text);
+            Assert.NotNull(UiaMatching.UniqueEnabledButton(nodes, new[] { "Stop" }));
+        }
+
+        [Fact]
+        public void Unique_enabled_button_refuses_duplicates_and_disabled_controls()
+        {
+            var twice = Window(new[]
+            {
+                N(3, "Button", "Send", pressable: true),
+                N(3, "Button", "Send", pressable: true),
+            });
+            Assert.Null(UiaMatching.UniqueEnabledButton(twice, new[] { "Send" }));
+
+            var disabled = Window(new[] { N(3, "Button", "Send", pressable: true, enabled: false) });
+            Assert.Null(UiaMatching.UniqueEnabledButton(disabled, new[] { "Send" }));
+        }
+
+        [Fact]
+        public void Card_text_is_the_last_three_texts_before_the_anchor_collapsed_and_capped()
+        {
+            var nodes = Window(new[]
+            {
+                N(3, "Text", "older"),
+                N(3, "Text", "Codex wants to run"),
+                N(3, "Text", "  npm   install\n--save "),
+                N(3, "Text", new String('x', 500)),
+                N(3, "Button", "Allow once", pressable: true),
+            });
+            var approve = UiaMatching.FirstPressable(nodes, new[] { "Allow once" });
+            var card = UiaMatching.CardText(approve, nodes);
+            Assert.StartsWith("Codex wants to run npm install --save xxx", card);
+            Assert.Equal(UiaMatching.CardTextCap, card.Length);
+            Assert.DoesNotContain("older", card);
+        }
+
+        [Fact]
+        public void Conversations_come_from_marked_rows_in_sidebar_order_with_their_state()
+        {
+            var nodes = Window(
+                new[] { N(3, "Button", "New chat", pressable: true) },
+                Row(3, "Fix the build", "Awaiting approval"),
+                Row(3, "Thinking about travel", "Working", selected: true),
+                Row(3, "Quiet one", "Complete"),
+                Row(3, "Idle one"));
+
+            var list = UiaMatching.Conversations(nodes, "Pin chat",
+                new[] { "Awaiting approval" }, new[] { "Unread", "Complete" }, new[] { "Thinking", "Working" }, baseline: null);
+
+            Assert.Equal(new[] { "Fix the build", "Thinking about travel", "Quiet one", "Idle one" }, list.Select(c => c["title"]));
+            Assert.Equal(new[] { "awaiting", "running", "unread", "idle" }, list.Select(c => c["state"]));
+            Assert.Equal(new[] { "false", "true", "false", "false" }, list.Select(c => c["selected"]));
+        }
+
+        [Fact]
+        public void A_row_title_never_reads_as_its_own_state()
+        {
+            // "Working" as a chat title must not make the chat busy; only a status descendant may.
+            var nodes = Window(Row(3, "Working"));
+            var list = UiaMatching.Conversations(nodes, "Pin chat", new[] { "Awaiting approval" }, new[] { "Unread" }, new[] { "Working" }, null);
+            Assert.Equal("idle", Assert.Single(list)["state"]);
+        }
+
+        [Fact]
+        public void Aria_current_decides_the_open_conversation_before_the_selection_pattern()
+        {
+            var current = N(3, "Button", "A", pressable: true, props: "readonly=true;current=page;expanded=false");
+            var explicitlyNot = N(3, "Button", "B", pressable: true, props: "current=false", selected: true);
+            var legacy = N(3, "Button", "C", pressable: true, selected: true);
+            Assert.True(UiaMatching.IsCurrent(current));
+            Assert.False(UiaMatching.IsCurrent(explicitlyNot));
+            Assert.True(UiaMatching.IsCurrent(legacy));
+        }
+
+        [Fact]
+        public void Conversation_matches_use_exact_titles_and_report_duplicates()
+        {
+            var nodes = Window(Row(3, "Plan"), Row(3, "Plan"), Row(3, "Plan B"));
+            Assert.Equal(2, UiaMatching.ConversationMatches(nodes, "Plan", "Pin chat").Count);
+            Assert.Single(UiaMatching.ConversationMatches(nodes, "Plan B", "Pin chat"));
+            Assert.Empty(UiaMatching.ConversationMatches(nodes, "plan", "Pin chat"));
+            Assert.Empty(UiaMatching.ConversationMatches(nodes, "Plan", ""));
+        }
+
+        [Fact]
+        public void Mode_is_read_from_the_prefixed_switcher_label()
+        {
+            var nodes = Window(new[] { N(3, "Button", "Switch mode, current mode: Codex", pressable: true) });
+            Assert.Equal("Codex", UiaMatching.Mode(nodes, "Switch mode, current mode: "));
+            Assert.Equal("", UiaMatching.Mode(nodes, ""));
+            Assert.Equal("", UiaMatching.Mode(nodes, "Other prefix: "));
+        }
+
+        [Fact]
+        public void Attention_is_a_substring_anywhere_in_the_tree()
+        {
+            var nodes = Window(new[] { N(3, "Button", "View activity, needs attention", pressable: true) });
+            Assert.True(UiaMatching.Attention(nodes, "needs attention"));
+            Assert.False(UiaMatching.Attention(nodes, ""));
+            Assert.False(UiaMatching.Attention(nodes, "needs review"));
+        }
+
+        [Fact]
+        public void Voice_state_needs_a_unique_enabled_start_and_treats_any_end_as_active()
+        {
+            var start = new[] { "Start voice chat", "Start new voice chat" };
+            var end = new[] { "Stop voice chat" };
+
+            var ready = Window(new[] { N(3, "Button", "Start new voice chat", pressable: true) });
+            Assert.Equal("ready", UiaMatching.VoiceState(ready, start, end));
+
+            var twoStarts = Window(new[]
+            {
+                N(3, "Button", "Start new voice chat", pressable: true),
+                N(3, "Button", "Start new voice chat", pressable: true),
+            });
+            Assert.Equal("unavailable", UiaMatching.VoiceState(twoStarts, start, end));
+
+            var active = Window(new[] { N(3, "Button", "Stop voice chat", pressable: true) });
+            Assert.Equal("active", UiaMatching.VoiceState(active, start, end));
+            Assert.Null(UiaMatching.VoiceTarget("start", active, start, end));
+            Assert.NotNull(UiaMatching.VoiceTarget("end", active, start, end));
+
+            // Even a disabled End button is evidence of a session: it blocks a second start,
+            // and is not itself a target.
+            var ending = Window(new[] { N(3, "Button", "Stop voice chat", pressable: true, enabled: false) });
+            Assert.Equal("active", UiaMatching.VoiceState(ending, start, end));
+            Assert.Null(UiaMatching.VoiceTarget("end", ending, start, end));
+
+            Assert.Equal("unavailable", UiaMatching.VoiceState(ready, start, Array.Empty<String>()));
+        }
+
+        [Fact]
+        public void Send_target_needs_one_composer_with_a_draft_and_a_local_enabled_send()
+        {
+            IEnumerable<UiaNode> Composer(String draft, Boolean sendEnabled = true) => new[]
+            {
+                N(3, "Group", ""),
+                N(4, "Edit", "Work with ChatGPT", aria: "textbox", value: draft),
+                N(4, "Button", "Send", pressable: true, enabled: sendEnabled),
+            };
+            var stop = new[] { "Stop" };
+            var approve = new[] { "Allow once" };
+
+            Assert.NotNull(UiaMatching.SendTarget(Window(Composer("hello")), "Send", stop, approve));
+            Assert.Null(UiaMatching.SendTarget(Window(Composer("   ")), "Send", stop, approve));
+            Assert.Null(UiaMatching.SendTarget(Window(Composer("hello", sendEnabled: false)), "Send", stop, approve));
+            Assert.Null(UiaMatching.SendTarget(Window(Composer("hello")), "", stop, approve));
+
+            // A running task or a waiting approval means the draft is not sendable now.
+            var running = Window(Composer("hello"), new[] { N(3, "Button", "Stop", pressable: true) });
+            Assert.Null(UiaMatching.SendTarget(running, "Send", stop, approve));
+
+            // Send found only at the document level is too broad a relationship.
+            var far = Window(new[] { N(3, "Group", ""), N(4, "Edit", "", aria: "textbox", value: "hello") },
+                new[] { N(3, "Button", "Send", pressable: true) });
+            Assert.Null(UiaMatching.SendTarget(far, "Send", stop, approve));
+        }
+
+        [Fact]
+        public void Panel_route_needs_the_mode_owning_document_and_one_opener_or_one_visible_panel()
+        {
+            var modeLabel = "Switch mode, current mode: Codex";
+            var open = new[] { "Changes", "This branch" };
+            var visible = new[] { "Show files", "Hide files" };
+
+            var withOpener = Window(new[]
+            {
+                N(3, "Button", modeLabel, pressable: true),
+                N(3, "Button", "Changes +1,234 −56", pressable: true),
+            });
+            Assert.True(UiaMatching.PanelRouteAvailable(withOpener, modeLabel, open, visible));
+
+            var settingsToo = Window(new[]
+            {
+                N(3, "Button", modeLabel, pressable: true),
+                N(3, "Button", "Changes", pressable: true),
+                N(3, "Button", "Changes settings", pressable: true),
+            });
+            Assert.True(UiaMatching.PanelRouteAvailable(settingsToo, modeLabel, open, visible));
+
+            var obstructed = Window(new[]
+            {
+                N(3, "Button", modeLabel, pressable: true),
+                N(3, "Button", "Changes", pressable: true),
+                N(3, "Group", "Confirm", aria: "dialog"),
+            });
+            Assert.False(UiaMatching.PanelRouteAvailable(obstructed, modeLabel, open, visible));
+
+            var preview = Window(new[]
+            {
+                N(3, "Button", modeLabel, pressable: true),
+                N(3, "Document", "preview"),
+                N(4, "Button", "Changes", pressable: true),
+            });
+            Assert.False(UiaMatching.PanelRouteAvailable(preview, modeLabel, open, visible));
+            Assert.False(UiaMatching.PanelRouteAvailable(withOpener, "", open, visible));
+        }
+
+        [Fact]
+        public void Normalisation_collapses_whitespace_and_case()
+        {
+            Assert.Equal("allow once", UiaMatching.NormalizeLabel("  Allow\n ONCE "));
+            Assert.Equal("a b", UiaMatching.Collapse(" a \r\n  b "));
+            Assert.Equal("", UiaMatching.NormalizeLabel(null));
+        }
+    }
+}

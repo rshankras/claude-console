@@ -2,17 +2,29 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- net8.0-windows for the platform analyser, but NO UseWPF: UI Automation is driven through
+         its COM interface (UIAutomationCore.dll ships with Windows), not the WPF wrapper in the
+         Desktop Runtime. That wrapper made this helper either framework-dependent and broken on
+         clean machines (#83) or self-contained and 68 MB. -->
     <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
     <RollForward>LatestMajor</RollForward>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>vizhi-desktop-uia</AssemblyName>
     <RootNamespace>VizhiDesktopUia</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Ships inside the plugin package, beside the plugin DLL. Self-contained and trimmed like
+         every other Windows helper: the Plugin Service carries a PRIVATE runtime, so no
+         machine-wide .NET can be assumed. Partial trimming keeps this assembly whole — the
+         hand-declared COM vtables must never lose a slot to the trimmer. -->
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
-    <SelfContained>false</SelfContained>
+    <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <!-- Trimmed apps switch built-in COM interop off by default; UI Automation needs it on. -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
   </PropertyGroup>
 
 </Project>
