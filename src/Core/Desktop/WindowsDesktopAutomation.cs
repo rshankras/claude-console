@@ -110,7 +110,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             }
 
             matched = ReadString(root, "matched");
-            this.KeepFront(root);
+            var restored = this.KeepFront(root);
+            // A landed press is the record Logitech QA and the device pass need; the macOS client
+            // logs only failures, but on Windows where the foreground went matters too.
+            PluginLog.Info($"WindowsDesktopAutomation.Press: '{matched}' landed; front {ReadString(root, "frontBefore")} -> {ReadString(root, "frontAfter")}"
+                + (restored is Boolean handed ? $"; focus handed back: {(handed ? "yes" : "refused")}" : ""));
             return true;
         }
 
@@ -121,12 +125,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// process that made the UIA call is refused; measured live 2026-09-30). The press has
         /// already landed, so a refused restore is logged, never a failure.
         /// </summary>
-        private void KeepFront(JsonElement press)
+        private Boolean? KeepFront(JsonElement press)
         {
             if (!press.TryGetProperty("frontMoved", out var moved) || moved.ValueKind != JsonValueKind.True
                 || !press.TryGetProperty("frontBeforeHwnd", out var hwnd) || hwnd.ValueKind != JsonValueKind.Number)
             {
-                return;
+                return null;
             }
             var args = new List<String> { "restore-front", "--hwnd", hwnd.GetInt64().ToString(System.Globalization.CultureInfo.InvariantCulture) };
             AddEach(args, "--process", _app.WindowsProcessNames);
@@ -134,7 +138,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             if (!TryParseOk(json, out _))
             {
                 PluginLog.Warning($"WindowsDesktopAutomation: the press activated the app and focus could not be handed back: {Describe(json)}");
+                return false;
             }
+            return true;
         }
 
         public Boolean PressInMode(String[] labels, String mode, out String matched)
