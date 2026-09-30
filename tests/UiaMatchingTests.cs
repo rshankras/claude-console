@@ -524,6 +524,23 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.StartsWith("item:", results[0].Id);
             Assert.Equal("https://chatgpt.com/c/abc", results[1].Id);
             Assert.Empty(UiaMatching.SearchResults(nodes, "", new[] { "chatgpt.com" }, new[] { "/c/" }));
+
+            // Seen live: a query that matches the title splits it around the matched words. The
+            // key shows the whole title, not the part before the match, and stops at the project.
+            var split = Window(new[]
+            {
+                N(3, "Window", "Command menu", aria: "dialog"),
+                N(4, "ListItem", "Add third line to notes.txt tmp Alt+1 Add a third", pressable: true, aria: "option"),
+                N(5, "Group", "", pressable: true),
+                N(6, "Text", "Add third line to ", aria: "description"),
+                N(6, "Text", "notes", aria: "description"),
+                N(6, "Text", ".txt", aria: "description"),
+                N(5, "Group", "", pressable: true),
+                N(6, "Text", "tmp", aria: "description"),
+                N(5, "Text", "Alt+1", aria: "description"),
+            });
+            Assert.Equal("Add third line to notes.txt",
+                Assert.Single(UiaMatching.SearchResults(split, "notes", Array.Empty<String>(), Array.Empty<String>())).Title);
         }
 
         [Fact]

@@ -815,16 +815,25 @@ internal static class UiaMatching
     /// <summary>
     /// A result's title for the key: a list item's accessible name runs the chat title, its
     /// project, a shortcut and a snippet together, so the item's first text — the title the
-    /// sidebar shows — is what the key displays. A link keeps its own text.
+    /// sidebar shows — is what the key displays. The app wraps the title in a group of its own
+    /// and splits it around the words the query matched ("Add third line to ", "notes", ".txt"),
+    /// so the texts beside the first one in that group are the rest of the title. A link keeps
+    /// its own text.
     /// </summary>
     public static String SearchResultTitle(UiaNode node, IReadOnlyList<UiaNode> nodes)
     {
         if (node.Role != "ListItem") return node.Text;
         var index = IndexOf(nodes, node);
         if (index < 0) return node.Text;
-        for (var i = index + 1; i < SubtreeEnd(nodes, index); i++)
+        var end = SubtreeEnd(nodes, index);
+        for (var i = index + 1; i < end; i++)
         {
-            if (nodes[i].Role == "Text" && !String.IsNullOrWhiteSpace(nodes[i].Text)) return nodes[i].Text;
+            var first = nodes[i];
+            if (first.Role != "Text" || String.IsNullOrWhiteSpace(first.Text)) continue;
+            // Directly under the item there is no wrapper to say where the title stops.
+            if (first.Depth <= node.Depth + 1) return first.Text;
+            return String.Concat(nodes.Skip(i).Take(end - i)
+                .TakeWhile(n => n.Role == "Text" && n.Depth == first.Depth).Select(n => n.Text)).Trim();
         }
         return node.Text;
     }
