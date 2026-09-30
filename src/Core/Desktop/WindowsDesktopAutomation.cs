@@ -230,7 +230,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             // caller brings the app forward on purpose right after this.
             var args = BaseArgs("press");
             args.AddRange(new[] { "--label", title, "--conversation", _app.ConversationItemMarker });
-            return TryParseOk(this.Runner(args, 4000), out _);
+            if (!TryParseOk(this.Runner(args, 4000), out _)) { return false; }
+            PluginLog.Info("WindowsDesktopAutomation.PressConversation: opened the chosen chat");
+            return true;
         }
 
         public Boolean WriteComposer(String text, Boolean send, out String error) =>
@@ -273,13 +275,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             }
 
             var json = this.Runner(args, 8000);
-            if (!TryParseOk(json, out _))
+            if (!TryParseOk(json, out var root))
             {
                 error = Describe(json);
                 PluginLog.Warning($"WindowsDesktopAutomation.WriteComposer: {error}");
                 return false;
             }
 
+            // No text in the log, only the outcome: the device pass needs the record, the
+            // draft is the user's.
+            PluginLog.Info($"WindowsDesktopAutomation.WriteComposer: {ReadString(root, "method")} write landed"
+                + (send ? ", sent" : "") + (target != null ? " (prepared target)" : ""));
             return true;
         }
 
@@ -442,6 +448,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             AddEach(args, "--approve", _app.ApproveLabels);
             var json = this.Runner(args, 4000);
             error = TryParseOk(json, out _) ? null : Describe(json);
+            if (error == null) PluginLog.Info("WindowsDesktopAutomation.Send: the draft was sent");
             return error == null;
         }
 
