@@ -116,17 +116,27 @@ if product:
 # service will load this package on Windows, so every helper must be there and self-contained. A
 # package that declares no Windows folder must ship no helper at all: an exe that is never
 # launched is dead weight, and one that would fail on a clean install (#83) is a trap for whoever
-# later adds the declaration without rebuilding. Vizhi Desktop is macOS-only until its UI
-# Automation helper bundles its runtime.
+# later adds the declaration without rebuilding. Which helpers a product needs differs: the
+# terminal products read an agent through a hook, the desktop product reads the app through
+# its UI Automation helper and installs no hook.
 ships_windows = bool(re.search(r"(?m)^pluginFolderWin:\s*\S", yaml))
-helpers = direct("bin/claude-console-", ".exe")
+helpers = direct("bin/claude-console-", ".exe") + direct("bin/vizhi-desktop-", ".exe")
+desktop = product == "VizhiDesktop"
 print(f"    windows       {'declared (pluginFolderWin)' if ships_windows else 'not declared: a macOS-only package'}")
 if not ships_windows:
     for n in helpers:
         err(f"{n} shipped but the yaml declares no pluginFolderWin — drop the inert helper or declare Windows")
 else:
-    if not has("bin/claude-console-hook.exe"):
-        err("bin/claude-console-hook.exe missing — live status cannot work on Windows")
+    if desktop:
+        if not has("bin/vizhi-desktop-uia.exe"):
+            err("bin/vizhi-desktop-uia.exe missing — every desktop key would report No Signal on Windows")
+        if has("bin/claude-console-hook.exe"):
+            err("bin/claude-console-hook.exe shipped in the desktop package — it installs no hooks; drop the inert helper")
+    else:
+        if not has("bin/claude-console-hook.exe"):
+            err("bin/claude-console-hook.exe missing — live status cannot work on Windows")
+        if has("bin/vizhi-desktop-uia.exe"):
+            err("bin/vizhi-desktop-uia.exe shipped in a terminal package — nothing launches it; drop the inert helper")
     toolkit = "bin/claude-console-tools.exe"
     standalone = ["bin/claude-console-" + t + ".exe" for t in ("inject", "voice", "focus", "shot")]
     if has(toolkit):

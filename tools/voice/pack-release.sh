@@ -75,14 +75,13 @@ case "$PRODUCT" in
   *)            SHIPS_DESKTOP=0 ;;
 esac
 
-# Terminal products have both platform backends. VizhiDesktop is macOS-only until its UI
-# Automation helper meets the rule every Windows helper has had to since #83 — bundle its own
-# runtime — and tools/windows/VizhiDesktopUia is still framework-dependent. Until then the
-# package declares no pluginFolderWin and carries no Windows helper or whisper bundle:
-# verify-package.sh rejects either as inert payload.
+# Every product has both platform backends. The terminal products ship the hook and the
+# toolkit; VizhiDesktop ships the toolkit (voice, the snip) and its UI Automation helper, which
+# meets the rule every Windows helper has had to since #83 — it bundles its own runtime.
+# build-windows-payload.sh picks the helper set per product; verify-package.sh checks it.
 case "$PRODUCT" in
-  ClaudeConsole|VizhiCodex) SHIPS_WINDOWS=1 ;;
-  *)                        SHIPS_WINDOWS=0 ;;
+  ClaudeConsole|VizhiCodex|VizhiDesktop) SHIPS_WINDOWS=1 ;;
+  *)                                     SHIPS_WINDOWS=0 ;;
 esac
 
 # --- preflight: the voice payload must exist and be notarized ------------------------------------

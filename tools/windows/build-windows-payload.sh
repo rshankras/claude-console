@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Publish the hook and shared interactive toolkit into the plugin package tree.
+# Publish the Windows helpers into the plugin package tree.
 #
-# Both cross-compile from macOS, so a single .lplug4 built here carries the payload for BOTH
+# All cross-compile from macOS, so a single .lplug4 built here carries the payload for BOTH
 # platforms (pluginFolderMac + pluginFolderWin in LoupedeckPackage.yaml both point at bin/).
 #
 #   claude-console-hook.exe     statusline + activity hooks, with its own watchdog and cap
+#                               (the terminal products)
 #   claude-console-tools.exe    inject / focus / voice / shot, one new process per invocation
+#                               (every product: voice and the snip are agent-neutral)
+#   vizhi-desktop-uia.exe       the UI Automation verbs that drive the ChatGPT app
+#                               (Vizhi Desktop, which has no hook: it reads the app, not a TTY)
 #
 # The toolkit shares ONE runtime across four operations instead of shipping four copies.
 # The standalone projects are retained for diagnostics, but are not release payload.
@@ -23,19 +27,28 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # exactly what depends on them.
 DEST="$ROOT/bin/$PRODUCT/$CONFIG/bin"
 
-echo ">>> building Windows helpers ($CONFIG, $RID)"
+# Which helpers a product ships. A helper that is never launched is dead weight, and a hook
+# in the desktop package would be one: the desktop product installs no hooks.
+case "$PRODUCT" in
+  ClaudeConsole|VizhiCodex) PROJECTS="ClaudeConsoleHook ClaudeConsoleTools" ;;
+  VizhiDesktop)             PROJECTS="ClaudeConsoleTools VizhiDesktopUia" ;;
+  *) echo "error: unsupported product '$PRODUCT' (expected ClaudeConsole, VizhiCodex or VizhiDesktop)." >&2; exit 2 ;;
+esac
+
+echo ">>> building Windows helpers ($CONFIG, $RID) for $PRODUCT"
 mkdir -p "$DEST"
 
 # Every helper is a self-contained, trimmed console exe. Options+ does not supply a globally
 # discoverable .NET on clean installs, so a framework-dependent helper fails there (#83).
-for proj in ClaudeConsoleHook ClaudeConsoleTools; do
+for proj in $PROJECTS; do
   [ -d "$ROOT/tools/windows/$proj" ] || { echo "error: required project $proj is absent" >&2; exit 1; }
   echo ">>>   $proj"
   case "$proj" in
-    ClaudeConsoleTools)
-      # The focus/shot predecessors shipped framework-dependent once (#83). A single-file
-      # publish also emits just an exe, so the sidecar check below alone cannot catch that
-      # regression; ask the project what it intends.
+    ClaudeConsoleTools|VizhiDesktopUia)
+      # The focus/shot predecessors shipped framework-dependent once (#83), and the desktop
+      # helper was WPF-based and framework-dependent until 2026-09-30. A single-file publish
+      # also emits just an exe, so the sidecar check below alone cannot catch that regression;
+      # ask the project what it intends.
       contained=$(dotnet msbuild "$ROOT/tools/windows/$proj/$proj.csproj" \
         -p:Configuration="$CONFIG" -p:RuntimeIdentifier="$RID" \
         -p:EnableWindowsTargeting=true -getProperty:SelfContained | tr -d '\r')
@@ -47,9 +60,9 @@ for proj in ClaudeConsoleHook ClaudeConsoleTools; do
   esac
   # Each csproj decides self-contained vs framework-dependent (see their comments); don't
   # override it here, or the trimming settings that keep these small get silently discarded.
-  # EnableWindowsTargeting is what lets a net8.0-windows project (the focus helper) publish from
-  # macOS — without it the SDK refuses with NETSDK1100 and, if output is suppressed, the exe just
-  # quietly never appears in the package. Harmless for the net8.0 helpers.
+  # EnableWindowsTargeting is what lets a net8.0-windows project publish from macOS — without
+  # it the SDK refuses with NETSDK1100 and, if output is suppressed, the exe just quietly never
+  # appears in the package. Harmless for the net8.0 helpers.
   dotnet publish "$ROOT/tools/windows/$proj" \
     -c "$CONFIG" -r "$RID" \
     -p:PublishSingleFile=true \
@@ -75,6 +88,11 @@ done
 for tool in inject focus voice shot; do
   rm -f "$DEST/claude-console-$tool.exe"
 done
+# A helper the product does not ship must not linger from an earlier stage of another product.
+case "$PRODUCT" in
+  VizhiDesktop) rm -f "$DEST/claude-console-hook.exe" ;;
+  *)            rm -f "$DEST/vizhi-desktop-uia.exe" ;;
+esac
 
 echo ">>> staged into $DEST:"
 ls -1 "$DEST"/*.exe 2>/dev/null | sed 's|.*/|      |'
