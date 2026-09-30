@@ -22,9 +22,12 @@ Automation through its COM interface (`UiaInterop.cs`) rather than the WPF wrapp
   ExpandCollapse, not Invoke; a pressed-state button exposes Toggle. The helper treats all of
   Invoke, Toggle, ExpandCollapse and SelectionItem as "pressable" and presses through whichever
   the control offers.
-- **Chromium serves no page content while the window is not being shown** — screen locked,
-  and to be confirmed for minimised and fully covered. The document element stays with nothing
-  under it. `status` reports `surface:false` for that, never an empty page; the keys read Hidden.
+- **Chromium serves no page content while the screen is locked.** The document element stays
+  with nothing under it. `status` reports `surface:false` for that, never an empty page; the keys
+  read Hidden. A minimised window and one fully covered by a maximised window both keep serving
+  the whole page (device pass, 2026-09-30: the same status 2 s and 12 s after minimising), and a
+  press on the minimised window lands — it takes the foreground without restoring the window,
+  and `restore-front` hands it back.
 - A cache request scoped to the subtree fetches the whole tree in one cross-process call:
   ~320 ms for 365 nodes, against ~2 s walking it property by property.
 - **A UIA press activates the app's window.** Chromium performs Invoke as a click and a click
@@ -87,7 +90,7 @@ What the Windows app does differently, and how the port answers it:
   `attach-files` (need a real file to attach), `context-selection` (copies from another app),
   `context-paste`, `context-screenshot` (the snip overlay).
 - `open-panel` in Codex mode with a review available.
-- The tree when the window is minimised, fully covered or on another virtual desktop.
+- The tree when the window is on another virtual desktop.
 - Options+ binding to a Store app, and the Vizhi Home layout importing on Windows.
 
 ## Packaging
