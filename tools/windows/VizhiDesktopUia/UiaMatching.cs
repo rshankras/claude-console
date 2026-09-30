@@ -322,6 +322,30 @@ internal static class UiaMatching
         return ConversationRows(nodes, marker).Where(x => x.Row.Text == title).Select(x => x.Row).ToList();
     }
 
+    /// <summary>
+    /// The one button that starts a voice chat. The Windows app shows two at once — the
+    /// composer's "Start voice chat" and the sidebar's "Start new voice chat" — so the
+    /// adapter's labels are tried in order and the first label naming exactly one enabled
+    /// button wins; a label naming two is still ambiguous. (The macOS rule takes all labels
+    /// together, where the app shows one.)
+    /// </summary>
+    public static UiaNode? VoiceStartButton(IReadOnlyList<UiaNode> nodes, IReadOnlyList<String> start)
+    {
+        foreach (var label in start)
+        {
+            var matches = ExactButtons(nodes, new[] { label });
+            if (matches.Count == 1)
+            {
+                return matches[0].Pressable && matches[0].Enabled ? matches[0] : null;
+            }
+            if (matches.Count > 1)
+            {
+                return null;
+            }
+        }
+        return null;
+    }
+
     public static String VoiceState(IReadOnlyList<UiaNode> nodes, IReadOnlyList<String> start, IReadOnlyList<String> end)
     {
         if (start.Count == 0 || end.Count == 0)
@@ -334,7 +358,7 @@ internal static class UiaMatching
         {
             return endings.Count == 1 ? "active" : "unavailable";
         }
-        return UniqueEnabledButton(nodes, start) != null ? "ready" : "unavailable";
+        return VoiceStartButton(nodes, start) != null ? "ready" : "unavailable";
     }
 
     public static UiaNode? VoiceTarget(String action, IReadOnlyList<UiaNode> nodes,
@@ -345,7 +369,7 @@ internal static class UiaMatching
         {
             return null;
         }
-        return UniqueEnabledButton(nodes, action == "start" ? start : end);
+        return action == "start" ? VoiceStartButton(nodes, start) : UniqueEnabledButton(nodes, end);
     }
 
     public static List<UiaNode> Composers(IReadOnlyList<UiaNode> nodes) =>

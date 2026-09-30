@@ -219,6 +219,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             });
             Assert.Equal("unavailable", UiaMatching.VoiceState(twoStarts, start, end));
 
+            // The Windows app shows the composer's and the sidebar's start buttons together
+            // (seen 2026-09-30): the adapter's first label wins, so voice stays available.
+            var both = Window(new[]
+            {
+                N(3, "Button", "Start new voice chat", pressable: true),
+                N(4, "Button", "Start voice chat", pressable: true),
+            });
+            Assert.Equal("ready", UiaMatching.VoiceState(both, start, end));
+            Assert.Equal("Start voice chat", UiaMatching.VoiceTarget("start", both, start, end).Text);
+
             var active = Window(new[] { N(3, "Button", "Stop voice chat", pressable: true) });
             Assert.Equal("active", UiaMatching.VoiceState(active, start, end));
             Assert.Null(UiaMatching.VoiceTarget("start", active, start, end));
