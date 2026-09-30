@@ -79,11 +79,37 @@ internal static class Win32
         public IntPtr ExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT
+    {
+        public Int32 Dx;
+        public Int32 Dy;
+        public UInt32 MouseData;
+        public UInt32 Flags;
+        public UInt32 Time;
+        public IntPtr ExtraInfo;
+    }
+
     [StructLayout(LayoutKind.Explicit)]
     private struct INPUT
     {
         [FieldOffset(0)] public UInt32 Type;
         [FieldOffset(8)] public KEYBDINPUT Keyboard;
+        [FieldOffset(8)] public MOUSEINPUT Mouse;
+    }
+
+    private const UInt32 INPUT_MOUSE = 0;
+    private const UInt32 MOUSEEVENTF_MOVE = 1;
+
+    /// <summary>
+    /// A mouse move of zero distance: no cursor movement, no click, no key — but it counts as
+    /// input from this process, which is what the foreground lock asks for before it lets a
+    /// background process bring a window forward while the user is busy in another.
+    /// </summary>
+    public static Boolean NoOpInput()
+    {
+        var inputs = new[] { new INPUT { Type = INPUT_MOUSE, Mouse = new MOUSEINPUT { Flags = MOUSEEVENTF_MOVE } } };
+        return SendInput(1, inputs, Marshal.SizeOf<INPUT>()) == 1;
     }
 
     /// <summary>

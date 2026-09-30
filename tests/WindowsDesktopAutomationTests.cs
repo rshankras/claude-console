@@ -316,8 +316,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.DoesNotContain("using System.Windows.Automation", allSource);
             Assert.DoesNotContain("Allow once", allSource); // app knowledge stays in the adapter
             Assert.DoesNotContain("ChatGPT", allSource);
-            // The only synthesised input is a chord posted after the focus was proven.
+            // The only synthesised inputs: a chord posted after the focus was proven, and a
+            // zero-distance mouse move that satisfies the foreground lock. Never a key on its own.
             Assert.DoesNotContain("keybd_event", allSource);
+            Assert.Contains("MOUSEEVENTF_MOVE", allSource);
 
             var project = File.ReadAllText(RepoFile("tools", "windows", "VizhiDesktopUia", "VizhiDesktopUia.csproj"));
             Assert.Contains("<SelfContained>true</SelfContained>", project);

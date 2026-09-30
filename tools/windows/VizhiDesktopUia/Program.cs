@@ -636,30 +636,45 @@ internal static partial class Program
         return Raise(previous) ? Emit(new Dictionary<String, Object?> { ["restored"] = true }) : Fail("restore-refused", ExitError);
     }
 
-    /// <summary>Bring a window to the foreground and wait for it to arrive.</summary>
+    /// <summary>
+    /// Bring a window to the foreground and wait for it to arrive. Every call here is the
+    /// direct result of a physical key press, so the user's intent is not in doubt — but
+    /// Windows' foreground lock does not know about keypads: while the user is giving input to
+    /// the front window, a background process is refused (measured live 2026-09-30: refused on
+    /// a key press, accepted from the same helper while the user was idle). A zero-distance
+    /// mouse move from this process satisfies the lock; the Alt-tab switch is the last resort.
+    /// </summary>
     private static Boolean Raise(IntPtr hwnd)
     {
         if (Win32.IsIconic(hwnd))
         {
             Win32.ShowWindow(hwnd, Win32.SW_RESTORE);
         }
-        // Windows refuses SetForegroundWindow for a background helper under the foreground
-        // lock. This is always the direct result of a physical key press, so use the same
-        // explicit-user-intent fallback as ClaudeConsoleFocus.
-        if (!Win32.SetForegroundWindow(hwnd))
-        {
-            Win32.SwitchToThisWindow(hwnd, true);
-        }
         var pid = Win32.PidOf(hwnd);
-        for (var attempt = 0; attempt < 6; attempt++)
+        Boolean Arrived()
         {
-            Thread.Sleep(100);
-            if (Win32.ForegroundPid() == pid)
+            for (var attempt = 0; attempt < 6; attempt++)
             {
-                return true;
+                Thread.Sleep(100);
+                if (Win32.ForegroundPid() == pid)
+                {
+                    return true;
+                }
             }
+            return false;
         }
-        return false;
+
+        if (Win32.SetForegroundWindow(hwnd) && Arrived())
+        {
+            return true;
+        }
+        Win32.NoOpInput();
+        if (Win32.SetForegroundWindow(hwnd) && Arrived())
+        {
+            return true;
+        }
+        Win32.SwitchToThisWindow(hwnd, true);
+        return Arrived();
     }
 
     /// <summary>

@@ -26,6 +26,9 @@ pack time); the device pass with the installed package is what remains before a 
   forward before the picker opens, so the region is picked from that app; ChatGPT comes back to
   the front with the image attached. To capture a different app, switch to it, then to ChatGPT,
   then press Screenshot. Holding Screenshot still captures that window whole, with no picker.
+  Bringing a window forward from a key press is refused by Windows' foreground lock while you
+  are giving input to the front window; the helper now posts a zero-distance mouse move first,
+  which the lock accepts. The same applies to the focus hand-back after Approve and Deny.
 - **Windows: a press hands focus back.** Chromium performs a UI Automation press as a click,
   which brings the ChatGPT window to the front; the helper reports it and a second invocation
   gives the foreground back to the window that had it, so Approve from your editor leaves you

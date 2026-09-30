@@ -314,14 +314,21 @@ internal static partial class Program
         var frontPid = Win32.PidOf(front);
         var source = _appPids.Contains(frontPid) ? WindowBehind()
             : Win32.IsAppWindow(front) ? new SourceWindow(frontPid, front.ToInt64(), Win32.WindowTitle(front)) : null;
+        var raised = false;
         if (source != null && _appPids.Contains(frontPid))
         {
             // A fresh, UIA-free process is allowed to move the foreground (see restore-front).
-            Raise(new IntPtr(source.Hwnd));
+            raised = Raise(new IntPtr(source.Hwnd));
         }
         var image = CaptureRegion();
         if (image == null) return Fail("cancelled", ExitNoMatch);
-        var result = new Dictionary<String, Object?> { ["image"] = image, ["appName"] = source == null ? "Source app" : AppName(source.Pid) };
+        var result = new Dictionary<String, Object?>
+        {
+            ["image"] = image,
+            ["appName"] = source == null ? "Source app" : AppName(source.Pid),
+            ["raised"] = raised,
+            ["frontWasApp"] = _appPids.Contains(frontPid),
+        };
         if (source != null) result["source"] = source.Encode();
         return Emit(result);
     }
