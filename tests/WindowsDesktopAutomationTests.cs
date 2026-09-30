@@ -45,6 +45,18 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void View_changes_outlasts_the_helpers_own_wait_for_the_panel()
+        {
+            // The helper checks the target twice, presses, then waits up to 3 s for the panel;
+            // the old 5 s budget could kill it inside that wait.
+            var auto = new WindowsDesktopAutomation(new OpenAiDesktopAdapter());
+            var budget = 0;
+            auto.Runner = (_, timeout) => { budget = timeout; return "{\"ok\":true,\"opened\":true}"; };
+            Assert.True(auto.OpenChanges(out _));
+            Assert.True(budget >= 7000);
+        }
+
+        [Fact]
         public void Status_names_the_process_and_asks_the_same_questions_as_macOS()
         {
             var (auto, calls) = Build(

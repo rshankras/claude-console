@@ -809,8 +809,11 @@ internal static partial class Program
         if (confirmed.Count != 1 || !SameElement(candidates[0], confirmed[0])) return Fail("panel-target-changed", ExitChanged);
         if (!Invoke(confirmed[0])) return Fail("panel-press-failed", ExitError);
 
+        // The macOS helper waits 1.2 s. Here one check is a whole UIA scan (~350 ms), and the
+        // first review after a turn loads slower than a reopened one: the device pass recorded
+        // panel-unconfirmed on a tab that did open. A confirmed panel returns at once.
         var deadline = Stopwatch.StartNew();
-        while (deadline.ElapsedMilliseconds < 1200)
+        while (deadline.ElapsedMilliseconds < 3000)
         {
             Thread.Sleep(80);
             var (again, againError, againCode) = Checked();

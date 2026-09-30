@@ -189,7 +189,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             AddEach(args, "--panel-open-turn", _app.ShowDiffTurnLabels);
             AddEach(args, "--panel-visible", _app.ChangesPanelLabels);
             AddOne(args, "--conv-marker", _app.ConversationItemMarker);
-            var json = this.Runner(args, 5000);
+            // The helper waits up to 3 s for the panel after its checks and the press.
+            var json = this.Runner(args, 7000);
             if (!TryParseOk(json, out var result) || !result.TryGetProperty("opened", out var opened) || opened.ValueKind != JsonValueKind.True)
             {
                 error = TryParseOk(json, out _) ? "panel-unconfirmed" : DesktopChangesTrace.ErrorFrom(json);
