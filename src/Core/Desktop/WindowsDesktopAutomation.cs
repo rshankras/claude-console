@@ -212,6 +212,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             AddEach(args, "--search-field", _app.SearchFieldLabels);
             AddEach(args, "--result-host", _app.SearchResultHosts);
             AddEach(args, "--result-path", _app.SearchResultPaths);
+            AddEach(args, "--result-group", _app.SearchResultGroups);
             // An empty query is a real value here (the field just opened), so these are added
             // whenever the caller supplied them, empty or not.
             if (target != null) args.AddRange(new[] { "--target", target });

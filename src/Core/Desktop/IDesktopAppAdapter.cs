@@ -20,6 +20,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         String[] SearchFieldLabels => Array.Empty<String>();
         String[] SearchResultHosts => Array.Empty<String>();
         String[] SearchResultPaths => Array.Empty<String>();
+        /// <summary>Headings of the search list that hold conversations; items under any other are not results.</summary>
+        String[] SearchResultGroups => Array.Empty<String>();
         /// <summary>Exact response-copy action and screen-reader speaker headings.</summary>
         String[] CopyResponseLabels => Array.Empty<String>();
         String[] CopyButtonLabels => Array.Empty<String>();

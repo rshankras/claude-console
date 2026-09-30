@@ -838,11 +838,30 @@ internal static class UiaMatching
         return node.Text;
     }
 
+    /// <summary>The heading a list item sits under inside its list; empty when it has none.</summary>
+    public static String ListGroup(IReadOnlyList<UiaNode> nodes, Int32 index)
+    {
+        var depth = nodes[index].Depth;
+        for (var i = index - 1; i >= 0; i--)
+        {
+            if (nodes[i].Depth >= depth) continue;
+            depth = nodes[i].Depth;
+            if (nodes[i].Role == "Group" && nodes[i].Text.Length > 0) return nodes[i].Text;
+            if (nodes[i].Role == "List") break;
+        }
+        return "";
+    }
+
+    // The command menu lists app commands (New chat, Open in new window) under their own
+    // headings beside the past chats. Named groups keep the list items to chats: a command
+    // must never be offered on a key as a chat to open.
     public static List<(UiaNode Node, String Id, String Title)> SearchResults(IReadOnlyList<UiaNode> surfaceNodes, String query,
-        IReadOnlyList<String> hosts, IReadOnlyList<String> paths)
+        IReadOnlyList<String> hosts, IReadOnlyList<String> paths, IReadOnlyList<String>? groups = null)
     {
         if (String.IsNullOrWhiteSpace(query)) return new List<(UiaNode, String, String)>();
-        var matches = surfaceNodes.Select(n => (Node: n, Id: SearchResultId(n, hosts, paths))).Where(x => x.Id != null)
+        var chats = (groups ?? Array.Empty<String>()).Select(NormalizeLabel).Where(g => g.Length > 0).ToHashSet(StringComparer.Ordinal);
+        var matches = surfaceNodes.Select((n, i) => (Node: n, Index: i, Id: SearchResultId(n, hosts, paths))).Where(x => x.Id != null)
+            .Where(x => chats.Count == 0 || x.Node.Role != "ListItem" || chats.Contains(NormalizeLabel(ListGroup(surfaceNodes, x.Index))))
             .Select(x => (x.Node, x.Id!, SearchResultTitle(x.Node, surfaceNodes))).ToList();
         var counts = matches.GroupBy(m => m.Item2, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
         return matches.Where(m => counts[m.Item2] == 1).Take(100).ToList();

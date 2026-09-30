@@ -91,6 +91,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public String[] SearchFieldLabels => new[] { "Search", "Search chats", "Search conversations" };
         public String[] SearchResultHosts => new[] { "chatgpt.com" };
         public String[] SearchResultPaths => new[] { "/c/", "/conversation/" };
+        // The Windows command menu also lists commands, under "Chat", "Navigation", "Panels".
+        public String[] SearchResultGroups => new[] { "Chats" };
 
         public String AttentionMarker => "needs attention";
 

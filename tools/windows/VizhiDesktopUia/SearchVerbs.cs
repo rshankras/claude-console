@@ -54,7 +54,7 @@ internal static partial class Program
 
     private static List<(UiaNode Node, String Id, String Title)> Results(SearchSurface surface, Dictionary<String, List<String>> options) =>
         UiaMatching.SearchResults(surface.Nodes, surface.Query, Values(options, "--result-host").Select(h => h.ToLowerInvariant()).ToList(),
-            Values(options, "--result-path"));
+            Values(options, "--result-path"), Values(options, "--result-group"));
 
     private static void CheckSearchMode(Target target, IReadOnlyList<UiaNode> nodes, Boolean pinned, Dictionary<String, List<String>> options)
     {

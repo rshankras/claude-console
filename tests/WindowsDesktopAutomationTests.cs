@@ -139,6 +139,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("ChatGPT", calls[0][calls[0].IndexOf("--expect-mode") + 1]);
             Assert.Contains("--search-field", calls[0]);
             Assert.Contains("--result-host", calls[0]);
+            Assert.Equal("Chats", calls[0][calls[0].IndexOf("--result-group") + 1]);
 
             Assert.True(auto.OpenChanges(out _));
             Assert.Equal("open-panel", calls[1][0]);

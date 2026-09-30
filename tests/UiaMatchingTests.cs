@@ -541,6 +541,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             });
             Assert.Equal("Add third line to notes.txt",
                 Assert.Single(UiaMatching.SearchResults(split, "notes", Array.Empty<String>(), Array.Empty<String>())).Title);
+
+            // Seen live: "new" lists the app's own commands under other headings. Only items
+            // under a named chat group are results; a command is never offered as a chat.
+            var mixed = Window(new[]
+            {
+                N(3, "Window", "Command menu", aria: "dialog"),
+                N(4, "List", "Suggestions"),
+                N(5, "Group", ""),
+                N(5, "Group", "Chats"),
+                N(6, "ListItem", "Check the new branch claude-console Alt+1", pressable: true, aria: "option"),
+                N(7, "Group", "", pressable: true),
+                N(8, "Text", "Check the new branch", aria: "description"),
+                N(5, "Group", "Chat"),
+                N(6, "ListItem", "New chat Ctrl+N", pressable: true, aria: "option"),
+                N(6, "ListItem", "Open in new window", pressable: true, aria: "option"),
+                N(5, "Group", "Panels"),
+                N(6, "ListItem", "Open browser tab Ctrl+T", pressable: true, aria: "option"),
+                N(4, "ListItem", "New loose item", pressable: true, aria: "option"),
+            });
+            var none = Array.Empty<String>();
+            Assert.Equal(5, UiaMatching.SearchResults(mixed, "new", none, none).Count);
+            Assert.Equal("Check the new branch", Assert.Single(UiaMatching.SearchResults(mixed, "new", none, none, new[] { "Chats" })).Title);
         }
 
         [Fact]
