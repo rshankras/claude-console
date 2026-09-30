@@ -16,8 +16,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             internal DesktopSearchSnapshot Next = Ready();
             internal DesktopSnapshot State = new() { SurfaceAvailable = true, Mode = "ChatGPT" };
             internal List<String> OtherCalls = new();
-            public DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null)
-            { Calls.Add(new(action, target, query, value, title, origin)); return Next; }
+            internal List<String> Modes = new();
+            public DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null, String mode = null)
+            { Calls.Add(new(action, target, query, value, title, origin)); Modes.Add(mode); return Next; }
             public DesktopSnapshot Status() => State;
             public Boolean Press(String[] labels, out String matched) { matched = null; throw new Exception("unexpected generic press"); }
             public Boolean PressGuarded(String[] labels, String card, out String matched, out String error) { matched = error = null; throw new Exception("unexpected approval"); }
@@ -45,6 +46,43 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("தமிழ் --send-label Send", actual[actual.IndexOf("--value") + 1]);
             Assert.DoesNotContain("--send-label", actual);
             Assert.Equal("ChatGPT", actual[actual.IndexOf("--expect-mode") + 1]);
+        }
+
+        [Fact]
+        public void A_search_opened_in_codex_names_codex_on_every_step()
+        {
+            var fake = new Fake { State = new() { SurfaceAvailable = true, Mode = "Codex" } };
+            var search = new DesktopSearch(fake);
+            Assert.True(FindChatDynamicFolder.Open(fake, new OpenAiDesktopAdapter(), search));
+            Assert.Equal("Codex", search.Mode);
+            var sink = search.CaptureSink();
+            fake.Next = Ready("typed"); search.Refresh(); search.TypeQuery();
+            Assert.Null(sink("spoken"));
+            Assert.True(search.Select(search.ResultParameter(search.Current.Results[0])));
+            Assert.Equal(new[] { "open", "read", "focus", "write", "select" }, fake.Calls.Select(c => c.Action));
+            Assert.All(fake.Modes, mode => Assert.Equal("Codex", mode));
+
+            // A lost field reopens in the same mode; a fresh ChatGPT search does not inherit it.
+            search.Begin("Codex"); fake.Next = new() { Error = "search-target-changed" }; search.Refresh();
+            fake.Next = Ready(); search.TypeQuery();
+            Assert.Equal(("open", "Codex"), (fake.Calls.Last().Action, fake.Modes.Last()));
+            search.Begin();
+            Assert.Null(fake.Modes.Last());
+            Assert.Equal("ChatGPT", search.Mode);
+
+            var windows = new WindowsDesktopAutomation(new OpenAiDesktopAdapter());
+            List<String> args = null;
+            windows.Runner = (a, _) => { args = a; return "{\"ok\":true,\"target\":\"x\",\"query\":\"\",\"results\":[]}"; };
+            Assert.True(windows.Search("open", mode: "Codex").Available);
+            Assert.Equal("Codex", args[args.IndexOf("--expect-mode") + 1]);
+        }
+
+        [Fact]
+        public void An_unreadable_mode_opens_no_search()
+        {
+            var fake = new Fake { State = new() { SurfaceAvailable = true, Mode = "" } };
+            Assert.False(FindChatDynamicFolder.Open(fake, new OpenAiDesktopAdapter(), new DesktopSearch(fake)));
+            Assert.Empty(fake.Calls);
         }
 
         [Theory]

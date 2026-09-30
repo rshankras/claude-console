@@ -75,7 +75,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 current.Available ? String.IsNullOrWhiteSpace(current.Query) ? "Speak or Type" : current.Query : "Open Search",
                 search.Feedback ?? (current.Available ? current.Query.Length == 0 ? "TAP TO TYPE" : current.Results.Count == 0 ? "NO MATCHES YET" : $"{current.Results.Count} FOUND · EDIT" : "TAP TO RETRY"), KeyImage.Gray, false);
             var result = search.Resolve(parameter);
-            return DesktopConversationRenderer.Render(size, result == null ? "Result changed" : DesktopConversationLabels.Display("ChatGPT", result.Title),
+            return DesktopConversationRenderer.Render(size, result == null ? "Result changed" : DesktopConversationLabels.Display(search.Mode, result.Title),
                 result == null ? "Refresh" : "Open chat", KeyImage.Gray, false);
         }
     }

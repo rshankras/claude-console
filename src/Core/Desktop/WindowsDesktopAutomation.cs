@@ -202,12 +202,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             return true;
         }
 
-        public DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null)
+        public DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null, String mode = null)
         {
             var args = BaseArgs("search");
             AddOne(args, "--action", action);
             AddOne(args, "--mode-prefix", _app.ModePrefix);
-            AddOne(args, "--expect-mode", "ChatGPT");
+            AddOne(args, "--expect-mode", mode ?? "ChatGPT");
             AddEach(args, "--search", _app.ControlLabels(DesktopControl.Search));
             AddEach(args, "--search-field", _app.SearchFieldLabels);
             AddEach(args, "--result-host", _app.SearchResultHosts);

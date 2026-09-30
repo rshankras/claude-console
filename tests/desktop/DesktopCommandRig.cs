@@ -46,10 +46,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                     break;
                 case "find-legacy":
                     var legacyFinder = new DesktopSearch(fake);
-                    Assert.Equal(mode == "ChatGPT", FindChatDynamicFolder.Open(fake, App, legacyFinder));
-                    Assert.Equal(mode == "ChatGPT" && success, legacyFinder.Current.Available);
-                    // Codex: the folder is View Changes. It reads status and never searches.
-                    if (mode == "Codex") { Assert.Equal("status", fake.Calls[0].Name); Assert.DoesNotContain(fake.Calls, c => c.Name.StartsWith("search")); }
+                    Assert.True(FindChatDynamicFolder.Open(fake, App, legacyFinder));
+                    Assert.Equal(mode, legacyFinder.Mode);
+                    Assert.Equal(success, legacyFinder.Current.Available);
+                    // Either mode: read status, open the app's search in that mode, nothing else.
+                    Assert.Equal(new[] { "status", "search:open" }, fake.Calls.Select(c => c.Name));
                     break;
                 case "find-chat-only":
                     if (DesktopNavigateCommand.IsHidden(parameter, mode)) { Assert.Empty(fake.Calls); break; }
@@ -461,8 +462,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             internal String Error;
             public Boolean HasVoiceShortcut { get; set; }
             public DesktopSnapshot Status() { Calls.Add(new("status")); return Next; }
-            public DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null)
-            { Calls.Add(new("search:" + action, value)); return Succeeds && Next.Mode == "ChatGPT" ? DesktopSearchTests.Ready() : new(); }
+            public DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null, String mode = null)
+            { Calls.Add(new("search:" + action, value)); return Succeeds && Next.Mode == (mode ?? "ChatGPT") ? DesktopSearchTests.Ready() : new(); }
             public Boolean Press(String[] labels, out String matched) { Calls.Add(new("press", Labels: labels)); matched = null; return Succeeds; }
             public Boolean PressExact(String[] labels) { Calls.Add(new("exact", Labels: labels)); return Succeeds; }
             public Boolean OpenChanges(out String error) { Calls.Add(new("open-changes")); error = Error; return Succeeds; }

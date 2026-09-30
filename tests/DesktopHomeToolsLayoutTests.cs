@@ -194,12 +194,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void Find_chat_key_is_view_changes_in_codex()
+        public void Find_chat_key_is_find_chat_in_both_modes_and_view_changes_stays_in_tasks()
         {
-            Assert.Equal(("Find Chat", "search"), FindChatDynamicFolder.Face(new Desktop.DesktopState { Mode = "ChatGPT", Activity = Desktop.DesktopActivity.Ready }));
-            var codex = new Desktop.DesktopState { Mode = "Codex", Activity = Desktop.DesktopActivity.Ready, AvailableControls = Desktop.DesktopControl.Changes };
-            Assert.Equal(("View Changes", "diff"), FindChatDynamicFolder.Face(codex));
-            Assert.Equal(("View Changes", "diff_idle"), FindChatDynamicFolder.Face(new Desktop.DesktopState { Mode = "Codex", Activity = Desktop.DesktopActivity.Ready }));
+            Assert.Equal(("Find Chat", "search"), FindChatDynamicFolder.Face);
+            var tasks = DesktopSavedPromptsDynamicFolder.Actions("VizhiDesktop", "Codex");
+            Assert.EndsWith("show_diff", tasks[0]);
         }
 
         [Fact]

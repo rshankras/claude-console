@@ -7,9 +7,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     using Loupedeck.ClaudeConsolePlugin.Desktop;
 
     /// <summary>
-    /// Find Chat in ChatGPT, View Changes in Codex. Bound directly to a key: Options+ opens a
-    /// folder only from a key binding; a command asking it to open one (the old Find Chat /
-    /// View Changes command) is received and ignored, which left that key on "Opening".
+    /// Find Chat, in ChatGPT and in Codex: the app's search is the same in both modes, so the
+    /// key never changes meaning (it was View Changes in Codex, which Tasks already offers).
+    /// Bound directly to a key: Options+ opens a folder only from a key binding; a command
+    /// asking it to open one (the old Find Chat / View Changes command) is received and
+    /// ignored, which left that key on "Opening".
     /// </summary>
     public sealed class FindChatDynamicFolder : PluginDynamicFolder
     {
@@ -22,7 +24,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         public FindChatDynamicFolder()
         {
             this.DisplayName = "Find Chat";
-            this.Description = "Find a ChatGPT conversation by speaking or typing a query";
+            this.Description = "Find a conversation by speaking or typing a query";
             this.GroupName = "Conversations";
         }
         public override PluginDynamicFolderNavigation GetNavigationArea(DeviceType _) => PluginDynamicFolderNavigation.ButtonArea;
@@ -32,7 +34,6 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             if (!_loaded && DesktopServices.Declared)
             {
                 _loaded = true; _search = DesktopServices.Search;
-                DesktopServices.OnMonitorChanged(OnModeChanged);
                 DesktopServices.Lifetime.OnStop(() => Deactivate());
             }
             return true;
@@ -41,7 +42,6 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             return Deactivate();
         }
-        private void OnModeChanged(DesktopState _) => this.Plugin.OnActionImageChanged("#DynamicFolder", this.Name, false);
 
         // The host has already pushed this folder before Activate; a non-search result must
         // explicitly Close (the SDK ignores Activate's return value on MX Creative Keypad).
@@ -49,14 +49,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             var state = automation.Status();
             if (!state.SurfaceAvailable) return false;
-            // Codex: this key is View Changes. Open the review panel; the folder then closes.
-            if (String.Equals(state.Mode, "Codex", StringComparison.OrdinalIgnoreCase))
-            {
-                if (state.AvailableControls.HasFlag(DesktopControl.Changes)) DesktopNavigateCommand.OpenChanges(automation);
-                return false;
-            }
-            if (!String.Equals(state.Mode, "ChatGPT", StringComparison.OrdinalIgnoreCase)) return false;
-            search.Begin(); // Keep the retry/Use App page visible if the app's layout is unsupported.
+            var mode = app.ModeNames.FirstOrDefault(m => String.Equals(m, state.Mode, StringComparison.OrdinalIgnoreCase));
+            if (mode == null) return false;
+            // The search is pinned to the mode it opened in. Keep the retry/Use App page
+            // visible if the app's layout is unsupported.
+            search.Begin(mode);
             return true;
         }
 
@@ -129,21 +126,10 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 .Select(p => ActionString.ToString(plugin, typeof(DesktopSearchCommand).FullName, p)).ToArray();
         public override IEnumerable<String> GetButtonPressActionNames(DeviceType _) =>
             DesktopServices.Declared ? Actions(this.Plugin.Name, DesktopServices.Search) : Array.Empty<String>();
-        public override String GetButtonDisplayName(PluginImageSize _) => Face(CurrentState()).Label;
-        public override BitmapImage GetButtonImage(PluginImageSize size)
-        {
-            var face = Face(CurrentState());
-            return KeyImage.Render(size, face.Label, KeyImage.Blue, face.Icon);
-        }
+        public override String GetButtonDisplayName(PluginImageSize _) => Face.Label;
+        public override BitmapImage GetButtonImage(PluginImageSize size) => KeyImage.Render(size, Face.Label, KeyImage.Blue, Face.Icon);
 
-        private static DesktopState CurrentState() =>
-            DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
-
-        internal static (String Label, String Icon) Face(DesktopState state)
-        {
-            if (state.Mode != "Codex") return ("Find Chat", "search");
-            var review = DesktopNavigateCommand.ReviewFace(state);
-            return (review.Label, review.Enabled ? review.Icon : review.Icon + "_idle");
-        }
+        // One face in every mode: the key is Find Chat wherever the app is.
+        internal static (String Label, String Icon) Face => ("Find Chat", "search");
     }
 }

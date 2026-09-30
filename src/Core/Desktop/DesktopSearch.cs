@@ -49,15 +49,20 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         private Boolean _waitingForField;
         private volatile DesktopSearchSnapshot _current = new();
         private volatile String _feedback;
+        // The app mode this search was opened in. Every step names it, so a search opened in
+        // Codex is refused, not redirected, once the window shows ChatGPT (and the reverse).
+        private volatile String _mode;
         public DesktopSearch(IDesktopAutomation automation) => _automation = automation;
         public DesktopSearchSnapshot Current => _ended ? new() : _current;
         public String Feedback => _ended ? null : _feedback;
+        public String Mode => _mode ?? "ChatGPT";
         public event Action Changed;
 
-        public Boolean Begin()
+        public Boolean Begin(String mode = null)
         {
             lock (_gate)
             {
+                _mode = mode;
                 OpenLocked();
             }
             Changed?.Invoke();
@@ -78,8 +83,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             {
                 if (_ended || _session == null || (!_current.Available && !_waitingForField)) return;
                 // A probe only observes the original window; it never clicks Search again.
-                var next = _current.Available ? _automation.Search("read", _current.Target)
-                    : _automation.Search("probe", origin: _current.Origin);
+                var next = _current.Available ? _automation.Search("read", _current.Target, mode: _mode)
+                    : _automation.Search("probe", origin: _current.Origin, mode: _mode);
                 if (_current.Available || next.Available || !CanAwaitField(next)) _waitingForField = false;
                 if (next.Available == _current.Available && next.Target == _current.Target && next.Origin == _current.Origin && next.Query == _current.Query
                     && next.Error == _current.Error && next.Results.SequenceEqual(_current.Results)) return;
@@ -95,7 +100,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             {
                 if (_ended || _session == null) return;
                 _feedback = null;
-                if (_current.Available) _current = _automation.Search("focus", _current.Target, _current.Query);
+                if (_current.Available) _current = _automation.Search("focus", _current.Target, _current.Query, mode: _mode);
                 else OpenLocked();
             }
             Changed?.Invoke();
@@ -116,7 +121,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                     {
                         if (_ended || _session != session || !_current.Available || _current.Target != seen.Target) return "Cancelled";
                         // Use the query seen at capture START, even when polling sees later typing.
-                        var next = _automation.Search("write", seen.Target, seen.Query, text);
+                        var next = _automation.Search("write", seen.Target, seen.Query, text, mode: _mode);
                         if (_ended || _session != session) return "Cancelled";
                         _current = next;
                         _feedback = result = next.Available ? null : FeedbackFor(next.Error);
@@ -145,7 +150,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                     var values = JsonSerializer.Deserialize<String[]>(Convert.FromBase64String(parameter[7..]));
                     if (values?.Length != 4 || values[0] != _session || values[1] != _current.Query
                         || !_current.Results.Any(r => r.Id == values[2] && r.Title == values[3])) return false;
-                    var next = _automation.Search("select", _current.Target, values[1], values[2], values[3]);
+                    var next = _automation.Search("select", _current.Target, values[1], values[2], values[3], mode: _mode);
                     selected = next.Available;
                     if (selected) { _session = null; _current = new(); }
                     else { _current = next; _feedback = FeedbackFor(next.Error); }
@@ -163,7 +168,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             _ended = false;
             _session = Guid.NewGuid().ToString("N"); // revoke old captures even if the app reuses its field
             _feedback = null;
-            _current = _automation.Search("open");
+            _current = _automation.Search("open", mode: _mode);
             _waitingForField = CanAwaitField(_current);
         }
         internal static Boolean CanAwaitField(DesktopSearchSnapshot state) => !state.Available
@@ -174,7 +179,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             "app-not-running" or "app-not-frontmost" => ("Open ChatGPT", "Then retry"),
             "not-trusted" => ("Allow access", "Mac Settings"),
-            "mode-changed" => ("Use ChatGPT", "Then retry"),
+            "mode-changed" => ("Mode changed", "Then retry"),
             "mode-unavailable" => ("Mode unreadable", "Retry"),
             "no-surface" => ("App not ready", "Retry"),
             "search-button-missing" => ("Open app search", "Then wait"),

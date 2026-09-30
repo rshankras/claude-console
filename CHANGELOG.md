@@ -20,6 +20,14 @@ pack time); the device pass with the installed package is what remains before a 
   checked without sending a message or starting a voice call is listed for the device pass.
 
 ### Changed
+- **Find Chat is Find Chat in both modes.** In Codex the Tools key used to become View Changes,
+  which Tasks already offers as its first key, so Codex showed it twice. The key now opens the
+  app's search in Codex as it does in ChatGPT, and a search stays pinned to the mode it opened
+  in. View Changes is Tools → Tasks. Checked on the Windows app; the macOS app's search in
+  Codex mode is still to be checked.
+- **Windows: Find Chat lists chats only, with their whole titles.** The app's command menu also
+  lists commands (New chat, Open in new window); those no longer appear as results. A title
+  the query matches is no longer cut off at the match.
 - **Windows: Screenshot picks from the app you were in.** Windows' region picker freezes the
   screen and closes the moment another window is activated — switching to the browser under it
   cancelled the capture (found in the device pass). The key now brings the window behind ChatGPT

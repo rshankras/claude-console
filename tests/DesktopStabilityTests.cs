@@ -28,7 +28,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             public Boolean FocusApp() => true;
             public String PrepareDraft(String mode, Boolean empty, out String error) { error = null; Write(""); return "target"; }
             public DesktopSearchSnapshot Search(String action, String target = null, String query = null,
-                String value = null, String title = null, String origin = null) => ReadSearch();
+                String value = null, String title = null, String origin = null, String mode = null) => ReadSearch();
         }
 
         [Fact]
