@@ -223,7 +223,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             // Opening presses Search, waits for the field and scans three times; the first
             // morning run after the laptop slept took over 5 s and was killed, which left the
             // keypad on Search unavailable while the app's search box stood open.
-            return DesktopSearchSnapshot.Parse(this.Runner(args, 10000));
+            var snapshot = DesktopSearchSnapshot.Parse(this.Runner(args, 10000));
+            // Outcomes only — never the query or a result title. The timer's read and probe
+            // steps repeat every second, so only the explicit steps are recorded.
+            if (action is "open" or "focus" or "write" or "select")
+            {
+                PluginLog.Info($"WindowsDesktopAutomation.Search: {action} in {mode ?? "ChatGPT"} "
+                    + (snapshot.Available ? $"ready; {snapshot.Results.Count} result(s)" : $"refused: {snapshot.Error}"));
+            }
+            return snapshot;
         }
 
         public Boolean PressConversation(String title)
