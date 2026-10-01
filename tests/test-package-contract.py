@@ -23,11 +23,15 @@ def main():
 
     verify(package)
     print('PASS: original package accepted')
+    with zipfile.ZipFile(package) as source:
+        desktop = any(e.filename.replace('\\', '/') == 'bin/VizhiDesktopPlugin.dll' for e in source.infolist())
     # Preserve every entry and attribute except the deliberate defect. Test the actual release
     # verifier against the actual bundled executable, not a mocked file list or source strings.
+    # The desktop product reads the app through its UI Automation helper and ships no hook.
     cases = [
         ('no-toolkit', 'bin/claude-console-tools.exe', None, 'missing and no shared toolkit'),
-        ('no-hook', 'bin/claude-console-hook.exe', None, 'missing — live status cannot work'),
+        ('no-uia', 'bin/vizhi-desktop-uia.exe', None, 'every desktop key would report No Signal') if desktop
+        else ('no-hook', 'bin/claude-console-hook.exe', None, 'missing — live status cannot work'),
         ('redundant-runtime', None, 'bin/claude-console-inject.exe', 'duplicates the shared toolkit'),
     ]
     with tempfile.TemporaryDirectory(prefix='vizhi-package-test-') as scratch:

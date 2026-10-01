@@ -1,3 +1,49 @@
+## Vizhi Desktop [Unreleased] — the Windows port
+
+Packaged for Windows (`pluginFolderWin`, the toolkit and the UI Automation helper, signed at
+pack time); the device pass with the installed package is what remains before a release.
+
+### Added
+- **Windows: the app is found and read.** The Store package OpenAI.Codex ("ChatGPT",
+  `ChatGPT.exe`) is the confirmed identity; the install probe looks it up in the package
+  repository. The UI Automation helper is rebuilt on the COM interface — self-contained and
+  trimmed like every other Windows helper, 14 MB — and reads the whole window in one call
+  (~320 ms). Every label the Mac adapter uses reads the same on Windows.
+- **Windows: every key has its path.** Status with the full macOS snapshot; presses with the
+  card, conversation and mode guards; draft targets, a guarded write into an empty composer,
+  append beneath a fingerprinted draft, and send; Voice Chat; View Changes; Copy Reply (with
+  the geometry rule for the app's wrapped footer buttons); Screenshot through the shared
+  toolkit's snip and the window-behind capture; Paste into Chat from the clipboard or a
+  selection; Attach Files by a verified paste into the focused composer; Find Chat through the
+  app's command menu, whose results are list items — the key shows the chat's own title.
+  Each verb was checked against the live app where a check was safe; what could not be
+  checked without sending a message or starting a voice call is listed for the device pass.
+
+### Changed
+- **Find Chat is Find Chat in both modes.** In Codex the Tools key used to become View Changes,
+  which Tasks already offers as its first key, so Codex showed it twice. The key now opens the
+  app's search in Codex as it does in ChatGPT, and a search stays pinned to the mode it opened
+  in. View Changes is Tools → Tasks. Checked on the Windows app; the macOS app's search in
+  Codex mode is still to be checked.
+- **Windows: Find Chat lists chats only, with their whole titles.** The app's command menu also
+  lists commands (New chat, Open in new window); those no longer appear as results. A title
+  the query matches is no longer cut off at the match.
+- **Windows: Screenshot picks from the app you were in.** Windows' region picker freezes the
+  screen and closes the moment another window is activated — switching to the browser under it
+  cancelled the capture (found in the device pass). The key now brings the window behind ChatGPT
+  forward before the picker opens, so the region is picked from that app; ChatGPT comes back to
+  the front with the image attached. To capture a different app, switch to it, then to ChatGPT,
+  then press Screenshot. Holding Screenshot still captures that window whole, with no picker.
+  Bringing a window forward from a key press is refused by Windows' foreground lock while you
+  are giving input to the front window; the helper now posts a zero-distance mouse move first,
+  which the lock accepts. The same applies to the focus hand-back after Approve and Deny.
+- **Windows: a press hands focus back.** Chromium performs a UI Automation press as a click,
+  which brings the ChatGPT window to the front; the helper reports it and a second invocation
+  gives the foreground back to the window that had it, so Approve from your editor leaves you
+  in your editor. The chat keys skip that, since they show the chat on purpose.
+- **Windows: a locked screen or hidden window reads Hidden, not resolved.** Chromium keeps the
+  document element while it serves no page; an empty document is not a surface.
+
 ## Vizhi Desktop [1.0.0] — 2026-09-29
 
 First release. Keypad controls for the ChatGPT desktop app on macOS, in both ChatGPT and Codex modes, on the Logitech MX Creative Keypad.

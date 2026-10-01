@@ -35,6 +35,12 @@ copyright: Copyright © 2026 S.Ravi Shankar. All rights reserved.
 # This parameter is required to support Mac.
 pluginFolderMac: bin
 
+# Location of plugin files on Windows. The same bin/: the Windows helpers (the toolkit for
+# voice and the snip, the UI Automation helper for the app) ride beside the plugin DLL and are
+# simply never launched on macOS. Declaring this is what makes the service load the package on
+# Windows, so it is declared only with those helpers built and signed (verify-package.sh).
+pluginFolderWin: bin
+
 # List of devices the plugin is optimized for.
 supportedDevices:
     # LogitechCreativeFamily covers the MX Creative Console devices:

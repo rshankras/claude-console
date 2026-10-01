@@ -28,8 +28,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Cheap process-only foreground check for passive polling; no UI traversal.</summary>
         Boolean? IsAppFrontmost() => true;
 
-        /// <summary>Search-only operations. Unsupported platforms never fall back to the composer.</summary>
-        DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null) => new();
+        /// <summary>
+        /// Search-only operations. Unsupported platforms never fall back to the composer.
+        /// <paramref name="mode"/> is the app mode the search was opened in; every step of one
+        /// search names the same mode, and null means ChatGPT.
+        /// </summary>
+        DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null, String mode = null) => new();
 
         /// <summary>
         /// Press the first control matching any of <paramref name="labels"/> WITHOUT focusing

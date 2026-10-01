@@ -31,10 +31,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         // Window-title discovery is deliberately weaker than an Options+ application binding,
         // but safe for reconnaissance and dev testing: the helper refuses ambiguous matches.
-        // Replace/augment with the confirmed executable identity after the Windows capture.
         public String[] WindowsWindowTitles => new[] { "ChatGPT", "Codex" };
 
-        public String[] WindowsProcessNames => Array.Empty<String>(); // filled from W0 inspect output
+        // Confirmed on the live app, 2026-09-30 (W0): the Windows app is the Store package
+        // OpenAI.Codex (family OpenAI.Codex_2p2nqsd0c76g0, display name "ChatGPT"), one package
+        // carrying both surfaces like the Mac bundle, whose executable is app\ChatGPT.exe. One
+        // process of that name owns the window; the others are Chromium's helpers.
+        public String[] WindowsProcessNames => new[] { "ChatGPT" };
+
+        /// <summary>The Store package family the app installs as; what the install probe looks for.</summary>
+        public static String WindowsPackageFamily => "OpenAI.Codex_2p2nqsd0c76g0";
 
         public String[] ApproveLabels => new[] { "Allow once" };
 
@@ -85,6 +91,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public String[] SearchFieldLabels => new[] { "Search", "Search chats", "Search conversations" };
         public String[] SearchResultHosts => new[] { "chatgpt.com" };
         public String[] SearchResultPaths => new[] { "/c/", "/conversation/" };
+        // The Windows command menu also lists commands, under "Chat", "Navigation", "Panels".
+        public String[] SearchResultGroups => new[] { "Chats" };
 
         public String AttentionMarker => "needs attention";
 
@@ -117,6 +125,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         // Availability comes from exposed app-owned controls, not Codex mode alone.
         public String[] ShowDiffLabels => this.ControlLabels(DesktopControl.Changes);
+        // One "View changes" per edited reply; each opens the same tab on the last turn.
+        public String[] ShowDiffTurnLabels => new[] { "View changes" };
         public String[] ChangesPanelLabels => new[] { "Show files", "Hide files" };
 
         public String[] ControlLabels(DesktopControl control) => control switch
@@ -124,7 +134,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             DesktopControl.Search => new[] { "Search" },
             // The summary row opens Review. File disclosure and Show/Hide files controls
             // belong INSIDE Review and must never be used as opening fallbacks.
-            DesktopControl.Changes => new[] { "Changes", "This branch" },
+            // App 26.928 (seen live on Windows, 2026-09-30) has no summary row: the reply's
+            // edit summary carries "View changes", which opens the same Review tab. Its
+            // neighbour "View changed files" is the file disclosure and is not an opener.
+            DesktopControl.Changes => new[] { "Changes", "This branch", "View changes" },
             DesktopControl.Projects => new[] { "Projects" },
             DesktopControl.Plugins => new[] { "Plugins" },
             DesktopControl.AttachFiles => new[] { "Add files and more" },

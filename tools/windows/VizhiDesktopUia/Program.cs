@@ -1,79 +1,168 @@
 // vizhi-desktop-uia — one-shot Windows UI Automation verbs for desktop agent apps.
 //
-// The JSON/argument contract mirrors tools/desktop/VizhiAxBridge.swift so the plugin consumes
-// identical snapshots on macOS and Windows. `inspect` is the Windows W0 reconnaissance tool:
-// run it without --window to list candidate top-level windows, then with the captured title to
-// dump the bounded UIA tree. The action verbs refuse ambiguous app/composer matches.
+// The Windows half of the desktop seam: what tools/desktop/VizhiAxBridge.swift is on macOS. Every
+// invocation does ONE thing and exits with ONE line of JSON on stdout — deliberately not a daemon:
+// the plugin spawns it through BoundedProcess (timeout + kill-tree), so a hung or malformed
+// Chromium tree can be killed without wedging LogiPluginService.
 //
-// Verbs:
-//   inspect [--window title]                         candidate windows or target UIA tree
-//   status  --window title... --approve label...    one state snapshot
-//   press   --window title... --label text...       invoke without foreground activation
-//   write   --window title... --text text            set the sole writable composer
-//   focus   --window title...                        deliberate foreground activation
+// App-agnostic BY CONTRACT: this binary knows no control labels and no app names. Which app to
+// drive (--process) and which labels mean approve/deny/stop/attention arrive as arguments from
+// the product's IDesktopAppAdapter. Keep it that way — a second desktop app must cost an
+// adapter, not a helper fork.
+//
+// The JSON contract mirrors the macOS helper field for field, so the monitor and every key
+// consume the same snapshot on both operating systems. The matching rules live in
+// UiaMatching.cs, where the test suite can reach them. Verbs are spread over the partial files
+// by concern: this one (target, scan, status, press, focus), ComposerVerbs.cs (drafts, writes,
+// send, attachments), ContextVerbs.cs (clipboard, screenshots, Copy Reply) and SearchVerbs.cs.
+//
+// Verbs (each takes --process <exe name>... --require-process; --window <title> is recon only):
+//   inspect [--all]                         candidate windows, or the target's control tree
+//   frontmost                               {"frontmost":bool} — process check, no UI walk
+//   status  --approve <label>... --deny ... one state snapshot; surface=false means the web
+//                                           content is not being served (screen locked, window
+//                                           hidden) — report it, never guess
+//   press   --label <text>... [--expect-near <card>] [--conversation <marker>] [--expect-mode <mode>]
+//           -> {"matched":..,"frontMoved":bool,"frontBeforeHwnd":N}: a press is a click to
+//           Chromium and a click activates the window; frontMoved says the app took the
+//           foreground from another window, and frontBeforeHwnd is what restore-front needs.
+//   press-exact --label <text>...           one enabled button with exactly that label
+//   restore-front --hwnd <N>                hand the foreground back after a press moved it
+//   voice   --action start|end --voice-start <label>... --voice-end <label>...
+//   open-panel --expect-mode <m> --mode-prefix <p> --panel-open <label>... --panel-visible <label>...
+//           [--panel-open-turn <label>...] openers each edited reply carries: the latest one is pressed
+//   draft-target --mode-prefix <p> --expect-mode <m> [--conv-marker <m>] [--allow-existing]
+//           -> {"target":<token>} naming this window, mode, editor and open conversation
+//   append-target (same) -> {"target","fingerprint","hasContent"} of the current draft
+//   write   --text <text> [--expect-target <token>] [--accept-existing] [--send-label <label>]
+//           -> {"method":"value"|"existing","sent":bool}; into an EMPTY composer only
+//   append  --text <text> --expect-target <token> --expect-draft <fingerprint> [--accept-existing]
+//   send    --send-label <label> [--expect-target <token>] [--expect-text <text>]
+//   attach-image --image <png> / attach-files --files <json>   (both need --expect-target)
+//   context-selection|clipboard|screenshot|window|return|paste, copy-reply, search: see the
+//           other files
+//   focus                                   the ONE deliberate foreground activation
+//
+// Exit codes: 0 ok · 3 app not running · 4 no match / not found · 5 UIA error · 6 ambiguous or changed.
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Text;
 using System.Text.Json;
-using System.Windows.Automation;
 
-internal static class Program
+namespace VizhiDesktopUia;
+
+[SupportedOSPlatform("windows")]
+internal static partial class Program
 {
     private const Int32 MaxDepth = 40;
-    private const Int32 MaxNodes = 2000;
-    private const Int32 CardTextCap = 400;
+    private const Int32 MaxNodes = 4000;
+    private const Int32 ExitNotRunning = 3;
+    private const Int32 ExitNoMatch = 4;
+    private const Int32 ExitError = 5;
+    private const Int32 ExitChanged = 6;
 
-    private sealed record Node(AutomationElement Element, String Role, String Text, Boolean Pressable, Int32 Depth);
+    private static readonly Int32[] CachedProperties =
+    {
+        UiaIds.RuntimeId, UiaIds.BoundingRectangle, UiaIds.ProcessId, UiaIds.ControlType, UiaIds.Name, UiaIds.IsEnabled, UiaIds.AutomationId,
+        UiaIds.ClassName, UiaIds.HelpText, UiaIds.NativeWindowHandle, UiaIds.IsOffscreen,
+        UiaIds.IsExpandCollapseAvailable, UiaIds.IsInvokeAvailable, UiaIds.IsSelectionItemAvailable,
+        UiaIds.IsToggleAvailable, UiaIds.IsValueAvailable, UiaIds.ValueValue, UiaIds.ValueIsReadOnly,
+        UiaIds.SelectionItemIsSelected, UiaIds.LegacyDescription, UiaIds.AriaRole, UiaIds.AriaProperties,
+        UiaIds.FullDescription, UiaIds.HasKeyboardFocus,
+    };
 
-    [SupportedOSPlatform("windows")]
+    private sealed record Target(IntPtr Hwnd, Int32 Pid, String Title);
+
+    private sealed record Scan(List<UiaNode> Nodes, Boolean Complete)
+    {
+        public Boolean Surface => UiaMatching.HasSurface(this.Nodes, this.Complete);
+    }
+
+    private static IUIAutomation? _uia;
+    private static IUIAutomation Uia => _uia ??= (IUIAutomation)new CUIAutomation();
+    private static HashSet<Int32> _appPids = new();
+    private static Dictionary<String, List<String>> _options = new();
+
+    [STAThread]
     private static Int32 Main(String[] args)
     {
         try
         {
             var verb = args.FirstOrDefault() ?? "help";
             var options = ParseOptions(args.Skip(1).ToArray());
+            _options = options;
 
             if (verb is "help" or "--help")
             {
-                Console.WriteLine("vizhi-desktop-uia <inspect|status|press|write|focus> [options]");
+                Console.WriteLine("vizhi-desktop-uia <verb> [options] — see the source header for the verbs");
                 return 0;
             }
 
-            if (verb == "inspect" && Values(options, "--window").Count == 0
-                && Values(options, "--process").Count == 0)
+            var pids = ProcessIds(Values(options, "--process"));
+            _appPids = pids;
+            if (verb == "frontmost")
+            {
+                // Passive polling backs off while another app is in front without asking
+                // Chromium to build or traverse its accessibility tree.
+                return Emit(new Dictionary<String, Object?> { ["frontmost"] = pids.Contains(Win32.ForegroundPid()) });
+            }
+
+            if (verb == "restore-front")
+            {
+                return RestoreFront(Value(options, "--hwnd"), pids);
+            }
+
+            if (verb.StartsWith("context-", StringComparison.Ordinal))
+            {
+                return Context(verb["context-".Length..], options);
+            }
+
+            if (verb == "inspect" && Values(options, "--window").Count == 0 && Values(options, "--process").Count == 0)
             {
                 return InspectWindows();
             }
 
-            var target = FindTarget(
-                Values(options, "--process"), Values(options, "--window"), options.ContainsKey("--require-process"));
-            if (target.Error != null)
+            var (target, error) = FindTarget(pids, Values(options, "--process").Count > 0,
+                Values(options, "--window"), options.ContainsKey("--require-process"));
+            if (target == null)
             {
-                return Fail(target.Error, target.Error == "ambiguous-app" ? 6 : 3);
+                return Fail(error!, error == "ambiguous-app" ? ExitChanged : ExitNotRunning);
             }
 
-            var root = target.Element!;
             return verb switch
             {
-                "inspect" => InspectTarget(root),
-                "status" => Status(root, options),
-                "press" => Press(root, options),
-                "press-exact" => Press(root, options, exact: true),
-                "write" => Write(root, options),
-                "focus" => Focus(root),
-                _ => Fail($"unknown-verb {verb}", 4),
+                "inspect" => InspectTarget(target, options.ContainsKey("--all")),
+                "status" => Status(target, options),
+                "press" => Press(target, options, exact: false),
+                "press-exact" => Press(target, options, exact: true),
+                "voice" => Voice(target, options),
+                "open-panel" => OpenPanel(target, options),
+                "draft-target" => DraftTarget(target, options),
+                "append-target" => AppendTarget(target, options),
+                "write" => Write(target, options, appending: false),
+                "append" => Write(target, options, appending: true),
+                "send" => Send(target, options),
+                "attach-image" => Attach(target, options, image: true),
+                "attach-files" => Attach(target, options, image: false),
+                "copy-reply" => CopyReply(target, options),
+                "search" => Search(target, options),
+                "focus" => Focus(target),
+                _ => Fail($"unknown-verb {verb}", ExitNoMatch),
             };
         }
-        catch (ElementNotAvailableException)
+        catch (COMException ex)
         {
-            return Fail("surface-unavailable", 5);
+            return Fail($"uia-error: 0x{ex.HResult:X8}", ExitError);
         }
         catch (Exception ex)
         {
-            return Fail($"uia-error: {ex.GetType().Name}: {ex.Message}", 5);
+            return Fail($"uia-error: {ex.GetType().Name}: {ex.Message}", ExitError);
         }
     }
+
+    // ---- arguments ---------------------------------------------------------
 
     private static Dictionary<String, List<String>> ParseOptions(String[] args)
     {
@@ -107,476 +196,702 @@ internal static class Program
     private static String? Value(Dictionary<String, List<String>> options, String name) =>
         Values(options, name).FirstOrDefault();
 
-    [SupportedOSPlatform("windows")]
-    private static (AutomationElement? Element, String? Error) FindTarget(
-        IReadOnlyList<String> processNames, IReadOnlyList<String> titles, Boolean requireProcess)
+    // ---- target ------------------------------------------------------------
+
+    private static HashSet<Int32> ProcessIds(IReadOnlyList<String> processNames)
     {
-        var processMatches = new List<Process>();
+        var pids = new HashSet<Int32>();
         foreach (var raw in processNames)
         {
             var name = raw.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? raw[..^4] : raw;
-            try { processMatches.AddRange(Process.GetProcessesByName(name)); } catch { }
+            try
+            {
+                foreach (var process in Process.GetProcessesByName(name))
+                {
+                    pids.Add(process.Id);
+                    process.Dispose();
+                }
+            }
+            catch
+            {
+                // A process that exits mid-enumeration is not an error.
+            }
         }
-        var processWindows = processMatches
-            .Where(p => Safe(() => p.MainWindowHandle) != IntPtr.Zero)
-            .GroupBy(p => p.Id).Select(g => g.First()).ToList();
-        if (processWindows.Count == 1)
+        return pids;
+    }
+
+    /// <summary>
+    /// The app's top-level windows a user could switch to, front to back. The app can have
+    /// more than one open (one per mode); every read and press is scoped to the one in front,
+    /// else the one it activated last, so a control in a background window is never pressed.
+    /// </summary>
+    private static List<Target> AppWindows(HashSet<Int32> pids) =>
+        Win32.TopLevelWindows()
+            .Where(hwnd => pids.Contains(Win32.PidOf(hwnd)) && Win32.IsAppWindow(hwnd, anyDesktop: true))
+            .Select(hwnd => new Target(hwnd, Win32.PidOf(hwnd), Win32.WindowTitle(hwnd)))
+            .ToList();
+
+    private static (Target? Target, String? Error) FindTarget(HashSet<Int32> pids, Boolean byProcess,
+        IReadOnlyList<String> titles, Boolean requireProcess)
+    {
+        if (byProcess)
         {
-            return (AutomationElement.FromHandle(processWindows[0].MainWindowHandle), null);
-        }
-        if (processWindows.Count > 1)
-        {
-            return (null, "ambiguous-app");
+            if (pids.Count == 0)
+            {
+                return (null, "app-not-running");
+            }
+            var windows = AppWindows(pids);
+            if (windows.Count == 0)
+            {
+                return (null, "app-not-running");
+            }
+            var foreground = Win32.GetForegroundWindow();
+            return (windows.FirstOrDefault(w => w.Hwnd == foreground) ?? windows[0], null);
         }
 
-        if (processNames.Count > 0 || requireProcess)
+        if (requireProcess)
         {
-            return (null, processNames.Count == 0 ? "identity-unconfirmed" : "app-not-running");
+            return (null, "identity-unconfirmed");
         }
-
         if (titles.Count == 0)
         {
             return (null, "app-not-running");
         }
 
-        var matches = new List<AutomationElement>();
-        foreach (AutomationElement candidate in AutomationElement.RootElement.FindAll(TreeScope.Children, Condition.TrueCondition))
-        {
-            var name = Safe(() => candidate.Current.Name) ?? "";
-            if (name.Length == 0 || !titles.Any(t =>
-                    String.Equals(name, t, StringComparison.OrdinalIgnoreCase)
-                    || name.Contains(t, StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            matches.Add(candidate);
-        }
-
-        var processIds = matches.Select(x => Safe(() => x.Current.ProcessId)).Where(x => x > 0).Distinct().ToList();
-        if (processIds.Count == 0)
+        // Recon only: a browser tab titled like the app would match too, which is why plugin
+        // actions must name the process.
+        var matches = Win32.TopLevelWindows()
+            .Where(Win32.IsWindowVisible)
+            .Select(hwnd => new Target(hwnd, Win32.PidOf(hwnd), Win32.WindowTitle(hwnd)))
+            .Where(w => w.Title.Length > 0 && titles.Any(t => String.Equals(w.Title, t, StringComparison.OrdinalIgnoreCase)
+                || w.Title.Contains(t, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        var processes = matches.Select(m => m.Pid).Distinct().ToList();
+        if (processes.Count == 0)
         {
             return (null, "app-not-running");
         }
-        if (processIds.Count > 1)
+        if (processes.Count > 1)
         {
             return (null, "ambiguous-app");
         }
-
-        return (matches.First(x => Safe(() => x.Current.ProcessId) == processIds[0]), null);
+        return (matches[0], null);
     }
 
-    [SupportedOSPlatform("windows")]
-    private static List<Node> Scan(AutomationElement root)
-    {
-        var nodes = new List<Node>();
-        var walker = TreeWalker.RawViewWalker;
+    private static Boolean AppIsFrontmost(Target target) => Win32.ForegroundPid() == target.Pid;
 
-        void Visit(AutomationElement element, Int32 depth)
+    // ---- scan --------------------------------------------------------------
+
+    private static IUIAutomationCacheRequest CacheRequest()
+    {
+        var request = Uia.CreateCacheRequest();
+        foreach (var id in CachedProperties)
+        {
+            request.AddProperty(id);
+        }
+        request.TreeScope = UiaIds.TreeScopeSubtree;
+        request.TreeFilter = Uia.RawViewCondition;
+        request.AutomationElementMode = UiaIds.ElementModeFull;
+        return request;
+    }
+
+    /// <summary>
+    /// One cross-process call fetches the whole subtree with every property this helper reads
+    /// (a cache request scoped to the subtree); the walk below is then in-process. Per-node
+    /// property reads, the WPF wrapper's way, cost ~2 s for a 365-node tree on the live app.
+    /// </summary>
+    private static Scan ScanTarget(Target target) => ScanWindow(target.Hwnd);
+
+    private static Scan ScanWindow(IntPtr hwnd)
+    {
+        var root = Uia.ElementFromHandleBuildCache(hwnd, CacheRequest());
+        var nodes = new List<UiaNode>();
+        var complete = true;
+
+        void Visit(IUIAutomationElement element, Int32 depth)
         {
             if (depth > MaxDepth || nodes.Count >= MaxNodes)
             {
+                complete = false;
                 return;
             }
 
-            var type = Safe(() => element.Current.ControlType) ?? ControlType.Custom;
-            nodes.Add(new Node(element, type.ProgrammaticName, DisplayText(element), CanPress(element), depth));
+            nodes.Add(Read(element, nodes.Count, depth));
 
-            AutomationElement? child = null;
-            try { child = walker.GetFirstChild(element); } catch (ElementNotAvailableException) { }
-            while (child != null && nodes.Count < MaxNodes)
+            IUIAutomationElementArray? children = null;
+            try { children = element.GetCachedChildren(); } catch (COMException) { }
+            if (children == null)
             {
-                Visit(child, depth + 1);
-                try { child = walker.GetNextSibling(child); } catch (ElementNotAvailableException) { child = null; }
+                return;
+            }
+            var count = children.Length;
+            for (var i = 0; i < count; i++)
+            {
+                Visit(children.GetElement(i), depth + 1);
             }
         }
 
         Visit(root, 0);
-        return nodes;
+        return new Scan(nodes, complete);
     }
 
-    [SupportedOSPlatform("windows")]
-    private static String DisplayText(AutomationElement element)
+    private static UiaNode Read(IUIAutomationElement element, Int32 index, Int32 depth)
     {
-        var name = Safe(() => element.Current.Name) ?? "";
-        if (name.Length > 0)
-        {
-            return name;
-        }
+        String Str(Int32 id) => element.GetCachedPropertyValue(id) as String ?? "";
+        Boolean Flag(Int32 id) => element.GetCachedPropertyValue(id) is Boolean b && b;
 
-        if (element.TryGetCurrentPattern(ValuePattern.Pattern, out var raw))
+        var name = Str(UiaIds.Name);
+        var help = Str(UiaIds.HelpText);
+        var full = Str(UiaIds.FullDescription);
+        var legacy = Str(UiaIds.LegacyDescription);
+        var hasValue = Flag(UiaIds.IsValueAvailable);
+        var value = hasValue ? Str(UiaIds.ValueValue) : "";
+
+        // Display text, in the macOS helper's order: title, value, description, help.
+        var text = name.Length > 0 ? name : value.Length > 0 ? value : help.Length > 0 ? help : full;
+
+        // An icon button can put its only meaningful label in its description or help. Keep
+        // every name together so a first non-empty value cannot hide the action's name.
+        var labels = new[] { name, help, full, legacy }.Where(x => x.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
+
+        return new UiaNode
         {
-            return ((ValuePattern)raw).Current.Value ?? "";
-        }
-        return Safe(() => element.Current.HelpText) ?? "";
+            Index = index,
+            Role = UiaIds.Role(element.GetCachedPropertyValue(UiaIds.ControlType) is Int32 type ? type : 0),
+            Text = text,
+            Labels = labels,
+            Pressable = Flag(UiaIds.IsInvokeAvailable) || Flag(UiaIds.IsExpandCollapseAvailable)
+                || Flag(UiaIds.IsToggleAvailable) || Flag(UiaIds.IsSelectionItemAvailable),
+            Enabled = Flag(UiaIds.IsEnabled),
+            Depth = depth,
+            AriaRole = Str(UiaIds.AriaRole),
+            AriaProperties = Str(UiaIds.AriaProperties),
+            Value = value,
+            HasValue = hasValue,
+            ReadOnly = Flag(UiaIds.ValueIsReadOnly),
+            Selected = Flag(UiaIds.SelectionItemIsSelected),
+            Focused = Flag(UiaIds.HasKeyboardFocus),
+            RuntimeId = element.GetCachedPropertyValue(UiaIds.RuntimeId) is Int32[] id ? String.Join(".", id) : "",
+            Bounds = element.GetCachedPropertyValue(UiaIds.BoundingRectangle) is Double[] { Length: 4 } rect ? rect : null,
+            Handle = element,
+        };
     }
 
-    [SupportedOSPlatform("windows")]
-    private static Boolean CanPress(AutomationElement element) =>
-        element.TryGetCurrentPattern(InvokePattern.Pattern, out _)
-        || element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out _);
-
-    private static Node? FirstPressable(IEnumerable<Node> nodes, IReadOnlyList<String> labels)
+    // Bounded wait for the web content — used by the acting verbs (which must not act on a
+    // half tree), NOT by status (a status poll reports surface=false immediately and cheaply).
+    private static Scan? WaitForSurface(Target target, Int32 milliseconds)
     {
-        var needles = labels.Where(x => !String.IsNullOrWhiteSpace(x)).ToList();
-        return nodes.FirstOrDefault(n => n.Pressable && n.Text.Length > 0
-            && needles.Any(label => n.Text.Contains(label, StringComparison.OrdinalIgnoreCase)));
-    }
-
-    private static List<Node> ExactButtons(IReadOnlyList<Node> nodes, IReadOnlyList<String> labels) =>
-        nodes.Where((n, i) => n.Role == ControlType.Button.ProgrammaticName && n.Text.Length > 0
-            && labels.Contains(n.Text, StringComparer.Ordinal)
-            && !nodes.Skip(i + 1).TakeWhile(child => child.Depth > n.Depth).Any(child => child.Pressable)).ToList();
-
-    private static String Collapse(String text) =>
-        String.Join(" ", text.Split((Char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-
-    private static String CardText(Node anchor, IReadOnlyList<Node> nodes)
-    {
-        var index = -1;
-        for (var i = 0; i < nodes.Count; i++)
+        var deadline = Stopwatch.StartNew();
+        do
         {
-            if (ReferenceEquals(nodes[i].Element, anchor.Element))
+            var scan = ScanTarget(target);
+            if (scan.Surface)
             {
-                index = i;
-                break;
+                return scan;
             }
+            Thread.Sleep(200);
         }
-        if (index < 0)
-        {
-            return "";
-        }
-
-        var texts = nodes.Skip(Math.Max(0, index - 20)).Take(Math.Min(20, index))
-            .Where(n => n.Role == ControlType.Text.ProgrammaticName && n.Text.Length > 0)
-            .Select(n => n.Text).TakeLast(3);
-        var text = Collapse(String.Join(" ", texts));
-        return text.Length > CardTextCap ? text[..CardTextCap] : text;
+        while (deadline.ElapsedMilliseconds < milliseconds);
+        return null;
     }
 
-    [SupportedOSPlatform("windows")]
-    private static Int32 Status(AutomationElement root, Dictionary<String, List<String>> options)
+    private static Boolean SameElement(UiaNode a, UiaNode b) => a.RuntimeId.Length > 0 && a.RuntimeId == b.RuntimeId;
+
+    // ---- verbs -------------------------------------------------------------
+
+    private static Int32 InspectWindows()
     {
-        var nodes = Scan(root);
-        if (nodes.Count <= 1)
-        {
-            return Emit(new Dictionary<String, Object?> { ["surface"] = false });
-        }
+        var windows = Win32.TopLevelWindows().Where(Win32.IsWindowVisible)
+            .Select(hwnd => new { Hwnd = hwnd, Title = Win32.WindowTitle(hwnd) })
+            .Where(w => w.Title.Length > 0)
+            .Select(w => new Dictionary<String, Object?>
+            {
+                ["title"] = w.Title,
+                ["pid"] = Win32.PidOf(w.Hwnd),
+                ["process"] = ProcessName(Win32.PidOf(w.Hwnd)),
+                ["class"] = Win32.WindowClass(w.Hwnd),
+                ["appWindow"] = Win32.IsAppWindow(w.Hwnd, anyDesktop: true),
+                ["otherDesktop"] = Win32.IsCloaked(w.Hwnd) && !Win32.IsCloaked(w.Hwnd, otherDesktopCounts: false),
+            }).ToList();
+        return Emit(new Dictionary<String, Object?> { ["windows"] = windows });
+    }
 
-        var approve = FirstPressable(nodes, Values(options, "--approve"));
-        var deny = FirstPressable(nodes, Values(options, "--deny"));
-        var stop = ExactButtons(nodes, Values(options, "--stop")).FirstOrDefault();
-        var attentionNeedle = Value(options, "--attention") ?? "";
-        var modePrefix = Value(options, "--mode-prefix") ?? "";
-        var mode = modePrefix.Length == 0 ? "" : nodes.Select(n => n.Text)
-            .FirstOrDefault(t => t.StartsWith(modePrefix, StringComparison.OrdinalIgnoreCase))?[modePrefix.Length..] ?? "";
-
+    // Recon: report controls and activity-shaped nodes, not message text. --all dumps every
+    // node for a developer sitting at the machine; the plugin never passes it.
+    private static Int32 InspectTarget(Target target, Boolean all)
+    {
+        var timer = Stopwatch.StartNew();
+        var scan = ScanTarget(target);
+        var elapsed = timer.ElapsedMilliseconds;
+        var interesting = scan.Nodes.Where(n => all || n.Pressable
+                || n.Role is "Image" or "ProgressBar" or "Edit" or "Document" or "StatusBar" or "Window" or "Menu" or "Hyperlink" or "ComboBox")
+            .Select(n => new Dictionary<String, Object?>
+            {
+                ["depth"] = n.Depth,
+                ["role"] = n.Role,
+                ["text"] = n.Text,
+                ["labels"] = n.Labels.ToList(),
+                ["pressable"] = n.Pressable,
+                ["enabled"] = n.Enabled,
+                ["ariaRole"] = n.AriaRole,
+                ["ariaProperties"] = n.AriaProperties,
+                ["hasValue"] = n.HasValue,
+                ["readOnly"] = n.ReadOnly,
+                ["selected"] = n.Selected,
+                ["focused"] = n.Focused,
+                ["value"] = all && n.Role is "Hyperlink" or "Edit" or "ComboBox" ? n.Value : "",
+            }).ToList();
         return Emit(new Dictionary<String, Object?>
         {
-            ["surface"] = true,
-            ["attention"] = attentionNeedle.Length > 0 && nodes.Any(n => n.Text.Contains(attentionNeedle, StringComparison.OrdinalIgnoreCase)),
-            ["approvalPresent"] = approve != null,
-            ["denyPresent"] = deny != null,
-            ["stopPresent"] = stop != null,
-            ["cardText"] = approve == null ? "" : CardText(approve, nodes),
-            ["mode"] = mode,
-            ["conversations"] = Conversations(nodes, options),
+            ["process"] = ProcessName(target.Pid),
+            ["title"] = target.Title,
+            ["surface"] = scan.Surface,
+            ["complete"] = scan.Complete,
+            ["nodeCount"] = scan.Nodes.Count,
+            ["scanMs"] = (Int32)elapsed,
+            ["nodes"] = interesting,
         });
     }
 
-    [SupportedOSPlatform("windows")]
-    private static List<Dictionary<String, String>> Conversations(
-        IReadOnlyList<Node> nodes, Dictionary<String, List<String>> options)
+    private static Int32 Status(Target target, Dictionary<String, List<String>> options)
     {
-        var marker = Value(options, "--conv-marker") ?? "";
-        var awaiting = Value(options, "--state-awaiting") ?? "";
-        var unread = Value(options, "--state-unread") ?? "";
-        var result = new List<Dictionary<String, String>>();
-        if (marker.Length == 0)
+        var scan = ScanTarget(target);
+        if (!scan.Surface)
         {
-            return result;
+            // Screen locked / window hidden: the tree evaporates. Say so — the monitor must
+            // treat this as SURFACE UNAVAILABLE, never as "everything resolved".
+            return Emit(new Dictionary<String, Object?> { ["surface"] = false });
         }
 
-        for (var i = 0; i < nodes.Count && result.Count < 8; i++)
+        var nodes = scan.Nodes;
+        var approve = UiaMatching.FirstPressable(nodes, Values(options, "--approve"));
+        var deny = UiaMatching.FirstPressable(nodes, Values(options, "--deny"));
+        var stop = UiaMatching.ExactButtons(nodes, Values(options, "--stop")).FirstOrDefault();
+        var modePrefix = Value(options, "--mode-prefix") ?? "";
+        var mode = UiaMatching.Mode(nodes, modePrefix);
+
+        Boolean Present(String argument) => UiaMatching.FirstPressable(nodes, Values(options, argument)) != null;
+
+        Int32? baseline = null;
+        foreach (var entry in Values(options, "--idle-images"))
         {
-            var node = nodes[i];
-            if (!node.Pressable || node.Text.Length == 0)
+            var parts = entry.Split('=', 2);
+            if (parts.Length == 2 && parts[0] == mode && Int32.TryParse(parts[1], out var count))
             {
-                continue;
+                baseline = count;
+                break;
             }
-
-            var j = i + 1;
-            var hasMarker = false;
-            var state = "idle";
-            while (j < nodes.Count && nodes[j].Depth > node.Depth)
-            {
-                var child = nodes[j];
-                hasMarker |= child.Pressable && child.Text.Contains(marker, StringComparison.OrdinalIgnoreCase);
-                if (awaiting.Length > 0 && child.Text.Contains(awaiting, StringComparison.OrdinalIgnoreCase)) state = "awaiting";
-                else if (state == "idle" && unread.Length > 0 && child.Text.Contains(unread, StringComparison.OrdinalIgnoreCase)) state = "unread";
-                j++;
-            }
-
-            if (!hasMarker)
-            {
-                continue;
-            }
-
-            var selected = node.Element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var pattern)
-                && ((SelectionItemPattern)pattern).Current.IsSelected;
-            result.Add(new Dictionary<String, String>
-            {
-                ["title"] = node.Text,
-                ["state"] = state,
-                ["selected"] = selected ? "true" : "false",
-            });
-            i = j - 1;
         }
-        return result;
+
+        var panelMode = Value(options, "--panel-mode") ?? "";
+        var reply = UiaMatching.ReplyTarget(nodes, ReplyRules(options));
+        return Emit(new Dictionary<String, Object?>
+        {
+            ["surface"] = true,
+            ["attention"] = UiaMatching.Attention(nodes, Value(options, "--attention") ?? ""),
+            ["approvalPresent"] = approve != null,
+            ["denyPresent"] = deny != null,
+            ["stopPresent"] = stop != null,
+            ["voiceChat"] = UiaMatching.VoiceState(nodes, Values(options, "--voice-start"), Values(options, "--voice-end")),
+            ["canSend"] = UiaMatching.SendTarget(nodes, Value(options, "--send-label") ?? "",
+                Values(options, "--stop"), Values(options, "--approve")) != null,
+            ["canCopyAnswer"] = reply.Node != null,
+            ["copyAnswerError"] = reply.Error,
+            ["searchPresent"] = Present("--search"),
+            ["changesPresent"] = mode.Length > 0 && mode == panelMode && UiaMatching.PanelRouteAvailable(nodes,
+                modePrefix + mode, Values(options, "--changes"), Values(options, "--panel-visible"),
+                Values(options, "--changes-turn")),
+            ["projectsPresent"] = Present("--projects"),
+            ["pluginsPresent"] = Present("--plugins"),
+            ["attachFilesPresent"] = Present("--attach-files"),
+            ["permissionsPresent"] = Present("--permissions"),
+            ["scheduledPresent"] = Present("--scheduled"),
+            ["pullRequestsPresent"] = Present("--pull-requests"),
+            ["explorePresent"] = Present("--explore"),
+            ["quickChatPresent"] = Present("--quick-chat"),
+            ["cardText"] = approve == null ? "" : UiaMatching.CardText(approve, nodes),
+            ["mode"] = mode,
+            ["conversations"] = UiaMatching.Conversations(nodes, Value(options, "--conv-marker") ?? "",
+                Values(options, "--state-awaiting"), Values(options, "--state-unread"),
+                Values(options, "--state-running"), baseline),
+        });
     }
 
-    [SupportedOSPlatform("windows")]
-    private static Int32 Press(AutomationElement root, Dictionary<String, List<String>> options, Boolean exact = false)
+    private static Int32 Press(Target target, Dictionary<String, List<String>> options, Boolean exact)
     {
         var labels = Values(options, "--label");
         if (labels.Count == 0)
         {
-            return Fail("no --label given", 4);
+            return Fail("no --label given", ExitNoMatch);
         }
 
-        var nodes = Scan(root);
-        var marker = Value(options, "--conversation");
-        var target = FirstPressable(nodes, labels);
-        if (exact)
+        var scan = WaitForSurface(target, 2000);
+        if (scan == null)
         {
-            var matches = ExactButtons(nodes, labels);
-            target = matches.Count == 1 && matches[0].Pressable && matches[0].Element.Current.IsEnabled
-                ? matches[0] : null;
+            return Fail("surface-unavailable", ExitError);
         }
-        if (marker != null)
-        {
-            var matches = nodes.Where((node, i) => node.Pressable
-                && String.Equals(node.Text, labels[0], StringComparison.Ordinal)
-                && nodes.Skip(i + 1).TakeWhile(child => child.Depth > node.Depth)
-                    .Any(child => child.Pressable && child.Text == marker)).ToList();
-            if (matches.Count > 1) return Fail("ambiguous-conversation", 4);
-            target = matches.SingleOrDefault();
-        }
-        if (target == null)
-        {
-            return Fail("no-match", 4);
-        }
+        var nodes = scan.Nodes;
 
-        var expected = Collapse(Value(options, "--expect-near") ?? "");
-        if (expected.Length > 0)
+        var expectedMode = Value(options, "--expect-mode");
+        if (expectedMode != null)
         {
-            var seen = CardText(target, nodes);
-            if (seen.Length == 0 || !(seen.Contains(expected, StringComparison.Ordinal)
-                || expected.Contains(seen, StringComparison.Ordinal)))
+            var prefix = Value(options, "--mode-prefix") ?? "";
+            var modes = prefix.Length == 0 ? new List<UiaNode>()
+                : nodes.Where(n => n.Text.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+            if (modes.Count != 1 || modes[0].Text != prefix + expectedMode)
             {
-                return Fail("card-changed", 6);
+                return Fail("mode-changed", ExitChanged);
             }
         }
 
-        var before = ForegroundProcessName();
-        if (!Invoke(target.Element))
+        UiaNode? candidate;
+        var marker = Value(options, "--conversation");
+        if (marker != null)
         {
-            return Fail("press-failed", 5);
+            var matches = UiaMatching.ConversationMatches(nodes, labels[0], marker);
+            if (matches.Count > 1)
+            {
+                return Fail("ambiguous-conversation", ExitNoMatch);
+            }
+            candidate = matches.FirstOrDefault();
         }
+        else if (exact)
+        {
+            candidate = UiaMatching.UniqueEnabledButton(nodes, labels);
+        }
+        else
+        {
+            candidate = UiaMatching.FirstPressable(nodes, labels);
+        }
+        if (candidate == null)
+        {
+            return Fail("no-match", ExitNoMatch);
+        }
+
+        // The expected-card guard: the caller names the card text it SAW; if what is beside
+        // the button now is a different card (the old one resolved, a new one appeared between
+        // the keypad's render and the thumb), refuse — "card-changed" makes the user look.
+        var expected = UiaMatching.Collapse(Value(options, "--expect-near"));
+        if (expected.Length > 0)
+        {
+            var seen = UiaMatching.CardText(candidate, nodes);
+            if (seen.Length == 0 || !(seen.Contains(expected, StringComparison.Ordinal)
+                || expected.Contains(seen, StringComparison.Ordinal)))
+            {
+                return Fail("card-changed", ExitChanged);
+            }
+        }
+
+        if (options.ContainsKey("--dry"))
+        {
+            return Emit(new Dictionary<String, Object?> { ["matched"] = candidate.Text, ["dry"] = true });
+        }
+
+        var beforeWindow = Win32.GetForegroundWindow();
+        var before = ProcessName(Win32.ForegroundPid());
+        if (!Invoke(candidate))
+        {
+            return Fail("press-failed", ExitError);
+        }
+
+        // Chromium performs a UIA press as a click, and a click activates its window — unlike
+        // the macOS AXPress, which leaves the front app alone. Report the move so the caller
+        // can hand focus back with restore-front; this process cannot (see there).
+        var afterPid = Win32.ForegroundPid();
+        var beforePid = Win32.PidOf(beforeWindow);
         return Emit(new Dictionary<String, Object?>
         {
-            ["matched"] = target.Text,
+            ["matched"] = candidate.Text,
             ["frontBefore"] = before,
-            ["frontAfter"] = ForegroundProcessName(),
+            ["frontAfter"] = ProcessName(afterPid),
+            ["frontBeforeHwnd"] = beforeWindow.ToInt64(),
+            ["frontMoved"] = beforeWindow != IntPtr.Zero && beforePid != target.Pid && afterPid == target.Pid,
         });
     }
 
-    [SupportedOSPlatform("windows")]
-    private static Boolean Invoke(AutomationElement element)
+    /// <summary>
+    /// Give the foreground back to the window named by --hwnd, as reported by a press's
+    /// frontBeforeHwnd. A separate invocation on purpose: measured live, the process that made
+    /// the UIA call is refused SetForegroundWindow afterwards and a fresh one is accepted at
+    /// once. Touches no UIA and synthesises no input.
+    /// </summary>
+    private static Int32 RestoreFront(String? handle, HashSet<Int32> appPids)
     {
-        if (element.TryGetCurrentPattern(InvokePattern.Pattern, out var invoke))
+        if (!Int64.TryParse(handle, out var raw) || raw == 0)
         {
-            ((InvokePattern)invoke).Invoke();
+            return Fail("no --hwnd given", ExitNoMatch);
+        }
+        var previous = new IntPtr(raw);
+        if (!Win32.IsWindowVisible(previous))
+        {
+            return Fail("window-gone", ExitNoMatch);
+        }
+        if (Win32.GetForegroundWindow() == previous)
+        {
+            return Emit(new Dictionary<String, Object?> { ["restored"] = false, ["already"] = true });
+        }
+        // Only hand focus back from the app this helper drives: never move it off whatever
+        // else the user has since switched to.
+        if (!appPids.Contains(Win32.ForegroundPid()))
+        {
+            return Emit(new Dictionary<String, Object?> { ["restored"] = false, ["frontElsewhere"] = true });
+        }
+        return Raise(previous) ? Emit(new Dictionary<String, Object?> { ["restored"] = true }) : Fail("restore-refused", ExitError);
+    }
+
+    /// <summary>
+    /// Bring a window to the foreground and wait for it to arrive. Every call here is the
+    /// direct result of a physical key press, so the user's intent is not in doubt — but
+    /// Windows' foreground lock does not know about keypads: while the user is giving input to
+    /// the front window, a background process is refused (measured live 2026-09-30: refused on
+    /// a key press, accepted from the same helper while the user was idle). A zero-distance
+    /// mouse move from this process satisfies the lock; the Alt-tab switch is the last resort.
+    /// </summary>
+    private static Boolean Raise(IntPtr hwnd)
+    {
+        if (Win32.IsIconic(hwnd))
+        {
+            Win32.ShowWindow(hwnd, Win32.SW_RESTORE);
+        }
+        var pid = Win32.PidOf(hwnd);
+        Boolean Arrived()
+        {
+            for (var attempt = 0; attempt < 6; attempt++)
+            {
+                Thread.Sleep(100);
+                if (Win32.ForegroundPid() == pid)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        if (Win32.SetForegroundWindow(hwnd) && Arrived())
+        {
             return true;
         }
-        if (element.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var selection))
+        Win32.NoOpInput();
+        if (Win32.SetForegroundWindow(hwnd) && Arrived())
         {
-            ((SelectionItemPattern)selection).Select();
+            return true;
+        }
+        Win32.SwitchToThisWindow(hwnd, true);
+        return Arrived();
+    }
+
+    /// <summary>
+    /// Press WITHOUT focusing the app. Chromium exposes a plain button through Invoke, a
+    /// popup button (aria-haspopup) through ExpandCollapse, a pressed-state button through
+    /// Toggle and a sidebar row through SelectionItem; a press means the same thing to the
+    /// user on all four.
+    /// </summary>
+    private static Boolean Invoke(UiaNode node)
+    {
+        if (node.Handle is not IUIAutomationElement element)
+        {
+            return false;
+        }
+        if (element.GetCurrentPattern(UiaIds.InvokePattern) is IUIAutomationInvokePattern invoke)
+        {
+            invoke.Invoke();
+            return true;
+        }
+        if (element.GetCurrentPattern(UiaIds.TogglePattern) is IUIAutomationTogglePattern toggle)
+        {
+            toggle.Toggle();
+            return true;
+        }
+        if (element.GetCurrentPattern(UiaIds.ExpandCollapsePattern) is IUIAutomationExpandCollapsePattern expand)
+        {
+            if (expand.CurrentExpandCollapseState == UiaIds.Expanded)
+            {
+                expand.Collapse();
+            }
+            else
+            {
+                expand.Expand();
+            }
+            return true;
+        }
+        if (element.GetCurrentPattern(UiaIds.SelectionItemPattern) is IUIAutomationSelectionItemPattern select)
+        {
+            select.Select();
             return true;
         }
         return false;
     }
 
-    [SupportedOSPlatform("windows")]
-    private static Int32 Write(AutomationElement root, Dictionary<String, List<String>> options)
+    private static Int32 Voice(Target target, Dictionary<String, List<String>> options)
     {
-        var text = Value(options, "--text") ?? "";
-        if (text.Length == 0)
+        var action = Value(options, "--action") ?? "";
+        if (action is not ("start" or "end"))
         {
-            return Fail("no --text given", 4);
+            return Fail("invalid-voice-action", ExitNoMatch);
+        }
+        var starts = Values(options, "--voice-start");
+        var ends = Values(options, "--voice-end");
+        var initial = WaitForSurface(target, 2000);
+        if (initial == null)
+        {
+            return Fail("surface-unavailable", ExitError);
+        }
+        var candidate = UiaMatching.VoiceTarget(action, initial.Nodes, starts, ends);
+        if (candidate == null)
+        {
+            return Fail("voice-state-changed", ExitChanged);
+        }
+        // A second look: the same window, the same button.
+        var latest = ScanTarget(target);
+        var confirmed = latest.Surface && Win32.WindowTitle(target.Hwnd) == target.Title
+            ? UiaMatching.VoiceTarget(action, latest.Nodes, starts, ends) : null;
+        if (confirmed == null || !SameElement(candidate, confirmed))
+        {
+            return Fail("voice-state-changed", ExitChanged);
+        }
+        if (!Invoke(confirmed))
+        {
+            return Fail("voice-press-failed", ExitError);
+        }
+        // Request accepted is all we know. Setup dialogs, connection failure, or user
+        // cancellation can follow; only later status observations may render an active session.
+        return Emit(new Dictionary<String, Object?> { ["requested"] = action });
+    }
+
+    private static Int32 OpenPanel(Target target, Dictionary<String, List<String>> options)
+    {
+        var expectedMode = Value(options, "--expect-mode") ?? "";
+        var prefix = Value(options, "--mode-prefix") ?? "";
+        var openers = Values(options, "--panel-open");
+        var turnOpeners = Values(options, "--panel-open-turn");
+        var visibleLabels = Values(options, "--panel-visible");
+        if (expectedMode.Length == 0 || prefix.Length == 0 || openers.Count == 0 || visibleLabels.Count == 0)
+        {
+            return Fail("panel-arguments", ExitNoMatch);
+        }
+        if (!AppIsFrontmost(target) || WaitForSurface(target, 1000) == null)
+        {
+            return Fail("panel-unavailable", ExitNoMatch);
+        }
+        var marker = Value(options, "--conv-marker") ?? "";
+        var conversation = UiaMatching.SelectedConversation(ScanTarget(target).Nodes, marker);
+
+        (List<UiaNode>? Content, String? Error, Int32 Code) Checked()
+        {
+            if (!AppIsFrontmost(target)) return (null, "panel-foreground-changed", ExitChanged);
+            if (Win32.WindowTitle(target.Hwnd) != target.Title) return (null, "panel-window-changed", ExitChanged);
+            var scan = ScanTarget(target);
+            if (!scan.Surface) return (null, "panel-surface-missing", ExitChanged);
+            if (UiaMatching.SelectedConversation(scan.Nodes, marker) != conversation) return (null, "panel-conversation-changed", ExitChanged);
+            var modes = scan.Nodes.Where(n => n.Text.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+            if (modes.Count != 1 || modes[0].Text != prefix + expectedMode) return (null, "mode-changed", ExitChanged);
+            if (UiaMatching.PanelObstructed(scan.Nodes)) return (null, "panel-obstructed", ExitNoMatch);
+            var owners = UiaMatching.Documents(scan.Nodes).Where(area => area.Any(n => n.Text == prefix + expectedMode)).ToList();
+            return owners.Count == 1 ? (owners[0], null, 0) : (null, "panel-not-available", ExitNoMatch);
         }
 
-        var writable = Scan(root).Where(n => n.Role == ControlType.Edit.ProgrammaticName
-            && n.Element.TryGetCurrentPattern(ValuePattern.Pattern, out var value)
-            && !((ValuePattern)value).Current.IsReadOnly).ToList();
-        if (writable.Count == 0)
-        {
-            return Fail("no-composer", 4);
-        }
-        if (writable.Count > 1)
-        {
-            return Fail("ambiguous-composer", 6);
-        }
+        Int32 Visible(List<UiaNode> content) => UiaMatching.ExactButtons(content, visibleLabels).Count;
 
-        var composer = writable[0].Element;
-        var valuePattern = (ValuePattern)composer.GetCurrentPattern(ValuePattern.Pattern);
-        valuePattern.SetValue(text);
-        Thread.Sleep(200);
-        if (!valuePattern.Current.Value.Contains(text, StringComparison.Ordinal))
-        {
-            return Fail("write-not-applied", 5);
-        }
+        var (nodes, error, code) = Checked();
+        if (nodes == null) return Fail(error!, code);
+        if (Visible(nodes) > 1) return Fail("panel-ambiguous", ExitNoMatch);
+        if (Visible(nodes) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
 
-        var sent = false;
-        var sendLabel = Value(options, "--send-label");
-        if (!String.IsNullOrEmpty(sendLabel))
+        var candidates = UiaMatching.PanelOpeners(nodes, openers, turnOpeners);
+        if (candidates.Count > 1) return Fail("panel-opener-multiple", ExitNoMatch);
+        // A conversation may have no review capability. Absence is not a clean working
+        // tree, and must not trigger a guessed shortcut, toggle, or text entry.
+        if (candidates.Count != 1) return Fail("panel-not-available", ExitNoMatch);
+
+        var (fresh, freshError, freshCode) = Checked();
+        if (fresh == null) return Fail(freshError!, freshCode);
+        if (Visible(fresh) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
+        var confirmed = UiaMatching.PanelOpeners(fresh, openers, turnOpeners);
+        if (confirmed.Count != 1 || !SameElement(candidates[0], confirmed[0])) return Fail("panel-target-changed", ExitChanged);
+        if (!Invoke(confirmed[0])) return Fail("panel-press-failed", ExitError);
+
+        // The macOS helper waits 1.2 s. Here one check is a whole UIA scan (~350 ms), and the
+        // first review after a turn loads slower than a reopened one: the device pass recorded
+        // panel-unconfirmed on a tab that did open. A confirmed panel returns at once.
+        var deadline = Stopwatch.StartNew();
+        while (deadline.ElapsedMilliseconds < 3000)
         {
-            var send = FirstPressable(Scan(root), new[] { sendLabel });
-            if (send == null || !Invoke(send.Element))
+            Thread.Sleep(80);
+            var (again, againError, againCode) = Checked();
+            if (again == null) return Fail(againError!, againCode);
+            if (Visible(again) == 1)
             {
-                return Fail("send-not-found", 4);
+                return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = false, ["method"] = "button" });
             }
-            sent = true;
         }
-
-        return Emit(new Dictionary<String, Object?> { ["method"] = "value", ["sent"] = sent });
+        return Fail("panel-unconfirmed", ExitError);
     }
 
-    [SupportedOSPlatform("windows")]
-    private static Int32 Focus(AutomationElement root)
+    private static Int32 Focus(Target target) =>
+        Raise(target.Hwnd) ? Emit(new Dictionary<String, Object?>()) : Fail("focus-failed", ExitError);
+
+    // ---- output ------------------------------------------------------------
+
+    private static Int32 Emit(Dictionary<String, Object?> payload, Int32 code = 0)
     {
-        var hwnd = new IntPtr(Safe(() => root.Current.NativeWindowHandle));
-        if (hwnd == IntPtr.Zero)
+        payload["ok"] = code == 0;
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
         {
-            return Fail("no-window-handle", 5);
+            WriteJson(writer, payload);
         }
-        if (IsIconic(hwnd))
-        {
-            ShowWindow(hwnd, SW_RESTORE);
-        }
-
-        // Windows may reject SetForegroundWindow for a background helper because of the
-        // foreground-lock rule. This command is always the direct result of a physical key press,
-        // so use the same explicit-user-intent fallback as ClaudeConsoleFocus.
-        if (!SetForegroundWindow(hwnd))
-        {
-            SwitchToThisWindow(hwnd, true);
-        }
-
-        // The app may activate a different owned top-level window, so compare process identity
-        // instead of demanding the exact UIA root handle remain foreground.
-        Thread.Sleep(100);
-        var targetPid = Safe(() => root.Current.ProcessId);
-        GetWindowThreadProcessId(GetForegroundWindow(), out var foregroundPid);
-        return targetPid > 0 && foregroundPid == (UInt32)targetPid
-            ? Emit(new Dictionary<String, Object?>())
-            : Fail("focus-failed", 5);
+        Console.Out.Write(Encoding.UTF8.GetString(stream.ToArray()));
+        Console.Out.WriteLine();
+        Console.Out.Flush();
+        return code;
     }
 
-    [SupportedOSPlatform("windows")]
-    private static Int32 InspectWindows()
+    // A hand-rolled writer: the trimmed publish cannot rely on reflection-based serialization
+    // of Dictionary<String, Object?>.
+    private static void WriteJson(Utf8JsonWriter writer, Object? value)
     {
-        var windows = new List<Dictionary<String, Object?>>();
-        foreach (AutomationElement element in AutomationElement.RootElement.FindAll(TreeScope.Children, Condition.TrueCondition))
+        switch (value)
         {
-            var pid = Safe(() => element.Current.ProcessId);
-            var title = Safe(() => element.Current.Name) ?? "";
-            if (pid <= 0 || title.Length == 0)
-            {
-                continue;
-            }
-
-            windows.Add(new Dictionary<String, Object?>
-            {
-                ["title"] = title,
-                ["pid"] = pid,
-                ["process"] = ProcessName(pid),
-                ["class"] = Safe(() => element.Current.ClassName) ?? "",
-            });
+            case null: writer.WriteNullValue(); break;
+            case String s: writer.WriteStringValue(s); break;
+            case Boolean b: writer.WriteBooleanValue(b); break;
+            case Int32 i: writer.WriteNumberValue(i); break;
+            case Int64 l: writer.WriteNumberValue(l); break;
+            case Dictionary<String, Object?> map:
+                writer.WriteStartObject();
+                foreach (var (key, item) in map)
+                {
+                    writer.WritePropertyName(key);
+                    WriteJson(writer, item);
+                }
+                writer.WriteEndObject();
+                break;
+            case Dictionary<String, String> map:
+                writer.WriteStartObject();
+                foreach (var (key, item) in map)
+                {
+                    writer.WriteString(key, item);
+                }
+                writer.WriteEndObject();
+                break;
+            case System.Collections.IEnumerable list:
+                writer.WriteStartArray();
+                foreach (var item in list)
+                {
+                    WriteJson(writer, item);
+                }
+                writer.WriteEndArray();
+                break;
+            default: writer.WriteStringValue(value.ToString()); break;
         }
-        return Emit(new Dictionary<String, Object?> { ["windows"] = windows });
     }
 
-    [SupportedOSPlatform("windows")]
-    private static Int32 InspectTarget(AutomationElement root)
-    {
-        var nodes = Scan(root).Select(n => new Dictionary<String, Object?>
-        {
-            ["depth"] = n.Depth,
-            ["role"] = n.Role,
-            ["text"] = n.Text,
-            ["pressable"] = n.Pressable,
-            ["class"] = Safe(() => n.Element.Current.ClassName) ?? "",
-            ["automationId"] = Safe(() => n.Element.Current.AutomationId) ?? "",
-            ["offscreen"] = Safe(() => n.Element.Current.IsOffscreen),
-        }).ToList();
-        return Emit(new Dictionary<String, Object?>
-        {
-            ["process"] = ProcessName(Safe(() => root.Current.ProcessId)),
-            ["title"] = Safe(() => root.Current.Name) ?? "",
-            ["nodes"] = nodes,
-        });
-    }
-
-    private static T Safe<T>(Func<T> read)
-    {
-        try { return read(); }
-        catch { return default!; }
-    }
+    private static Int32 Fail(String error, Int32 code) =>
+        Emit(new Dictionary<String, Object?> { ["error"] = error }, code);
 
     private static String ProcessName(Int32 pid)
     {
         try { using var process = Process.GetProcessById(pid); return process.ProcessName; }
         catch { return ""; }
     }
-
-    private static String ForegroundProcessName()
-    {
-        var hwnd = GetForegroundWindow();
-        GetWindowThreadProcessId(hwnd, out var pid);
-        return ProcessName((Int32)pid);
-    }
-
-    private static Int32 Emit(Dictionary<String, Object?> payload, Int32 code = 0)
-    {
-        payload["ok"] = code == 0;
-        Console.WriteLine(JsonSerializer.Serialize(payload));
-        return code;
-    }
-
-    private static Int32 Fail(String error, Int32 code) =>
-        Emit(new Dictionary<String, Object?> { ["error"] = error }, code);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    private static extern UInt32 GetWindowThreadProcessId(IntPtr hwnd, out UInt32 processId);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern Boolean SetForegroundWindow(IntPtr hwnd);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern Boolean ShowWindow(IntPtr hwnd, Int32 command);
-
-    [DllImport("user32.dll")]
-    private static extern void SwitchToThisWindow(IntPtr hwnd, Boolean altTab);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern Boolean IsIconic(IntPtr hwnd);
-
-    private const Int32 SW_RESTORE = 9;
 }

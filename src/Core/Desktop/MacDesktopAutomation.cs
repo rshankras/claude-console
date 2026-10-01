@@ -68,10 +68,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 && front.ValueKind is JsonValueKind.True or JsonValueKind.False ? front.GetBoolean() : null;
         }
 
-        public DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null)
+        public DesktopSearchSnapshot Search(String action, String target = null, String query = null, String value = null, String title = null, String origin = null, String mode = null)
         {
             var args = new List<String> { "search", "--app", _app.BundleId, "--action", action,
-                "--mode-prefix", _app.ModePrefix, "--expect-mode", "ChatGPT" };
+                "--mode-prefix", _app.ModePrefix, "--expect-mode", mode ?? "ChatGPT" };
             AddEach(args, "--search", _app.ControlLabels(DesktopControl.Search));
             AddEach(args, "--search-field", _app.SearchFieldLabels);
             AddEach(args, "--result-host", _app.SearchResultHosts);

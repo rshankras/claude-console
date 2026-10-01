@@ -1485,12 +1485,12 @@
       ],
       "title": {
         "ChatGPT": "Find Chat",
-        "Codex": "Find Chat (use ChatGPT)"
+        "Codex": "Find Chat"
       },
       "kind": "find-legacy",
       "prepare": "Keep ChatGPT in the foreground with a disposable conversation.",
-      "action": "Open the retained Find Chat folder binding.",
-      "expectedApp": "ChatGPT opens native search. In Codex this search-only folder closes without pressing an app control.",
+      "action": "Open the Find Chat folder binding.",
+      "expectedApp": "Opens the app's native search in either mode; the search stays pinned to the mode it opened in.",
       "expectedKey": "Shows the existing search controls.",
       "smoke": false,
       "capability": "supported"

@@ -85,26 +85,33 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        // Desktop ships no Windows payload yet: its UI Automation helper is framework-dependent,
-        // and every Windows helper has had to bundle its runtime since #83. The packer says so with
-        // a gate, the verifier reads the same fact off the package yaml (pluginFolderWin), and
-        // neither ships an exe that would fail on a clean install. Voice on Windows, for the
-        // products that do ship it, is a verb of the one self-contained toolkit — never a
-        // standalone voice exe, which the branch this test came from still listed.
-        public void Desktop_ships_no_Windows_payload_and_the_toolkit_carries_voice_for_those_that_do()
+        // Every product ships a Windows payload, each its own: the terminal products the hook and
+        // the toolkit, the desktop product the toolkit and its UI Automation helper (self-contained
+        // since 2026-09-30; every Windows helper has had to bundle its runtime since #83) and no
+        // hook, since it installs none. The verifier reads the platform off the package yaml
+        // (pluginFolderWin) and the product off the DLL, and refuses a helper nothing launches.
+        // Voice on Windows is a verb of the one self-contained toolkit — never a standalone voice
+        // exe, which the branch this test came from still listed.
+        public void Each_product_ships_its_own_Windows_helpers_and_the_toolkit_carries_voice()
         {
             var builder = ReadRepoFile("tools", "windows", "build-windows-payload.sh");
             var packer = ReadRepoFile("tools", "voice", "pack-release.sh");
             var verifier = ReadRepoFile("tools", "verify-package.sh");
+            var signer = ReadRepoFile("tools", "windows", "sign-windows-payload.sh");
 
-            Assert.Contains("ClaudeConsole|VizhiCodex) SHIPS_WINDOWS=1", packer);
+            Assert.Contains("ClaudeConsole|VizhiCodex|VizhiDesktop) SHIPS_WINDOWS=1", packer);
             Assert.Contains("VizhiDesktop) SHIPS_DESKTOP=1", packer);
             Assert.Contains("desktop/VizhiAxBridge", packer);
             Assert.Contains("pluginFolderWin", verifier);
-            Assert.DoesNotContain("PROJECTS=(VizhiDesktopUia", builder);
+            Assert.Contains("bin/vizhi-desktop-uia.exe", verifier);
+            Assert.Contains("shipped in the desktop package", verifier);
+            Assert.Contains("shipped in a terminal package", verifier);
 
-            Assert.Contains("for proj in ClaudeConsoleHook ClaudeConsoleTools", builder);
+            Assert.Contains("ClaudeConsole|VizhiCodex) PROJECTS=\"ClaudeConsoleHook ClaudeConsoleTools\"", builder);
+            Assert.Contains("VizhiDesktop)             PROJECTS=\"ClaudeConsoleTools VizhiDesktopUia\"", builder);
+            Assert.Contains("ClaudeConsoleTools|VizhiDesktopUia)", builder);
             Assert.Contains("SelfContained", builder);
+            Assert.Contains("VizhiDesktop)  NAME=\"Vizhi Desktop\"", signer);
 
             Assert.Contains("WINDOWS_WHISPER_DIR", packer);
             Assert.Contains("$PKG_VOICE/whisper-bin-win", packer);

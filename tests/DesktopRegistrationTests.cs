@@ -119,13 +119,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void Desktop_package_is_mac_only_until_a_windows_automation_backend_exists()
+        public void Desktop_package_declares_both_platforms_on_the_same_bin_folder()
         {
+            // One .lplug4 serves both platforms: the Windows helpers ride beside the plugin DLL
+            // and are never launched on macOS. Declaring pluginFolderWin is what makes the service
+            // load the package on Windows, so it exists only with the helpers built (verifier).
             var yaml = File.ReadAllText(RepoFile(
                 "src", "Products", "VizhiDesktop", "package", "metadata", "LoupedeckPackage.yaml"));
 
             Assert.Contains("pluginFolderMac: bin", yaml);
-            Assert.DoesNotContain("pluginFolderWin:", yaml);
+            Assert.Contains("pluginFolderWin: bin", yaml);
         }
 
         [Fact]

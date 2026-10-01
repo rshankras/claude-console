@@ -47,7 +47,8 @@ TSA="${CODESIGN_TSA:-http://time.certum.pl}"
 case "$PRODUCT" in
   ClaudeConsole) NAME="Claude Console";  URL="https://vizhi.dev/claude-console/" ;;
   VizhiCodex)    NAME="Vizhi for Codex"; URL="https://vizhi.dev/vizhi-codex/" ;;
-  *) echo "error: unsupported product '$PRODUCT' (expected ClaudeConsole or VizhiCodex)." >&2; exit 2 ;;
+  VizhiDesktop)  NAME="Vizhi Desktop";   URL="https://vizhi.dev/vizhi-desktop/" ;;
+  *) echo "error: unsupported product '$PRODUCT' (expected ClaudeConsole, VizhiCodex or VizhiDesktop)." >&2; exit 2 ;;
 esac
 
 # Everything a Windows machine would load: helpers, the plugin DLL, whisper and its backends.

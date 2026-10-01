@@ -222,10 +222,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void Downloads_are_bounded_and_symlinks_are_not_presented_as_files()
         {
             for (var i = 0; i < 25; i++) File(i + ".txt");
-            System.IO.File.CreateSymbolicLink(Path.Combine(_directory, "link.txt"), Path.Combine(_directory, "0.txt"));
+            // Windows grants symlink creation only to administrators or Developer Mode; a laptop
+            // without either still proves the bound and the hidden-file rule.
+            var linked = true;
+            try { System.IO.File.CreateSymbolicLink(Path.Combine(_directory, "link.txt"), Path.Combine(_directory, "0.txt")); }
+            catch (IOException) when (OperatingSystem.IsWindows()) { linked = false; }
             File(".hidden.txt"); var app = App(); var picker = new DesktopFilePicker(app, new(app), _directory); picker.Begin();
             Assert.Equal(18, picker.Current.Files.Length);
             Assert.DoesNotContain(picker.Current.Files, f => f.Name is "link.txt" or ".hidden.txt");
+            if (!linked) Assert.DoesNotContain(picker.Current.Files, f => f.Name == "link.txt");
             foreach (var file in picker.Current.Files.Take(9)) picker.Execute(picker.Parameter(file), new OpenAiDesktopAdapter(), new());
             Assert.Equal(8, picker.Current.Selected.Length); Assert.Equal("8 Files Max", picker.Current.Feedback);
         }
