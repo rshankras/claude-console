@@ -131,29 +131,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         internal static IReadOnlyList<WorkflowDef> LoadChatGptFavorites() =>
             LoadChatGptWorkflows(ChatGptConfigFile).Where(IsUsable).Take(9).ToArray();
 
-        private static readonly Object CacheGate = new();
-        private static readonly Dictionary<String, (String Json, WorkflowDef[] Defaults, WorkflowDef[] Slots)> Cache = new();
+        // No cache: every load reads the file and runs the migrations, which are idempotent on a
+        // stock file (the Flow step recognises the Scope/SourcePrompt the Ux step writes — #149).
+        // A cache keyed on content would have returned one mutable WorkflowDef[] to every caller
+        // and could not have fixed the rewrite anyway, since the first load per process still ran.
         private static IEnumerable<WorkflowDef> LoadWorkflows(String configFile, WorkflowDef[] defaults)
-        {
-            lock (CacheGate)
-            {
-                try
-                {
-                    var json = File.Exists(configFile) ? File.ReadAllText(configFile) : null;
-                    if (Cache.TryGetValue(configFile, out var entry) && entry.Json == json && ReferenceEquals(entry.Defaults, defaults)) return entry.Slots;
-                    var slots = LoadWorkflowsCore(configFile, defaults).ToArray();
-                    if (File.Exists(configFile))
-                    {
-                        if (Cache.Count >= 32) Cache.Clear();
-                        Cache[configFile] = (File.ReadAllText(configFile), defaults, slots);
-                    }
-                    return slots;
-                }
-                catch { return LoadWorkflowsCore(configFile, defaults); }
-            }
-        }
-
-        private static IEnumerable<WorkflowDef> LoadWorkflowsCore(String configFile, WorkflowDef[] defaults)
         {
             try
             {

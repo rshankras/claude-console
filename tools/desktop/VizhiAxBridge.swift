@@ -958,28 +958,50 @@ func sameOperationWindow() -> Bool {
 }
 
 // One canonical sidebar scan for status, reply copying, draft guards and navigation.
+//
+// A row is a pressable, titled node that OWNS the marker: the marker sits in its subtree outside
+// any nested row's subtree. A project row that only contains chat rows (each with its own marker)
+// is therefore a container, not a conversation — and its chats are still visited, where the first
+// cut skipped a matched row's whole subtree and made a project-only chat unfindable by title.
 func conversationRows(_ nodes: [Node], marker: String) -> [(node: Node, index: Int, end: Int)] {
     guard !marker.isEmpty else { return [] }
-    var rows: [(node: Node, index: Int, end: Int, lists: Int)] = []
-    var i = 0
-    while i < nodes.count {
-        let row = nodes[i]
-        guard row.pressable, !row.text.isEmpty else { i += 1; continue }
+    func subtreeEnd(_ i: Int) -> Int {
         var end = i + 1
-        while end < nodes.count && nodes[end].depth > row.depth { end += 1 }
-        guard nodes[(i + 1)..<end].contains(where: { $0.pressable && $0.text == marker }) else { i += 1; continue }
-        var depth = row.depth, lists = 0
-        if i > 0 {
-            for j in stride(from: i - 1, through: 0, by: -1) where nodes[j].depth < depth {
-                depth = nodes[j].depth
-                if nodes[j].role == "AXList" { lists += 1 }
+        while end < nodes.count && nodes[end].depth > nodes[i].depth { end += 1 }
+        return end
+    }
+    // Candidates: pressable titled nodes with the marker anywhere below them, in DFS order.
+    var candidates: [(index: Int, end: Int)] = []
+    for i in nodes.indices where nodes[i].pressable && !nodes[i].text.isEmpty {
+        let end = subtreeEnd(i)
+        if nodes[(i + 1)..<end].contains(where: { $0.pressable && $0.text == marker }) { candidates.append((i, end)) }
+    }
+    var rows: [(node: Node, index: Int, end: Int, nested: Bool, lists: Int)] = []
+    for (c, candidate) in candidates.enumerated() {
+        // Own marker: walk the subtree, stepping over nested candidates' subtrees.
+        var own = false
+        var j = candidate.index + 1
+        while j < candidate.end {
+            if let inner = candidates[(c + 1)...].first(where: { $0.index == j }) { j = inner.end; continue }
+            if nodes[j].pressable && nodes[j].text == marker { own = true; break }
+            j += 1
+        }
+        guard own else { continue }
+        // Nested: inside an earlier candidate's span (a pressable project row), or under a second
+        // list (a project header the app exposes as a plain group).
+        let nested = candidates[..<c].contains { $0.index < candidate.index && candidate.end <= $0.end }
+        var depth = nodes[candidate.index].depth, lists = 0
+        if candidate.index > 0 {
+            for k in stride(from: candidate.index - 1, through: 0, by: -1) where nodes[k].depth < depth {
+                depth = nodes[k].depth
+                if nodes[k].role == "AXList" { lists += 1 }
             }
         }
-        rows.append((row, i, end, lists)); i = end
+        rows.append((nodes[candidate.index], candidate.index, candidate.end, nested || lists > 1, lists))
     }
     return rows.filter { row in
-        guard row.lists > 1 else { return true }
-        let peers = rows.filter { $0.lists == 1 && $0.node.text == row.node.text }
+        guard row.nested else { return true }
+        let peers = rows.filter { !$0.nested && $0.node.text == row.node.text }
         guard peers.count == 1 else { return true }
         let peer = peers[0].node
         // Explicit different identities or selection states prove these are different chats.

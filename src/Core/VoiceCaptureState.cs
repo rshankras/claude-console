@@ -80,13 +80,28 @@ namespace Loupedeck.ClaudeConsolePlugin
     /// </summary>
     internal sealed class VoiceCaptureState
     {
+        /// <summary>The helper's hard recording cap, in seconds (<c>--maxsec</c> on both platforms).</summary>
+        internal const Int32 RecordingCapSeconds = 180;
+
+        /// <summary>
+        /// How long whisper gets to produce the transcript after a stop. Transcription time grows with
+        /// the recording — base.en needs roughly half the audio length on an Intel Mac or a Windows
+        /// laptop — so a fixed 20 s budget that was fine for a 60 s cap lost every long dictation once
+        /// the cap went to 180 s: "transcript not produced within 20s", and the words arrived to a
+        /// deleted WAV and a finished capture. 20 s floor, plus half the recorded seconds.
+        /// </summary>
+        internal static Double TranscriptWaitSeconds(Double recordedSeconds) =>
+            20 + Math.Min(Math.Max(recordedSeconds, 0), RecordingCapSeconds) * 0.5;
+
         /// <summary>
         /// How long a recording may sit before a new press treats it as dead. The helper stops
-        /// itself at 180s and the transcript wait runs 20s, so anything past the sum means the helper
-        /// died without a trace. A flag that could not expire would be worse than the bug it fixes:
-        /// one crashed helper and every voice key is dead until the plugin reloads.
+        /// itself at the cap and the transcript wait runs up to <see cref="TranscriptWaitSeconds"/>
+        /// of the cap, so anything past that sum means the helper died without a trace. A flag that
+        /// could not expire would be worse than the bug it fixes: one crashed helper and every voice
+        /// key is dead until the plugin reloads.
         /// </summary>
-        internal static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(240);
+        internal static readonly TimeSpan StaleAfter =
+            TimeSpan.FromSeconds(RecordingCapSeconds + TranscriptWaitSeconds(RecordingCapSeconds) + 10);
 
         private readonly Object _lock = new Object();
 
@@ -102,10 +117,22 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
             Changed?.Invoke();
         }
+        /// <summary>
+        /// Whether a finished transcript is waiting on disk. Consulted only when a capture looks
+        /// stale, and always OUTSIDE the lock: it stats files, and the key renderers read Phase and
+        /// Intent under the same lock while painting.
+        /// </summary>
         internal Func<Boolean> HasPendingTranscript { get; set; } = () => false;
         private VoicePhase _phase = VoicePhase.Idle;
         private VoiceIntent _intent;
         private DateTime _since;
+        private DateTime _recordingStarted;
+
+        /// <summary>
+        /// Seconds the last capture recorded before its stop — what the transcript wait is sized
+        /// from. Zero until a capture has been stopped.
+        /// </summary>
+        internal Double LastRecordedSeconds { get; private set; }
 
         internal VoicePhase Phase { get { lock (this._lock) { return this._phase; } } }
 
@@ -125,7 +152,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (_phase == VoicePhase.Starting)
                 { _phase = VoicePhase.Cancelling; action = VoiceAction.Cancel; }
                 else if (_phase == VoicePhase.Recording)
-                { _phase = VoicePhase.Transcribing; _since = now; action = VoiceAction.Stop; }
+                { _phase = VoicePhase.Transcribing; LastRecordedSeconds = (now - _recordingStarted).TotalSeconds; _since = now; action = VoiceAction.Stop; }
                 else return VoiceAction.Refuse;
             }
             Changed?.Invoke();
@@ -139,7 +166,15 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         internal (VoiceAction Action, VoiceIntent Intent) Press(VoiceIntent pressed, DateTime now, Boolean awaitReadiness = false)
         {
-            var result = this.PressLocked(pressed, now, awaitReadiness);
+            // The disk probe runs only for a capture that looks dead, and never under the lock.
+            Boolean stale;
+            lock (this._lock)
+            {
+                stale = this._phase is VoicePhase.Recording or VoicePhase.Transcribing && now - this._since > StaleAfter;
+            }
+            var transcriptPending = stale && HasPendingTranscript();
+
+            var result = this.PressLocked(pressed, now, awaitReadiness, transcriptPending);
             if (result.Changed)
             {
                 this.Changed?.Invoke();
@@ -147,13 +182,14 @@ namespace Loupedeck.ClaudeConsolePlugin
             return (result.Action, result.Intent);
         }
 
-        private (VoiceAction Action, VoiceIntent Intent, Boolean Changed) PressLocked(VoiceIntent pressed, DateTime now, Boolean awaitReadiness)
+        private (VoiceAction Action, VoiceIntent Intent, Boolean Changed) PressLocked(VoiceIntent pressed, DateTime now, Boolean awaitReadiness, Boolean transcriptPending)
         {
             lock (this._lock)
             {
                 // A capture older than any capture can legitimately be means the helper died without
-                // writing anything. Treat it as over, so this press starts cleanly.
-                if (this._phase is VoicePhase.Recording or VoicePhase.Transcribing && now - this._since > StaleAfter && !HasPendingTranscript())
+                // writing anything. Treat it as over, so this press starts cleanly — unless its
+                // transcript is already on disk, in which case this press is the stop that delivers it.
+                if (this._phase is VoicePhase.Recording or VoicePhase.Transcribing && now - this._since > StaleAfter && !transcriptPending)
                 {
                     this._phase = VoicePhase.Idle;
                 }
@@ -170,6 +206,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     case VoicePhase.Recording:
                         // ANY voice key stops the running capture, and the ORIGINAL intent survives.
                         this._phase = VoicePhase.Transcribing;
+                        this.LastRecordedSeconds = (now - this._recordingStarted).TotalSeconds;
                         this._since = now;
                         return (VoiceAction.Stop, this._intent, true);
 
@@ -184,6 +221,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                         this._captureId++;
                         this._intent = pressed;
                         this._since = now;
+                        this._recordingStarted = now;
                         return (VoiceAction.Start, pressed, true);
                 }
             }
@@ -197,6 +235,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 if (this._phase != VoicePhase.Starting) { return false; }
                 this._phase = VoicePhase.Recording;
                 this._since = now;
+                this._recordingStarted = now;
             }
             this.Changed?.Invoke();
             return true;

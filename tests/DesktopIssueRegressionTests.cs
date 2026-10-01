@@ -25,13 +25,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             File.SetLastWriteTimeUtc(path, stamp); stamp = File.GetLastWriteTimeUtc(path);
             for (var i = 0; i < 5; i++) Load();
             Assert.Equal(bytes, File.ReadAllBytes(path)); Assert.Equal(stamp, File.GetLastWriteTimeUtc(path));
-            // A fresh path bypasses the cache, like the first load in a new plugin process.
+            // A fresh path, like the first load in a new plugin process: the migrations themselves
+            // must be idempotent — there is no cache to hide a rewrite behind.
             var fresh = Path.Combine(home.Dir, "fresh.json"); File.WriteAllBytes(fresh, bytes); File.SetLastWriteTimeUtc(fresh, stamp);
             if (chat) DesktopWorkflowCommand.LoadChatGptWorkflows(fresh).ToArray(); else DesktopWorkflowCommand.LoadWorkflows(fresh).ToArray();
             Assert.Equal(stamp, File.GetLastWriteTimeUtc(fresh));
         }
         [Fact]
-        public void Cached_workflows_reload_after_a_user_edits_the_file()
+        public void Workflows_reload_after_a_user_edits_the_file()
         {
             using var home = new TempHome(); var path = Path.Combine(home.Dir, "workflows.json");
             DesktopWorkflowCommand.LoadWorkflows(path).ToArray();
@@ -144,6 +145,150 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("custom", File.ReadAllText(Path.Combine(runtime, "desktop-workflows.json")));
             Assert.False(File.Exists(Path.Combine(runtime, "pending-draft.json")));
             Assert.Equal("neighbor", File.ReadAllText(Path.Combine(home.RuntimeHome, "model")));
+            // The dictation is parked for an upgrade, not deleted; nothing else is.
+            Assert.True(File.Exists(Path.Combine(DesktopUninstall.RuntimeCache(runtime), DesktopUninstall.PendingDraftFile)));
+        }
+
+        // ---- review follow-up (1 Oct): the fixes the first cut needed ----------------------------
+
+        [Theory]
+        [InlineData(5, true)]
+        [InlineData(11, false)]
+        public void Upgrade_keeps_the_unsent_dictation_but_never_the_speech_model(Int32 minutes, Boolean restored)
+        {
+            using var home = new TempHome(); var runtime = Path.Combine(home.Dir, "Desktop");
+            var model = Path.Combine(runtime, "whisper", "ggml-base.en.bin");
+            Directory.CreateDirectory(Path.GetDirectoryName(model)); File.WriteAllText(model, "148 MB");
+            File.WriteAllText(Path.Combine(runtime, DesktopUninstall.PendingDraftFile), "[\"words\",null]");
+            var now = DateTime.UtcNow;
+            Assert.True(DesktopUninstall.Clean(runtime, Path.Combine(home.Dir, "ipc"), Path.Combine(home.Dir, "apps"), now));
+            Assert.False(Directory.Exists(runtime));                                   // the model went with it
+            Assert.True(Directory.Exists(DesktopUninstall.RuntimeCache(runtime)));
+
+            DesktopUninstall.RestoreRuntimeCache(runtime, now.AddMinutes(minutes));
+
+            Assert.False(File.Exists(model));
+            Assert.Equal(restored, File.Exists(Path.Combine(runtime, DesktopUninstall.PendingDraftFile)));
+            Assert.False(Directory.Exists(DesktopUninstall.RuntimeCache(runtime)));   // consumed or discarded, never left
+        }
+
+        [Fact]
+        public void Uninstall_with_no_dictation_parks_nothing()
+        {
+            using var home = new TempHome(); var runtime = Path.Combine(home.Dir, "Desktop");
+            Directory.CreateDirectory(runtime); File.WriteAllText(Path.Combine(runtime, "desktop-workflows.json"), "custom");
+            Assert.True(DesktopUninstall.Clean(runtime, Path.Combine(home.Dir, "ipc"), Path.Combine(home.Dir, "apps")));
+            Assert.False(Directory.Exists(DesktopUninstall.RuntimeCache(runtime)));
+        }
+
+        [Fact]
+        public void The_desktop_runtime_home_is_the_SDK_plugin_data_directory()
+        {
+            using var home = new TempHome();
+            Assert.Equal(Path.Combine(home.Dir, "Library/Application Support", "Logi", "LogiPluginService", "PluginData", "VizhiDesktop"),
+                ProductRuntime.For(home.Dir, "vizhi-desktop", false));
+            Assert.Equal(Path.Combine(home.Dir, "AppData/Local", "Logi", "LogiPluginService", "PluginData", "VizhiDesktop"),
+                ProductRuntime.For(home.Dir, "vizhi-desktop", true));
+            // The terminal products stay beside their agent's configuration.
+            Assert.Equal(Path.Combine(home.Dir, ".claude", "claude-console"), ProductRuntime.For(home.Dir, "claude-console", false));
+            Assert.Equal(Path.Combine(home.Dir, ".codex", "vizhi-runtime"), ProductRuntime.For(home.Dir, "codex-console", false));
+        }
+
+        [Fact]
+        public void A_registration_receipt_that_cannot_be_restored_is_discarded_without_throwing()
+        {
+            using var home = new TempHome(); var runtime = Path.Combine(home.Dir, "Desktop"); var apps = Path.Combine(home.Dir, "apps");
+            var backup = Path.Combine(DesktopUninstall.RegistrationReceipt(runtime), "70", "@_vizhidesktop");
+            Directory.CreateDirectory(backup);
+            File.WriteAllText(Path.Combine(DesktopUninstall.RegistrationReceipt(runtime), "written-at"), DateTime.UtcNow.ToString("O"));
+            File.WriteAllText(Path.Combine(home.Dir, "elsewhere.json"), "{}");
+            try { File.CreateSymbolicLink(Path.Combine(backup, "ApplicationInfo.json"), Path.Combine(home.Dir, "elsewhere.json")); }
+            catch (Exception) { return; }   // no symlink privilege here (Windows without developer mode): nothing to prove
+
+            Assert.False(DesktopUninstall.TryRestoreRegistration(runtime, apps));
+
+            Assert.False(Directory.Exists(DesktopUninstall.RegistrationReceipt(runtime)));   // not retried on every load
+            Assert.False(Directory.Exists(Path.Combine(apps, "70", "@_vizhidesktop")));
+        }
+
+        [Theory]
+        [InlineData(0, 20)]
+        [InlineData(60, 50)]
+        [InlineData(180, 110)]
+        [InlineData(400, 110)]
+        public void Transcript_wait_grows_with_the_recording_and_the_stale_window_covers_it(Double recorded, Double expected)
+        {
+            Assert.Equal(expected, VoiceCaptureState.TranscriptWaitSeconds(recorded));
+            Assert.True(VoiceCaptureState.StaleAfter.TotalSeconds >
+                VoiceCaptureState.RecordingCapSeconds + VoiceCaptureState.TranscriptWaitSeconds(VoiceCaptureState.RecordingCapSeconds));
+        }
+
+        [Fact]
+        public void A_stop_records_how_long_the_capture_ran()
+        {
+            var voice = new VoiceCaptureState(); var t0 = DateTime.UnixEpoch;
+            voice.Press(VoiceIntent.DesktopDraft, t0);
+            Assert.Equal(VoiceAction.Stop, voice.Press(VoiceIntent.DesktopDraft, t0.AddSeconds(75)).Action);
+            Assert.Equal(75, voice.LastRecordedSeconds, 3);
+            voice.Finish();
+            voice.Press(VoiceIntent.Desktop, t0);
+            Assert.Equal(VoiceAction.Stop, voice.StopIfCapturing(VoiceIntent.Desktop, t0.AddSeconds(12)));
+            Assert.Equal(12, voice.LastRecordedSeconds, 3);
+        }
+
+        [Fact]
+        public void The_transcript_probe_runs_only_for_a_capture_that_looks_dead()
+        {
+            var probes = 0;
+            var voice = new VoiceCaptureState { HasPendingTranscript = () => { probes++; return false; } };
+            var t0 = DateTime.UnixEpoch;
+            voice.Press(VoiceIntent.DesktopDraft, t0);
+            voice.Press(VoiceIntent.DesktopDraft, t0.AddSeconds(30));              // an ordinary stop: no disk access
+            Assert.Equal(0, probes);
+            voice.Finish(); voice.Press(VoiceIntent.DesktopDraft, t0);
+            Assert.Equal(VoiceAction.Start, voice.Press(VoiceIntent.DesktopDraft, t0 + VoiceCaptureState.StaleAfter + TimeSpan.FromSeconds(1)).Action);
+            Assert.Equal(1, probes);
+        }
+
+        [Theory]
+        [InlineData("DesktopDraft", true)]
+        [InlineData("Desktop", true)]
+        [InlineData("DesktopSearch", false)]
+        [InlineData("Project", false)]
+        [InlineData("", false)]
+        [InlineData(null, false)]
+        [InlineData("garbage", false)]
+        public void Only_a_dictation_transcript_may_be_adopted_as_a_draft(String sidecar, Boolean draftable)
+        {
+            Assert.Equal(draftable, BridgeManager.LeftoverTranscriptIsDraftable(sidecar));
+        }
+
+        [Fact]
+        public void Search_signal_verdict_never_fails_on_a_missing_recording()
+        {
+            Assert.True(BridgeManager.SearchSignalVerdict("signal", false, () => throw new IOException()));
+            Assert.False(BridgeManager.SearchSignalVerdict("silent", false, () => throw new IOException()));
+            Assert.Null(BridgeManager.SearchSignalVerdict("unknown", false, () => throw new IOException()));
+            Assert.Null(BridgeManager.SearchSignalVerdict(null, false, () => throw new IOException()));
+            Assert.False(BridgeManager.SearchSignalVerdict(null, true, () => false));
+            Assert.True(BridgeManager.SearchSignalVerdict("unknown", true, () => true));
+        }
+
+        [Fact]
+        public void Dictate_and_Send_shows_a_retained_draft_with_its_retry_hint()
+        {
+            var face = DesktopDictationFace.For(VoiceIntent.Desktop, new VoiceCaptureState(), null, "voice", pending: true, retryHint: "OPEN APP · TAP TO RETRY");
+            Assert.Equal((VoiceFailure.InsertDraft, "voice", "OPEN APP · TAP TO RETRY"), face);
+            var idle = DesktopDictationFace.For(VoiceIntent.Desktop, new VoiceCaptureState(), null, "voice");
+            Assert.Equal(("Dictate & Send", "voice", "SEND"), idle);
+        }
+
+        [Fact]
+        public void An_emptied_draft_file_restores_nothing()
+        {
+            using var home = new TempHome(); var path = Path.Combine(home.Dir, "pending-draft.json");
+            File.WriteAllText(path, "[]");
+            Assert.False(new DesktopDraftRecovery(new DesktopCommandRig.Automation(), path).Pending);
         }
     }
 }

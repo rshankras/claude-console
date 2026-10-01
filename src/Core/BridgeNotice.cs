@@ -120,6 +120,20 @@ namespace Loupedeck.ClaudeConsolePlugin
             "Direct typing keys, Yes/No and voice do not need it; if one is refused, pin a session slot. " +
             $"Set Settings › System › For developers › Terminal to Windows Terminal and start a new session. ({detail})";
 
+        /// <summary>Where a layout notice points — the FAQ (its anchors are frozen; none is layout-specific).</summary>
+        internal const String LayoutUrl = "https://vizhi.dev/faq/";
+
+        internal const String LayoutTitle = "Keypad layout";
+
+        /// <summary>
+        /// Posted when the plugin wrote or updated its application registration without restarting
+        /// the Logi Plugin Service: the service reads registrations at startup, so the layout stays
+        /// invisible until then, and the plugin no longer restarts Logi's processes itself (#138).
+        /// </summary>
+        internal static String LayoutAwaitsServiceRestart() =>
+            "Vizhi Desktop installed its keypad layout. It appears in Logi Options+ after the Logi Plugin Service " +
+            "next starts — sign out and back in, or restart the computer.";
+
         /// <summary>Where the voice notices point — the FAQ's voice section.</summary>
         internal const String VoiceUrl = "https://vizhi.dev/faq/#voice";
 

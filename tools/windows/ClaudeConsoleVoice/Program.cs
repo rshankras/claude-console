@@ -108,7 +108,10 @@ internal static class VoiceProgram
         }
         finally
         {
-            try { File.Delete(stopFlag); File.Delete(wavPath); } catch { /* next capture clears it anyway */ }
+            // Each in its own try: a stop flag the plugin still holds must not keep the recording
+            // (up to 180 s of speech) on disk.
+            try { File.Delete(stopFlag); } catch { /* next capture clears it anyway */ }
+            try { File.Delete(wavPath); } catch { /* next capture overwrites it */ }
         }
     }
 

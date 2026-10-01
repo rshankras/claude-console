@@ -3,6 +3,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System;
     using System.Collections.Generic;
     using System.Diagnostics;
+    using System.Globalization;
     using System.IO;
     using System.Linq;
     using System.Net.Http;
@@ -1390,16 +1391,30 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         private Boolean StartVoiceCapture()
         {
+            // A transcript left behind by a capture whose wait timed out is adopted as a draft only
+            // when it WAS a dictation. The transcript file is shared by every intent: a late Find Chat
+            // query ("notes") or a project name must never be retained and then inserted into the
+            // composer as if the user had dictated it. The capture's intent travels in a sidecar
+            // written at start; a leftover of any other intent is discarded, as it always was.
             if (Voice.Intent is VoiceIntent.Desktop or VoiceIntent.DesktopDraft && File.Exists(VoiceTranscriptFile))
             {
-                var text = CleanTranscript(File.ReadAllText(VoiceTranscriptFile));
-                if (!String.IsNullOrWhiteSpace(text))
+                var leftoverIntent = ReadSidecar(VoiceIntentFile);
+                if (!LeftoverTranscriptIsDraftable(leftoverIntent))
                 {
-                    if (DraftRecoverySink?.Invoke(text) == true) {
-                        TryDelete(VoiceTranscriptFile); TryDelete(VoiceWavFile);
-                        ReportVoiceFailure(Voice.Intent, VoiceFailure.InsertDraft, "previous transcript retained for review");
-                    } else ReportVoiceFailure(Voice.Intent, VoiceFailure.NotTyped, "previous transcript needs recovery");
-                    return false;
+                    PluginLog.Info($"BridgeManager: discarding a leftover {leftoverIntent ?? "untagged"} transcript — not a dictation");
+                    TryDelete(VoiceTranscriptFile); TryDelete(VoiceIntentFile); TryDelete(VoiceWavFile);
+                }
+                else
+                {
+                    var text = CleanTranscript(File.ReadAllText(VoiceTranscriptFile));
+                    if (!String.IsNullOrWhiteSpace(text))
+                    {
+                        if (DraftRecoverySink?.Invoke(text) == true) {
+                            TryDelete(VoiceTranscriptFile); TryDelete(VoiceIntentFile); TryDelete(VoiceWavFile);
+                            ReportVoiceFailure(Voice.Intent, VoiceFailure.InsertDraft, "previous transcript retained for review");
+                        } else ReportVoiceFailure(Voice.Intent, VoiceFailure.NotTyped, "previous transcript needs recovery");
+                        return false;
+                    }
                 }
             }
             if (OperatingSystem.IsWindows())
@@ -1424,6 +1439,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             TryDelete(VoiceTranscriptFile + ".capped");
             TryDelete(VoiceTranscriptFile + ".signal");
             TryDelete(VoiceStopFile);
+            WriteVoiceIntentSidecar();
 
             // Voice.Press has already recorded the pressed key's intent by the time we are here, so
             // a failure to START can be shown on the right key too.
@@ -1451,7 +1467,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             var args = new List<String>
             {
                 VoiceHelperApp, "--args",
-                "--maxsec", "180",
+                "--maxsec", VoiceCaptureState.RecordingCapSeconds.ToString(CultureInfo.InvariantCulture),
                 "--out", VoiceWavFile,
                 "--stopflag", VoiceStopFile,
                 "--transcript", VoiceTranscriptFile,
@@ -1467,6 +1483,44 @@ namespace Loupedeck.ClaudeConsolePlugin
             WatchCaptureCompletion();
             return true;
         }
+
+        // The capture's intent, beside the transcript it will produce, so a transcript that outlives
+        // its wait can be told apart from a dictation when the next press finds it.
+        private static String VoiceIntentFile => VoiceTranscriptFile + ".intent";
+
+        private void WriteVoiceIntentSidecar()
+        {
+            try { File.WriteAllText(VoiceIntentFile, Voice.Intent.ToString()); }
+            catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: could not record the capture intent"); }
+        }
+
+        private static String ReadSidecar(String path)
+        {
+            try { return File.Exists(path) ? File.ReadAllText(path).Trim() : null; }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// Only a transcript tagged as a desktop dictation may be retained as a draft by a later
+        /// press. Untagged (older helper, failed write) or any other intent — search, project — is not.
+        /// </summary>
+        internal static Boolean LeftoverTranscriptIsDraftable(String intentSidecar) =>
+            Enum.TryParse<VoiceIntent>(intentSidecar, out var intent)
+            && intent is VoiceIntent.Desktop or VoiceIntent.DesktopDraft;
+
+        /// <summary>
+        /// The silence gate's verdict for a Find Chat recording: the helper's sidecar when it could
+        /// evaluate the audio, the plugin's own check when the WAV is still there, and NO verdict
+        /// when neither exists — the helper deletes the WAV after transcribing, so a missing file is
+        /// the normal case, not a validation failure, and the transcript proceeds.
+        /// </summary>
+        internal static Boolean? SearchSignalVerdict(String sidecar, Boolean wavExists, Func<Boolean> wavHasSignal) =>
+            sidecar switch
+            {
+                "signal" => true,
+                "silent" => false,
+                _ => wavExists ? wavHasSignal() : null,
+            };
 
         private void WatchCaptureCompletion()
         {
@@ -1501,6 +1555,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             TryDelete(VoiceTranscriptFile + ".signal");
             TryDelete(VoiceStopFile);
             TryDelete(VoiceReadyFile);
+            WriteVoiceIntentSidecar();
 
             // Each refusal goes through ReportVoiceFailure so the pressed key says why, as the
             // macOS path already did. Here they were a log line and a beep: on QA's machine the
@@ -1529,7 +1584,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             var psi = new ProcessStartInfo(helper) { UseShellExecute = false, CreateNoWindow = true };
             var voiceArguments = new List<String>
             {
-                "--maxsec", "180",
+                "--maxsec", VoiceCaptureState.RecordingCapSeconds.ToString(CultureInfo.InvariantCulture),
                 "--out", VoiceWavFile,
                 "--stopflag", VoiceStopFile,
                 "--transcript", VoiceTranscriptFile,
@@ -2667,6 +2722,13 @@ namespace Loupedeck.ClaudeConsolePlugin
                 PluginLog.Info("BridgeManager: whisper model ready");
                 this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelReady(), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
             }
+            catch (OperationCanceledException)
+            {
+                // Cancelled by an uninstall in progress: nothing failed, and there is no product left
+                // to warn. A '!' in the message centre for a plugin being removed is noise.
+                PluginLog.Info("BridgeManager: whisper model download cancelled");
+                TryDelete(partFile);
+            }
             catch (Exception ex)
             {
                 // A failed download used to be a log line only, and the next press silently started
@@ -2791,7 +2853,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             if (Voice.Phase == VoicePhase.Idle) return true;
             var action = Voice.StopIfCapturing(Voice.Intent, DateTime.UtcNow);
             if (action == VoiceAction.Stop) StopVoiceCaptureThen(_ => { });
-            return SpinWait.SpinUntil(() => Voice.Phase == VoicePhase.Idle, TimeSpan.FromSeconds(25));
+            // As long as the longest transcript wait, plus a margin — a capped recording stopped here
+            // is the worst case.
+            var budget = VoiceCaptureState.TranscriptWaitSeconds(VoiceCaptureState.RecordingCapSeconds) + 10;
+            return SpinWait.SpinUntil(() => Voice.Phase == VoicePhase.Idle, TimeSpan.FromSeconds(budget));
         }
 
         internal void StopSearchCapture()
@@ -2901,7 +2966,10 @@ namespace Loupedeck.ClaudeConsolePlugin
               var intent = Voice.Intent;
               try
               {
-                var deadline = DateTime.UtcNow.AddSeconds(20);
+                // Sized from the recording: whisper's time grows with the audio, and a fixed 20 s
+                // lost every dictation longer than about a minute on slower machines (#139).
+                var waitSeconds = VoiceCaptureState.TranscriptWaitSeconds(Voice.LastRecordedSeconds);
+                var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
                 while (DateTime.UtcNow < deadline)
                 {
                     Thread.Sleep(150);
@@ -2918,6 +2986,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                         TryDelete(VoiceErrorFile);
                         TryDelete(VoiceTranscriptFile);
+                        TryDelete(VoiceIntentFile);
                         this.ReportVoiceFailure(intent, VoiceFailure.FromSidecar(error), error);
                         return;
                     }
@@ -2938,6 +3007,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     }
 
                     TryDelete(VoiceTranscriptFile);
+                    TryDelete(VoiceIntentFile);
 
                     // Whisper labels sounds it could not read as speech: "(gunshot)", "(static)",
                     // "[BLANK_AUDIO]". They are descriptions of noise, not words anyone said, and
@@ -2949,9 +3019,9 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         try
                         {
-                            if (!(File.Exists(VoiceTranscriptFile + ".signal")
-                                ? File.ReadAllText(VoiceTranscriptFile + ".signal") == "signal"
-                                : this.SearchAudioHasSignal(VoiceWavFile)))
+                            var verdict = SearchSignalVerdict(ReadSidecar(VoiceTranscriptFile + ".signal"),
+                                File.Exists(VoiceWavFile), () => this.SearchAudioHasSignal(VoiceWavFile));
+                            if (verdict == false)
                             {
                                 this.ReportVoiceFailure(intent, VoiceFailure.NoSpeech, "search recording was silent");
                                 return;
@@ -2983,8 +3053,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                     return;
                 }
                 // The helper died without writing anything — the denied-microphone case before the
-                // sidecar covered it, or a helper killed mid-run. Nothing will arrive; say so.
-                this.ReportVoiceFailure(intent, VoiceFailure.NoResponse, "transcript not produced within 20s");
+                // sidecar covered it, or a helper killed mid-run. Nothing will arrive; say so. (A
+                // transcript that does arrive later keeps its intent sidecar, so the next desktop
+                // press can still adopt a dictation and will discard anything else.)
+                this.ReportVoiceFailure(intent, VoiceFailure.NoResponse, $"transcript not produced within {waitSeconds:0}s");
               }
               finally
               {

@@ -608,6 +608,18 @@ assert(conversationRows(sidebar, marker: "Pin chat").count == 1)
 assert(conversationMatches(title: "Chat", marker: "Pin chat", nodes: sidebar).count == 1)
 assert(conversationRows(Array(sidebar.prefix(5)), marker: "Pin chat").count == 1)
 assert(conversationRows(sidebar + [row("Chat", 1), row("Pin chat", 2)], marker: "Pin chat").count == 3)
+// A PRESSABLE project row that only contains chat rows is a container, not a conversation: it is
+// never a row itself, its chat is still found by title (once), and a project-only chat under it
+// keeps its row. (The first cut recorded the project as the row and skipped its children.)
+let projectRow = [row("My Project", 1), node("AXList", "", 2), row("Chat", 3), row("Pin chat", 4),
+    node("AXList", "Recents", 0), row("Chat", 1), row("Pin chat", 2)]
+assert(conversationRows(projectRow, marker: "Pin chat").map { $0.node.text } == ["Chat"])
+assert(conversationMatches(title: "My Project", marker: "Pin chat", nodes: projectRow).isEmpty)
+assert(conversationMatches(title: "Chat", marker: "Pin chat", nodes: projectRow).count == 1)
+assert(conversationRows(Array(projectRow.prefix(4)), marker: "Pin chat").map { $0.index } == [2])
+// A project row with its OWN pin control is a conversation in its own right, beside its chats.
+let pinnedProject = [row("My Project", 1), row("Pin chat", 2), node("AXList", "", 2), row("Chat", 3), row("Pin chat", 4)]
+assert(conversationRows(pinnedProject, marker: "Pin chat").map { $0.node.text } == ["My Project", "Chat"])
 print("Issues 144–147: Mac menu, duplicate sidebar, turn routing and voice preferences passed")
 '''
 with tempfile.TemporaryDirectory(prefix='vizhi-ax-tests-') as tmp:

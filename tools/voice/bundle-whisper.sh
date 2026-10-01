@@ -26,7 +26,9 @@ if [ -z "$SRC_CLI" ] || [ ! -x "$SRC_CLI" ]; then
 fi
 echo ">>> source whisper-cli: $SRC_CLI"
 
-OUT="$HOME/.claude/claude-console/whisper-bin"
+# Beside the helper of whichever product build.sh is installing (VOICE_RUNTIME_HOME); the
+# Claude Console home by default, which is also where pack-release.sh takes the bundle from.
+OUT="${VOICE_RUNTIME_HOME:-$HOME/.claude/claude-console}/whisper-bin"
 echo ">>> output dir: $OUT"
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -188,7 +190,7 @@ esac
 # precisely how a broken bundle passed CI and shipped (#24). Denying the Homebrew prefix is what
 # makes this test able to fail. Asserting that a backend was loaded FROM THE BUNDLE is what makes
 # it able to fail for the right reason.
-SMOKE_MODEL="${WHISPER_SMOKE_MODEL:-$HOME/.claude/claude-console/whisper/ggml-base.en.bin}"
+SMOKE_MODEL="${WHISPER_SMOKE_MODEL:-${VOICE_RUNTIME_HOME:-$HOME/.claude/claude-console}/whisper/ggml-base.en.bin}"
 SMOKE_MARKER="$OUT/TRANSCRIPTION_SMOKE_OK"
 rm -f "$SMOKE_MARKER"
 if [ ! -f "$SMOKE_MODEL" ]; then

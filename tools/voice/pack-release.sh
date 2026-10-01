@@ -81,20 +81,13 @@ case "$PRODUCT" in
   *)                                     SHIPS_WINDOWS=0 ;;
 esac
 
-# A release must never inherit whichever helper happens to be installed locally.
+# --- preflight: the whisper bundles must exist and be smoke-tested ------------------------------
+# Checked BEFORE the helper is built and notarized: a missing bundle is a ten-second failure here,
+# and a wasted multi-minute Apple round-trip if it is only found afterwards.
 VOICE_STAGE="$(mktemp -d)"
 trap 'rm -rf "$VOICE_STAGE"' EXIT
-APP="$VOICE_STAGE/ClaudeVoiceHelper.app"
-export SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Ravi Shankar (8LEAJKRS3U)}"
-VOICE_BUILD_APP="$APP" VOICE_PRODUCT="$PRODUCT" VOICE_VERSION="$VER" VOICE_NO_INSTALL=1 bash "$HERE/build.sh"
-ditto -c -k --keepParent "$APP" "$VOICE_STAGE/helper.zip"
-xcrun notarytool submit "$VOICE_STAGE/helper.zip" --keychain-profile "${NOTARY_PROFILE:-claude-console-notary}" --wait
-xcrun stapler staple "$APP"
-
-# --- preflight: the voice payload must exist and be notarized ------------------------------------
 if [ "$SHIPS_VOICE" = "1" ]; then
-  [ -d "$APP" ]  || { echo "error: helper missing ($APP) — run sign-and-notarize.sh first." >&2; exit 1; }
-  [ -d "$WBIN" ] || { echo "error: whisper bundle missing ($WBIN) — run sign-and-notarize.sh first." >&2; exit 1; }
+  [ -d "$WBIN" ] || { echo "error: whisper bundle missing ($WBIN) — run tools/voice/bundle-whisper.sh first." >&2; exit 1; }
   # A whisper bundle that has never transcribed anything must not ship. 2.0.1 went out with a
   # bundle carrying no compute backends: it aborted on every user machine and passed every check
   # here, because this machine's Homebrew supplied the backends it was missing (#24). The marker
@@ -105,7 +98,6 @@ if [ "$SHIPS_VOICE" = "1" ]; then
     echo "       WHISPER_SMOKE_MODEL) — an unverified bundle is how the voice regression shipped." >&2
     exit 1
   fi
-  verify_macos_helper "$APP"
   # The Windows bundle needs the same proof, and it can only be produced on Windows: run
   # whisper-cli.exe against a real recording there, then write the marker beside it.
   if [ "$SHIPS_WINDOWS" = "1" ]; then
@@ -121,12 +113,26 @@ if [ "$SHIPS_VOICE" = "1" ]; then
       echo "error: $WIN_WBIN has not passed a real transcription smoke test on Windows." >&2
       exit 1
     }
-    echo ">>> voice payload OK (helper notarized + stapled, both bundles transcription-verified)"
+  fi
+
+  # --- build, sign and notarize the voice helper from source --------------------------------------
+  # A release must never inherit whichever helper happens to be installed locally (#140): the
+  # helper is compiled from tools/voice with THIS product's identity, prompt and version, then
+  # signed, notarized and stapled in a staging directory no runtime home ever sees.
+  APP="$VOICE_STAGE/ClaudeVoiceHelper.app"
+  export SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Ravi Shankar (8LEAJKRS3U)}"
+  VOICE_BUILD_APP="$APP" VOICE_PRODUCT="$PRODUCT" VOICE_VERSION="$VER" VOICE_NO_INSTALL=1 bash "$HERE/build.sh"
+  ditto -c -k --keepParent "$APP" "$VOICE_STAGE/helper.zip"
+  xcrun notarytool submit "$VOICE_STAGE/helper.zip" --keychain-profile "${NOTARY_PROFILE:-claude-console-notary}" --wait
+  xcrun stapler staple "$APP"
+  verify_macos_helper "$APP"
+  if [ "$SHIPS_WINDOWS" = "1" ]; then
+    echo ">>> voice payload OK (helper built, notarized + stapled; both bundles transcription-verified)"
   else
-    echo ">>> voice payload OK (helper notarized + stapled, macOS bundle transcription-verified; $PRODUCT ships no Windows payload)"
+    echo ">>> voice payload OK (helper built, notarized + stapled; macOS bundle transcription-verified; $PRODUCT ships no Windows payload)"
   fi
 else
-  echo ">>> $PRODUCT ships no voice payload — skipping the notarization preflight"
+  echo ">>> $PRODUCT ships no voice payload — skipping the helper build and notarization"
 fi
 
 # --- build the plugin (Release) ------------------------------------------------------------------

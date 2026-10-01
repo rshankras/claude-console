@@ -11,9 +11,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             var draft = intent == VoiceIntent.DesktopDraft;
             var listening = capture.IsRecording(intent);
             var progress = capture.StartupLabel(intent) ?? (capture.IsTranscribing(intent) ? "Transcribing" : null);
-            if (draft && pending && !listening && progress == null)
+            // A retained draft is shown on EVERY voice key that would act on it: a tap on either key
+            // inserts it (never sends), a hold discards it. A key that silently did something other
+            // than its face promised is how a stale brief ends up in the wrong chat.
+            if (pending && !listening && progress == null)
             {
-                return (VoiceFailure.InsertDraft, "voice_draft", retryHint);
+                return (VoiceFailure.InsertDraft, draft ? "voice_draft" : "voice", retryHint);
             }
             if (draft && failure == "Draft Ready") { return ("Draft Ready", "voice_draft", "SEND DRAFT"); }
             if (draft && failure == "Discarded") { return ("Discarded", "voice_draft", "DICTATE"); }

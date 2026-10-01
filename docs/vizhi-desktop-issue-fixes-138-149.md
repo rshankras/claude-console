@@ -85,11 +85,73 @@ remain separate. Verify a real project chat and intentionally equal chat titles
 on the Mac before release. Multi-turn Changes and dual-start Voice Chat have
 regression fixtures; their full live Mac/keypad acceptance remains to be run.
 
-Uninstall intentionally preserves user settings. A registration receipt can remain
-on disk after a real uninstall; an expired receipt is discarded on the next
-install/load and is never restored. It contains profile data, not audio or pending
-dictation. The public vizhi.dev FAQ has not been edited or published; the product
-README documents the new paths and cleanup behavior.
+Uninstall intentionally preserves user settings. The public vizhi.dev FAQ has not
+been edited or published; the product README documents the new paths and cleanup
+behavior.
 
 The Windows recovery clipboard owns a temporary window before publishing data,
 following the [Win32 clipboard ownership contract](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setclipboarddata).
+
+## Review follow-up, 1 October
+
+A review of the first cut (fifteen findings, four of them release blockers) led to
+these changes. Suite after the changes: 2,432 C# passed, 29 skipped; every shell,
+metadata and AX stage green; all three products build; both helpers compile.
+
+Blockers:
+
+1. **`Load()` aborted on a failed receipt restore**, leaving every key dead until the
+   receipt expired. Restore is now `TryRestoreRegistration`: best effort, never throws,
+   and a receipt that fails to restore is discarded so the failure is not repeated.
+2. **Every upgrade deleted the pending dictation**, because Options+ runs
+   `Uninstall()` on replacement. `Clean` now parks the dictation beside the
+   registration receipt; a reinstall within ten minutes takes it back
+   (`RestoreRuntimeCache`, run in the plugin constructor before the draft file is
+   read). The speech model is deliberately not parked: keeping it alive past an
+   uninstall would need a timer process the plugin cannot own once it is gone, and
+   a lingering process after an uninstall is its own finding. After an upgrade the
+   first voice press copies the model from a sibling product or downloads it again,
+   with the download face showing. Decided with the owner on 1 October against the
+   SDK contract (the service cannot tell an upgrade from an uninstall).
+   Same decision: the runtime home is now the SDK's own plugin data directory
+   (`Plugin.GetPluginDataDirectory()`, `PluginData/VizhiDesktop` under the service
+   tree), as the Actions SDK documents and Logitech's plugins practise; the product
+   hands it to `ProductRuntime.SdkHome` at construction.
+3. **The 180 s recording cap kept a 20 s transcript wait.** The wait is now sized from
+   the recording (`TranscriptWaitSeconds`: 20 s plus half the recorded seconds, 110 s
+   at the cap), `StaleAfter` is derived from cap plus wait, and the uninstall wait
+   uses the same budget.
+4. **`conversationRows` skipped a matched row's subtree**, so a chat nested under a
+   pressable project row was unfindable. A row now has to OWN its marker (outside
+   nested rows' subtrees); containers are never rows, their chats are visited, and
+   the nesting rule covers both a pressable project row and a second list.
+
+Also fixed:
+
+5. A leftover transcript was adopted as a draft whatever intent produced it. The
+   capture's intent is written to a `.intent` sidecar at start; only `Desktop` /
+   `DesktopDraft` leftovers are retained, anything else is discarded as before.
+6. Dictate & Send silently became a draft-insert key. Its face now shows `Insert
+   Draft` with the retry hint while a draft is pending, and it has the same
+   hold-to-discard gesture as Dictate.
+7. The voice helper deleted the WAV but wrote `.signal` only when it could judge the
+   audio. It now always writes `signal`, `silent` or `unknown`, and the plugin's
+   `SearchSignalVerdict` yields no verdict (transcript proceeds) when neither the
+   sidecar nor the WAV can decide.
+8. A sideloaded registration was written but never adopted, with no notice.
+   `RegisterIfMissing` returns true only when it scheduled a restart; otherwise the
+   message centre says the layout appears after the next service start
+   (`BridgeNotice.LayoutAwaitsServiceRestart`), which also needed `Notify` wired in
+   the Desktop plugin — it never was, so the model-download notices were dropped too.
+9. `DesktopDraftRecovery.Save` empties the file when a delete fails, so a consumed
+   draft cannot come back after a reload.
+10. The stale-capture disk probe runs before `VoiceCaptureState` takes its lock.
+11. The content-keyed workflow cache is gone; the migration fix is the #149 fix.
+12. A download cancelled by uninstall no longer reports a failure.
+13. The Windows voice helper deletes the stop flag and the WAV in separate `try`s.
+14. `tools/voice/build.sh` installs into the product's runtime home (`VOICE_PRODUCT`)
+    and `bundle-whisper.sh` follows it (`VOICE_RUNTIME_HOME`).
+15. `pack-release.sh` checks the whisper bundles before the notarization round-trip.
+
+Still owed: the Windows deferred-cleanup command and the Windows helper changes are
+compiled but not run on hardware; the live checks listed above are unchanged.

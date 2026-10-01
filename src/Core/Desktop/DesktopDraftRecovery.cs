@@ -47,14 +47,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             if (_path == null) return;
             try {
-                if (_text == null) { File.Delete(_path); return; }
+                if (_text == null)
+                {
+                    // The memory copy is already gone. A delete that fails (a scanner holding the file,
+                    // the directory mid-removal) must not leave the old draft to come back on the next
+                    // load: overwrite it with an empty document, which the constructor ignores.
+                    try { File.Delete(_path); }
+                    catch (Exception ex) when (File.Exists(_path))
+                    {
+                        PluginLog.Warning(ex, "Desktop draft file could not be deleted; emptied instead");
+                        File.WriteAllText(_path, "[]");
+                    }
+                    return;
+                }
                 PrivateFiles.EnsurePrivateDirectory(Path.GetDirectoryName(_path));
                 var temp = _path + ".tmp-" + Guid.NewGuid().ToString("N");
                 try {
                     File.WriteAllText(temp, JsonSerializer.Serialize(new[] { _text, _error }));
                     PrivateFiles.EnsurePrivateFile(temp); File.Move(temp, _path, true);
                 } finally { if (File.Exists(temp)) File.Delete(temp); }
-            } catch { PluginLog.Warning("Desktop draft persistence failed; draft remains in memory"); }
+            } catch (Exception ex) {
+                PluginLog.Warning(ex, _text == null
+                    ? "Desktop draft file could not be cleared; a consumed draft may reappear after a reload"
+                    : "Desktop draft persistence failed; the draft is held in memory only until the next reload");
+            }
         }
 
         internal Boolean Retain(String text) => Retain(text, null);

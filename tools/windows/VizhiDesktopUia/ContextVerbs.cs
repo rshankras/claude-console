@@ -124,7 +124,10 @@ internal static partial class Program
 
     private static String CaptureDirectory()
     {
-        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vizhi Desktop", "desktop-captures");
+        // The plugin's SDK data directory (ProductRuntime.Home on Windows): captures live with the
+        // rest of the product's files and go with them on uninstall.
+        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Logi", "LogiPluginService", "PluginData", "VizhiDesktop", "desktop-captures");
         Directory.CreateDirectory(directory);
         return directory;
     }

@@ -37,11 +37,18 @@ echo "built: $APP"
 
 if [ "${VOICE_NO_INSTALL:-0}" = "1" ]; then exit 0; fi
 
-# Install to the plugin's runtime home (next to the whisper model + hooks). The plugin launches
-# the app from here, NOT from the source tree. NOTE: recompiling changes the ad-hoc code hash, so
-# macOS will re-prompt for Microphone permission the next time the Voice key is used. (A real
-# Developer-ID signature would keep the grant stable across rebuilds — for the shipping build.)
-RUNTIME="$HOME/.claude/claude-console/ClaudeVoiceHelper.app"
+# Install to the PRODUCT's runtime home (next to the whisper model + hooks) — the same place
+# BridgeManager.VoiceHelperApp resolves for that product (ProductRuntime.For), or a dev-linked
+# plugin looks for a helper that was installed somewhere else. The plugin launches the app from
+# here, NOT from the source tree. NOTE: recompiling changes the ad-hoc code hash, so macOS will
+# re-prompt for Microphone permission the next time the Voice key is used. (A real Developer-ID
+# signature would keep the grant stable across rebuilds — for the shipping build.)
+case "${VOICE_PRODUCT:-ClaudeConsole}" in
+  VizhiDesktop) RUNTIME_HOME="$HOME/Library/Application Support/Logi/LogiPluginService/PluginData/VizhiDesktop" ;;
+  VizhiCodex)   RUNTIME_HOME="$HOME/.codex/vizhi-runtime" ;;
+  *)            RUNTIME_HOME="$HOME/.claude/claude-console" ;;
+esac
+RUNTIME="$RUNTIME_HOME/ClaudeVoiceHelper.app"
 echo ">>> installing to $RUNTIME"
 mkdir -p "$(dirname "$RUNTIME")"
 rm -rf "$RUNTIME"
@@ -53,7 +60,7 @@ echo "installed: $RUNTIME"
 # whisper-cli, and the plugin downloads the speech model itself on first use.)
 if command -v whisper-cli >/dev/null 2>&1; then
   echo ">>> bundling self-contained whisper-cli"
-  bash "$HERE/bundle-whisper.sh"
+  VOICE_RUNTIME_HOME="$RUNTIME_HOME" bash "$HERE/bundle-whisper.sh"
 else
   echo ">>> skipping whisper bundle (no whisper-cli to vendor; 'brew install whisper-cpp' to enable)"
 fi

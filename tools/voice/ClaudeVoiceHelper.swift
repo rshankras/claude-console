@@ -187,9 +187,16 @@ func recordingHasSignal(_ url: URL) -> Bool? {
     }
     return count > 0 && energy / Double(count) > 0.000001
 }
-if let signal = recordingHasSignal(url) {
-    try? (signal ? "signal" : "silent").write(toFile: transcriptPath + ".signal", atomically: true, encoding: .utf8)
+// Always written, because the WAV is always removed next: a gate that could not evaluate the
+// audio says so ("unknown"), and the plugin then proceeds with the transcript instead of opening
+// a file that no longer exists and reporting the search as unvalidated.
+let verdict: String
+switch recordingHasSignal(url) {
+case .some(true): verdict = "signal"
+case .some(false): verdict = "silent"
+case .none: verdict = "unknown"
 }
+try? verdict.write(toFile: transcriptPath + ".signal", atomically: true, encoding: .utf8)
 try? fm.removeItem(at: url)
 
 try? text.write(toFile: transcriptPath, atomically: true, encoding: .utf8)

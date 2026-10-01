@@ -20,6 +20,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     {
         private readonly ListeningFace _face;
         private readonly FailureFace _fail;
+        private readonly DesktopVoiceDraftCommand.ButtonHandler _buttons = new();
         public DesktopVoiceCommand()
             : base(displayName: "Dictate & Send", description: "Speak a prompt — press to start, press again to send it to the app", groupName: "Agent")
         {
@@ -50,7 +51,25 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 }
                 this.ActionImageChanged();
             });
+
+            // A retained draft (a failed send, a failed insertion, one restored from disk) changes
+            // what this key does, so it changes what the key SHOWS — and gets the same hold-to-discard
+            // the Dictate key has, or a layout without that key could never clear it.
+            DesktopServices.OnDraftChanged(() => this.ActionImageChanged());
         }
+
+        // Handle both gestures ourselves, like the Dictate key: default SDK dispatch would act on
+        // button-down, before it knew a long press was coming. A tap runs only on release.
+        protected override Boolean ProcessButtonEvent2(String actionParameter, DeviceButtonEvent2 buttonEvent) =>
+            _buttons.Handle(buttonEvent.EventType,
+                () => DesktopServices.Declared
+                    ? DesktopServices.DraftRecovery.DiscardableId(BridgeManager.Instance.Voice.Phase) : null,
+                () => this.RunCommand(actionParameter),
+                id =>
+                {
+                    if (DesktopServices.Declared)
+                        DesktopServices.Run(() => DesktopServices.DraftRecovery.Discard(id, BridgeManager.Instance.Voice.Phase));
+                });
 
         protected override void RunCommand(String actionParameter)
         {
@@ -68,6 +87,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             // One door for every voice key. Whether this press starts, stops, or is refused — and
             // where a stopped capture's transcript is routed — is the engine's call, not this key's.
             _fail.Clear();
+            // The face says "Insert Draft" whenever this branch is taken (DesktopDictationFace), so
+            // a tap does what it shows: inserts the retained words for review. Never sends them.
             if (DesktopServices.DraftRecovery.Pending && BridgeManager.Instance.Voice.Phase == VoicePhase.Idle)
             {
                 var result = DesktopServices.DraftRecovery.Insert();
@@ -85,8 +106,10 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             if (BridgeManager.Instance.VoiceModelDownloading)
                 return KeyImage.RenderIntentTile(imageSize, "Downloading", "voice", "VOICE MODEL · 148 MB");
+            var pending = DesktopServices.Declared && DesktopServices.DraftRecovery.Pending;
             var face = DesktopDictationFace.For(VoiceIntent.Desktop, BridgeManager.Instance.Voice,
-                _fail.IsActive ? _fail.Text : null, _face.Icon);
+                _fail.IsActive ? _fail.Text : null, _face.Icon, pending,
+                pending ? DesktopServices.DraftRecovery.RetryHint : "TAP TO RETRY");
             return KeyImage.RenderIntentTile(imageSize, face.Label, face.Icon, face.Footer);
         }
     }

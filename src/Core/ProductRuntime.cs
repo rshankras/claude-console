@@ -4,13 +4,38 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System.IO;
 
     // Product-owned storage. No migration ever changes the source product's files.
+    //
+    // Vizhi Desktop keeps its files where the Logi Actions SDK says a plugin's data goes:
+    // Plugin.GetPluginDataDirectory(), i.e. <Logi Plugin Service data>/PluginData/VizhiDesktop —
+    // the same drawer Logitech's own Spotify and Zoom plugins use. The product hands the SDK's
+    // answer to SdkHome at construction; For() reproduces the conventional path for tests and
+    // for the sibling-product scan that reuses an already-downloaded speech model. The terminal
+    // products stay beside their agent's own configuration on purpose: the agent's hooks and
+    // scripts run from there without the plugin.
     internal static class ProductRuntime
     {
-        internal static String Home => BridgeManager.HomeOverride == null && OperatingSystem.IsWindows() && IpcPaths.ProductSlug == "vizhi-desktop"
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vizhi Desktop") : For(BridgeManager.HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), IpcPaths.ProductSlug, OperatingSystem.IsWindows());
+        /// <summary>The directory the SDK reported for this plugin's data; null outside a running plugin.</summary>
+        internal static String SdkHome { get; set; }
+
+        internal static String Home
+        {
+            get
+            {
+                if (SdkHome != null && BridgeManager.HomeOverride == null) return SdkHome;
+                if (BridgeManager.HomeOverride == null && OperatingSystem.IsWindows() && IpcPaths.ProductSlug == "vizhi-desktop")
+                {
+                    return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "Logi", "LogiPluginService", "PluginData", "VizhiDesktop");
+                }
+                return For(BridgeManager.HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    IpcPaths.ProductSlug, OperatingSystem.IsWindows());
+            }
+        }
+
         internal static String For(String home, String product, Boolean windows) => product switch
         {
-            "vizhi-desktop" => Path.Combine(home, windows ? "AppData/Local" : "Library/Application Support", "Vizhi Desktop"),
+            "vizhi-desktop" => Path.Combine(home, windows ? "AppData/Local" : "Library/Application Support",
+                "Logi", "LogiPluginService", "PluginData", "VizhiDesktop"),
             "codex-console" => Path.Combine(home, ".codex", "vizhi-runtime"),
             _ => Path.Combine(home, ".claude", "claude-console"),
         };
