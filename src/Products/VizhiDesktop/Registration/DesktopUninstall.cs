@@ -59,8 +59,7 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
                         var app = Path.Combine(device, "@_vizhidesktop");
                         var info = Path.Combine(app, "ApplicationInfo.json");
                         if (!File.Exists(info)) continue;
-                        var node = JsonNode.Parse(File.ReadAllText(info));
-                        if ((String)node?[RegistrationCleanup.OwnerKey] == "VizhiDesktop")
+                        if (IsOurs(JsonNode.Parse(File.ReadAllText(info))))
                         {
                             // Keep the registration (custom AND deliberately deleted profiles, #138)
                             // for the replacement window, so an upgrade does not reset the layout.
@@ -70,7 +69,10 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
                             if (Directory.Exists(backup)) Directory.Delete(backup, true);
                             CopyTree(app, backup);
                             WriteStamp(receipt, now);
+                            var profiles = Path.Combine(app, "Profiles");
+                            var count = Directory.Exists(profiles) ? Directory.GetDirectories(profiles).Length : 0;
                             Directory.Delete(app, true);
+                            PluginLog.Info($"DesktopUninstall: parked the {Path.GetFileName(device)} registration with {count} profile(s) for a reinstall within {ReplacementWindow.TotalMinutes:0} min");
                         }
                     }
                 return true;
@@ -120,6 +122,15 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
             }
         }
 
+        /// <summary>
+        /// Ours by either mark. Options+ rewrites ApplicationInfo.json on install and drops the
+        /// <c>selfRegisteredBy</c> stamp; <c>nativePluginName</c> survives (the same rule
+        /// SelfRegistration applies). Gating on the stamp alone parked nothing on the 1 Oct device pass.
+        /// </summary>
+        internal static Boolean IsOurs(JsonNode info) =>
+            (String)info?[RegistrationCleanup.OwnerKey] == "VizhiDesktop"
+            || (String)info?["nativePluginName"] == "VizhiDesktop";
+
         private static void CopyTree(String source, String target)
         {
             if (new DirectoryInfo(source).LinkTarget != null) throw new IOException("Refusing linked registration");
@@ -152,6 +163,13 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
             }
         }
 
+        /// <summary>
+        /// Put a parked registration back. The service re-registers the application from the new
+        /// package BEFORE the plugin's Install()/Load() run, so the target usually exists already:
+        /// the parked profiles and marker are then MERGED into it — a profile is copied only when
+        /// the target lacks it, nothing there is overwritten. Skipping an existing target and
+        /// discarding the receipt, as the first cut did, threw the user's profiles away.
+        /// </summary>
         internal static void RestoreRegistration(String runtime, String appsRoot, DateTime? utcNow = null)
         {
             var receipt = RegistrationReceipt(runtime);
@@ -161,15 +179,39 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
             {
                 var source = Path.Combine(device, "@_vizhidesktop");
                 var target = Path.Combine(appsRoot, Path.GetFileName(device), "@_vizhidesktop");
-                if (!Directory.Exists(source) || Directory.Exists(target)) continue;
-                var temporary = target + ".restore-" + Guid.NewGuid().ToString("N");
-                try
+                if (!Directory.Exists(source)) continue;
+                if (!Directory.Exists(target))
                 {
-                    CopyTree(source, temporary);
-                    Directory.CreateDirectory(Path.GetDirectoryName(target));
-                    Directory.Move(temporary, target);
+                    var temporary = target + ".restore-" + Guid.NewGuid().ToString("N");
+                    try
+                    {
+                        CopyTree(source, temporary);
+                        Directory.CreateDirectory(Path.GetDirectoryName(target));
+                        Directory.Move(temporary, target);
+                    }
+                    finally { if (Directory.Exists(temporary)) Directory.Delete(temporary, true); }
+                    PluginLog.Info($"DesktopUninstall: restored the {Path.GetFileName(device)} registration after a reinstall");
+                    continue;
                 }
-                finally { if (Directory.Exists(temporary)) Directory.Delete(temporary, true); }
+                var restored = 0;
+                var parkedProfiles = Path.Combine(source, "Profiles");
+                if (Directory.Exists(parkedProfiles))
+                {
+                    var liveProfiles = Path.Combine(target, "Profiles");
+                    Directory.CreateDirectory(liveProfiles);
+                    foreach (var profile in Directory.GetDirectories(parkedProfiles))
+                    {
+                        var destination = Path.Combine(liveProfiles, Path.GetFileName(profile));
+                        if (Directory.Exists(destination)) continue;
+                        var temporary = destination + ".restore-" + Guid.NewGuid().ToString("N");
+                        try { CopyTree(profile, temporary); Directory.Move(temporary, destination); restored++; }
+                        finally { if (Directory.Exists(temporary)) Directory.Delete(temporary, true); }
+                    }
+                }
+                var marker = Path.Combine(source, ".vizhi-packaged-profile");
+                if (File.Exists(marker) && !File.Exists(Path.Combine(target, ".vizhi-packaged-profile")))
+                    File.Copy(marker, Path.Combine(target, ".vizhi-packaged-profile"));
+                PluginLog.Info($"DesktopUninstall: merged {restored} parked profile(s) into the {Path.GetFileName(device)} registration the service re-created");
             }
             Directory.Delete(receipt, true);
         }

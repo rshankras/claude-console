@@ -283,6 +283,57 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(("Dictate & Send", "voice", "SEND"), idle);
         }
 
+        // ---- device pass 1 Oct: what the Options+ replacement actually does ------------------------
+
+        [Fact]
+        public void Uninstall_parks_a_registration_that_only_nativePluginName_marks_as_ours()
+        {
+            // Options+ rewrites ApplicationInfo.json on install and drops selfRegisteredBy; the stamp
+            // was the only gate, so nothing was parked on the device.
+            using var home = new TempHome(); var runtime = Path.Combine(home.Dir, "Desktop"); var apps = Path.Combine(home.Dir, "apps");
+            var app = Path.Combine(apps, "70", "@_vizhidesktop");
+            Directory.CreateDirectory(Path.Combine(app, "Profiles", "CUSTOM")); File.WriteAllText(Path.Combine(app, "Profiles", "CUSTOM", "ProfileInfo.json"), "{}");
+            File.WriteAllText(Path.Combine(app, "ApplicationInfo.json"), "{\"nativePluginName\":\"VizhiDesktop\",\"hasNativePlugin\":true}");
+            File.WriteAllText(Path.Combine(app, ".vizhi-packaged-profile"), "STOCK");
+            Assert.True(DesktopUninstall.Clean(runtime, Path.Combine(home.Dir, "ipc"), apps, DateTime.UtcNow));
+            Assert.False(Directory.Exists(app));
+            Assert.True(File.Exists(Path.Combine(DesktopUninstall.RegistrationReceipt(runtime), "70", "@_vizhidesktop", "Profiles", "CUSTOM", "ProfileInfo.json")));
+            // Someone else's registration is never touched.
+            var other = Path.Combine(apps, "70", "@_vizhidesktop"); Directory.CreateDirectory(other);
+            File.WriteAllText(Path.Combine(other, "ApplicationInfo.json"), "{\"nativePluginName\":\"SomeoneElse\"}");
+            Assert.True(DesktopUninstall.Clean(runtime, Path.Combine(home.Dir, "ipc"), apps, DateTime.UtcNow));
+            Assert.True(Directory.Exists(other));
+        }
+
+        [Fact]
+        public void Reinstall_merges_parked_profiles_into_the_registration_the_service_re_created()
+        {
+            // The service re-registers the app from the new package before Install()/Load() run, keeping
+            // only the active profile; the parked ones must be merged in, never overwrite what is there.
+            using var home = new TempHome(); var runtime = Path.Combine(home.Dir, "Desktop"); var apps = Path.Combine(home.Dir, "apps");
+            var app = Path.Combine(apps, "70", "@_vizhidesktop");
+            foreach (var p in new[] { "ACTIVE", "CUSTOM1", "CUSTOM2" })
+            { Directory.CreateDirectory(Path.Combine(app, "Profiles", p)); File.WriteAllText(Path.Combine(app, "Profiles", p, "ProfileInfo.json"), "parked " + p); }
+            File.WriteAllText(Path.Combine(app, "ApplicationInfo.json"), "{\"nativePluginName\":\"VizhiDesktop\"}");
+            File.WriteAllText(Path.Combine(app, ".vizhi-packaged-profile"), "STOCK");
+            var now = DateTime.UtcNow;
+            Assert.True(DesktopUninstall.Clean(runtime, Path.Combine(home.Dir, "ipc"), apps, now));
+
+            // What the service leaves behind after the replacement: a fresh ApplicationInfo, the active profile only.
+            Directory.CreateDirectory(Path.Combine(app, "Profiles", "ACTIVE"));
+            File.WriteAllText(Path.Combine(app, "Profiles", "ACTIVE", "ProfileInfo.json"), "live ACTIVE (rewritten by the service)");
+            File.WriteAllText(Path.Combine(app, "ApplicationInfo.json"), "{\"nativePluginName\":\"VizhiDesktop\",\"defaultProfileName\":\"ACTIVE\"}");
+
+            Assert.True(DesktopUninstall.TryRestoreRegistration(runtime, apps, now.AddMinutes(3)));
+
+            Assert.Equal("live ACTIVE (rewritten by the service)", File.ReadAllText(Path.Combine(app, "Profiles", "ACTIVE", "ProfileInfo.json")));
+            Assert.Equal("parked CUSTOM1", File.ReadAllText(Path.Combine(app, "Profiles", "CUSTOM1", "ProfileInfo.json")));
+            Assert.Equal("parked CUSTOM2", File.ReadAllText(Path.Combine(app, "Profiles", "CUSTOM2", "ProfileInfo.json")));
+            Assert.Equal("STOCK", File.ReadAllText(Path.Combine(app, ".vizhi-packaged-profile")));
+            Assert.Contains("\"defaultProfileName\":\"ACTIVE\"", File.ReadAllText(Path.Combine(app, "ApplicationInfo.json")));   // the service's document is kept
+            Assert.False(Directory.Exists(DesktopUninstall.RegistrationReceipt(runtime)));
+        }
+
         [Fact]
         public void An_emptied_draft_file_restores_nothing()
         {
