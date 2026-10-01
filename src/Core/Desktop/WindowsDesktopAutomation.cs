@@ -220,7 +220,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             if (value != null) args.AddRange(new[] { "--value", value });
             if (title != null) args.AddRange(new[] { "--title", title });
             if (origin != null) args.AddRange(new[] { "--origin", origin });
-            return DesktopSearchSnapshot.Parse(this.Runner(args, 5000));
+            // Opening presses Search, waits for the field and scans three times; the first
+            // morning run after the laptop slept took over 5 s and was killed, which left the
+            // keypad on Search unavailable while the app's search box stood open.
+            return DesktopSearchSnapshot.Parse(this.Runner(args, 10000));
         }
 
         public Boolean PressConversation(String title)

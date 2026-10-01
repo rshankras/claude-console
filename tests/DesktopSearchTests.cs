@@ -71,10 +71,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("ChatGPT", search.Mode);
 
             var windows = new WindowsDesktopAutomation(new OpenAiDesktopAdapter());
-            List<String> args = null;
-            windows.Runner = (a, _) => { args = a; return "{\"ok\":true,\"target\":\"x\",\"query\":\"\",\"results\":[]}"; };
+            List<String> args = null; var budget = 0;
+            windows.Runner = (a, timeout) => { args = a; budget = timeout; return "{\"ok\":true,\"target\":\"x\",\"query\":\"\",\"results\":[]}"; };
             Assert.True(windows.Search("open", mode: "Codex").Available);
             Assert.Equal("Codex", args[args.IndexOf("--expect-mode") + 1]);
+            Assert.True(budget >= 10000);   // a cold open on the laptop ran past the macOS 5 s budget
         }
 
         [Fact]
