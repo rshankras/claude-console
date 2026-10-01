@@ -35,8 +35,13 @@ internal static class Win32
         return length > 0 ? buffer.ToString(0, length) : "";
     }
 
-    public static Boolean IsCloaked(IntPtr hwnd) =>
-        DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out var cloaked, sizeof(Int32)) == 0 && cloaked != 0;
+    // DWM_CLOAKED_SHELL (2) is the shell hiding a window that lives on another virtual desktop;
+    // the app or its owner cloaking it (1, 4) is a window nobody can switch to.
+    private const Int32 DWM_CLOAKED_SHELL = 0x2;
+
+    public static Boolean IsCloaked(IntPtr hwnd, Boolean otherDesktopCounts = true) =>
+        DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out var cloaked, sizeof(Int32)) == 0
+        && (otherDesktopCounts ? cloaked != 0 : (cloaked & ~DWM_CLOAKED_SHELL) != 0);
 
     public static Int32 PidOf(IntPtr hwnd)
     {
@@ -46,10 +51,16 @@ internal static class Win32
 
     public static Int32 ForegroundPid() => PidOf(GetForegroundWindow());
 
-    /// <summary>A top-level window a user could switch to: visible, unowned, uncloaked, titled, not a tool window.</summary>
-    public static Boolean IsAppWindow(IntPtr hwnd) =>
+    /// <summary>
+    /// A top-level window a user could switch to: visible, unowned, uncloaked, titled, not a
+    /// tool window. The app's own windows count on every virtual desktop — the tree is served
+    /// there and a press brings the desktop along (device pass, 2026-10-01) — while a window
+    /// "behind" the app is only one on the same desktop.
+    /// </summary>
+    public static Boolean IsAppWindow(IntPtr hwnd, Boolean anyDesktop = false) =>
         IsWindowVisible(hwnd) && GetWindow(hwnd, GW_OWNER) == IntPtr.Zero
-        && (GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64() & WS_EX_TOOLWINDOW) == 0 && !IsCloaked(hwnd)
+        && (GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64() & WS_EX_TOOLWINDOW) == 0
+        && !IsCloaked(hwnd, otherDesktopCounts: !anyDesktop)
         && WindowTitle(hwnd).Length > 0;
 
     /// <summary>Every top-level window, front to back.</summary>

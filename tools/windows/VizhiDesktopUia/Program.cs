@@ -227,7 +227,7 @@ internal static partial class Program
     /// </summary>
     private static List<Target> AppWindows(HashSet<Int32> pids) =>
         Win32.TopLevelWindows()
-            .Where(hwnd => pids.Contains(Win32.PidOf(hwnd)) && Win32.IsAppWindow(hwnd))
+            .Where(hwnd => pids.Contains(Win32.PidOf(hwnd)) && Win32.IsAppWindow(hwnd, anyDesktop: true))
             .Select(hwnd => new Target(hwnd, Win32.PidOf(hwnd), Win32.WindowTitle(hwnd)))
             .ToList();
 
@@ -410,7 +410,8 @@ internal static partial class Program
                 ["pid"] = Win32.PidOf(w.Hwnd),
                 ["process"] = ProcessName(Win32.PidOf(w.Hwnd)),
                 ["class"] = Win32.WindowClass(w.Hwnd),
-                ["appWindow"] = Win32.IsAppWindow(w.Hwnd),
+                ["appWindow"] = Win32.IsAppWindow(w.Hwnd, anyDesktop: true),
+                ["otherDesktop"] = Win32.IsCloaked(w.Hwnd) && !Win32.IsCloaked(w.Hwnd, otherDesktopCounts: false),
             }).ToList();
         return Emit(new Dictionary<String, Object?> { ["windows"] = windows });
     }
