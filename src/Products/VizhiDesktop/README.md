@@ -422,5 +422,9 @@ first voice press after an upgrade copies it from Claude Console or Vizhi for Co
 them has it, and downloads it again otherwise, saying so on the key. Claude Console and Vizhi for
 Codex files are left untouched.
 
-Deleting the current packaged profile is respected. Profile registration and upgrades take
-effect on the next normal service restart; Desktop does not restart Options+ or LPS itself.
+Deleting the current packaged profile is respected — by restarts, by disable/enable and by an
+upgrade. To get *Vizhi Home* back, download `VizhiDesktop-Home.lp5` from
+[vizhi.dev/layouts](https://vizhi.dev/layouts/) and import it in Options+ with Vizhi Desktop
+selected (⋯ → Import Profile); Options+ gives the import its own identity, so it sits beside your
+other profiles. Profile registration and upgrades take effect on the next normal service restart;
+Desktop does not restart Options+ or LPS itself.
