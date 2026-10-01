@@ -1,7 +1,8 @@
-## Vizhi Desktop [Unreleased] — the Windows port
+## Vizhi Desktop [1.1.0] — Unreleased — Windows, and the 1.0.0 QA fixes
 
 Packaged for Windows (`pluginFolderWin`, the toolkit and the UI Automation helper, signed at
-pack time); the device pass with the installed package is what remains before a release.
+pack time), and the fixes for everything Logitech QA found in 1.0.0 (#138–#149); the device
+pass with the installed package (docs/vizhi-desktop-1.1.0-device-pass.md) is what remains.
 
 ### Added
 - **Windows: the app is found and read.** The Store package OpenAI.Codex ("ChatGPT",
@@ -43,6 +44,41 @@ pack time); the device pass with the installed package is what remains before a 
   in your editor. The chat keys skip that, since they show the chat on purpose.
 - **Windows: a locked screen or hidden window reads Hidden, not resolved.** Chromium keeps the
   document element while it serves no page; an empty document is not a surface.
+
+### Fixed
+- **Vizhi Desktop keeps its files in its own place — the one the Logi SDK provides** (#141,
+  #142, #143). 1.0.0 wrote its helper, settings, screenshots and the 148 MB speech model into
+  Claude Console's `~/.claude/claude-console` folder, and left them there after an uninstall.
+  They now live in `PluginData/VizhiDesktop` under the Logi Plugin Service's own data directory
+  (`Plugin.GetPluginDataDirectory()`), where Logitech's plugins keep theirs; the first load
+  copies your existing settings across without touching the originals. Uninstall removes the
+  runtime, the temporary IPC directory and the registration; a small `VizhiDesktop Settings`
+  backup keeps your configuration for a reinstall. An upgrade keeps an unsent dictation and your
+  profiles; the speech model is copied back from Claude Console or Vizhi for Codex when one of
+  them has it, and downloaded again otherwise — with the download shown on the key and in
+  Options+, where 1.0.0 showed nothing.
+- **A deleted "Vizhi Home" profile stays deleted, and the plugin never restarts Logi's
+  services** (#138). 1.0.0 re-installed the layout on every load and killed the Logi Plugin
+  Service and the Options+ agent to make it show. Now a layout you removed is respected, and a
+  registration the plugin writes itself (sideloads only) says in Options+ that it appears after
+  the service next starts.
+- **Dictation is kept when it cannot be delivered** (#139). A failed Dictate & Send retains the
+  words as a draft AND copies them to the clipboard; the key shows *Insert Draft* with what to
+  do next (*OPEN APP · TAP TO RETRY*, *FOCUS CHAT INPUT*) instead of *HOLD TO DISCARD*; a tap
+  inserts for review and never sends; a hold discards. Recording runs to 180 s, the key says
+  *Recording ended* at the cap, and the transcript wait grows with the recording so a long
+  dictation is no longer lost on a slower Mac or laptop. The raw audio is deleted after
+  transcription on both platforms. A retained draft survives a plugin reload.
+- **The microphone prompt and the voice helper name Vizhi Desktop** (#140). Every package had
+  shipped the same stale Claude Console helper copied from the packing machine; the helper is
+  now built from source for each product, with its own identity and prompt, and the package
+  check refuses a mismatch. Allow the microphone once more after upgrading — the identity is new.
+- **Workflow settings are no longer rewritten on every load** (#149): two migrations undid each
+  other five times per load.
+- **Find Chat shows the app's results, chats only, with whole titles** (#144); **a chat inside
+  a project is one chat** for Copy Reply and the Home cards (#145); **View Changes opens from
+  the latest edited reply** when the summary row is gone (#146); **Voice Chat starts with the
+  composer's button** when the sidebar shows a second one (#147).
 
 ## Vizhi Desktop [1.0.0] — 2026-09-29
 
