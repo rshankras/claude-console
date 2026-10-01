@@ -48,9 +48,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         internal static Boolean Open(IDesktopAutomation automation, IDesktopAppAdapter app, DesktopSearch search)
         {
             var state = automation.Status();
-            if (!state.SurfaceAvailable) return false;
+            if (!state.SurfaceAvailable) { PluginLog.Info("FindChatDynamicFolder: closed, the app's surface is unavailable"); return false; }
             var mode = app.ModeNames.FirstOrDefault(m => String.Equals(m, state.Mode, StringComparison.OrdinalIgnoreCase));
-            if (mode == null) return false;
+            if (mode == null) { PluginLog.Info("FindChatDynamicFolder: closed, the app's mode is unreadable"); return false; }
             // The search is pinned to the mode it opened in. Keep the retry/Use App page
             // visible if the app's layout is unsupported.
             search.Begin(mode);
@@ -68,17 +68,18 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             search.Changed -= OnChanged;
             search.Changed += OnChanged;
             _timer?.Dispose(); _timer = null;
+            PluginLog.Info("FindChatDynamicFolder: opened from the keypad");
             if (!DesktopServices.Run(() =>
             {
                 if (generation != Interlocked.Read(ref _generation)) return;
                 var opened = Open(automation, app, search);
-                if (generation != Interlocked.Read(ref _generation)) { search.End(); return; }
+                if (generation != Interlocked.Read(ref _generation)) { PluginLog.Info("FindChatDynamicFolder: left before the app answered"); search.End(); return; }
                 if (!opened) { this.Close(); return; }
                 lock (_timerGate)
                     if (generation == Interlocked.Read(ref _generation))
                         _timer = new Timer(_ => PollSearch(generation), null, 1000, Timeout.Infinite);
                 this.ButtonActionNamesChanged();
-            })) { search.Changed -= OnChanged; this.Close(); }
+            })) { PluginLog.Info("FindChatDynamicFolder: closed, another action is running"); search.Changed -= OnChanged; this.Close(); }
             return true;
         }
 
