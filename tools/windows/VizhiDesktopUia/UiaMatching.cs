@@ -249,15 +249,21 @@ internal static class UiaMatching
         return node.Selected;
     }
 
-    /// <summary>Rows that carry the adapter's sidebar marker in their own subtree.</summary>
+    /// <summary>
+    /// Rows that carry the adapter's sidebar marker in their own subtree. A chat that belongs
+    /// to a project is listed twice — under its project, where its row sits inside the
+    /// project's own list item, and again in Recents — and both rows are marked current. The
+    /// copy under the project is dropped whenever Recents lists the same title, so one chat is
+    /// one row; a project chat Recents no longer shows keeps its only row.
+    /// </summary>
     public static IEnumerable<(UiaNode Row, Int32 Index, Int32 End)> ConversationRows(
         IReadOnlyList<UiaNode> nodes, String marker)
     {
         if (marker.Length == 0)
         {
-            yield break;
+            return Enumerable.Empty<(UiaNode, Int32, Int32)>();
         }
-
+        var rows = new List<(UiaNode Row, Int32 Index, Int32 End, Boolean InProject)>();
         var i = 0;
         while (i < nodes.Count)
         {
@@ -281,7 +287,7 @@ internal static class UiaMatching
 
             if (hasMarker)
             {
-                yield return (node, i, end);
+                rows.Add((node, i, end, ListItemAncestors(nodes, i) > 1));
                 i = end;        // skip the subtree so row controls never read as items
             }
             else
@@ -289,6 +295,21 @@ internal static class UiaMatching
                 i++;
             }
         }
+        var listed = rows.Where(r => !r.InProject).Select(r => r.Row.Text).ToHashSet(StringComparer.Ordinal);
+        return rows.Where(r => !r.InProject || !listed.Contains(r.Row.Text)).Select(r => (r.Row, r.Index, r.End));
+    }
+
+    private static Int32 ListItemAncestors(IReadOnlyList<UiaNode> nodes, Int32 index)
+    {
+        var count = 0;
+        var depth = nodes[index].Depth;
+        for (var i = index - 1; i >= 0 && depth > 0; i--)
+        {
+            if (nodes[i].Depth >= depth) continue;
+            depth = nodes[i].Depth;
+            if (nodes[i].Role == "ListItem") count++;
+        }
+        return count;
     }
 
     public static List<Dictionary<String, String>> Conversations(IReadOnlyList<UiaNode> nodes, String marker,

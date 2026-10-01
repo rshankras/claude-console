@@ -186,6 +186,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void A_project_chat_listed_under_its_project_and_in_recents_is_one_conversation()
+        {
+            // Seen live (2026-10-01): the open chat sat under project "tmp" and in Recents, both
+            // rows aria-current, so Copy Reply refused with reply-selection-multiple and the
+            // chat keys would have found two rows for one title.
+            var current = "current=page";
+            var nodes = Window(
+                new[] { N(3, "List", ""), N(4, "ListItem", "tmp Plan Old"), N(5, "Group", "tmp"), N(6, "List", "Chats in tmp"), N(7, "ListItem", "Plan") },
+                Row(8, "Plan", props: current),
+                new[] { N(7, "ListItem", "Old") }, Row(8, "Old"),
+                new[] { N(3, "List", ""), N(4, "ListItem", "Plan") }, Row(5, "Plan", props: current),
+                new[] { N(4, "ListItem", "Other") }, Row(5, "Other"));
+            var rows = UiaMatching.Conversations(nodes, "Pin chat", Array.Empty<String>(), Array.Empty<String>(), Array.Empty<String>(), null);
+            Assert.Equal(new[] { "Old", "Plan", "Other" }, rows.Select(r => r["title"]));   // Old is only under its project
+            Assert.Equal(new[] { "false", "true", "false" }, rows.Select(r => r["selected"]));
+            Assert.Single(UiaMatching.ConversationMatches(nodes, "Plan", "Pin chat"));
+            Assert.StartsWith("Plan:", UiaMatching.SelectedConversation(nodes, "Pin chat"));
+
+            // Two different chats with one title in Recents are still two rows.
+            var twins = Window(new[] { N(3, "List", ""), N(4, "ListItem", "Plan") }, Row(5, "Plan"), new[] { N(4, "ListItem", "Plan") }, Row(5, "Plan"));
+            Assert.Equal(2, UiaMatching.ConversationMatches(twins, "Plan", "Pin chat").Count);
+        }
+
+        [Fact]
         public void Mode_is_read_from_the_prefixed_switcher_label()
         {
             var nodes = Window(new[] { N(3, "Button", "Switch mode, current mode: Codex", pressable: true) });
