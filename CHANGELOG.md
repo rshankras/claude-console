@@ -80,6 +80,11 @@ pass with the installed package (docs/vizhi-desktop-1.1.0-device-pass.md) is wha
   the latest edited reply** when the summary row is gone (#146); **Voice Chat starts with the
   composer's button** when the sidebar shows a second one (#147).
 
+### Removed
+- **The optional "Vizhi Adaptive 3" layout** is no longer in the package. One layout, Vizhi Home,
+  is the one we keep correct; it is also downloadable from vizhi.dev/layouts for re-import. An
+  Adaptive 3 you imported before keeps working and keeps receiving the Home migrations.
+
 ## Vizhi Desktop [1.0.0] — 2026-09-29
 
 First release. Keypad controls for the ChatGPT desktop app on macOS, in both ChatGPT and Codex modes, on the Logitech MX Creative Keypad.

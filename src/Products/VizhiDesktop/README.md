@@ -23,7 +23,7 @@ product. *(Not an OpenAI product; ChatGPT and Codex are trademarks of OpenAI.)*
 **Version 1.0.0, macOS only (first release):** two pages, Home and Tools.
 Approve and Deny take the family positions on Home in both modes; All Chats joins Find Chat on Tools, and Voice Chat moves to Tools.
 Stock Home and Tools pages migrate together, with a backup; a customized key on either page leaves both as they were.
-Custom assignments and the optional Adaptive 3 layout are preserved.
+Custom assignments and layouts you imported earlier are preserved.
 Spoken workflows now show **Your request** first, then a shorter labeled task instruction.
 Debug investigates before fixing and can report no bug found. Unchanged stock recipes upgrade
 with a settings backup; custom recipes remain intact. The speak → finish → review → Send
@@ -334,9 +334,10 @@ starts ChatGPT dictation, but this update retains the existing offline Voice Dra
 
 ## Choose a layout
 
-- **Vizhi Home** ships as the two-page default: Home and mode-aware Tools.
-- **Vizhi Adaptive 3** remains an optional three-page layout with approvals on its first page.
-  Import [VizhiDesktop-Adaptive3.lp5](package/optional-profiles/VizhiDesktop-Adaptive3.lp5) explicitly.
+- **Vizhi Home** ships as the two-page default: Home and mode-aware Tools. It is also
+  downloadable from [vizhi.dev/layouts](https://vizhi.dev/layouts/) for re-import.
+- The optional three-page *Vizhi Adaptive 3* layout is no longer shipped (1.1.0): one layout to
+  keep right. A copy you imported earlier keeps working and keeps receiving the Home migrations.
 - Installed Flow 2, Flow, Everyday, Adaptive and customized profiles are retained. Ordinary
   updates add the packaged layout without changing the selected profile. This user-authorized
   redesign installation explicitly selects Vizhi Home and preserves the System source page.

@@ -911,7 +911,7 @@
       },
       "kind": "find",
       "prepare": "Use a disposable ChatGPT conversation with an existing unsent draft. Keep the app foreground. Search actions operate only inside Find Chat; Codex opens View Changes.",
-      "action": "Use the legacy adaptive Find Chat / View Changes assignment (optional Adaptive 3 profile).",
+      "action": "Use the legacy adaptive Find Chat / View Changes assignment (a layout imported before 1.1.0; no longer shipped).",
       "expectedApp": "ChatGPT opens native search and the query page. Codex opens the Changes panel when an app-owned review route is exposed; repeated taps leave it open. A site-building/browser chat with no review route stays unchanged.",
       "expectedKey": "Codex stays on the current keypad page: Not available without a review route, Opened after confirmation, or Couldn’t open if a supported opening fails. ChatGPT retains search cards and query status.",
       "smoke": true,
