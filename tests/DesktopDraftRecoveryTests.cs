@@ -49,7 +49,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         [InlineData(false, true)]
         [InlineData(true, true)]
         [InlineData(true, false)]
-        public void Successful_delivery_and_auto_send_do_not_create_a_pending_draft(Boolean submit, Boolean success)
+        public void Only_successful_delivery_avoids_a_pending_draft(Boolean submit, Boolean success)
         {
             var bridge = new BridgeManager(new PlatformSeamTests.FakePlatformBridge());
             var retentions = 0;
@@ -58,7 +58,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
             bridge.DeliverToSink("hello", submit);
 
-            Assert.Equal(0, retentions);
+            Assert.Equal(success ? 0 : 1, retentions);
         }
 
         [Theory]
@@ -160,10 +160,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             var capture = new VoiceCaptureState();
             var retry = DesktopDictationFace.For(VoiceIntent.DesktopDraft, capture, null, "voice", true);
             Assert.Equal("Insert Draft", retry.Label);
-            Assert.Equal("HOLD TO DISCARD", retry.Footer);
+            Assert.Equal("TAP TO RETRY", retry.Footer);
             var occupied = DesktopDictationFace.For(VoiceIntent.DesktopDraft, capture, "Draft Exists", "voice", true);
             Assert.Equal("Insert Draft", occupied.Label);
-            Assert.Equal("HOLD TO DISCARD", occupied.Footer);
+            Assert.Equal("TAP TO RETRY", occupied.Footer);
             var ready = DesktopDictationFace.For(VoiceIntent.DesktopDraft, capture, "Draft Ready", "voice");
             Assert.Equal("SEND DRAFT", ready.Footer);
         }

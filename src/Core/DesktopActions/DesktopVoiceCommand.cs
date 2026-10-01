@@ -68,6 +68,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             // One door for every voice key. Whether this press starts, stops, or is refused — and
             // where a stopped capture's transcript is routed — is the engine's call, not this key's.
             _fail.Clear();
+            if (DesktopServices.DraftRecovery.Pending && BridgeManager.Instance.Voice.Phase == VoicePhase.Idle)
+            {
+                var result = DesktopServices.DraftRecovery.Insert();
+                if (result != null) _fail.Show(result);
+                return;
+            }
             DesktopServices.VoiceActions.RequestDictation(VoiceIntent.Desktop, BridgeManager.Instance.Voice,
                 intent => BridgeManager.Instance.ToggleVoice(intent), out var feedback);
             if (feedback != null) { _fail.Show(feedback); }
@@ -77,6 +83,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
+            if (BridgeManager.Instance.VoiceModelDownloading)
+                return KeyImage.RenderIntentTile(imageSize, "Downloading", "voice", "VOICE MODEL · 148 MB");
             var face = DesktopDictationFace.For(VoiceIntent.Desktop, BridgeManager.Instance.Voice,
                 _fail.IsActive ? _fail.Text : null, _face.Icon);
             return KeyImage.RenderIntentTile(imageSize, face.Label, face.Icon, face.Footer);

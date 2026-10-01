@@ -47,7 +47,7 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
         /// load; never throws. Returns true when it registered — the caller should then skip
         /// RegistrationHeal (this load's restart already covers it).
         /// </summary>
-        internal static Boolean RegisterIfMissing(String windowsProcessName = null)
+        internal static Boolean RegisterIfMissing(String windowsProcessName = null, Boolean automaticRestartAllowed = false)
         {
             try
             {
@@ -88,8 +88,8 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
                     {
                         PluginLog.Info(
                             "SelfRegistration: updated packaged profile navigation; " +
-                            "restarting Logi Plugin Service in 10s");
-                        Process.Start(OperatingSystem.IsWindows()
+                            "adopted on the next service restart");
+                        if (automaticRestartAllowed) Process.Start(OperatingSystem.IsWindows()
                             ? RegistrationHeal.WindowsRestart()
                             : RegistrationHeal.MacRestart());
                         return true;
@@ -101,9 +101,9 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
 
                 PluginLog.Info(
                     "SelfRegistration: no application registration on disk (sideloaded installs never create one) — " +
-                    "wrote it from the packaged profile; restarting Logi Plugin Service in 10s so it adopts the entry");
+                    "wrote it from the packaged profile; adopted on the next service restart so it adopts the entry");
 
-                Process.Start(OperatingSystem.IsWindows()
+                if (automaticRestartAllowed) Process.Start(OperatingSystem.IsWindows()
                     ? RegistrationHeal.WindowsRestart()
                     : RegistrationHeal.MacRestart());
                 return true;
@@ -211,8 +211,7 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
             var revisionFile = Path.Combine(appDir, ".vizhi-packaged-profile");
             // Keep package revision outside ApplicationInfo: Options+ rewrites that document,
             // and defaultProfileName is the user's selection, not an installation marker.
-            if (File.Exists(revisionFile) && File.ReadAllText(revisionFile) == nextProfile
-                && File.Exists(Path.Combine(profileDir, "ProfileInfo.json"))) return navigationUpdated;
+            if (File.Exists(revisionFile) && File.ReadAllText(revisionFile) == nextProfile) return navigationUpdated;
             if (File.Exists(Path.Combine(profileDir, "ProfileInfo.json")))
             {
                 WriteProfileRevision(appDir, nextProfile);

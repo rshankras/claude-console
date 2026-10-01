@@ -19,7 +19,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             for (var i = 0; i < updated.Length; i++)
             {
                 var value = current[i]; var stock = previous[i];
-                if (value == null || value.Input != null || value.Id != stock.Id || value.Label != stock.Label) continue;
+                if (value == null || value.Input != null || value.Scope != stock.Scope || value.SourcePrompt != stock.SourcePrompt || value.Id != stock.Id || value.Label != stock.Label) continue;
                 var iconMatches = value.Icon == stock.Icon || value.Id == "draft" && value.Icon == "voice_draft";
                 var promptMatches = value.Prompt == stock.Prompt && value.Submits == stock.Submits;
                 if (value.Id == "refactor" && value.Prompt == LEGACY_REFACTOR && value.Submits) promptMatches = true;

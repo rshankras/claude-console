@@ -43,7 +43,8 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
         }
 
-        public static String Root => Path.Combine(TempDir, ProductSlug);
+        public static String Root => ProductSlug == "vizhi-desktop"
+            ? Path.Combine(ProductRuntime.Home, "ipc") : Path.Combine(TempDir, ProductSlug);
         public static String SessionsDir => Path.Combine(Root, "sessions");
         public static String ActivityDir => Path.Combine(Root, "activity");
         public static String VoiceDir => Path.Combine(Root, "voice");

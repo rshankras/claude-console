@@ -162,6 +162,7 @@ assert 'keyboardSetUnicodeString' not in source, 'Desktop text insertion must no
 fixture += function('buttonLabels') + '\n' + function('normalizedButtonLabel') + '\n'
 fixture += '\n'.join(function(n) for n in ['normalizedSearchLabel', 'isSearchField', 'searchContainer', 'reportedSearchModes', 'searchModeError']) + '\n'
 fixture += function('scanWindows') + '\n'
+fixture += function('conversationRows') + '\n'
 fixture += function('conversationMatches') + '\n' + function('conversationState')
 fixture += '\n' + function('conversationRowState')
 fixture += '\n' + function('currentConversationFlag')
@@ -169,7 +170,7 @@ fixture += '\n' + function('replyActionRun') + '\n' + function('sameReplyControl
 fixture += '\n' + function('positionedReplyRow') + '\n' + function('replySpeakerLabel')
 fixture += '\n' + function('replyConversationNodes') + '\n' + function('replyTarget')
 fixture += '\n' + '\n'.join(function(n) for n in ['firstPressable', 'exactButtons', 'uniqueEnabledButton',
-    'voiceState', 'voiceTarget', 'composerSendTarget', 'sendTarget'])
+    'preferredVoiceStart', 'voiceState', 'voiceTarget', 'composerSendTarget', 'sendTarget'])
 fixture += '''
 func row(_ text: String, _ depth: Int = 0) -> Node {
     Node(el: original, role: "AXButton", text: text, pressable: true, depth: depth, labels: [text])
@@ -526,7 +527,7 @@ assert(replyTarget(replyBase + header + wrapped + [node("AXHeading", "You said:"
 print("Desktop AX targeting, draft eligibility, matching, activity, search and latest-reply regressions passed")
 '''
 fixture += '\n' + function('collapse') + '\n' + function('panelOpeners') + '\n'
-fixture += '\n'.join(function(name) for name in ['panelNodes', 'panelObstructed', 'panelRouteAvailable']) + '\n'
+fixture += '\n'.join(function(name) for name in ['preferredPanelOpeners', 'panelNodes', 'panelObstructed', 'panelRouteAvailable']) + '\n'
 fixture += r'''
 func panelButton(_ name: String, depth: Int = 1, enabled: Bool = true) -> Node {
  let el = FakeElement(role: "AXButton", text: name, children: [], enabled: enabled)
@@ -561,6 +562,53 @@ assert(reviewAvailable([rootArea, appMode, panelButton("Changes")] + browserCont
 let modal = Node(el: FakeElement(role: "AXGroup", text: "", children: [], attributes: ["AXSubrole": "AXApplicationDialog"]), role: "AXGroup", text: "", pressable: false, depth: 1)
 assert(!reviewAvailable([rootArea, appMode, panelButton("Changes"), modal]))
 
+'''
+fixture += '\n'.join(function(name) for name in ['searchMenuGroup', 'searchMenuTitle']) + '\n'
+fixture += 'let kAXURLAttribute = "AXURL"\nstruct SearchSurface { let nodes: [Node]; let query: String }\n'
+fixture += '\n'.join(function(name) for name in ['searchResultID', 'searchResults']) + '\n'
+fixture += r'''
+// Actual Mac command-menu shape: a pressable text option beneath the Chats group.
+let menu = [node("AXList", "Suggestions", 0), node("AXGroup", "Chats", 1),
+    node("AXStaticText", "Add notes.txt Project shortcut snippet", 2),
+    node("AXGroup", "", 3), node("AXStaticText", "Add ", 4),
+    node("AXStaticText", "notes", 4), node("AXStaticText", ".txt", 4),
+    node("AXGroup", "", 3), node("AXStaticText", "Project", 4),
+    node("AXGroup", "Navigation", 1), node("AXStaticText", "Open browser tab", 2)]
+assert(searchMenuGroup(2, nodes: menu) == "Chats")
+assert(searchMenuTitle(2, nodes: menu) == "Add notes.txt")
+assert(searchMenuGroup(10, nodes: menu) == "Navigation")
+assert(searchMenuGroup(4, nodes: menu) != "Chats")
+var menuOptions = menu
+let option = menu[2]
+menuOptions[2] = Node(el: option.el, role: option.role, text: option.text, pressable: true, depth: option.depth, labels: option.labels)
+arguments["--result-group"] = ["Chats"]
+let menuResults = searchResults(SearchSurface(nodes: menuOptions, query: "notes"))
+assert(menuResults.count == 1 && menuResults[0].node.text == "Add notes.txt")
+assert(searchResults(SearchSurface(nodes: menuOptions + menuOptions, query: "notes")).isEmpty)
+arguments["--result-group"] = []
+assert(searchResults(SearchSurface(nodes: menuOptions, query: "notes")).isEmpty)
+
+// Two distinct start labels must be available AND select the same preferred button.
+let bothStarts = [node("AXButton", "Start voice chat", 1), node("AXButton", "Start new voice chat", 1)]
+assert(state(bothStarts) == "ready")
+assert(target("start", bothStarts)?.text == "Start voice chat")
+assert(target("start", [bothStarts[0], bothStarts[0], bothStarts[1]]) == nil)
+// Summary first, otherwise the latest turn, with ambiguity retained for two summaries.
+let firstTurn = panelButton("View changes"), lastTurn = panelButton("View changes")
+let turns = [firstTurn, panelButton("View changed files"), lastTurn]
+assert(CFEqual(preferredPanelOpeners(turns, labels: ["Changes", "View changes"], turnLabels: ["View changes"])[0].el, lastTurn.el))
+let summary = panelButton("Changes")
+assert(CFEqual(preferredPanelOpeners(turns + [summary], labels: ["Changes", "View changes"], turnLabels: ["View changes"])[0].el, summary.el))
+assert(preferredPanelOpeners(turns + [summary, summary], labels: ["Changes", "View changes"], turnLabels: ["View changes"]).count == 2)
+// Nested project row and Recents are one reading; two Recents with the same title stay ambiguous.
+let sidebar = [node("AXList", "Projects", 0), node("AXGroup", "Project", 1),
+    node("AXList", "", 2), row("Chat", 3), row("Pin chat", 4),
+    node("AXList", "Recents", 0), row("Chat", 1), row("Pin chat", 2)]
+assert(conversationRows(sidebar, marker: "Pin chat").count == 1)
+assert(conversationMatches(title: "Chat", marker: "Pin chat", nodes: sidebar).count == 1)
+assert(conversationRows(Array(sidebar.prefix(5)), marker: "Pin chat").count == 1)
+assert(conversationRows(sidebar + [row("Chat", 1), row("Pin chat", 2)], marker: "Pin chat").count == 3)
+print("Issues 144–147: Mac menu, duplicate sidebar, turn routing and voice preferences passed")
 '''
 with tempfile.TemporaryDirectory(prefix='vizhi-ax-tests-') as tmp:
     script = Path(tmp) / 'main.swift'

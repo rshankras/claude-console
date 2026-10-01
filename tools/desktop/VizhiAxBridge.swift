@@ -290,7 +290,8 @@ func captureDirectory() -> URL {
               argValue("--test-pasteboard")?.hasPrefix("com.vizhi.fixture.") == true else { fail("invalid-capture-directory", 4) }
         return URL(fileURLWithPath: path, isDirectory: true)
     }
-    return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/claude-console/desktop-captures", isDirectory: true)
+    guard let path = argValue("--capture-dir"), path.hasPrefix("/") else { fail("invalid-capture-directory", 4) }
+    return URL(fileURLWithPath: path, isDirectory: true)
 }
 func savedPasteboard(_ board: NSPasteboard) -> [NSPasteboardItem]? {
     var total = 0, result: [NSPasteboardItem] = []
@@ -799,11 +800,10 @@ func replyTarget(_ windowNodes: [Node], copiedTarget: AXUIElement? = nil) -> (no
         firstPressable(matching: argValues("--approve"), in: windowNodes) != nil { return (nil, "answer-not-ready") }
     if let marker = argValue("--conv-marker"), !marker.isEmpty {
         var selected = 0
-        for (i, row) in windowNodes.enumerated() where row.pressable && !row.text.isEmpty {
-            var end = i + 1
-            while end < windowNodes.count && windowNodes[end].depth > row.depth { end += 1 }
-            let descendants = windowNodes[(i + 1)..<end]
-            guard descendants.contains(where: { $0.pressable && $0.text == marker }), conversationSelected(row.el) else { continue }
+        for entry in conversationRows(windowNodes, marker: marker) {
+            let row = entry.node
+            let descendants = windowNodes[(entry.index + 1)..<entry.end]
+            guard conversationSelected(row.el) else { continue }
             selected += 1
             let state = conversationRowState(title: row.text, descendants: descendants,
                 awaiting: argValues("--state-awaiting"), unread: [], running: argValues("--state-running"), baseline: nil)
@@ -892,18 +892,29 @@ func replyTarget(_ windowNodes: [Node], copiedTarget: AXUIElement? = nil) -> (no
     return (target, "")
 }
 
+func preferredVoiceStart(nodes: [Node], labels: [String]) -> Node? {
+    for label in labels {
+        let matches = exactButtons(matching: [label], in: nodes).filter {
+            $0.pressable && (attr($0.el, kAXEnabledAttribute as String) as? Bool) == true
+        }
+        if matches.count > 1 { return nil }
+        if matches.count == 1 { return matches[0] }
+    }
+    return nil
+}
+
 func voiceState(nodes: [Node], start: [String], end: [String]) -> String {
     guard !start.isEmpty, !end.isEmpty else { return "unavailable" }
     let endings = exactButtons(matching: end, in: nodes)
     // Even a disabled End button is evidence of a session. It must block starting another.
     if !endings.isEmpty { return endings.count == 1 ? "active" : "unavailable" }
-    return uniqueEnabledButton(matching: start, in: nodes) != nil ? "ready" : "unavailable"
+    return preferredVoiceStart(nodes: nodes, labels: start) != nil ? "ready" : "unavailable"
 }
 
 func voiceTarget(action: String, nodes: [Node], start: [String], end: [String]) -> Node? {
     guard ["start", "end"].contains(action),
           voiceState(nodes: nodes, start: start, end: end) == (action == "start" ? "ready" : "active") else { return nil }
-    return uniqueEnabledButton(matching: action == "start" ? start : end, in: nodes)
+    return action == "start" ? preferredVoiceStart(nodes: nodes, labels: start) : uniqueEnabledButton(matching: end, in: nodes)
 }
 
 // Send is never a substring search over the entire window. Require exactly one composer,
@@ -946,19 +957,46 @@ func sameOperationWindow() -> Bool {
     return operationWindows.count == 1 && current.count == 1 && CFEqual(operationWindows[0], current[0])
 }
 
+// One canonical sidebar scan for status, reply copying, draft guards and navigation.
+func conversationRows(_ nodes: [Node], marker: String) -> [(node: Node, index: Int, end: Int)] {
+    guard !marker.isEmpty else { return [] }
+    var rows: [(node: Node, index: Int, end: Int, lists: Int)] = []
+    var i = 0
+    while i < nodes.count {
+        let row = nodes[i]
+        guard row.pressable, !row.text.isEmpty else { i += 1; continue }
+        var end = i + 1
+        while end < nodes.count && nodes[end].depth > row.depth { end += 1 }
+        guard nodes[(i + 1)..<end].contains(where: { $0.pressable && $0.text == marker }) else { i += 1; continue }
+        var depth = row.depth, lists = 0
+        if i > 0 {
+            for j in stride(from: i - 1, through: 0, by: -1) where nodes[j].depth < depth {
+                depth = nodes[j].depth
+                if nodes[j].role == "AXList" { lists += 1 }
+            }
+        }
+        rows.append((row, i, end, lists)); i = end
+    }
+    return rows.filter { row in
+        guard row.lists > 1 else { return true }
+        let peers = rows.filter { $0.lists == 1 && $0.node.text == row.node.text }
+        guard peers.count == 1 else { return true }
+        let peer = peers[0].node
+        // Explicit different identities or selection states prove these are different chats.
+        let identity = str(row.node.el, "AXIdentifier") ?? ""
+        let otherIdentity = str(peer.el, "AXIdentifier") ?? ""
+        if !identity.isEmpty && !otherIdentity.isEmpty && identity != otherIdentity { return true }
+        if conversationSelected(row.node.el) != conversationSelected(peer.el) { return true }
+        // The project list duplicates its chat in Recents. Two equal titles in Recents remain
+        // separate rows and therefore ambiguous; project-only chats retain their only row.
+        return false
+    }.map { ($0.node, $0.index, $0.end) }
+}
+
 // Exact titles only, and only rows with the adapter's sidebar marker in their subtree.
 func conversationMatches(title: String, marker: String, nodes: [Node]) -> [Node] {
-    guard !title.isEmpty && !marker.isEmpty else { return [] }
-    return nodes.indices.compactMap { i in
-        let n = nodes[i]
-        guard n.pressable && n.text == title else { return nil }
-        var j = i + 1
-        while j < nodes.count && nodes[j].depth > n.depth {
-            if nodes[j].pressable && nodes[j].text == marker { return n }
-            j += 1
-        }
-        return nil
-    }
+    guard !title.isEmpty else { return [] }
+    return conversationRows(nodes, marker: marker).map { $0.node }.filter { $0.text == title }
 }
 
 // The baseline comes from verified app/mode controls, never from possibly-running peers.
@@ -1139,6 +1177,33 @@ func inspectSearch(_ nodes: [Node]) -> (surface: SearchSurface?, error: String) 
 
 func searchSurface(_ nodes: [Node]) -> SearchSurface? { inspectSearch(nodes).surface }
 
+// Command-menu options are AXStaticText on macOS (not Windows ListItem).
+// Only direct children of the named Chats group qualify, never menu commands.
+func searchMenuGroup(_ index: Int, nodes: [Node]) -> String? {
+    guard index > 0 else { return nil }
+    let depth = nodes[index].depth
+    for i in stride(from: index - 1, through: 0, by: -1) {
+        if nodes[i].depth < depth {
+            return nodes[i].role == "AXGroup" && nodes[i].depth == depth - 1 ? nodes[i].text : nil
+        }
+    }
+    return nil
+}
+
+func searchMenuTitle(_ index: Int, nodes: [Node]) -> String? {
+    let row = nodes[index]
+    guard index + 1 < nodes.count, nodes[index + 1].role == "AXGroup",
+          nodes[index + 1].depth == row.depth + 1 else { return nil }
+    let group = index + 1
+    var parts: [String] = []
+    for node in nodes.dropFirst(group + 1) {
+        if node.depth <= nodes[group].depth { break }
+        if node.role == "AXStaticText" { parts.append(node.text) }
+    }
+    let title = parts.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+    return title.isEmpty ? nil : title
+}
+
 func searchResultID(_ node: Node) -> String? {
     guard node.role == "AXLink", node.pressable, !node.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           let raw = attr(node.el, kAXURLAttribute as String),
@@ -1155,8 +1220,14 @@ func searchResultID(_ node: Node) -> String? {
 
 func searchResults(_ surface: SearchSurface) -> [(node: Node, id: String)] {
     guard !surface.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
-    let matches = surface.nodes.compactMap { node -> (node: Node, id: String)? in
-        searchResultID(node).map { (node, $0) }
+    let matches = surface.nodes.enumerated().compactMap { index, node -> (node: Node, id: String)? in
+        if let id = searchResultID(node) { return (node, id) }
+        guard ["AXListItem", "AXStaticText"].contains(node.role), node.pressable,
+              let group = searchMenuGroup(index, nodes: surface.nodes),
+              argValues("--result-group").contains(group),
+              let title = searchMenuTitle(index, nodes: surface.nodes) else { return nil }
+        let id = "item:" + SHA256.hash(data: Data(node.text.utf8)).map { String(format: "%02x", $0) }.joined()
+        return (Node(el: node.el, role: node.role, text: title, pressable: node.pressable, depth: node.depth, labels: node.labels), id)
     }
     let groups = Dictionary(grouping: matches, by: { $0.id })
     return matches.filter { groups[$0.id]?.count == 1 }.prefix(100).map { $0 }
@@ -1192,16 +1263,8 @@ func emitSearch(_ surface: SearchSurface) -> Never {
 // silently receive a brief after sidebar navigation. No conversation text is logged.
 func selectedDraftConversation(_ nodes: [Node]) -> String {
     guard let marker = argValue("--conv-marker"), !marker.isEmpty else { return "" }
-    var selected: [String] = []
-    for (i, node) in nodes.enumerated() where node.pressable && !node.text.isEmpty {
-        var j = i + 1, hasMarker = false
-        while j < nodes.count && nodes[j].depth > node.depth {
-            if nodes[j].pressable && nodes[j].text == marker { hasMarker = true }
-            j += 1
-        }
-        guard hasMarker else { continue }
-        if conversationSelected(node.el) { selected.append(node.text + ":" + String(CFHash(node.el))) }
-    }
+    let selected = conversationRows(nodes, marker: marker).map { $0.node }
+        .filter { conversationSelected($0.el) }.map { $0.text + ":" + String(CFHash($0.el)) }
     if selected.count > 1 { fail("composer-target-changed", 6) }
     return selected.first ?? ""
 }
@@ -1250,6 +1313,12 @@ func panelOpeners(_ nodes: [Node], labels: [String], enabledOnly: Bool = true) -
     }
 }
 
+func preferredPanelOpeners(_ nodes: [Node], labels: [String], turnLabels: [String]) -> [Node] {
+    let summaries = panelOpeners(nodes, labels: labels.filter { !turnLabels.contains($0) })
+    if !summaries.isEmpty { return summaries }
+    return Array(panelOpeners(nodes, labels: turnLabels).suffix(1))
+}
+
 // A browser preview may expose another web area with arbitrary website controls.
 // Review belongs to the unique app web area containing the mode control; child web
 // areas own their own controls and cannot advertise Review on behalf of the app.
@@ -1279,7 +1348,7 @@ func panelRouteAvailable(_ nodes: [Node], modeLabel: String, openLabels: [String
     guard !panelObstructed(nodes), let content = panelNodes(nodes, modeLabel: modeLabel) else { return false }
     let panels = exactButtons(matching: visibleLabels, in: content)
     if panels.count != 0 { return panels.count == 1 }
-    return panelOpeners(content, labels: openLabels).count == 1
+    return preferredPanelOpeners(content, labels: openLabels, turnLabels: argValues("--changes-turn")).count == 1
 }
 
 switch verb {
@@ -1311,14 +1380,14 @@ case "open-panel":
     }
     let nodes = checkedPanelNodes()
     if panelVisible(nodes) { emit(["opened": true, "alreadyOpen": true], code: 0) }
-    let candidates = panelOpeners(nodes, labels: argValues("--panel-open"))
+    let candidates = preferredPanelOpeners(nodes, labels: argValues("--panel-open"), turnLabels: argValues("--panel-open-turn"))
     guard candidates.count <= 1 else { fail("panel-opener-multiple", 4) }
     // A Codex conversation may have no Git review capability. Absence is not a clean
     // working tree, and must not trigger a guessed shortcut, toggle, or text entry.
     guard candidates.count == 1 else { fail("panel-not-available", 4) }
     let fresh = checkedPanelNodes()
     if panelVisible(fresh) { emit(["opened": true, "alreadyOpen": true], code: 0) }
-    let confirmed = panelOpeners(fresh, labels: argValues("--panel-open"))
+    let confirmed = preferredPanelOpeners(fresh, labels: argValues("--panel-open"), turnLabels: argValues("--panel-open-turn"))
     guard confirmed.count == 1, CFEqual(candidates[0].el, confirmed[0].el) else { fail("panel-target-changed", 6) }
     guard AXUIElementPerformAction(confirmed[0].el, kAXPressAction as CFString) == .success else { fail("panel-press-failed", 5) }
     let deadline = Date().addingTimeInterval(1.2)
@@ -1702,28 +1771,11 @@ case "status":
         let awaiting = argValues("--state-awaiting")
         let unread = argValues("--state-unread")
         let running = argValues("--state-running")
-        var i = 0
-        while i < nodes.count && readings.count < 8 {
-            let n = nodes[i]
-            guard n.pressable && !n.text.isEmpty else { i += 1; continue }
-
-            var j = i + 1
-            var hasMarker = false
-            while j < nodes.count && nodes[j].depth > n.depth {
-                let m = nodes[j]
-                if m.pressable && m.text == convMarker { hasMarker = true }
-                j += 1
-            }
-
-            if hasMarker {
-                let selected = conversationSelected(n.el)
-                let state = conversationRowState(title: n.text, descendants: nodes[(i + 1)..<j],
-                    awaiting: awaiting, unread: unread, running: running, baseline: baselineImages)
-                readings.append((n.text, state, selected))
-                i = j          // skip the subtree so row controls never read as items
-            } else {
-                i += 1
-            }
+        for entry in conversationRows(nodes, marker: convMarker).prefix(8) {
+            let n = entry.node
+            let state = conversationRowState(title: n.text, descendants: nodes[(entry.index + 1)..<entry.end],
+                awaiting: awaiting, unread: unread, running: running, baseline: baselineImages)
+            readings.append((n.text, state, conversationSelected(n.el)))
         }
     }
 

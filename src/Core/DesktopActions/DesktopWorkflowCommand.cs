@@ -12,13 +12,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// scope, inserts the complete brief, and waits for an explicit Send Draft press.</summary>
     public class DesktopWorkflowCommand : DesktopCommandBase
     {
-        private static readonly String CodexConfigFile = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "claude-console", "desktop-workflows.json");
+        private static String CodexConfigFile => Path.Combine(
+            ProductRuntime.Home, "desktop-workflows.json");
 
-        private static readonly String ChatGptConfigFile = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "claude-console", "desktop-chatgpt-workflows.json");
+        private static String ChatGptConfigFile => Path.Combine(
+            ProductRuntime.Home, "desktop-chatgpt-workflows.json");
 
         // The appendix's nine, written in the house prompt style: scoped to something concrete,
         // method named, output shaped. Entries that need a target the key can't know (a PR
@@ -133,7 +131,29 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         internal static IReadOnlyList<WorkflowDef> LoadChatGptFavorites() =>
             LoadChatGptWorkflows(ChatGptConfigFile).Where(IsUsable).Take(9).ToArray();
 
+        private static readonly Object CacheGate = new();
+        private static readonly Dictionary<String, (String Json, WorkflowDef[] Defaults, WorkflowDef[] Slots)> Cache = new();
         private static IEnumerable<WorkflowDef> LoadWorkflows(String configFile, WorkflowDef[] defaults)
+        {
+            lock (CacheGate)
+            {
+                try
+                {
+                    var json = File.Exists(configFile) ? File.ReadAllText(configFile) : null;
+                    if (Cache.TryGetValue(configFile, out var entry) && entry.Json == json && ReferenceEquals(entry.Defaults, defaults)) return entry.Slots;
+                    var slots = LoadWorkflowsCore(configFile, defaults).ToArray();
+                    if (File.Exists(configFile))
+                    {
+                        if (Cache.Count >= 32) Cache.Clear();
+                        Cache[configFile] = (File.ReadAllText(configFile), defaults, slots);
+                    }
+                    return slots;
+                }
+                catch { return LoadWorkflowsCore(configFile, defaults); }
+            }
+        }
+
+        private static IEnumerable<WorkflowDef> LoadWorkflowsCore(String configFile, WorkflowDef[] defaults)
         {
             try
             {

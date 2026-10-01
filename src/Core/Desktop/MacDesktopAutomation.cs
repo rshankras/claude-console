@@ -14,8 +14,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     /// child-process shape in this codebase). The helper is app-agnostic; this class feeds it
     /// the adapter's labels, so all app knowledge stays in one place.
     ///
-    /// The helper lives in the SHARED runtime home (~/.claude/claude-console), beside the voice
-    /// helper and for the same reason: one binary serves every product that ships it. It is a
+    /// The helper lives in the product's runtime home beside its voice helper. It is a
     /// plain signed binary spawned as a DIRECT child — its AX calls attribute to
     /// LogiPluginService, which already holds the Accessibility grant the terminal products
     /// required. (The voice helper's `open` launch exists to give it its OWN TCC identity for
@@ -23,10 +22,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     /// </summary>
     internal sealed class MacDesktopAutomation : IDesktopAutomation
     {
-        // Same home as BridgeManager.ClaudeConsoleHome — shared across products on purpose.
-        internal static readonly String HelperPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "claude-console", "VizhiAxBridge");
+        // Resolved after the product declares its identity.
+        internal static String HelperPath => Path.Combine(
+            ProductRuntime.Home, "VizhiAxBridge");
 
         private readonly IDesktopAppAdapter _app;
         private readonly DesktopVoiceShortcut _voiceShortcut;
@@ -76,6 +74,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             AddEach(args, "--search-field", _app.SearchFieldLabels);
             AddEach(args, "--result-host", _app.SearchResultHosts);
             AddEach(args, "--result-path", _app.SearchResultPaths);
+            AddEach(args, "--result-group", _app.SearchResultGroups);
             if (target != null) args.AddRange(new[] { "--target", target });
             if (query != null) args.AddRange(new[] { "--query", query });
             if (value != null) args.AddRange(new[] { "--value", value });
@@ -216,6 +215,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             var args = new List<String> { "open-panel", "--app", _app.BundleId,
                 "--mode-prefix", _app.ModePrefix, "--expect-mode", "Codex" };
             AddEach(args, "--panel-open", _app.ShowDiffLabels);
+            AddEach(args, "--panel-open-turn", _app.ShowDiffTurnLabels);
             AddEach(args, "--panel-visible", _app.ChangesPanelLabels);
             AddEach(args, "--conv-marker", new[] { _app.ConversationItemMarker });
             var json = this.Invoke(args, 5000);
@@ -377,6 +377,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public DesktopCaptureResult Context(String action, String source = null, String text = null)
         {
             var args = new List<String> { action == "copy" ? "copy-reply" : "context-" + action, "--app", action == "copy" ? _app.BundleId : "@frontmost", "--chat-app", _app.BundleId };
+            if (action != "copy") args.AddRange(new[] { "--capture-dir", Path.Combine(ProductRuntime.Home, "desktop-captures") });
             if (action == "copy")
             {
                 AddReplyLabels(args);
@@ -489,6 +490,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             AddEach(args, "--search", _app.ControlLabels(DesktopControl.Search));
             AddEach(args, "--changes", _app.ControlLabels(DesktopControl.Changes));
+            AddEach(args, "--changes-turn", _app.ShowDiffTurnLabels);
             AddEach(args, "--panel-visible", _app.ChangesPanelLabels);
             args.AddRange(new[] { "--panel-mode", "Codex" });
             AddEach(args, "--projects", _app.ControlLabels(DesktopControl.Projects));

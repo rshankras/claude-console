@@ -250,7 +250,7 @@ Actual attachment accessibility varies by app version and needs live testing.
 Up to eight sources (50,000 text characters total) can be staged. Source counts appear on capture
 keys. Captures do not submit messages. A failed capture does not reuse old clipboard contents;
 previously staged sources remain until used or cleared. Source text and the retained reply stay
-in memory; screenshots are private files under `~/.claude/claude-console/desktop-captures/`.
+in memory; screenshots are private files under `~/Library/Application Support/Vizhi Desktop/desktop-captures/`.
 Clear Sources clears staging only, not files, clipboard contents or text already in an app.
 
 **System access:** this installation adds an Ask ChatGPT page without replacing existing System
@@ -269,11 +269,11 @@ Source Closed. Paste Reply requires the original app and the empty field you exp
    **Send** on the keypad. Another Dictate press adds more detail without submitting.
    Insertion can temporarily use the clipboard for native paste and restores its contents,
    unless you copied something newer. If **Insert Draft · HOLD TO DISCARD** appears, the
-   transcript is retained in memory. **Tap** to retry against the original chat and draft,
+   transcript is retained privately on disk. **Tap** to retry against the original chat and draft,
    or **hold** until **Discarded** appears to forget the retained recording. Discarding
    does not clear text already in the app. If the chat or draft changed during recording,
    insertion is refused. Retries never overwrite another draft or send automatically.
-   The retained draft otherwise lasts until insertion or plugin restart. Releasing a hold
+   The retained draft survives a plugin restart; after reload, an explicit retry inserts into the current composer for review. Releasing a hold
    never retries insertion or starts another recording.
 4. Use **Stop** to interrupt a running response. Its square icon is distinct from navigation.
 
@@ -311,7 +311,7 @@ With the confirmed shortcut configured:
    means finish the local Voice Draft capture first. Rapid repeat presses are suppressed.
 4. **Stop** on Home interrupts task generation; it does not end Voice Chat.
 
-The local configuration is `~/.claude/claude-console/desktop-voice-shortcut.json`:
+The local configuration is `~/Library/Application Support/Vizhi Desktop/desktop-voice-shortcut.json`:
 
 ```json
 { "toggleVoiceChat": "Control+Shift+V" }
@@ -343,7 +343,7 @@ starts ChatGPT dictation, but this update retains the existing offline Voice Dra
 
 ## Short chat labels and workflow favorites
 
-Configuration lives in `~/.claude/claude-console/`. Reload Vizhi Desktop or restart Logi Plugin
+Configuration lives in `~/Library/Application Support/Vizhi Desktop/`. Reload Vizhi Desktop or restart Logi Plugin
 Service after editing these files. Examples are in [package/examples](package/examples).
 
 **Conversation labels:** create `desktop-conversation-labels.json` with exact app titles:
@@ -394,3 +394,27 @@ entry in the Codex JSON with its example from `desktop-workflow-extras.json`.
 - The ChatGPT desktop app, signed in
 - Logi Options+ with the Logi Plugin Service 6.4 or newer
 - MX Creative Keypad
+
+
+### Runtime storage and recovery
+
+On macOS, Desktop owns `~/Library/Application Support/Vizhi Desktop/`; on Windows,
+`%USERPROFILE%/AppData/Local/Vizhi Desktop/`. Settings, helpers, the voice model,
+captures and private IPC resolve within that directory. The first load copies existing
+Desktop settings from the legacy Claude Console directory without changing the originals.
+
+Failed dictation is retained as an unsent draft across plugin reloads. Retry inserts for
+review and never sends automatically. Failed Dictate & Send also copies the transcript to
+the clipboard when available. Recording ends at 180 seconds; the key then asks you to finish.
+Audio is removed after transcription. The first voice use displays the 148 MB model download;
+a verified model from another product is copied when available.
+
+Uninstall removes the Desktop runtime and its legacy temporary IPC directory. A small
+`Vizhi Desktop Settings` sibling directory keeps user configuration for reinstall; it contains
+no recording, pending transcript, model or executable. Delete that directory for a complete
+settings reset. A private registration receipt is restored only when reinstall happens within
+ten minutes, preserving custom and deleted profiles during upgrades. Expired receipts are
+discarded on the next install/load. Claude Console and Vizhi for Codex files are left untouched.
+
+Deleting the current packaged profile is respected. Profile registration and upgrades take
+effect on the next normal service restart; Desktop does not restart Options+ or LPS itself.

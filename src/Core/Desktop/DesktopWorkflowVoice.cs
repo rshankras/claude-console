@@ -201,7 +201,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 if (_ready) return ("Send Draft", "send", "REVIEW FIRST");
                 if (_pending != null && _pending == _recovery.PendingId) return ("Insert Draft", "voice_draft", _recovery.RetryHint);
                 if (_waiting) return capture.IsRecording(VoiceIntent.DesktopDraft)
-                    ? ("Listening", "voice", "TAP TO FINISH") : ("Preparing", "voice_draft", "WAIT");
+                    ? (capture.Capped ? "Recording ended" : "Listening", "voice", "TAP TO FINISH") : ("Preparing", "voice_draft", "WAIT");
                 return _failure != null ? (_failure, "voice_draft", "TAP TO RETRY") : null;
             }
             finally { System.Threading.Monitor.Exit(_gate); }

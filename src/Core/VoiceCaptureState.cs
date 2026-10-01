@@ -82,14 +82,27 @@ namespace Loupedeck.ClaudeConsolePlugin
     {
         /// <summary>
         /// How long a recording may sit before a new press treats it as dead. The helper stops
-        /// itself at 60s and the transcript wait runs 20s, so anything past the sum means the helper
+        /// itself at 180s and the transcript wait runs 20s, so anything past the sum means the helper
         /// died without a trace. A flag that could not expire would be worse than the bug it fixes:
         /// one crashed helper and every voice key is dead until the plugin reloads.
         /// </summary>
-        internal static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(90);
+        internal static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(240);
 
         private readonly Object _lock = new Object();
 
+        internal void Refresh() => Changed?.Invoke();
+        internal Boolean Capped { get; private set; }
+        private Int64 _captureId;
+        internal Int64 CaptureId { get { lock (_lock) return _captureId; } }
+        internal void MarkCapped(Int64 captureId)
+        {
+            lock (_lock) {
+                if (_captureId != captureId || _phase != VoicePhase.Recording) return;
+                Capped = true;
+            }
+            Changed?.Invoke();
+        }
+        internal Func<Boolean> HasPendingTranscript { get; set; } = () => false;
         private VoicePhase _phase = VoicePhase.Idle;
         private VoiceIntent _intent;
         private DateTime _since;
@@ -140,7 +153,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 // A capture older than any capture can legitimately be means the helper died without
                 // writing anything. Treat it as over, so this press starts cleanly.
-                if (this._phase is VoicePhase.Recording or VoicePhase.Transcribing && now - this._since > StaleAfter)
+                if (this._phase is VoicePhase.Recording or VoicePhase.Transcribing && now - this._since > StaleAfter && !HasPendingTranscript())
                 {
                     this._phase = VoicePhase.Idle;
                 }
@@ -167,6 +180,8 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                     default:
                         this._phase = awaitReadiness ? VoicePhase.Starting : VoicePhase.Recording;
+                        this.Capped = false;
+                        this._captureId++;
                         this._intent = pressed;
                         this._since = now;
                         return (VoiceAction.Start, pressed, true);

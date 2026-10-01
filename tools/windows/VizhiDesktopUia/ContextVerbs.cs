@@ -124,8 +124,7 @@ internal static partial class Program
 
     private static String CaptureDirectory()
     {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var directory = Path.Combine(home, ".claude", "claude-console", "desktop-captures");
+        var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vizhi Desktop", "desktop-captures");
         Directory.CreateDirectory(directory);
         return directory;
     }

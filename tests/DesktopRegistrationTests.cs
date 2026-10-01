@@ -37,6 +37,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Deleted_current_revision_stays_deleted_without_requesting_a_restart()
+        {
+            var root = Path.Combine(_root, "deleted");
+            SelfRegistration.CreateRegistration(DesktopLp5(), null, root, windows: false);
+            var info = Directory.GetFiles(root, "ApplicationInfo.json", SearchOption.AllDirectories).Single();
+            var app = Path.GetDirectoryName(info);
+            var profile = (String)JsonNode.Parse(File.ReadAllText(info))["defaultProfileName"];
+            Directory.Delete(Path.Combine(app, "Profiles", profile), true);
+            var before = File.ReadAllText(info);
+            Assert.False(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(DesktopLp5(), null, root, false));
+            Assert.False(Directory.Exists(Path.Combine(app, "Profiles", profile)));
+            Assert.Equal(before, File.ReadAllText(info));
+        }
+
+        [Fact]
         public void A_desktop_bundle_survives_the_windows_patch_untouched()
         {
             var winRoot = Path.Combine(this._root, "win");

@@ -56,6 +56,8 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             // Before any action is constructed — actions resolve IPC paths and DesktopServices.
             IpcPaths.UseProduct("vizhi-desktop");
+            try { DesktopUninstall.RestoreSettings(ProductRuntime.Home); ProductRuntime.MigrateDesktop(BridgeManager.HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ProductRuntime.Home); }
+            catch (Exception ex) { PluginLog.Warning(ex, "Desktop settings migration will retry on next load"); }
 
             _app = new OpenAiDesktopAdapter();
             IDesktopAutomation automation = OperatingSystem.IsWindows()
@@ -78,6 +80,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                 bridge.TranscriptSink = (text, send) => _lifetime.Active
                     ? DesktopTranscriptDelivery.Write(automation, text, send, recovery.NotifyReady) : "Cancelled";
                 bridge.DraftRecoverySink = recovery.Retain;
+                bridge.DraftFailureRecoverySink = recovery.Retain;
+                bridge.FailedSendCopy = text => DesktopRecoveryClipboard.Copy(text);
                 bridge.SearchAudioHasSignal = DesktopSearchAudio.HasSignal;
                 bridge.DesktopCaptureAllowed = _lifetime.CaptureGuard();
             }, bridge.ClearDesktopRouting);
@@ -96,6 +100,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
+            try { DesktopUninstall.RestoreRegistration(ProductRuntime.Home, RegistrationHeal.ApplicationsRoot()); }
+            catch (Exception ex) { PluginLog.Warning(ex, "Desktop registration restore will retry on next load"); return; }
             _lifetime.Start();
             _actions.Start();
             BridgeManager.Instance.PluginAssemblyFilePath = this.AssemblyFilePath;
@@ -138,6 +144,20 @@ namespace Loupedeck.ClaudeConsolePlugin
             }
 
             PluginLog.Info("VizhiDesktopPlugin: Loaded — driving the ChatGPT/Codex desktop app");
+        }
+
+        public override Boolean Install()
+        {
+            try { DesktopUninstall.RestoreRegistration(ProductRuntime.Home, RegistrationHeal.ApplicationsRoot()); }
+            catch (Exception ex) { PluginLog.Warning(ex, "Desktop registration restore deferred to load"); }
+            return true;
+        }
+
+        public override Boolean Uninstall()
+        {
+            if (!BridgeManager.Instance.FinishDesktopCaptureForUninstall()) return false;
+            Unload();
+            return DesktopUninstall.Clean(ProductRuntime.Home, System.IO.Path.Combine(IpcPaths.TempDir, "vizhi-desktop"), RegistrationHeal.ApplicationsRoot());
         }
 
         public override void Unload()

@@ -112,7 +112,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
                 () => throw new Exception("must not record"), id => recovery.Discard(id));
             Assert.True(recovery.Pending);
             var capture = new VoiceCaptureState();
-            Assert.Equal("HOLD TO DISCARD", DesktopDictationFace.For(VoiceIntent.DesktopDraft,
+            Assert.Equal("TAP TO RETRY", DesktopDictationFace.For(VoiceIntent.DesktopDraft,
                 capture, "Draft Exists", "voice", pending: true).Footer);
             Assert.True(recovery.Discard(recovery.PendingId.Value));
             var result = DesktopDictationFace.For(VoiceIntent.DesktopDraft, capture, "Discarded", "voice");

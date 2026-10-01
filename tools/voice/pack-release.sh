@@ -1,9 +1,9 @@
 #!/bin/bash
 # pack-release.sh — build a distributable .lplug4 with offline voice EMBEDDED.
 #
-# Copies the Developer-ID-signed, notarized voice helper + self-contained whisper-cli into the
+# Builds the product voice helper from source, signs/notarizes it, and copies it with whisper-cli into the
 # packed plugin (under bin/voice/), so a package-only install has working voice: the plugin installs
-# them to ~/.claude/claude-console/ and strips quarantine on first use (BridgeManager
+# them to each product runtime home and strips quarantine on first use (BridgeManager
 # .EnsureVoiceRuntimeInstalled). The ~142 MB speech model is NOT embedded — it downloads on first use.
 #
 # Prerequisite: run tools/voice/sign-and-notarize.sh first so the runtime-home artifacts are
@@ -30,7 +30,7 @@ BUILD_DIR="$ROOT/bin/$PRODUCT/Release"
 INTERMEDIATE_DIR="$ROOT/src/Products/$PRODUCT/obj/Release"
 
 HOME_DIR="$HOME/.claude/claude-console"
-APP="$HOME_DIR/ClaudeVoiceHelper.app"
+APP="" # populated from a fresh source build below
 WBIN="$HOME_DIR/whisper-bin"
 # A Windows whisper.cpp bundle prepared and smoke-tested ON WINDOWS (#47). Kept separate from the
 # macOS bundle: both contain a whisper-cli with platform-specific dependencies and cannot share one
@@ -56,11 +56,8 @@ verify_macos_helper() {
   fi
 }
 
-# Which products ship offline voice. Both do: voice is agent-neutral — it records, transcribes and
-# injects into the focused session without asking which agent runs there. The payload installs to a
-# runtime home shared by every product (~/.claude/claude-console) under one bundle id, so a user with
-# both packages reuses one model download. Executable runtime copies are product-specific;
-# verify microphone consent after moving a helper to its product runtime location.
+# Every product ships local voice with its own helper identity and runtime directory.
+# A verified existing model may be copied from another product without changing its files.
 case "$PRODUCT" in
   ClaudeConsole|VizhiCodex|VizhiDesktop) SHIPS_VOICE=1 ;;
   *)
@@ -83,6 +80,16 @@ case "$PRODUCT" in
   ClaudeConsole|VizhiCodex|VizhiDesktop) SHIPS_WINDOWS=1 ;;
   *)                                     SHIPS_WINDOWS=0 ;;
 esac
+
+# A release must never inherit whichever helper happens to be installed locally.
+VOICE_STAGE="$(mktemp -d)"
+trap 'rm -rf "$VOICE_STAGE"' EXIT
+APP="$VOICE_STAGE/ClaudeVoiceHelper.app"
+export SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Ravi Shankar (8LEAJKRS3U)}"
+VOICE_BUILD_APP="$APP" VOICE_PRODUCT="$PRODUCT" VOICE_VERSION="$VER" VOICE_NO_INSTALL=1 bash "$HERE/build.sh"
+ditto -c -k --keepParent "$APP" "$VOICE_STAGE/helper.zip"
+xcrun notarytool submit "$VOICE_STAGE/helper.zip" --keychain-profile "${NOTARY_PROFILE:-claude-console-notary}" --wait
+xcrun stapler staple "$APP"
 
 # --- preflight: the voice payload must exist and be notarized ------------------------------------
 if [ "$SHIPS_VOICE" = "1" ]; then
@@ -294,7 +301,7 @@ fi
 # helper remains valid. Extract into a fresh directory and apply the same three release gates to
 # the packaged helper (#66).
 VERIFY_DIR="$(mktemp -d)"
-trap 'rm -rf "$VERIFY_DIR"' EXIT
+trap 'rm -rf "$VERIFY_DIR" "$VOICE_STAGE"' EXIT
 ditto -x -k "$OUT" "$VERIFY_DIR"
 PACKED_APP="$(find "$VERIFY_DIR" -type d -name ClaudeVoiceHelper.app -print -quit)"
 if [ -z "$PACKED_APP" ]; then

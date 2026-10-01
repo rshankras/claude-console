@@ -51,6 +51,7 @@ let maxSec = Double(argValue("--maxsec") ?? "30") ?? 30
 let surfacedErrorPath = transcriptPath + ".error"
 func fail(_ message: String, _ code: Int32) -> Never {
     try? message.write(toFile: surfacedErrorPath, atomically: true, encoding: .utf8)
+    try? FileManager.default.removeItem(atPath: outWav)
     log(message)
     exit(code)
 }
@@ -109,7 +110,10 @@ let start = Date()
 while true {
     RunLoop.current.run(until: Date().addingTimeInterval(0.12))
     if fm.fileExists(atPath: stopFlag) { break }
-    if Date().timeIntervalSince(start) > maxSec { break }
+    if Date().timeIntervalSince(start) > maxSec {
+        try? "capped".write(toFile: transcriptPath + ".capped", atomically: true, encoding: .utf8)
+        break
+    }
 }
 recorder.stop()
 try? fm.removeItem(atPath: stopFlag)
@@ -164,6 +168,29 @@ text = text.replacingOccurrences(of: "\n", with: " ")
            .trimmingCharacters(in: .whitespacesAndNewlines)
 // whisper emits "[BLANK_AUDIO]" / "(silence)" markers when it hears nothing — treat as empty.
 if text == "[BLANK_AUDIO]" || text == "(silence)" || text == "[ Silence ]" { text = "" }
+
+// Persist only the silence gate, then erase the raw recording before publishing completion.
+// Same 20 ms / -60 dBFS gate as DesktopSearchAudio; no audio is needed for a later key press.
+func recordingHasSignal(_ url: URL) -> Bool? {
+    guard let file = try? AVAudioFile(forReading: url),
+          let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)),
+          (try? file.read(into: buffer)) != nil,
+          let samples = buffer.floatChannelData?[0] else { return nil }
+    var energy: Double = 0
+    var count = 0
+    for index in 0..<Int(buffer.frameLength) {
+        let value = Double(samples[index]); energy += value * value; count += 1
+        if count == 320 {
+            if energy / Double(count) > 0.000001 { return true }
+            energy = 0; count = 0
+        }
+    }
+    return count > 0 && energy / Double(count) > 0.000001
+}
+if let signal = recordingHasSignal(url) {
+    try? (signal ? "signal" : "silent").write(toFile: transcriptPath + ".signal", atomically: true, encoding: .utf8)
+}
+try? fm.removeItem(at: url)
 
 try? text.write(toFile: transcriptPath, atomically: true, encoding: .utf8)
 exit(0)
