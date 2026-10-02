@@ -188,6 +188,8 @@ pgrep -fl "VizhiAxBridge|ClaudeVoiceHelper|sleep 660" || echo "no plugin process
     second half (Find Chat pressed while the box is open takes it over — `SearchVerbs.CheckedSearch`
     pins an `open` that finds the field; compiled, not run on Windows). Voice Chat needs no re-run:
     the dialog scan is Mac-only.
+8.2c Phase 5.3's Copy Reply with the composer focused (#152: `IsBlockingDialog` — only a modal
+    dialog blocks Copy Reply, the composer and View Changes; compiled, not run on Windows).
 8.3 Phase 6 and Phase 7. The deferred timer no longer exists, so there is no process to watch for.
 
 ## Phase 9 — put the Mac back
