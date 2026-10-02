@@ -1,8 +1,11 @@
-## Vizhi Desktop [1.1.0] — Unreleased — Windows, and the 1.0.0 QA fixes
+## Vizhi Desktop [1.1.0] — 2026-10-02 — Windows, and the 1.0.0 QA fixes
 
 Packaged for Windows (`pluginFolderWin`, the toolkit and the UI Automation helper, signed at
-pack time), and the fixes for everything Logitech QA found in 1.0.0 (#138–#149); the device
-pass with the installed package (docs/vizhi-desktop-1.1.0-device-pass.md) is what remains.
+pack time), and the fixes for everything Logitech QA found in 1.0.0 (#138–#149), plus three
+found in the device passes (#151 #152, and the #147 follow-ups). Device-checked with the
+installed package on a Mac and a Windows laptop on 2 October
+(docs/vizhi-desktop-1.1.0-device-pass.md, #153); View Changes with two edited turns (#146) is
+covered by tests only.
 
 ### Added
 - **Windows: the app is found and read.** The Store package OpenAI.Codex ("ChatGPT",
@@ -24,8 +27,7 @@ pass with the installed package (docs/vizhi-desktop-1.1.0-device-pass.md) is wha
 - **Find Chat is Find Chat in both modes.** In Codex the Tools key used to become View Changes,
   which Tasks already offers as its first key, so Codex showed it twice. The key now opens the
   app's search in Codex as it does in ChatGPT, and a search stays pinned to the mode it opened
-  in. View Changes is Tools → Tasks. Checked on the Windows app; the macOS app's search in
-  Codex mode is still to be checked.
+  in. View Changes is Tools → Tasks. Checked on both apps.
 - **Windows: Find Chat lists chats only, with their whole titles.** The app's command menu also
   lists commands (New chat, Open in new window); those no longer appear as results. A title
   the query matches is no longer cut off at the match.
