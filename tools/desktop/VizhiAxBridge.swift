@@ -797,6 +797,16 @@ func replyConversationNodes(_ nodes: [Node], speakerLabels: Set<String>) -> [Nod
     return conversations.count == 1 ? conversations[0] : nil
 }
 
+// A dialog blocks the reply and panel routes only when it is modal. Chromium exposes the
+// composer's "Text formatting" toolbar as AXApplicationDialog with AXModal false (device,
+// 2 Oct, #152), which read as "a dialog is open" on every chat with a focused composer. A
+// node that does not report AXModal still blocks, as before.
+func blockingDialog(_ node: Node) -> Bool {
+    if node.role == "AXSheet" { return true }
+    guard ["AXApplicationDialog", "AXDialog"].contains(str(node.el, kAXSubroleAttribute as String) ?? "") else { return false }
+    return (attr(node.el, "AXModal") as? Bool) != false
+}
+
 // Speaker headings and the response-only Copy control are adapter-owned semantics. Never
 // use selected text, the last generic Copy button, or scrape message/reasoning text.
 func replyTarget(_ windowNodes: [Node], copiedTarget: AXUIElement? = nil) -> (node: Node?, error: String) {
@@ -810,10 +820,7 @@ func replyTarget(_ windowNodes: [Node], copiedTarget: AXUIElement? = nil) -> (no
     // Copy targets the native response action, never an editor. Unrelated text areas
     // (or a read-only conversation without a composer) do not make that action ambiguous.
     // Keep text areas as action-row boundaries below; write/send retain their own guards.
-    if windowNodes.contains(where: { $0.role == "AXSheet" ||
-        ["AXApplicationDialog", "AXDialog"].contains(str($0.el, kAXSubroleAttribute as String) ?? "") }) {
-        return (nil, "reply-dialog-open")
-    }
+    if windowNodes.contains(where: blockingDialog) { return (nil, "reply-dialog-open") }
     if !exactButtons(matching: argValues("--stop") + argValues("--voice-end"), in: windowNodes).isEmpty ||
         firstPressable(matching: argValues("--approve"), in: windowNodes) != nil { return (nil, "answer-not-ready") }
     if let marker = argValue("--conv-marker"), !marker.isEmpty {
@@ -1380,8 +1387,7 @@ func panelNodes(_ nodes: [Node], modeLabel: String) -> [Node]? {
 }
 
 func panelObstructed(_ nodes: [Node]) -> Bool {
-    nodes.contains { $0.role == "AXSheet" || $0.role == "AXDialog" || $0.role == "AXMenu" ||
-        ["AXApplicationDialog", "AXDialog"].contains(str($0.el, kAXSubroleAttribute as String) ?? "") }
+    nodes.contains { $0.role == "AXDialog" || $0.role == "AXMenu" || blockingDialog($0) }
 }
 
 func panelRouteAvailable(_ nodes: [Node], modeLabel: String, openLabels: [String], visibleLabels: [String]) -> Bool {

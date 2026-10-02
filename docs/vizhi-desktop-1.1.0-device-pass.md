@@ -136,7 +136,9 @@ for i in 1 2 3 4 5 6 7 8 9; do pgrep -fl "LogiPluginService|logioptionsplus_agen
 5.3 #145 Project chat. In ChatGPT create a project (sidebar → Projects → +) and start a chat inside
     it. With that chat open: press **Copy Reply** → it copies (face not "Check Chat"). Press **Home**:
     the chat appears ONCE among the cards. Open another chat, press the project chat's card → it
-    opens.
+    opens. Then click into the composer so the Text formatting toolbar shows and look at
+    **Copy Reply** again: it must still read *Copy Reply* (#152 — on the package from `b369dc5` it
+    read *Check Chat* whenever that toolbar was in the tree).
 5.4 #146 View Changes. Codex mode, a project chat, ask for a file edit, wait; ask for a second edit,
     wait; close the Changes tab if open. Tools → Tasks → **View Changes** → the tab opens; press
     again → "already open" (stays).

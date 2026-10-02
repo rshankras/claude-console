@@ -212,3 +212,19 @@ add those nodes; every other verb keeps the single-window contract. The adapter'
 labels were already right ("Stop voice chat"). Not unit-testable offline (AX walk);
 verified on the device in the next cut. Windows untouched: the UIA helper scans the
 process, and the Windows pass had already seen start and end.
+
+## Device-pass finding, 2 October: #152 Copy Reply blocked by the formatting toolbar
+
+After step 5.3 the bridge kept answering `reply-dialog-open` for Copy Reply (key:
+*Check Chat*) on a chat with no dialog in sight. The only dialog-like node in the
+window was the composer's **Text formatting** toolbar (Link / Bold / Italic / Text
+styles): Chromium exposes it as `AXGroup` with subrole `AXApplicationDialog`,
+`AXModal = 0`, a 146×36 popover. `replyTarget` and `panelObstructed` treated any
+dialog subrole as a blocking dialog; the Windows `IsDialog` (aria role dialog) has
+the same shape.
+
+Fix: `blockingDialog` on the Mac — a sheet, or a dialog subrole whose `AXModal` is
+not reported false; `IsBlockingDialog` on Windows — `IsDialog` unless
+`AriaProperties` says `modal=false`. Used by the reply guard, the composer guard and
+the panel route; the search-container rule (dialogs as containers) is untouched.
+Offline AX cases (modal nil / true / false, sheet) and `UiaMatchingTests` cases added.

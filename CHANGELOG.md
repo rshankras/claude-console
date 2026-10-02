@@ -83,6 +83,9 @@ pass with the installed package (docs/vizhi-desktop-1.1.0-device-pass.md) is wha
   hides the mode switcher, and **Voice Chat now sees a running session and ends it**: on the Mac
   the session lives in a separate voice window the key never looked at, so it kept offering to
   start another and could not stop the one running (#147).
+- **Copy Reply no longer says "Check Chat" while the composer's formatting toolbar is showing**
+  (#152). ChatGPT exposes that toolbar as a dialog; only a *modal* dialog now blocks Copy Reply,
+  the composer and the View Changes route, on both platforms.
 - **Opening a Find Chat result leaves the page, and the search works again afterwards** (#151).
   The folder asked the Logi Plugin Service to go up a level with a generic action the service
   refuses, so it stayed on the result cards, and until you pressed Back the next Find Chat press

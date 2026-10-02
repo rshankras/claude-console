@@ -551,7 +551,7 @@ internal static class UiaMatching
 
     /// <summary>A modal, or a task that is running or waiting, means the composer is not ready.</summary>
     public static Boolean ComposerBlocked(IReadOnlyList<UiaNode> nodes, IReadOnlyList<String> blockingLabels) =>
-        nodes.Any(IsDialog) || ExactButtons(nodes, blockingLabels).Any(n => n.Enabled);
+        nodes.Any(IsBlockingDialog) || ExactButtons(nodes, blockingLabels).Any(n => n.Enabled);
 
     // ---- Copy Reply ------------------------------------------------------------
     //
@@ -674,7 +674,7 @@ internal static class UiaMatching
         var users = rules.UserHeadings.Select(NormalizeLabel).ToList();
         if (assistants.Count == 0 || users.Count == 0 || rules.CopyResponse.Count == 0) return (null, "unsupported");
         if (!windowNodes.Any(n => n.Role == "Document")) return (null, "reply-web-area-missing");
-        if (windowNodes.Any(IsDialog)) return (null, "reply-dialog-open");
+        if (windowNodes.Any(IsBlockingDialog)) return (null, "reply-dialog-open");
         if (ExactButtons(windowNodes, rules.Stop.Concat(rules.VoiceEnd).ToList()).Count > 0
             || FirstPressable(windowNodes, rules.Approve) != null) return (null, "answer-not-ready");
         if (rules.ConversationMarker.Length > 0)
@@ -891,8 +891,25 @@ internal static class UiaMatching
     public static Boolean IsDialog(UiaNode node) =>
         node.AriaRole is "dialog" or "alertdialog" || (node.Role == "Window" && node.Depth > 0);
 
+    /// <summary>
+    /// A dialog blocks the composer, the reply and the panel routes only when it is modal. The
+    /// composer's "Text formatting" toolbar is a non-modal dialog (#152); a dialog that does not
+    /// say still blocks, as before. The search-container rule keeps using <see cref="IsDialog"/>.
+    /// </summary>
+    public static Boolean IsBlockingDialog(UiaNode node) => IsDialog(node) && AriaProperty(node, "modal") != "false";
+
+    private static String? AriaProperty(UiaNode node, String key)
+    {
+        foreach (var pair in node.AriaProperties.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (parts.Length == 2 && parts[0].Trim() == key) return NormalizeLabel(parts[1]);
+        }
+        return null;
+    }
+
     public static Boolean PanelObstructed(IReadOnlyList<UiaNode> nodes) =>
-        nodes.Any(n => IsDialog(n) || n.Role == "Menu");
+        nodes.Any(n => IsBlockingDialog(n) || n.Role == "Menu");
 
     /// <summary>
     /// A preview can expose another document with arbitrary website controls. Split the scan

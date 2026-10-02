@@ -34,6 +34,7 @@ struct FakeElement {
     var enabled: Bool? = true
     var attributes: [String: String] = [:]
     var frame: CGRect? = nil
+    var modal: Bool? = nil
 }
 typealias AXUIElement = FakeElement
 let kAXRoleAttribute = "AXRole"
@@ -52,7 +53,7 @@ func str(_ el: FakeElement, _ name: String) -> String? {
     if name == kAXRoleAttribute { return el.role }
     return el.attributes[name]
 }
-func attr(_ el: FakeElement, _ name: String) -> Any? { el.enabled }
+func attr(_ el: FakeElement, _ name: String) -> Any? { name == "AXModal" ? el.modal : el.enabled }
 func controlFrame(_ el: FakeElement) -> CGRect? { el.frame }
 var arguments = ["--send-label": ["Send"], "--stop": ["Stop"], "--approve": ["Allow"]]
 func argValues(_ name: String) -> [String] { arguments[name] ?? [] }
@@ -168,7 +169,7 @@ fixture += '\n' + function('conversationRowState')
 fixture += '\n' + function('currentConversationFlag')
 fixture += '\n' + function('replyActionRun') + '\n' + function('sameReplyControlRow')
 fixture += '\n' + function('positionedReplyRow') + '\n' + function('replySpeakerLabel')
-fixture += '\n' + function('replyConversationNodes') + '\n' + function('replyTarget')
+fixture += '\n' + function('blockingDialog') + '\n' + function('replyConversationNodes') + '\n' + function('replyTarget')
 fixture += '\n' + '\n'.join(function(n) for n in ['firstPressable', 'exactButtons', 'uniqueEnabledButton',
     'preferredVoiceStart', 'voiceState', 'voiceTarget', 'composerSendTarget', 'sendTarget'])
 fixture += '''
@@ -387,6 +388,16 @@ assert(replyTarget(replyBase).error == "reply-unrecognized")
 assert(replyTarget(replyBase + message(true, explicit: true)).node != nil)
 assert(replyTarget(transcript + [node("AXButton", "Stop", 1)]).error == "answer-not-ready")
 assert(replyTarget(transcript + [node("AXButton", "Allow", 1)]).error == "answer-not-ready")
+// #152: only a MODAL dialog blocks Copy Reply; the composer's Text formatting toolbar is an
+// AXApplicationDialog with AXModal false, and an element that does not report AXModal still blocks.
+func dialog(modal: Bool?) -> Node {
+    Node(el: FakeElement(role: "AXGroup", text: "Text formatting", children: [], attributes: ["AXSubrole": "AXApplicationDialog"], modal: modal),
+         role: "AXGroup", text: "Text formatting", pressable: false, depth: 1, labels: [])
+}
+assert(replyTarget(transcript + [dialog(modal: nil)]).error == "reply-dialog-open")
+assert(replyTarget(transcript + [dialog(modal: true)]).error == "reply-dialog-open")
+assert(replyTarget(transcript + [dialog(modal: false)]).node != nil)
+assert(replyTarget(transcript + [node("AXSheet", "", 1)]).error == "reply-dialog-open")
 let extraEditors = [node("AXTextArea", "sidebar editor", 1)] + transcript + [node("AXTextArea", "secondary editor", 1)]
 assert(CFEqual(replyTarget(extraEditors).node!.el, newest[newest.count - 2].el))
 assert(CFEqual(replyTarget(transcript.filter { $0.role != "AXTextArea" }).node!.el, newest[newest.count - 2].el))

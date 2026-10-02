@@ -497,6 +497,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("reply-unrecognized", UiaMatching.ReplyTarget(Window(new[] { N(3, "Group", "") }), Rules).Error);
             Assert.Equal("answer-not-ready", UiaMatching.ReplyTarget(Window(Turn(true, "a"), new[] { N(3, "Button", "Stop", pressable: true) }), Rules).Error);
             Assert.Equal("reply-dialog-open", UiaMatching.ReplyTarget(Window(Turn(true, "a"), new[] { N(3, "Group", "Confirm", aria: "dialog") }), Rules).Error);
+            // #152: only a MODAL dialog blocks; the composer's Text formatting toolbar says modal=false.
+            Assert.Equal("reply-dialog-open", UiaMatching.ReplyTarget(Window(Turn(true, "a"), new[] { N(3, "Group", "Confirm", aria: "dialog", props: "modal=true") }), Rules).Error);
+            Assert.NotEqual("reply-dialog-open", UiaMatching.ReplyTarget(Window(Turn(true, "a"), new[] { N(3, "Group", "Text formatting", aria: "dialog", props: "modal=false") }), Rules).Error);
+            Assert.False(UiaMatching.PanelObstructed(new[] { N(3, "Group", "Text formatting", aria: "dialog", props: "modal=false") }));
+            Assert.True(UiaMatching.PanelObstructed(new[] { N(3, "Group", "Confirm", aria: "dialog") }));
             Assert.Equal("reply-copy-not-found", UiaMatching.ReplyTarget(Window(Turn(true, "a", footer: false)), Rules).Error);
             // A running open conversation is not a finished answer.
             var running = Window(Row(3, "A", "Working", props: "current=page"), Turn(true, "a"));
