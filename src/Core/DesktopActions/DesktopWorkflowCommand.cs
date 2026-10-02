@@ -12,13 +12,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// scope, inserts the complete brief, and waits for an explicit Send Draft press.</summary>
     public class DesktopWorkflowCommand : DesktopCommandBase
     {
-        private static readonly String CodexConfigFile = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "claude-console", "desktop-workflows.json");
+        private static String CodexConfigFile => Path.Combine(
+            ProductRuntime.Home, "desktop-workflows.json");
 
-        private static readonly String ChatGptConfigFile = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "claude-console", "desktop-chatgpt-workflows.json");
+        private static String ChatGptConfigFile => Path.Combine(
+            ProductRuntime.Home, "desktop-chatgpt-workflows.json");
 
         // The appendix's nine, written in the house prompt style: scoped to something concrete,
         // method named, output shaped. Entries that need a target the key can't know (a PR
@@ -133,6 +131,10 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         internal static IReadOnlyList<WorkflowDef> LoadChatGptFavorites() =>
             LoadChatGptWorkflows(ChatGptConfigFile).Where(IsUsable).Take(9).ToArray();
 
+        // No cache: every load reads the file and runs the migrations, which are idempotent on a
+        // stock file (the Flow step recognises the Scope/SourcePrompt the Ux step writes — #149).
+        // A cache keyed on content would have returned one mutable WorkflowDef[] to every caller
+        // and could not have fixed the rewrite anyway, since the first load per process still ran.
         private static IEnumerable<WorkflowDef> LoadWorkflows(String configFile, WorkflowDef[] defaults)
         {
             try

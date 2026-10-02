@@ -290,7 +290,8 @@ func captureDirectory() -> URL {
               argValue("--test-pasteboard")?.hasPrefix("com.vizhi.fixture.") == true else { fail("invalid-capture-directory", 4) }
         return URL(fileURLWithPath: path, isDirectory: true)
     }
-    return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/claude-console/desktop-captures", isDirectory: true)
+    guard let path = argValue("--capture-dir"), path.hasPrefix("/") else { fail("invalid-capture-directory", 4) }
+    return URL(fileURLWithPath: path, isDirectory: true)
 }
 func savedPasteboard(_ board: NSPasteboard) -> [NSPasteboardItem]? {
     var total = 0, result: [NSPasteboardItem] = []
@@ -604,9 +605,9 @@ func targetWindows() -> [AXUIElement] {
 // Capture once per invocation. A re-scan must never retarget another window after a wait.
 let operationWindows = targetWindows()
 
-// One DFS over the target window (never the menu bar — thousands of AXMenuItems of pure noise).
+// One DFS over the given roots (never the menu bar — thousands of AXMenuItems of pure noise).
 // Returns tree order, which the card-text heuristic depends on.
-func scanWindows() -> (nodes: [Node], webArea: Bool) {
+func walkTree(_ roots: [AXUIElement]) -> (nodes: [Node], webArea: Bool, complete: Bool) {
     var nodes: [Node] = []
     var webArea = false
     var complete = true
@@ -622,9 +623,27 @@ func scanWindows() -> (nodes: [Node], webArea: Bool) {
                                    "AXBusyIndicator", "AXGroup"].contains(role) ? buttonLabels(el) : []))
         for c in children(el) { rec(c, depth + 1) }
     }
-    for w in operationWindows { rec(w, 0) }
+    for w in roots { rec(w, 0) }
+    return (nodes, webArea, complete)
+}
+
+// The target window only.
+func scanWindows() -> (nodes: [Node], webArea: Bool) {
+    let tree = walkTree(operationWindows)
     // A partial tree cannot establish uniqueness or rule out an approval/running task.
-    return (nodes, webArea && complete)
+    return (tree.nodes, tree.webArea && tree.complete)
+}
+
+// Voice mode lives in a separate AXDialog window that the target scan never visits (device,
+// 2 Oct): the main window kept "Start voice chat" while the dialog held "Stop voice chat", so
+// the key read Ready through a whole session and could not end it. Only the voice verbs look
+// there; every other verb keeps its single-window contract.
+func voiceDialogNodes() -> [Node] {
+    let windows = (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+    let dialogs = windows.filter { w in
+        !operationWindows.contains { CFEqual($0, w) } && str(w, kAXSubroleAttribute as String) == "AXDialog"
+    }
+    return dialogs.isEmpty ? [] : walkTree(dialogs).nodes
 }
 
 // Bounded wait for the web content tree — used by press/write (which must not act on a half
@@ -778,6 +797,16 @@ func replyConversationNodes(_ nodes: [Node], speakerLabels: Set<String>) -> [Nod
     return conversations.count == 1 ? conversations[0] : nil
 }
 
+// A dialog blocks the reply and panel routes only when it is modal. Chromium exposes the
+// composer's "Text formatting" toolbar as AXApplicationDialog with AXModal false (device,
+// 2 Oct, #152), which read as "a dialog is open" on every chat with a focused composer. A
+// node that does not report AXModal still blocks, as before.
+func blockingDialog(_ node: Node) -> Bool {
+    if node.role == "AXSheet" { return true }
+    guard ["AXApplicationDialog", "AXDialog"].contains(str(node.el, kAXSubroleAttribute as String) ?? "") else { return false }
+    return (attr(node.el, "AXModal") as? Bool) != false
+}
+
 // Speaker headings and the response-only Copy control are adapter-owned semantics. Never
 // use selected text, the last generic Copy button, or scrape message/reasoning text.
 func replyTarget(_ windowNodes: [Node], copiedTarget: AXUIElement? = nil) -> (node: Node?, error: String) {
@@ -791,19 +820,15 @@ func replyTarget(_ windowNodes: [Node], copiedTarget: AXUIElement? = nil) -> (no
     // Copy targets the native response action, never an editor. Unrelated text areas
     // (or a read-only conversation without a composer) do not make that action ambiguous.
     // Keep text areas as action-row boundaries below; write/send retain their own guards.
-    if windowNodes.contains(where: { $0.role == "AXSheet" ||
-        ["AXApplicationDialog", "AXDialog"].contains(str($0.el, kAXSubroleAttribute as String) ?? "") }) {
-        return (nil, "reply-dialog-open")
-    }
+    if windowNodes.contains(where: blockingDialog) { return (nil, "reply-dialog-open") }
     if !exactButtons(matching: argValues("--stop") + argValues("--voice-end"), in: windowNodes).isEmpty ||
         firstPressable(matching: argValues("--approve"), in: windowNodes) != nil { return (nil, "answer-not-ready") }
     if let marker = argValue("--conv-marker"), !marker.isEmpty {
         var selected = 0
-        for (i, row) in windowNodes.enumerated() where row.pressable && !row.text.isEmpty {
-            var end = i + 1
-            while end < windowNodes.count && windowNodes[end].depth > row.depth { end += 1 }
-            let descendants = windowNodes[(i + 1)..<end]
-            guard descendants.contains(where: { $0.pressable && $0.text == marker }), conversationSelected(row.el) else { continue }
+        for entry in conversationRows(windowNodes, marker: marker) {
+            let row = entry.node
+            let descendants = windowNodes[(entry.index + 1)..<entry.end]
+            guard conversationSelected(row.el) else { continue }
             selected += 1
             let state = conversationRowState(title: row.text, descendants: descendants,
                 awaiting: argValues("--state-awaiting"), unread: [], running: argValues("--state-running"), baseline: nil)
@@ -892,18 +917,29 @@ func replyTarget(_ windowNodes: [Node], copiedTarget: AXUIElement? = nil) -> (no
     return (target, "")
 }
 
+func preferredVoiceStart(nodes: [Node], labels: [String]) -> Node? {
+    for label in labels {
+        let matches = exactButtons(matching: [label], in: nodes).filter {
+            $0.pressable && (attr($0.el, kAXEnabledAttribute as String) as? Bool) == true
+        }
+        if matches.count > 1 { return nil }
+        if matches.count == 1 { return matches[0] }
+    }
+    return nil
+}
+
 func voiceState(nodes: [Node], start: [String], end: [String]) -> String {
     guard !start.isEmpty, !end.isEmpty else { return "unavailable" }
     let endings = exactButtons(matching: end, in: nodes)
     // Even a disabled End button is evidence of a session. It must block starting another.
     if !endings.isEmpty { return endings.count == 1 ? "active" : "unavailable" }
-    return uniqueEnabledButton(matching: start, in: nodes) != nil ? "ready" : "unavailable"
+    return preferredVoiceStart(nodes: nodes, labels: start) != nil ? "ready" : "unavailable"
 }
 
 func voiceTarget(action: String, nodes: [Node], start: [String], end: [String]) -> Node? {
     guard ["start", "end"].contains(action),
           voiceState(nodes: nodes, start: start, end: end) == (action == "start" ? "ready" : "active") else { return nil }
-    return uniqueEnabledButton(matching: action == "start" ? start : end, in: nodes)
+    return action == "start" ? preferredVoiceStart(nodes: nodes, labels: start) : uniqueEnabledButton(matching: end, in: nodes)
 }
 
 // Send is never a substring search over the entire window. Require exactly one composer,
@@ -946,19 +982,68 @@ func sameOperationWindow() -> Bool {
     return operationWindows.count == 1 && current.count == 1 && CFEqual(operationWindows[0], current[0])
 }
 
-// Exact titles only, and only rows with the adapter's sidebar marker in their subtree.
-func conversationMatches(title: String, marker: String, nodes: [Node]) -> [Node] {
-    guard !title.isEmpty && !marker.isEmpty else { return [] }
-    return nodes.indices.compactMap { i in
-        let n = nodes[i]
-        guard n.pressable && n.text == title else { return nil }
-        var j = i + 1
-        while j < nodes.count && nodes[j].depth > n.depth {
-            if nodes[j].pressable && nodes[j].text == marker { return n }
+// One canonical sidebar scan for status, reply copying, draft guards and navigation.
+//
+// A row is a pressable, titled node that OWNS the marker: the marker sits in its subtree outside
+// any nested row's subtree. A project row that only contains chat rows (each with its own marker)
+// is therefore a container, not a conversation — and its chats are still visited, where the first
+// cut skipped a matched row's whole subtree and made a project-only chat unfindable by title.
+func conversationRows(_ nodes: [Node], marker: String) -> [(node: Node, index: Int, end: Int)] {
+    guard !marker.isEmpty else { return [] }
+    func subtreeEnd(_ i: Int) -> Int {
+        var end = i + 1
+        while end < nodes.count && nodes[end].depth > nodes[i].depth { end += 1 }
+        return end
+    }
+    // Candidates: pressable titled nodes with the marker anywhere below them, in DFS order.
+    var candidates: [(index: Int, end: Int)] = []
+    for i in nodes.indices where nodes[i].pressable && !nodes[i].text.isEmpty {
+        let end = subtreeEnd(i)
+        if nodes[(i + 1)..<end].contains(where: { $0.pressable && $0.text == marker }) { candidates.append((i, end)) }
+    }
+    var rows: [(node: Node, index: Int, end: Int, nested: Bool, lists: Int)] = []
+    for (c, candidate) in candidates.enumerated() {
+        // Own marker: walk the subtree, stepping over nested candidates' subtrees.
+        var own = false
+        var j = candidate.index + 1
+        while j < candidate.end {
+            if let inner = candidates[(c + 1)...].first(where: { $0.index == j }) { j = inner.end; continue }
+            if nodes[j].pressable && nodes[j].text == marker { own = true; break }
             j += 1
         }
-        return nil
+        guard own else { continue }
+        // Nested: inside an earlier candidate's span (a pressable project row), or under a second
+        // list (a project header the app exposes as a plain group).
+        let nested = candidates[..<c].contains { $0.index < candidate.index && candidate.end <= $0.end }
+        var depth = nodes[candidate.index].depth, lists = 0
+        if candidate.index > 0 {
+            for k in stride(from: candidate.index - 1, through: 0, by: -1) where nodes[k].depth < depth {
+                depth = nodes[k].depth
+                if nodes[k].role == "AXList" { lists += 1 }
+            }
+        }
+        rows.append((nodes[candidate.index], candidate.index, candidate.end, nested || lists > 1, lists))
     }
+    return rows.filter { row in
+        guard row.nested else { return true }
+        let peers = rows.filter { !$0.nested && $0.node.text == row.node.text }
+        guard peers.count == 1 else { return true }
+        let peer = peers[0].node
+        // Explicit different identities or selection states prove these are different chats.
+        let identity = str(row.node.el, "AXIdentifier") ?? ""
+        let otherIdentity = str(peer.el, "AXIdentifier") ?? ""
+        if !identity.isEmpty && !otherIdentity.isEmpty && identity != otherIdentity { return true }
+        if conversationSelected(row.node.el) != conversationSelected(peer.el) { return true }
+        // The project list duplicates its chat in Recents. Two equal titles in Recents remain
+        // separate rows and therefore ambiguous; project-only chats retain their only row.
+        return false
+    }.map { ($0.node, $0.index, $0.end) }
+}
+
+// Exact titles only, and only rows with the adapter's sidebar marker in their subtree.
+func conversationMatches(title: String, marker: String, nodes: [Node]) -> [Node] {
+    guard !title.isEmpty else { return [] }
+    return conversationRows(nodes, marker: marker).map { $0.node }.filter { $0.text == title }
 }
 
 // The baseline comes from verified app/mode controls, never from possibly-running peers.
@@ -1139,6 +1224,33 @@ func inspectSearch(_ nodes: [Node]) -> (surface: SearchSurface?, error: String) 
 
 func searchSurface(_ nodes: [Node]) -> SearchSurface? { inspectSearch(nodes).surface }
 
+// Command-menu options are AXStaticText on macOS (not Windows ListItem).
+// Only direct children of the named Chats group qualify, never menu commands.
+func searchMenuGroup(_ index: Int, nodes: [Node]) -> String? {
+    guard index > 0 else { return nil }
+    let depth = nodes[index].depth
+    for i in stride(from: index - 1, through: 0, by: -1) {
+        if nodes[i].depth < depth {
+            return nodes[i].role == "AXGroup" && nodes[i].depth == depth - 1 ? nodes[i].text : nil
+        }
+    }
+    return nil
+}
+
+func searchMenuTitle(_ index: Int, nodes: [Node]) -> String? {
+    let row = nodes[index]
+    guard index + 1 < nodes.count, nodes[index + 1].role == "AXGroup",
+          nodes[index + 1].depth == row.depth + 1 else { return nil }
+    let group = index + 1
+    var parts: [String] = []
+    for node in nodes.dropFirst(group + 1) {
+        if node.depth <= nodes[group].depth { break }
+        if node.role == "AXStaticText" { parts.append(node.text) }
+    }
+    let title = parts.joined().trimmingCharacters(in: .whitespacesAndNewlines)
+    return title.isEmpty ? nil : title
+}
+
 func searchResultID(_ node: Node) -> String? {
     guard node.role == "AXLink", node.pressable, !node.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           let raw = attr(node.el, kAXURLAttribute as String),
@@ -1155,8 +1267,14 @@ func searchResultID(_ node: Node) -> String? {
 
 func searchResults(_ surface: SearchSurface) -> [(node: Node, id: String)] {
     guard !surface.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
-    let matches = surface.nodes.compactMap { node -> (node: Node, id: String)? in
-        searchResultID(node).map { (node, $0) }
+    let matches = surface.nodes.enumerated().compactMap { index, node -> (node: Node, id: String)? in
+        if let id = searchResultID(node) { return (node, id) }
+        guard ["AXListItem", "AXStaticText"].contains(node.role), node.pressable,
+              let group = searchMenuGroup(index, nodes: surface.nodes),
+              argValues("--result-group").contains(group),
+              let title = searchMenuTitle(index, nodes: surface.nodes) else { return nil }
+        let id = "item:" + SHA256.hash(data: Data(node.text.utf8)).map { String(format: "%02x", $0) }.joined()
+        return (Node(el: node.el, role: node.role, text: title, pressable: node.pressable, depth: node.depth, labels: node.labels), id)
     }
     let groups = Dictionary(grouping: matches, by: { $0.id })
     return matches.filter { groups[$0.id]?.count == 1 }.prefix(100).map { $0 }
@@ -1192,16 +1310,8 @@ func emitSearch(_ surface: SearchSurface) -> Never {
 // silently receive a brief after sidebar navigation. No conversation text is logged.
 func selectedDraftConversation(_ nodes: [Node]) -> String {
     guard let marker = argValue("--conv-marker"), !marker.isEmpty else { return "" }
-    var selected: [String] = []
-    for (i, node) in nodes.enumerated() where node.pressable && !node.text.isEmpty {
-        var j = i + 1, hasMarker = false
-        while j < nodes.count && nodes[j].depth > node.depth {
-            if nodes[j].pressable && nodes[j].text == marker { hasMarker = true }
-            j += 1
-        }
-        guard hasMarker else { continue }
-        if conversationSelected(node.el) { selected.append(node.text + ":" + String(CFHash(node.el))) }
-    }
+    let selected = conversationRows(nodes, marker: marker).map { $0.node }
+        .filter { conversationSelected($0.el) }.map { $0.text + ":" + String(CFHash($0.el)) }
     if selected.count > 1 { fail("composer-target-changed", 6) }
     return selected.first ?? ""
 }
@@ -1250,6 +1360,12 @@ func panelOpeners(_ nodes: [Node], labels: [String], enabledOnly: Bool = true) -
     }
 }
 
+func preferredPanelOpeners(_ nodes: [Node], labels: [String], turnLabels: [String]) -> [Node] {
+    let summaries = panelOpeners(nodes, labels: labels.filter { !turnLabels.contains($0) })
+    if !summaries.isEmpty { return summaries }
+    return Array(panelOpeners(nodes, labels: turnLabels).suffix(1))
+}
+
 // A browser preview may expose another web area with arbitrary website controls.
 // Review belongs to the unique app web area containing the mode control; child web
 // areas own their own controls and cannot advertise Review on behalf of the app.
@@ -1271,15 +1387,14 @@ func panelNodes(_ nodes: [Node], modeLabel: String) -> [Node]? {
 }
 
 func panelObstructed(_ nodes: [Node]) -> Bool {
-    nodes.contains { $0.role == "AXSheet" || $0.role == "AXDialog" || $0.role == "AXMenu" ||
-        ["AXApplicationDialog", "AXDialog"].contains(str($0.el, kAXSubroleAttribute as String) ?? "") }
+    nodes.contains { $0.role == "AXDialog" || $0.role == "AXMenu" || blockingDialog($0) }
 }
 
 func panelRouteAvailable(_ nodes: [Node], modeLabel: String, openLabels: [String], visibleLabels: [String]) -> Bool {
     guard !panelObstructed(nodes), let content = panelNodes(nodes, modeLabel: modeLabel) else { return false }
     let panels = exactButtons(matching: visibleLabels, in: content)
     if panels.count != 0 { return panels.count == 1 }
-    return panelOpeners(content, labels: openLabels).count == 1
+    return preferredPanelOpeners(content, labels: openLabels, turnLabels: argValues("--changes-turn")).count == 1
 }
 
 switch verb {
@@ -1311,14 +1426,14 @@ case "open-panel":
     }
     let nodes = checkedPanelNodes()
     if panelVisible(nodes) { emit(["opened": true, "alreadyOpen": true], code: 0) }
-    let candidates = panelOpeners(nodes, labels: argValues("--panel-open"))
+    let candidates = preferredPanelOpeners(nodes, labels: argValues("--panel-open"), turnLabels: argValues("--panel-open-turn"))
     guard candidates.count <= 1 else { fail("panel-opener-multiple", 4) }
     // A Codex conversation may have no Git review capability. Absence is not a clean
     // working tree, and must not trigger a guessed shortcut, toggle, or text entry.
     guard candidates.count == 1 else { fail("panel-not-available", 4) }
     let fresh = checkedPanelNodes()
     if panelVisible(fresh) { emit(["opened": true, "alreadyOpen": true], code: 0) }
-    let confirmed = panelOpeners(fresh, labels: argValues("--panel-open"))
+    let confirmed = preferredPanelOpeners(fresh, labels: argValues("--panel-open"), turnLabels: argValues("--panel-open-turn"))
     guard confirmed.count == 1, CFEqual(candidates[0].el, confirmed[0].el) else { fail("panel-target-changed", 6) }
     guard AXUIElementPerformAction(confirmed[0].el, kAXPressAction as CFString) == .success else { fail("panel-press-failed", 5) }
     let deadline = Date().addingTimeInterval(1.2)
@@ -1600,7 +1715,10 @@ case "search":
     if action == "open" {
         let scan = scanWindows()
         guard scan.webArea, sameOperationWindow() else { failSearch("no-surface") }
-        checkSearchMode(scan.nodes, pinned: false)
+        // The open search box hides the mode switcher (#147). A field that is already there
+        // excuses the hidden switcher, so a second Find Chat press takes over the open box; a
+        // visible, different mode is still refused.
+        checkSearchMode(scan.nodes, pinned: searchSurface(scan.nodes) != nil)
         if searchSurface(scan.nodes) == nil {
             // An existing field with an unsupported container must not make Retry toggle
             // an already-open search panel. Only press the opener when no field is present.
@@ -1702,28 +1820,11 @@ case "status":
         let awaiting = argValues("--state-awaiting")
         let unread = argValues("--state-unread")
         let running = argValues("--state-running")
-        var i = 0
-        while i < nodes.count && readings.count < 8 {
-            let n = nodes[i]
-            guard n.pressable && !n.text.isEmpty else { i += 1; continue }
-
-            var j = i + 1
-            var hasMarker = false
-            while j < nodes.count && nodes[j].depth > n.depth {
-                let m = nodes[j]
-                if m.pressable && m.text == convMarker { hasMarker = true }
-                j += 1
-            }
-
-            if hasMarker {
-                let selected = conversationSelected(n.el)
-                let state = conversationRowState(title: n.text, descendants: nodes[(i + 1)..<j],
-                    awaiting: awaiting, unread: unread, running: running, baseline: baselineImages)
-                readings.append((n.text, state, selected))
-                i = j          // skip the subtree so row controls never read as items
-            } else {
-                i += 1
-            }
+        for entry in conversationRows(nodes, marker: convMarker).prefix(8) {
+            let n = entry.node
+            let state = conversationRowState(title: n.text, descendants: nodes[(entry.index + 1)..<entry.end],
+                awaiting: awaiting, unread: unread, running: running, baseline: baselineImages)
+            readings.append((n.text, state, conversationSelected(n.el)))
         }
     }
 
@@ -1738,7 +1839,7 @@ case "status":
         "approvalPresent": approve != nil,
         "denyPresent": deny != nil,
         "stopPresent": stop != nil,
-        "voiceChat": voiceState(nodes: nodes, start: argValues("--voice-start"), end: argValues("--voice-end")),
+        "voiceChat": voiceState(nodes: nodes + voiceDialogNodes(), start: argValues("--voice-start"), end: argValues("--voice-end")),
         "canSend": sendTarget(in: nodes) != nil,
         "canCopyAnswer": copyInspection.node != nil,
         "copyAnswerError": copyInspection.error,
@@ -1848,16 +1949,17 @@ case "voice":
     let starts = argValues("--voice-start")
     let ends = argValues("--voice-end")
     if !waitForWebContent(seconds: 2) { fail("surface-unavailable", 5) }
+    // The session's Stop button is in the voice dialog, not the target window (voiceDialogNodes).
     let initial = scanWindows()
     guard initial.webArea, sameOperationWindow(),
-          let target = voiceTarget(action: action, nodes: initial.nodes, start: starts, end: ends) else {
+          let target = voiceTarget(action: action, nodes: initial.nodes + voiceDialogNodes(), start: starts, end: ends) else {
         fail("voice-state-changed", 6)
     }
     let title = str(operationWindows[0], kAXTitleAttribute as String)
     let latest = scanWindows()
     guard latest.webArea, sameOperationWindow(),
           str(operationWindows[0], kAXTitleAttribute as String) == title,
-          let confirmed = voiceTarget(action: action, nodes: latest.nodes, start: starts, end: ends),
+          let confirmed = voiceTarget(action: action, nodes: latest.nodes + voiceDialogNodes(), start: starts, end: ends),
           CFEqual(target.el, confirmed.el) else { fail("voice-state-changed", 6) }
     guard AXUIElementPerformAction(confirmed.el, kAXPressAction as CFString) == .success else {
         fail("voice-press-failed", 5)

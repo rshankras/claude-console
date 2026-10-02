@@ -56,6 +56,37 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             // Before any action is constructed — actions resolve IPC paths and DesktopServices.
             IpcPaths.UseProduct("vizhi-desktop");
+            // Where the SDK says this plugin's data goes (PluginData/VizhiDesktop under the service's
+            // own tree). Every Desktop path — helpers, model, captures, IPC, drafts — resolves from it.
+            try { ProductRuntime.SdkHome = this.GetPluginDataDirectory(); }
+            catch (Exception ex) { PluginLog.Warning(ex, "VizhiDesktopPlugin: SDK data directory unavailable — using the conventional path"); }
+            try { DesktopUninstall.RestoreSettings(ProductRuntime.Home); ProductRuntime.MigrateDesktop(BridgeManager.HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ProductRuntime.Home); }
+            catch (Exception ex) { PluginLog.Warning(ex, "Desktop settings migration will retry on next load"); }
+            // A reinstall within the replacement window gets its speech model and unsent dictation
+            // back BEFORE DesktopServices.Declare reads the dictation file below.
+            DesktopUninstall.RestoreRuntimeCache(ProductRuntime.Home);
+
+            // The engine composes what the user should be told; only the plugin can put it in front
+            // of them (Options+'s message centre, with a link). Without this the speech-model and
+            // layout notices were composed and dropped (#142).
+            BridgeManager.Instance.Notify = (status, message, url, title) =>
+            {
+                try
+                {
+                    if (message == null)
+                    {
+                        this.OnPluginStatusChanged(status, String.Empty);
+                    }
+                    else
+                    {
+                        this.OnPluginStatusChanged(status, message, url, title);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginLog.Warning(ex, "VizhiDesktopPlugin: could not post the plugin status");
+                }
+            };
 
             _app = new OpenAiDesktopAdapter();
             IDesktopAutomation automation = OperatingSystem.IsWindows()
@@ -78,6 +109,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                 bridge.TranscriptSink = (text, send) => _lifetime.Active
                     ? DesktopTranscriptDelivery.Write(automation, text, send, recovery.NotifyReady) : "Cancelled";
                 bridge.DraftRecoverySink = recovery.Retain;
+                bridge.DraftFailureRecoverySink = recovery.Retain;
+                bridge.FailedSendCopy = text => DesktopRecoveryClipboard.Copy(text);
                 bridge.SearchAudioHasSignal = DesktopSearchAudio.HasSignal;
                 bridge.DesktopCaptureAllowed = _lifetime.CaptureGuard();
             }, bridge.ClearDesktopRouting);
@@ -96,6 +129,8 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
+            // Best effort: a layout that cannot be copied back must not cost the user every key.
+            DesktopUninstall.TryRestoreRegistration(ProductRuntime.Home, RegistrationHeal.ApplicationsRoot());
             _lifetime.Start();
             _actions.Start();
             BridgeManager.Instance.PluginAssemblyFilePath = this.AssemblyFilePath;
@@ -133,11 +168,25 @@ namespace Loupedeck.ClaudeConsolePlugin
                 // Marketplace installs can retain an older ApplicationInfo timestamp even after
                 // correctly adopting it. The shared timestamp heuristic would then restart LPS
                 // during a healthy install. Desktop still self-registers a genuinely missing
-                // sideload entry above, but never restarts merely because timestamps differ.
+                // sideload entry above — and tells the user it needs a service restart to show,
+                // since this product never restarts Logi's processes itself (#138).
                 RegistrationHeal.HealIfNeeded(automaticRestartAllowed: false);
             }
 
             PluginLog.Info("VizhiDesktopPlugin: Loaded — driving the ChatGPT/Codex desktop app");
+        }
+
+        public override Boolean Install()
+        {
+            DesktopUninstall.TryRestoreRegistration(ProductRuntime.Home, RegistrationHeal.ApplicationsRoot());
+            return true;
+        }
+
+        public override Boolean Uninstall()
+        {
+            if (!BridgeManager.Instance.FinishDesktopCaptureForUninstall()) return false;
+            Unload();
+            return DesktopUninstall.Clean(ProductRuntime.Home, System.IO.Path.Combine(IpcPaths.TempDir, "vizhi-desktop"), RegistrationHeal.ApplicationsRoot());
         }
 
         public override void Unload()

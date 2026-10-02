@@ -159,6 +159,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
         {
+            if (BridgeManager.Instance.VoiceModelDownloading)
+                return KeyImage.RenderIntentTile(imageSize, "Downloading", "voice", "VOICE MODEL · 148 MB");
             var contextual = DesktopServices.Declared ? DesktopServices.WorkflowVoice.Face("context_voice", DesktopServices.Monitor.Current.Mode, BridgeManager.Instance.Voice) : null;
             if (contextual.HasValue && !_fail.IsActive)
             {
@@ -167,7 +169,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             }
             var face = DesktopDictationFace.For(VoiceIntent.DesktopDraft, BridgeManager.Instance.Voice,
                 _fail.IsActive ? _fail.Text : _ready.IsActive ? _ready.Text : null, _face.Icon,
-                DesktopServices.Declared && DesktopServices.DraftRecovery.Pending);
+                DesktopServices.Declared && DesktopServices.DraftRecovery.Pending,
+                DesktopServices.Declared ? DesktopServices.DraftRecovery.RetryHint : "TAP TO RETRY");
             return KeyImage.RenderIntentTile(imageSize, face.Label, face.Icon, face.Footer);
         }
     }

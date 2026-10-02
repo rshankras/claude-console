@@ -38,8 +38,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             this.AddParameter("clipboard_review", "Paste into Chat / Review Code", "Tools");
             this.AddParameter("screenshot_tests", "Screenshot / Run Tests", "Tools");
             this.AddParameter("clear_screenshot", "Clear Added / Screenshot", "Tools");
-            _tasks = DesktopWorkflowCommand.LoadWorkflows(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".claude", "claude-console", "desktop-workflows.json")).Where(DesktopWorkflowCommand.IsUsable).Take(9).ToArray();
+            _tasks = DesktopWorkflowCommand.LoadWorkflows(Path.Combine(ProductRuntime.Home, "desktop-workflows.json")).Where(DesktopWorkflowCommand.IsUsable).Take(9).ToArray();
             DesktopServices.OnMonitorChanged(state => { _confirmation.Observe(state); this.ActionImageChanged(); });
             DesktopServices.OnContextChanged(() => this.ActionImageChanged());
             DesktopServices.OnWorkflowChanged(() => this.ActionImageChanged());

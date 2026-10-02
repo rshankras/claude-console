@@ -10,8 +10,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     internal sealed class DesktopVoiceShortcut
     {
         internal static String ConfigPath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".claude", "claude-console", "desktop-voice-shortcut.json");
+            ProductRuntime.Home, "desktop-voice-shortcut.json");
 
         // macOS ANSI virtual-key positions, from HIToolbox/Events.h. Configuration accepts
         // letter keys plus modifiers; Return, Escape, and bare text are deliberately excluded.

@@ -392,7 +392,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             capture.Finish(); Assert.Equal(4, changes);
             Assert.Equal(intent == VoiceIntent.DesktopDraft ? "Dictate" : "Dictate & Send", Label());
             var recovered = DesktopDictationFace.For(intent, capture, VoiceFailure.InsertDraft, "frame");
-            Assert.Equal(intent == VoiceIntent.DesktopDraft ? "HOLD TO DISCARD" : "CHECK APP", recovered.Footer);
+            Assert.Equal(intent == VoiceIntent.DesktopDraft ? "TAP TO RETRY" : "CHECK APP", recovered.Footer);
         }
 
         [Theory]
@@ -443,7 +443,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             {
                 var failure = Assert.Single(failures);
                 Assert.Equal(intent, failure.Intent);
-                if (intent == VoiceIntent.DesktopDraft)
+                if (intent is VoiceIntent.DesktopDraft or VoiceIntent.Desktop)
                 {
                     Assert.Equal("Original transcript தமிழ்", Assert.Single(clipboard));
                     Assert.Equal(copied ? VoiceFailure.InsertDraft : VoiceFailure.NotTyped, failure.Label);

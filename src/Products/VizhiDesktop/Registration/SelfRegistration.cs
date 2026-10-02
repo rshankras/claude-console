@@ -43,11 +43,14 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
     internal static class SelfRegistration
     {
         /// <summary>
-        /// Register if missing and schedule the adopting service restart. Safe to call on every
-        /// load; never throws. Returns true when it registered — the caller should then skip
-        /// RegistrationHeal (this load's restart already covers it).
+        /// Register if missing. Safe to call on every load; never throws. The service adopts a new
+        /// registration only at its next start, and this product does not restart Logi's processes
+        /// itself (#138) unless <paramref name="automaticRestartAllowed"/> — so when it writes or
+        /// updates a registration without one, it tells the user through the message centre.
+        /// Returns true only when a restart was scheduled, which is what lets the caller skip
+        /// RegistrationHeal; otherwise the heal (itself gated) still runs.
         /// </summary>
-        internal static Boolean RegisterIfMissing(String windowsProcessName = null)
+        internal static Boolean RegisterIfMissing(String windowsProcessName = null, Boolean automaticRestartAllowed = false)
         {
             try
             {
@@ -86,13 +89,9 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
                         lp5, File.Exists(icon) ? icon : null, appsRoot,
                         OperatingSystem.IsWindows(), windowsProcessName))
                     {
-                        PluginLog.Info(
-                            "SelfRegistration: updated packaged profile navigation; " +
-                            "restarting Logi Plugin Service in 10s");
-                        Process.Start(OperatingSystem.IsWindows()
-                            ? RegistrationHeal.WindowsRestart()
-                            : RegistrationHeal.MacRestart());
-                        return true;
+                        PluginLog.Info("SelfRegistration: updated packaged profile navigation — " +
+                            (automaticRestartAllowed ? "restarting Logi Plugin Service in 10s" : "adopted at the next service restart"));
+                        return AdoptRegistration(automaticRestartAllowed);
                     }
                     return false;
                 }
@@ -101,18 +100,40 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
 
                 PluginLog.Info(
                     "SelfRegistration: no application registration on disk (sideloaded installs never create one) — " +
-                    "wrote it from the packaged profile; restarting Logi Plugin Service in 10s so it adopts the entry");
+                    "wrote it from the packaged profile; " +
+                    (automaticRestartAllowed ? "restarting Logi Plugin Service in 10s so it adopts the entry" : "adopted at the next service restart"));
 
-                Process.Start(OperatingSystem.IsWindows()
-                    ? RegistrationHeal.WindowsRestart()
-                    : RegistrationHeal.MacRestart());
-                return true;
+                return AdoptRegistration(automaticRestartAllowed);
             }
             catch (Exception ex)
             {
                 try { PluginLog.Warning($"SelfRegistration: skipped ({ex.Message})"); } catch { }
                 return false;
             }
+        }
+
+        // Either restart the service so it adopts the entry now (true), or say what the user has
+        // to do (false) — a registration nobody adopts and nobody mentions is a layout that never
+        // appears (#138 review).
+        private static Boolean AdoptRegistration(Boolean automaticRestartAllowed)
+        {
+            if (automaticRestartAllowed)
+            {
+                Process.Start(OperatingSystem.IsWindows() ? RegistrationHeal.WindowsRestart() : RegistrationHeal.MacRestart());
+                return true;
+            }
+            try
+            {
+                // Warning, not Normal: Options+ renders a card only for Warning (device, #31), and it
+                // is accurate — the plugin is partially working until the service adopts the entry.
+                BridgeManager.Instance.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.LayoutAwaitsServiceRestart(),
+                    BridgeNotice.LayoutUrl, BridgeNotice.LayoutTitle);
+            }
+            catch (Exception ex)
+            {
+                try { PluginLog.Warning(ex, "SelfRegistration: could not post the layout notice"); } catch { }
+            }
+            return false;
         }
 
         /// <summary>
@@ -211,8 +232,7 @@ namespace Loupedeck.ClaudeConsolePlugin.VizhiDesktop.Registration
             var revisionFile = Path.Combine(appDir, ".vizhi-packaged-profile");
             // Keep package revision outside ApplicationInfo: Options+ rewrites that document,
             // and defaultProfileName is the user's selection, not an installation marker.
-            if (File.Exists(revisionFile) && File.ReadAllText(revisionFile) == nextProfile
-                && File.Exists(Path.Combine(profileDir, "ProfileInfo.json"))) return navigationUpdated;
+            if (File.Exists(revisionFile) && File.ReadAllText(revisionFile) == nextProfile) return navigationUpdated;
             if (File.Exists(Path.Combine(profileDir, "ProfileInfo.json")))
             {
                 WriteProfileRevision(appDir, nextProfile);

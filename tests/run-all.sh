@@ -51,6 +51,9 @@ if [ "$(uname -s)" = "Darwin" ]; then
 fi
 
 echo
+echo "▶ voice helper product metadata"
+if ! python3 "$REPO/tests/scripts/test-voice-metadata.py"; then STATUS=1; fi
+
 echo "▶ desktop harness self-tests"
 if ! python3 "$REPO/tests/scripts/test-desktop-harness.py"; then STATUS=1; fi
 

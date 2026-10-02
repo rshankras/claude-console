@@ -70,14 +70,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             var voice = BridgeManager.Instance.Voice;
             Monitor.IsCommandBusy = () => actions.IsBusy || voice.Phase is VoicePhase.Starting or VoicePhase.Transcribing;
             VoiceActions = new DesktopVoiceActions(automation);
-            DraftRecovery = new DesktopDraftRecovery(automation);
+            DraftRecovery = new DesktopDraftRecovery(automation, IpcPaths.ProductSlug == "vizhi-desktop" ? System.IO.Path.Combine(ProductRuntime.Home, "pending-draft.json") : null);
             Context = new DesktopContextCapture(automation) { DraftPending = () => DraftRecovery.Pending };
             Context.CopyTrace = new DesktopCopyTrace(System.IO.Path.Combine(
-                BridgeManager.HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".claude", "claude-console", "desktop-copy-trace-until"), message => PluginLog.Info(message)).Write;
+                ProductRuntime.Home, "desktop-copy-trace-until"), message => PluginLog.Info(message)).Write;
             var changesTrace = new DesktopChangesTrace(System.IO.Path.Combine(
-                BridgeManager.HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                ".claude", "claude-console", "desktop-changes-trace-until"), message => PluginLog.Info(message)).Write;
+                ProductRuntime.Home, "desktop-changes-trace-until"), message => PluginLog.Info(message)).Write;
             if (automation is MacDesktopAutomation mac) mac.ChangesTrace = changesTrace;
             if (automation is WindowsDesktopAutomation windows) windows.ChangesTrace = changesTrace;
             Files = new DesktopFilePicker(automation, Context, System.IO.Path.Combine(

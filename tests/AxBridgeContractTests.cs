@@ -133,7 +133,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("kAXFocusedWindowAttribute", source);
             Assert.Contains("kAXMainWindowAttribute", source);
             Assert.Contains("let operationWindows = targetWindows()", source);
-            Assert.Contains("for w in operationWindows", source);
+            Assert.Contains("let tree = walkTree(operationWindows)", source);
+            // The one exception: the Mac app runs voice in its own AXDialog window, so only the
+            // voice state and the voice verb also read dialogs (#147, device 2 Oct).
+            var dialogUses = source.Split("voiceDialogNodes()").Length - 1;
+            Assert.Equal(4, dialogUses); // definition + status voiceChat + voice verb (initial, confirm)
+            Assert.Contains("\"voiceChat\": voiceState(nodes: nodes + voiceDialogNodes()", source);
             Assert.Contains("operationWindows.count == 1 && current.count == 1 && CFEqual(operationWindows[0], current[0])", source);
             Assert.Contains("windows.count == 1 ? windows : []", source);
         }

@@ -3,6 +3,7 @@ namespace Loupedeck.ClaudeConsolePlugin
     using System;
     using System.Collections.Generic;
     using System.Diagnostics;
+    using System.Globalization;
     using System.IO;
     using System.Linq;
     using System.Net.Http;
@@ -70,10 +71,8 @@ namespace Loupedeck.ClaudeConsolePlugin
         // Runtime home shared with the voice helper: ~/.claude/claude-console/
         private static String ClaudeDir => Path.Combine(UserHome, ".claude");
         private static String ClaudeConsoleHome => Path.Combine(ClaudeDir, "claude-console");
-        internal static String VoiceRuntimeHome(String home, String product) => product == "codex-console"
-            ? Path.Combine(home, ".codex", "vizhi-runtime")
-            : Path.Combine(home, ".claude", "claude-console");
-        private static String RuntimeHome => VoiceRuntimeHome(UserHome, IpcPaths.ProductSlug);
+        internal static String VoiceRuntimeHome(String home, String product) => ProductRuntime.For(home, product, OperatingSystem.IsWindows());
+        private static String RuntimeHome => ProductRuntime.Home;
         private static String VoiceHelperApp => Path.Combine(RuntimeHome, "ClaudeVoiceHelper.app");
         // Self-contained whisper-cli produced by tools/voice/bundle-whisper.sh (no Homebrew needed).
         private static String WhisperBinDir => Path.Combine(RuntimeHome, "whisper-bin");
@@ -99,7 +98,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         private static String PluginMissingSinceFile => Path.Combine(ClaudeConsoleHome, "plugin-missing-since");
 
         // Speech model — fetched on first use if absent (see EnsureVoiceModel). base.en ≈ 142 MB.
-        private static String VoiceModelFile => Path.Combine(ClaudeConsoleHome, "whisper", "ggml-base.en.bin");
+        private static String VoiceModelFile => Path.Combine(RuntimeHome, "whisper", "ggml-base.en.bin");
         private const String VoiceModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
         private const String VoiceModelSha256 = "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002";
         private const Int64 VoiceModelSize = 147964211;
@@ -205,7 +204,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         private Func<Boolean> _desktopCaptureAllowed;
         internal void ClearDesktopRouting()
         {
-            TranscriptSink = null; DraftRecoverySink = null;
+            TranscriptSink = null; DraftRecoverySink = null; DraftFailureRecoverySink = null; FailedSendCopy = null;
             SearchTranscriptSink = null; DraftTranscriptSink = null;
             _searchCaptureSink = null; _draftCaptureSink = null;
             VoiceModelOverride = null; SearchAudioHasSignal = null;
@@ -236,8 +235,10 @@ namespace Loupedeck.ClaudeConsolePlugin
                 this.ReportVoiceFailure(VoiceIntent.DesktopDraft, error, "Composed draft delivery was not confirmed");
         }
 
-        /// <summary>Optional recovery for a desktop draft the sink refused. Never used for auto-send.</summary>
+        /// <summary>Optional recovery for a desktop draft the sink refused. Failed sends recover as drafts; retry never submits.</summary>
         internal Func<String, Boolean> DraftRecoverySink { get; set; }
+        internal Func<String, String, Boolean> DraftFailureRecoverySink { get; set; }
+        internal Action<String> FailedSendCopy { get; set; }
 
         /// <summary>
         /// A dictation failed: which key's capture it was, and the words that key should show (#18).
@@ -1390,6 +1391,32 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// </summary>
         private Boolean StartVoiceCapture()
         {
+            // A transcript left behind by a capture whose wait timed out is adopted as a draft only
+            // when it WAS a dictation. The transcript file is shared by every intent: a late Find Chat
+            // query ("notes") or a project name must never be retained and then inserted into the
+            // composer as if the user had dictated it. The capture's intent travels in a sidecar
+            // written at start; a leftover of any other intent is discarded, as it always was.
+            if (Voice.Intent is VoiceIntent.Desktop or VoiceIntent.DesktopDraft && File.Exists(VoiceTranscriptFile))
+            {
+                var leftoverIntent = ReadSidecar(VoiceIntentFile);
+                if (!LeftoverTranscriptIsDraftable(leftoverIntent))
+                {
+                    PluginLog.Info($"BridgeManager: discarding a leftover {leftoverIntent ?? "untagged"} transcript — not a dictation");
+                    TryDelete(VoiceTranscriptFile); TryDelete(VoiceIntentFile); TryDelete(VoiceWavFile);
+                }
+                else
+                {
+                    var text = CleanTranscript(File.ReadAllText(VoiceTranscriptFile));
+                    if (!String.IsNullOrWhiteSpace(text))
+                    {
+                        if (DraftRecoverySink?.Invoke(text) == true) {
+                            TryDelete(VoiceTranscriptFile); TryDelete(VoiceIntentFile); TryDelete(VoiceWavFile);
+                            ReportVoiceFailure(Voice.Intent, VoiceFailure.InsertDraft, "previous transcript retained for review");
+                        } else ReportVoiceFailure(Voice.Intent, VoiceFailure.NotTyped, "previous transcript needs recovery");
+                        return false;
+                    }
+                }
+            }
             if (OperatingSystem.IsWindows())
             {
                 return this.StartVoiceCaptureWindows();
@@ -1409,7 +1436,10 @@ namespace Loupedeck.ClaudeConsolePlugin
             EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
             TryDelete(VoiceErrorFile);
+            TryDelete(VoiceTranscriptFile + ".capped");
+            TryDelete(VoiceTranscriptFile + ".signal");
             TryDelete(VoiceStopFile);
+            WriteVoiceIntentSidecar();
 
             // Voice.Press has already recorded the pressed key's intent by the time we are here, so
             // a failure to START can be shown on the right key too.
@@ -1437,7 +1467,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             var args = new List<String>
             {
                 VoiceHelperApp, "--args",
-                "--maxsec", "60",
+                "--maxsec", VoiceCaptureState.RecordingCapSeconds.ToString(CultureInfo.InvariantCulture),
                 "--out", VoiceWavFile,
                 "--stopflag", VoiceStopFile,
                 "--transcript", VoiceTranscriptFile,
@@ -1450,7 +1480,59 @@ namespace Loupedeck.ClaudeConsolePlugin
                 args.Add(BundledWhisperCli);
             }
             RunDetached("open", args);
+            WatchCaptureCompletion();
             return true;
+        }
+
+        // The capture's intent, beside the transcript it will produce, so a transcript that outlives
+        // its wait can be told apart from a dictation when the next press finds it.
+        private static String VoiceIntentFile => VoiceTranscriptFile + ".intent";
+
+        private void WriteVoiceIntentSidecar()
+        {
+            try { File.WriteAllText(VoiceIntentFile, Voice.Intent.ToString()); }
+            catch (Exception ex) { PluginLog.Warning(ex, "BridgeManager: could not record the capture intent"); }
+        }
+
+        private static String ReadSidecar(String path)
+        {
+            try { return File.Exists(path) ? File.ReadAllText(path).Trim() : null; }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// Only a transcript tagged as a desktop dictation may be retained as a draft by a later
+        /// press. Untagged (older helper, failed write) or any other intent — search, project — is not.
+        /// </summary>
+        internal static Boolean LeftoverTranscriptIsDraftable(String intentSidecar) =>
+            Enum.TryParse<VoiceIntent>(intentSidecar, out var intent)
+            && intent is VoiceIntent.Desktop or VoiceIntent.DesktopDraft;
+
+        /// <summary>
+        /// The silence gate's verdict for a Find Chat recording: the helper's sidecar when it could
+        /// evaluate the audio, the plugin's own check when the WAV is still there, and NO verdict
+        /// when neither exists — the helper deletes the WAV after transcribing, so a missing file is
+        /// the normal case, not a validation failure, and the transcript proceeds.
+        /// </summary>
+        internal static Boolean? SearchSignalVerdict(String sidecar, Boolean wavExists, Func<Boolean> wavHasSignal) =>
+            sidecar switch
+            {
+                "signal" => true,
+                "silent" => false,
+                _ => wavExists ? wavHasSignal() : null,
+            };
+
+        private void WatchCaptureCompletion()
+        {
+            var captureId = Voice.CaptureId;
+            Task.Run(async () => {
+                while (Voice.CaptureId == captureId && Voice.Phase is VoicePhase.Starting or VoicePhase.Recording)
+                {
+                    if (File.Exists(VoiceTranscriptFile + ".capped") || File.Exists(VoiceTranscriptFile))
+                    { Voice.MarkCapped(captureId); return; }
+                    await Task.Delay(250);
+                }
+            });
         }
 
         // Windows whisper-cli lives in the same runtime-home dir as the macOS bundle, with the
@@ -1469,8 +1551,11 @@ namespace Loupedeck.ClaudeConsolePlugin
             EnsureIpcRoot();
             TryDelete(VoiceTranscriptFile);
             TryDelete(VoiceErrorFile);
+            TryDelete(VoiceTranscriptFile + ".capped");
+            TryDelete(VoiceTranscriptFile + ".signal");
             TryDelete(VoiceStopFile);
             TryDelete(VoiceReadyFile);
+            WriteVoiceIntentSidecar();
 
             // Each refusal goes through ReportVoiceFailure so the pressed key says why, as the
             // macOS path already did. Here they were a log line and a beep: on QA's machine the
@@ -1499,7 +1584,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             var psi = new ProcessStartInfo(helper) { UseShellExecute = false, CreateNoWindow = true };
             var voiceArguments = new List<String>
             {
-                "--maxsec", "60",
+                "--maxsec", VoiceCaptureState.RecordingCapSeconds.ToString(CultureInfo.InvariantCulture),
                 "--out", VoiceWavFile,
                 "--stopflag", VoiceStopFile,
                 "--transcript", VoiceTranscriptFile,
@@ -1538,6 +1623,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     if (File.Exists(VoiceReadyFile) && Voice.MarkReady(DateTime.UtcNow))
                     {
                         ready = true;
+                        WatchCaptureCompletion();
                         return true;
                     }
                     Thread.Sleep(50);
@@ -2548,6 +2634,10 @@ namespace Loupedeck.ClaudeConsolePlugin
         // download it by hand. The download is verified by sha256 before it's promoted into place.
         // ------------------------------------------------------------------------------------------
         private static readonly HttpClient _modelHttp = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        internal Boolean VoiceModelDownloading => Volatile.Read(ref _modelDownloading) != 0;
+        private VoiceIntent _modelDownloadIntent;
+        private CancellationTokenSource _modelCancellation = new();
+        private Thread _modelDownloadThread;
         private Int32 _modelDownloading; // 0 = idle, 1 = a background download is in flight
 
         // True when the model is present and complete. If it is missing, kicks off a one-time
@@ -2569,13 +2659,28 @@ namespace Loupedeck.ClaudeConsolePlugin
 
             if (Interlocked.CompareExchange(ref _modelDownloading, 1, 0) == 0)
             {
-                new Thread(DownloadVoiceModel) { IsBackground = true, Name = "claude-voice-model-download" }.Start();
+                _modelDownloadIntent = Voice.Intent;
+                _modelCancellation = new CancellationTokenSource();
+                _modelDownloadThread = new Thread(DownloadVoiceModel) { IsBackground = true, Name = "claude-voice-model-download" };
+                _modelDownloadThread.Start();
                 // Say so where the user will see it. The key says Model loading for two seconds,
                 // but 142 MB on a slow connection is a multi-minute cliff, and the only other notice
                 // was a log line (2.2.1 Windows retest, item 6).
                 this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelDownloading(), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
             }
             return false;
+        }
+
+        internal static Boolean ReuseVoiceModel(String source, String destination, String hash)
+        {
+            if (!File.Exists(source) || !String.Equals(HashFileSha256(source), hash, StringComparison.OrdinalIgnoreCase)) return false;
+            Directory.CreateDirectory(Path.GetDirectoryName(destination));
+            var temporary = destination + ".copy-" + Guid.NewGuid().ToString("N");
+            try {
+                File.Copy(source, temporary);
+                if (!String.Equals(HashFileSha256(temporary), hash, StringComparison.OrdinalIgnoreCase)) return false;
+                File.Move(temporary, destination, true); return true;
+            } finally { TryDelete(temporary); }
         }
 
         private void DownloadVoiceModel()
@@ -2585,15 +2690,20 @@ namespace Loupedeck.ClaudeConsolePlugin
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(VoiceModelFile));
                 TryDelete(partFile);
+                foreach (var product in new[] { "claude-console", "codex-console", "vizhi-desktop" })
+                {
+                    var candidate = Path.Combine(VoiceRuntimeHome(UserHome, product), "whisper", "ggml-base.en.bin");
+                    if (candidate != VoiceModelFile && ReuseVoiceModel(candidate, VoiceModelFile, VoiceModelSha256)) return;
+                }
                 PluginLog.Info($"BridgeManager: downloading whisper model (~142 MB) from {VoiceModelUrl}");
 
-                using (var resp = _modelHttp.GetAsync(VoiceModelUrl, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult())
+                using (var resp = _modelHttp.GetAsync(VoiceModelUrl, HttpCompletionOption.ResponseHeadersRead, _modelCancellation.Token).GetAwaiter().GetResult())
                 {
                     resp.EnsureSuccessStatusCode();
                     using (var src = resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
                     using (var dst = new FileStream(partFile, FileMode.Create, FileAccess.Write, FileShare.None))
                     {
-                        src.CopyTo(dst, 1 << 20);
+                        src.CopyToAsync(dst, 1 << 20, _modelCancellation.Token).GetAwaiter().GetResult();
                     }
                 }
 
@@ -2602,6 +2712,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 {
                     PluginLog.Warning($"BridgeManager: model checksum mismatch (got {sha}) — discarding download");
                     TryDelete(partFile);
+                    this.ReportVoiceFailure(_modelDownloadIntent, "Download failed", "model checksum mismatch");
                     this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelDownloadFailed("checksum mismatch"), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
                     return;
                 }
@@ -2611,17 +2722,26 @@ namespace Loupedeck.ClaudeConsolePlugin
                 PluginLog.Info("BridgeManager: whisper model ready");
                 this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelReady(), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
             }
+            catch (OperationCanceledException)
+            {
+                // Cancelled by an uninstall in progress: nothing failed, and there is no product left
+                // to warn. A '!' in the message centre for a plugin being removed is noise.
+                PluginLog.Info("BridgeManager: whisper model download cancelled");
+                TryDelete(partFile);
+            }
             catch (Exception ex)
             {
                 // A failed download used to be a log line only, and the next press silently started
                 // the 142 MB over again.
                 PluginLog.Warning(ex, "BridgeManager: whisper model download failed");
+                this.ReportVoiceFailure(_modelDownloadIntent, "Download failed", "model download failed");
                 TryDelete(partFile);
                 this.Notify?.Invoke(PluginStatus.Warning, BridgeNotice.VoiceModelDownloadFailed(ex.Message), BridgeNotice.VoiceUrl, BridgeNotice.VoiceTitle);
             }
             finally
             {
                 Interlocked.Exchange(ref _modelDownloading, 0);
+                Voice.Refresh();
             }
         }
 
@@ -2652,7 +2772,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         // nothing pinned and no single obvious session; Windows has no frontmost query — was
         // transcribed and then dropped with a WARN line, indistinguishable on the device from one
         // that landed (2.2.1 Windows retest, item 6). The key now says No target / Not typed like
-        // every other voice failure, and the log keeps the words so nothing dictated is lost.
+        // every other voice failure, and failed desktop delivery retains the words outside logs.
         // The desktop-surface twin of DeliverDictation: the product's sink puts the words where its
         // keys are aimed, and the SAME named failures reach the key when it cannot (#18). A sink
         // that throws is a failure like any other; draft recovery belongs to the product.
@@ -2672,12 +2792,13 @@ namespace Loupedeck.ClaudeConsolePlugin
             catch (Exception ex) { error = ex.Message; }
             if (error != null)
             {
-                if (!submit && this.DraftRecoverySink != null)
+                if (this.DraftRecoverySink != null || this.DraftFailureRecoverySink != null)
                 {
                     try
                     {
-                        if (this.DraftRecoverySink(text))
+                        if (this.DraftFailureRecoverySink?.Invoke(text, error) ?? this.DraftRecoverySink(text))
                         {
+                            if (submit) { try { this.FailedSendCopy?.Invoke(text); } catch { PluginLog.Warning("Failed dictation remains retained; clipboard unavailable"); } }
                             this.ReportVoiceFailure(intent, VoiceFailure.InsertDraft,
                                 "draft insertion was not confirmed; transcript retained for keypad retry");
                             return;
@@ -2725,6 +2846,19 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// the destination was decided by whichever key you pressed second. Dictating a prompt and
         /// pressing Go to Project to stop it would fuzzy-match your prompt to a project and open it.
         /// </summary>
+        internal Boolean FinishDesktopCaptureForUninstall()
+        {
+            _modelCancellation.Cancel();
+            if (_modelDownloadThread?.IsAlive == true && !_modelDownloadThread.Join(TimeSpan.FromSeconds(5))) return false;
+            if (Voice.Phase == VoicePhase.Idle) return true;
+            var action = Voice.StopIfCapturing(Voice.Intent, DateTime.UtcNow);
+            if (action == VoiceAction.Stop) StopVoiceCaptureThen(_ => { });
+            // As long as the longest transcript wait, plus a margin — a capped recording stopped here
+            // is the worst case.
+            var budget = VoiceCaptureState.TranscriptWaitSeconds(VoiceCaptureState.RecordingCapSeconds) + 10;
+            return SpinWait.SpinUntil(() => Voice.Phase == VoicePhase.Idle, TimeSpan.FromSeconds(budget));
+        }
+
         internal void StopSearchCapture()
         {
             if (Voice.StopIfCapturing(VoiceIntent.DesktopSearch, DateTime.UtcNow) == VoiceAction.Stop)
@@ -2739,6 +2873,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 return;
             }
 
+            Voice.HasPendingTranscript = () => File.Exists(VoiceTranscriptFile) || File.Exists(VoiceTranscriptFile + ".capped");
             var (action, routed) = Voice.Press(intent, DateTime.UtcNow, awaitReadiness: OperatingSystem.IsWindows());
             switch (action)
             {
@@ -2831,7 +2966,10 @@ namespace Loupedeck.ClaudeConsolePlugin
               var intent = Voice.Intent;
               try
               {
-                var deadline = DateTime.UtcNow.AddSeconds(20);
+                // Sized from the recording: whisper's time grows with the audio, and a fixed 20 s
+                // lost every dictation longer than about a minute on slower machines (#139).
+                var waitSeconds = VoiceCaptureState.TranscriptWaitSeconds(Voice.LastRecordedSeconds);
+                var deadline = DateTime.UtcNow.AddSeconds(waitSeconds);
                 while (DateTime.UtcNow < deadline)
                 {
                     Thread.Sleep(150);
@@ -2848,6 +2986,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
                         TryDelete(VoiceErrorFile);
                         TryDelete(VoiceTranscriptFile);
+                        TryDelete(VoiceIntentFile);
                         this.ReportVoiceFailure(intent, VoiceFailure.FromSidecar(error), error);
                         return;
                     }
@@ -2868,6 +3007,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                     }
 
                     TryDelete(VoiceTranscriptFile);
+                    TryDelete(VoiceIntentFile);
 
                     // Whisper labels sounds it could not read as speech: "(gunshot)", "(static)",
                     // "[BLANK_AUDIO]". They are descriptions of noise, not words anyone said, and
@@ -2879,7 +3019,9 @@ namespace Loupedeck.ClaudeConsolePlugin
                     {
                         try
                         {
-                            if (!this.SearchAudioHasSignal(VoiceWavFile))
+                            var verdict = SearchSignalVerdict(ReadSidecar(VoiceTranscriptFile + ".signal"),
+                                File.Exists(VoiceWavFile), () => this.SearchAudioHasSignal(VoiceWavFile));
+                            if (verdict == false)
                             {
                                 this.ReportVoiceFailure(intent, VoiceFailure.NoSpeech, "search recording was silent");
                                 return;
@@ -2911,11 +3053,16 @@ namespace Loupedeck.ClaudeConsolePlugin
                     return;
                 }
                 // The helper died without writing anything — the denied-microphone case before the
-                // sidecar covered it, or a helper killed mid-run. Nothing will arrive; say so.
-                this.ReportVoiceFailure(intent, VoiceFailure.NoResponse, "transcript not produced within 20s");
+                // sidecar covered it, or a helper killed mid-run. Nothing will arrive; say so. (A
+                // transcript that does arrive later keeps its intent sidecar, so the next desktop
+                // press can still adopt a dictation and will discard anything else.)
+                this.ReportVoiceFailure(intent, VoiceFailure.NoResponse, $"transcript not produced within {waitSeconds:0}s");
               }
               finally
               {
+                TryDelete(VoiceWavFile);
+                TryDelete(VoiceTranscriptFile + ".signal");
+                TryDelete(VoiceTranscriptFile + ".capped");
                 Voice.Finish();
               }
             })

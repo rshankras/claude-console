@@ -39,14 +39,15 @@ codesign --verify --strict "$BIN"
 
 codesign -dvv "$BIN" 2>&1 | grep -E "Identifier=|Authority=|Signature=" || true
 
-# Install to the SHARED runtime home (same reasoning as the voice helper: one binary serves
-# every product that ships it). The plugin launches from here, never the source tree; on a
-# package-only install, EnsureDesktopRuntimeInstalled copies it out of the .lplug4 instead.
+# Install to the Desktop runtime home — the SDK's plugin data directory for this plugin, the same
+# path ProductRuntime resolves (Plugin.GetPluginDataDirectory() → PluginData/VizhiDesktop). The
+# plugin launches from here, never the source tree; on a package-only install,
+# EnsureDesktopRuntimeInstalled copies it out of the .lplug4 instead.
 if [ "$INSTALL" = "0" ]; then
   echo "built: $BIN (runtime unchanged)"
   exit 0
 fi
-RUNTIME="$HOME/.claude/claude-console/VizhiAxBridge"
+RUNTIME="$HOME/Library/Application Support/Logi/LogiPluginService/PluginData/VizhiDesktop/VizhiAxBridge"
 echo ">>> installing to $RUNTIME"
 mkdir -p "$(dirname "$RUNTIME")"
 cp -f "$BIN" "$RUNTIME"

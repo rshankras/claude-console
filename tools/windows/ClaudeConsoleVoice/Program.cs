@@ -79,7 +79,7 @@ internal static class VoiceProgram
 
         try
         {
-            var pcm = Record(stopFlag, maxSec, opts.GetValueOrDefault("--ready"));
+            var pcm = Record(stopFlag, maxSec, opts.GetValueOrDefault("--ready"), transcriptPath + ".capped");
             WriteWav(wavPath, pcm);
 
             String? failure = null;
@@ -108,7 +108,10 @@ internal static class VoiceProgram
         }
         finally
         {
+            // Each in its own try: a stop flag the plugin still holds must not keep the recording
+            // (up to 180 s of speech) on disk.
             try { File.Delete(stopFlag); } catch { /* next capture clears it anyway */ }
+            try { File.Delete(wavPath); } catch { /* next capture overwrites it */ }
         }
     }
 
@@ -129,7 +132,7 @@ internal static class VoiceProgram
     // ---- capture -----------------------------------------------------------
 
     [SupportedOSPlatform("windows")]
-    private static Byte[] Record(String stopFlag, Int32 maxSec, String? readyPath = null)
+    private static Byte[] Record(String stopFlag, Int32 maxSec, String? readyPath = null, String? cappedPath = null)
     {
         var fmt = new WAVEFORMATEX
         {
@@ -173,6 +176,8 @@ internal static class VoiceProgram
                 DrainDoneBuffers(handle, headers, buffers, audio, requeue: true);
                 Thread.Sleep(30);
             }
+
+            if (DateTime.UtcNow >= deadline && cappedPath != null) WriteAtomic(cappedPath, "capped");
 
             // Stop and collect what's still in flight. waveInReset returns every pending buffer
             // with WHDR_DONE set, so nothing recorded is lost.

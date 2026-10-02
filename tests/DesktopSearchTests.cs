@@ -79,11 +79,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void An_unreadable_mode_opens_no_search()
+        public void An_unreadable_mode_opens_with_the_last_pinned_mode()
         {
-            var fake = new Fake { State = new() { SurfaceAvailable = true, Mode = "" } };
-            Assert.False(FindChatDynamicFolder.Open(fake, new OpenAiDesktopAdapter(), new DesktopSearch(fake)));
-            Assert.Empty(fake.Calls);
+            // The open search box hides the mode switcher (#147): a second Find Chat press must
+            // take the box over in the mode the search was pinned to, not bounce the keypad back.
+            var fake = new Fake { State = new() { SurfaceAvailable = true, Mode = "Codex" } };
+            var search = new DesktopSearch(fake);
+            Assert.True(FindChatDynamicFolder.Open(fake, new OpenAiDesktopAdapter(), search));
+            search.End();
+            fake.State = new() { SurfaceAvailable = true, Mode = "" };
+            Assert.True(FindChatDynamicFolder.Open(fake, new OpenAiDesktopAdapter(), search));
+            Assert.Equal("open", fake.Calls.Last().Action); Assert.Equal("Codex", fake.Modes.Last());
+            // Before any search, ChatGPT is the pin; the helper refuses if a different mode is visible.
+            var fresh = new Fake { State = new() { SurfaceAvailable = true, Mode = "" } };
+            Assert.True(FindChatDynamicFolder.Open(fresh, new OpenAiDesktopAdapter(), new DesktopSearch(fresh)));
+            Assert.Equal("ChatGPT", fresh.Modes.Last());
+            // No surface at all still closes the folder.
+            var gone = new Fake { State = new() { SurfaceAvailable = false } };
+            Assert.False(FindChatDynamicFolder.Open(gone, new OpenAiDesktopAdapter(), new DesktopSearch(gone)));
+            Assert.Empty(gone.Calls);
         }
 
         [Theory]
@@ -200,6 +214,53 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.True(search.Select(parameter));
             Assert.Equal(new Fake.Call("select", "fixture-window-field", "plate", "/c/two", "Plate design"), fake.Calls.Last());
             Assert.False(search.Select(parameter));
+        }
+
+        // #151: the host refuses the generic "folder up" action, so the folder must close itself
+        // on Selected; and after a selection the Open Search key must start a new search, not die.
+        [Fact]
+        public void Opening_a_result_raises_Selected_once_and_only_on_success()
+        {
+            var fake = new Fake(); var search = new DesktopSearch(fake); search.Begin();
+            var selected = 0; search.Selected += () => selected++;
+            fake.Next = new() { Error = "search-focus-failed" };
+            Assert.False(search.Select(search.ResultParameter(search.Current.Results[0]))); Assert.Equal(0, selected);
+            fake.Next = Ready(); search.TypeQuery(); // a refused selection is retried from the search key
+            var parameter = search.ResultParameter(search.Current.Results[0]);
+            Assert.True(search.Select(parameter)); Assert.Equal(1, selected);
+            Assert.False(search.Current.Available);
+            Assert.False(search.Select(parameter)); Assert.Equal(1, selected);
+        }
+
+        [Fact]
+        public void Type_after_a_selection_starts_a_new_search_in_the_same_mode_but_not_after_back()
+        {
+            var fake = new Fake { State = new() { SurfaceAvailable = true, Mode = "Codex" } };
+            var search = new DesktopSearch(fake);
+            Assert.True(FindChatDynamicFolder.Open(fake, new OpenAiDesktopAdapter(), search));
+            Assert.True(search.Select(search.ResultParameter(search.Current.Results[0])));
+            var count = fake.Calls.Count;
+            search.TypeQuery();
+            Assert.Equal("open", fake.Calls.Last().Action); Assert.Equal(count + 1, fake.Calls.Count);
+            Assert.True(search.Current.Available); Assert.Equal("Codex", fake.Modes.Last());
+            Assert.True(search.Select(search.ResultParameter(search.Current.Results[1])));
+            // Back (Deactivate → End) is final: the next Find Chat press re-activates the folder.
+            search.End(); count = fake.Calls.Count;
+            search.TypeQuery(); Assert.Equal(count, fake.Calls.Count); Assert.False(search.Current.Available);
+        }
+
+        [Fact]
+        public void A_result_press_leaves_closing_to_the_folder()
+        {
+            var fake = new Fake(); var search = new DesktopSearch(fake); search.Begin();
+            var selected = 0; search.Selected += () => selected++;
+            var closed = 0;
+            DesktopSearchCommand.Execute(search.ResultParameter(search.Current.Results[0]), search, new(fake), new VoiceCaptureState(),
+                (_, _) => Assert.Fail("toggled voice"), () => closed++);
+            Assert.Equal(1, selected);
+            // The callback is kept for the rig; production passes a no-op (the host's NavigateUp
+            // generic action is refused), and the folder closes on Selected instead.
+            Assert.Equal(1, closed);
         }
 
         [Theory]

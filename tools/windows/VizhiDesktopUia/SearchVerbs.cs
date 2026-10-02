@@ -77,8 +77,11 @@ internal static partial class Program
         // Tokens are issued only after a mode check and name mode + process + window + field.
         // A modal can hide the mode selector without invalidating that same target.
         var action = Value(options, "--action");
+        // An "open" that finds the field already there takes over the open box: the box hides the
+        // selector (#147), and a second Find Chat press must not be refused for that.
         var pinned = _verifiedSearchOrigin == origin || (action == "probe" && expectedOrigin == origin)
-            || (surface != null && Value(options, "--target") == surface.Token);
+            || (surface != null && Value(options, "--target") == surface.Token)
+            || (action == "open" && surface != null);
         CheckSearchMode(target, scan.Nodes, pinned, options);
         if (surface == null) throw new SearchFailure(error);
         var expectedTarget = Value(options, "--target");

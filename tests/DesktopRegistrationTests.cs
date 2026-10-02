@@ -37,6 +37,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Deleted_current_revision_stays_deleted_without_requesting_a_restart()
+        {
+            var root = Path.Combine(_root, "deleted");
+            SelfRegistration.CreateRegistration(DesktopLp5(), null, root, windows: false);
+            var info = Directory.GetFiles(root, "ApplicationInfo.json", SearchOption.AllDirectories).Single();
+            var app = Path.GetDirectoryName(info);
+            var profile = (String)JsonNode.Parse(File.ReadAllText(info))["defaultProfileName"];
+            Directory.Delete(Path.Combine(app, "Profiles", profile), true);
+            var before = File.ReadAllText(info);
+            Assert.False(SelfRegistration.UpdateOwnedDefaultProfileIfNeeded(DesktopLp5(), null, root, false));
+            Assert.False(Directory.Exists(Path.Combine(app, "Profiles", profile)));
+            Assert.Equal(before, File.ReadAllText(info));
+        }
+
+        [Fact]
         public void A_desktop_bundle_survives_the_windows_patch_untouched()
         {
             var winRoot = Path.Combine(this._root, "win");
@@ -282,27 +297,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void Adaptive3_remains_an_explicit_import_with_fixed_approval_row()
+        public void The_package_ships_exactly_one_layout()
         {
-            using var zip = System.IO.Compression.ZipFile.OpenRead(RepoFile(
-                "src", "Products", "VizhiDesktop", "package", "optional-profiles", "VizhiDesktop-Adaptive3.lp5"));
-            String Read(String name) { using var reader = new StreamReader(zip.GetEntry(name).Open()); return reader.ReadToEnd(); }
-            var profile = JsonNode.Parse(Read("ProfileInfo.json"));
-            var guid = (String)profile["name"];
-            Assert.Equal("Vizhi Adaptive 3", (String)profile["displayName"]);
-            Assert.Equal(guid, (String)profile["packageName"]);
-            Assert.Equal(guid, (String)JsonNode.Parse(Read("ApplicationInfo.json"))["defaultProfileName"]);
-            Assert.Contains($"name: {guid}", Read("metadata/LoupedeckPackage.yaml"));
-            using var original = System.IO.Compression.ZipFile.OpenRead(DesktopLp5());
-            using var originalReader = new StreamReader(original.GetEntry("ProfileInfo.json").Open());
-            Assert.NotEqual(guid, (String)JsonNode.Parse(originalReader.ReadToEnd())["name"]);
-            var pages = profile["layout"]["layoutModes"][0]["workspaces"][0]["pressPages"].AsArray();
-            Assert.Equal(3, pages.Count);
-            var home = pages[0]["controls"].AsArray();
-            Assert.EndsWith("DesktopApprovalCommand___approve", (String)home[6]["pressAction"]);
-            Assert.EndsWith("DesktopApprovalCommand___deny", (String)home[7]["pressAction"]);
-            Assert.EndsWith("DesktopVoiceChatCommand", (String)home[8]["pressAction"]);
-            Assert.DoesNotContain("$ClaudeConsole", Read("metadata/ProfilePreview.json"));
+            // 1.1.0 dropped the optional Adaptive 3 layout: one layout to keep correct. A copy a
+            // user imported earlier is their profile, not the package's.
+            var package = Path.GetDirectoryName(Path.GetDirectoryName(DesktopLp5()));   // …/package
+            var layouts = Directory.GetFiles(package, "*.lp5", SearchOption.AllDirectories)
+                .Select(p => Path.GetRelativePath(package, p)).OrderBy(p => p).ToArray();
+            Assert.Equal(new[] { Path.Combine("profiles", "DefaultProfile70.lp5") }, layouts);
         }
 
         private static String RepoFile(params String[] parts)

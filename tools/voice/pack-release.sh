@@ -1,9 +1,9 @@
 #!/bin/bash
 # pack-release.sh — build a distributable .lplug4 with offline voice EMBEDDED.
 #
-# Copies the Developer-ID-signed, notarized voice helper + self-contained whisper-cli into the
+# Builds the product voice helper from source, signs/notarizes it, and copies it with whisper-cli into the
 # packed plugin (under bin/voice/), so a package-only install has working voice: the plugin installs
-# them to ~/.claude/claude-console/ and strips quarantine on first use (BridgeManager
+# them to each product runtime home and strips quarantine on first use (BridgeManager
 # .EnsureVoiceRuntimeInstalled). The ~142 MB speech model is NOT embedded — it downloads on first use.
 #
 # Prerequisite: run tools/voice/sign-and-notarize.sh first so the runtime-home artifacts are
@@ -30,7 +30,7 @@ BUILD_DIR="$ROOT/bin/$PRODUCT/Release"
 INTERMEDIATE_DIR="$ROOT/src/Products/$PRODUCT/obj/Release"
 
 HOME_DIR="$HOME/.claude/claude-console"
-APP="$HOME_DIR/ClaudeVoiceHelper.app"
+APP="" # populated from a fresh source build below
 WBIN="$HOME_DIR/whisper-bin"
 # A Windows whisper.cpp bundle prepared and smoke-tested ON WINDOWS (#47). Kept separate from the
 # macOS bundle: both contain a whisper-cli with platform-specific dependencies and cannot share one
@@ -56,11 +56,8 @@ verify_macos_helper() {
   fi
 }
 
-# Which products ship offline voice. Both do: voice is agent-neutral — it records, transcribes and
-# injects into the focused session without asking which agent runs there. The payload installs to a
-# runtime home shared by every product (~/.claude/claude-console) under one bundle id, so a user with
-# both packages reuses one model download. Executable runtime copies are product-specific;
-# verify microphone consent after moving a helper to its product runtime location.
+# Every product ships local voice with its own helper identity and runtime directory.
+# A verified existing model may be copied from another product without changing its files.
 case "$PRODUCT" in
   ClaudeConsole|VizhiCodex|VizhiDesktop) SHIPS_VOICE=1 ;;
   *)
@@ -84,10 +81,13 @@ case "$PRODUCT" in
   *)                                     SHIPS_WINDOWS=0 ;;
 esac
 
-# --- preflight: the voice payload must exist and be notarized ------------------------------------
+# --- preflight: the whisper bundles must exist and be smoke-tested ------------------------------
+# Checked BEFORE the helper is built and notarized: a missing bundle is a ten-second failure here,
+# and a wasted multi-minute Apple round-trip if it is only found afterwards.
+VOICE_STAGE="$(mktemp -d)"
+trap 'rm -rf "$VOICE_STAGE"' EXIT
 if [ "$SHIPS_VOICE" = "1" ]; then
-  [ -d "$APP" ]  || { echo "error: helper missing ($APP) — run sign-and-notarize.sh first." >&2; exit 1; }
-  [ -d "$WBIN" ] || { echo "error: whisper bundle missing ($WBIN) — run sign-and-notarize.sh first." >&2; exit 1; }
+  [ -d "$WBIN" ] || { echo "error: whisper bundle missing ($WBIN) — run tools/voice/bundle-whisper.sh first." >&2; exit 1; }
   # A whisper bundle that has never transcribed anything must not ship. 2.0.1 went out with a
   # bundle carrying no compute backends: it aborted on every user machine and passed every check
   # here, because this machine's Homebrew supplied the backends it was missing (#24). The marker
@@ -98,7 +98,6 @@ if [ "$SHIPS_VOICE" = "1" ]; then
     echo "       WHISPER_SMOKE_MODEL) — an unverified bundle is how the voice regression shipped." >&2
     exit 1
   fi
-  verify_macos_helper "$APP"
   # The Windows bundle needs the same proof, and it can only be produced on Windows: run
   # whisper-cli.exe against a real recording there, then write the marker beside it.
   if [ "$SHIPS_WINDOWS" = "1" ]; then
@@ -114,12 +113,26 @@ if [ "$SHIPS_VOICE" = "1" ]; then
       echo "error: $WIN_WBIN has not passed a real transcription smoke test on Windows." >&2
       exit 1
     }
-    echo ">>> voice payload OK (helper notarized + stapled, both bundles transcription-verified)"
+  fi
+
+  # --- build, sign and notarize the voice helper from source --------------------------------------
+  # A release must never inherit whichever helper happens to be installed locally (#140): the
+  # helper is compiled from tools/voice with THIS product's identity, prompt and version, then
+  # signed, notarized and stapled in a staging directory no runtime home ever sees.
+  APP="$VOICE_STAGE/ClaudeVoiceHelper.app"
+  export SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Ravi Shankar (8LEAJKRS3U)}"
+  VOICE_BUILD_APP="$APP" VOICE_PRODUCT="$PRODUCT" VOICE_VERSION="$VER" VOICE_NO_INSTALL=1 bash "$HERE/build.sh"
+  ditto -c -k --keepParent "$APP" "$VOICE_STAGE/helper.zip"
+  xcrun notarytool submit "$VOICE_STAGE/helper.zip" --keychain-profile "${NOTARY_PROFILE:-claude-console-notary}" --wait
+  xcrun stapler staple "$APP"
+  verify_macos_helper "$APP"
+  if [ "$SHIPS_WINDOWS" = "1" ]; then
+    echo ">>> voice payload OK (helper built, notarized + stapled; both bundles transcription-verified)"
   else
-    echo ">>> voice payload OK (helper notarized + stapled, macOS bundle transcription-verified; $PRODUCT ships no Windows payload)"
+    echo ">>> voice payload OK (helper built, notarized + stapled; macOS bundle transcription-verified; $PRODUCT ships no Windows payload)"
   fi
 else
-  echo ">>> $PRODUCT ships no voice payload — skipping the notarization preflight"
+  echo ">>> $PRODUCT ships no voice payload — skipping the helper build and notarization"
 fi
 
 # --- build the plugin (Release) ------------------------------------------------------------------
@@ -294,7 +307,7 @@ fi
 # helper remains valid. Extract into a fresh directory and apply the same three release gates to
 # the packaged helper (#66).
 VERIFY_DIR="$(mktemp -d)"
-trap 'rm -rf "$VERIFY_DIR"' EXIT
+trap 'rm -rf "$VERIFY_DIR" "$VOICE_STAGE"' EXIT
 ditto -x -k "$OUT" "$VERIFY_DIR"
 PACKED_APP="$(find "$VERIFY_DIR" -type d -name ClaudeVoiceHelper.app -print -quit)"
 if [ -z "$PACKED_APP" ]; then

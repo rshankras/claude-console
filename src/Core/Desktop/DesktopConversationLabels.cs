@@ -11,7 +11,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     {
         private readonly Dictionary<String, Dictionary<String, String>> _modes;
         private static readonly Lazy<DesktopConversationLabels> Default = new(() => Load(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude", "claude-console",
+            ProductRuntime.Home,
             "desktop-conversation-labels.json")));
 
         private DesktopConversationLabels(Dictionary<String, Dictionary<String, String>> modes) => _modes = modes;

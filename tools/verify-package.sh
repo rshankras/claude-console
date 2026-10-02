@@ -32,7 +32,7 @@ command -v python3 >/dev/null 2>&1 || { echo "error: python3 is required." >&2; 
 
 echo ">>> verifying $PKG"
 python3 - "$PKG" "$ROOT" "$(basename "$HOME")" "$(basename "$ROOT")" "${CC_VERIFY_OFFLINE:-0}" <<'PY'
-import os, re, sys, zipfile
+import os, re, sys, zipfile, plistlib, runpy
 import urllib.error, urllib.request
 
 pkg, root, user, checkout, offline = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5] == "1"
@@ -161,6 +161,19 @@ else:
             if has(sidecar):
                 err(f"{sidecar} shipped beside {n} — the helper is not self-contained")
 print(f"    helpers       {len(helpers)}: " + ", ".join(os.path.basename(h) for h in helpers))
+
+# Product identity and source-built version are release gates, alongside signing.
+voice_plist = "bin/voice/ClaudeVoiceHelper.app/Contents/Info.plist"
+if product and yaml_version and has(voice_plist):
+    try:
+        verify = runpy.run_path(os.path.join(root, "tools/voice/helper-metadata.py"))["verify"]
+        actual = plistlib.loads(read(voice_plist))
+        for key in verify(actual, product, yaml_version):
+            err(f"voice helper {key} does not match {product} {yaml_version}")
+    except Exception as ex:
+        err(f"invalid voice helper metadata: {ex}")
+else:
+    err("voice helper product metadata is missing")
 
 # --- voice payload (#24, #47, #64) -------------------------------------------------------------
 if not under("bin/voice/"):

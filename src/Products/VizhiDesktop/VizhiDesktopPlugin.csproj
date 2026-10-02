@@ -11,7 +11,7 @@
          crash-disable marker (Logs/plugin_crashes/) by assembly version; if this stays
          1.0.0.0 forever, any one load-crash disables the plugin permanently. Bumping it
          per release lets a new build dodge a stale marker. -->
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
 
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -46,11 +46,8 @@
          started. The package cannot carry code for an agent it doesn't ship. -->
     <Compile Include="..\..\Agents\OpenAiDesktop\**\*.cs" />
 
-    <!-- Voice IS shipped here. The capture pipeline is surface-neutral; only the sink differs
-         (transcript → the app's composer via the AX helper, not a TTY). The runtime home
-         (~/.claude/claude-console) and the helper's bundle id are shared with the terminal
-         products on purpose: one notarized helper, one Microphone grant, one copy of the
-         speech model. pack-release.sh embeds the voice payload for this product too. -->
+    <!-- Voice ships here with a product-specific helper identity and runtime directory.
+         pack-release.sh builds its helper from source and embeds the verified payload. -->
   </ItemGroup>
 
   <ItemGroup>

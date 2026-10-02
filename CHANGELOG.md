@@ -1,7 +1,11 @@
-## Vizhi Desktop [Unreleased] — the Windows port
+## Vizhi Desktop [1.1.0] — 2026-10-02 — Windows, and the 1.0.0 QA fixes
 
 Packaged for Windows (`pluginFolderWin`, the toolkit and the UI Automation helper, signed at
-pack time); the device pass with the installed package is what remains before a release.
+pack time), and the fixes for everything Logitech QA found in 1.0.0 (#138–#149), plus three
+found in the device passes (#151 #152, and the #147 follow-ups). Device-checked with the
+installed package on a Mac and a Windows laptop on 2 October
+(docs/vizhi-desktop-1.1.0-device-pass.md, #153); View Changes with two edited turns (#146) is
+covered by tests only.
 
 ### Added
 - **Windows: the app is found and read.** The Store package OpenAI.Codex ("ChatGPT",
@@ -23,8 +27,7 @@ pack time); the device pass with the installed package is what remains before a 
 - **Find Chat is Find Chat in both modes.** In Codex the Tools key used to become View Changes,
   which Tasks already offers as its first key, so Codex showed it twice. The key now opens the
   app's search in Codex as it does in ChatGPT, and a search stays pinned to the mode it opened
-  in. View Changes is Tools → Tasks. Checked on the Windows app; the macOS app's search in
-  Codex mode is still to be checked.
+  in. View Changes is Tools → Tasks. Checked on both apps.
 - **Windows: Find Chat lists chats only, with their whole titles.** The app's command menu also
   lists commands (New chat, Open in new window); those no longer appear as results. A title
   the query matches is no longer cut off at the match.
@@ -43,6 +46,59 @@ pack time); the device pass with the installed package is what remains before a 
   in your editor. The chat keys skip that, since they show the chat on purpose.
 - **Windows: a locked screen or hidden window reads Hidden, not resolved.** Chromium keeps the
   document element while it serves no page; an empty document is not a surface.
+
+### Fixed
+- **Vizhi Desktop keeps its files in its own place — the one the Logi SDK provides** (#141,
+  #142, #143). 1.0.0 wrote its helper, settings, screenshots and the 148 MB speech model into
+  Claude Console's `~/.claude/claude-console` folder, and left them there after an uninstall.
+  They now live in `PluginData/VizhiDesktop` under the Logi Plugin Service's own data directory
+  (`Plugin.GetPluginDataDirectory()`), where Logitech's plugins keep theirs; the first load
+  copies your existing settings across without touching the originals. Uninstall removes the
+  runtime, the temporary IPC directory and the registration; a small `VizhiDesktop Settings`
+  backup keeps your configuration for a reinstall. An upgrade keeps an unsent dictation and your
+  profiles; the speech model is copied back from Claude Console or Vizhi for Codex when one of
+  them has it, and downloaded again otherwise — with the download shown on the key and in
+  Options+, where 1.0.0 showed nothing.
+- **A deleted "Vizhi Home" profile stays deleted, and the plugin never restarts Logi's
+  services** (#138). 1.0.0 re-installed the layout on every load and killed the Logi Plugin
+  Service and the Options+ agent to make it show. Now a layout you removed is respected, and a
+  registration the plugin writes itself (sideloads only) says in Options+ that it appears after
+  the service next starts.
+- **Dictation is kept when it cannot be delivered** (#139). A failed Dictate & Send retains the
+  words as a draft AND copies them to the clipboard; the key shows *Insert Draft* with what to
+  do next (*OPEN APP · TAP TO RETRY*, *FOCUS CHAT INPUT*) instead of *HOLD TO DISCARD*; a tap
+  inserts for review and never sends; a hold discards. Recording runs to 180 s, the key says
+  *Recording ended* at the cap, and the transcript wait grows with the recording so a long
+  dictation is no longer lost on a slower Mac or laptop. The raw audio is deleted after
+  transcription on both platforms. A retained draft survives a plugin reload.
+- **The microphone prompt and the voice helper name Vizhi Desktop** (#140). Every package had
+  shipped the same stale Claude Console helper copied from the packing machine; the helper is
+  now built from source for each product, with its own identity and prompt, and the package
+  check refuses a mismatch. Allow the microphone once more after upgrading — the identity is new.
+- **Workflow settings are no longer rewritten on every load** (#149): two migrations undid each
+  other five times per load.
+- **Find Chat shows the app's results, chats only, with whole titles** (#144); **a chat inside
+  a project is one chat** for Copy Reply and the Home cards (#145); **View Changes opens from
+  the latest edited reply** when the summary row is gone (#146); **Voice Chat starts with the
+  composer's button** when the sidebar shows a second one, **a second Find Chat press takes
+  over a search box that is already open** instead of reading "mode unreadable" because the box
+  hides the mode switcher, and **Voice Chat now sees a running session and ends it**: on the Mac
+  the session lives in a separate voice window the key never looked at, so it kept offering to
+  start another and could not stop the one running (#147).
+- **Copy Reply no longer says "Check Chat" while the composer's formatting toolbar is showing**
+  (#152). ChatGPT exposes that toolbar as a dialog; only a *modal* dialog now blocks Copy Reply,
+  the composer and the View Changes route, on both platforms.
+- **Opening a Find Chat result leaves the page, and the search works again afterwards** (#151).
+  The folder asked the Logi Plugin Service to go up a level with a generic action the service
+  refuses, so it stayed on the result cards, and until you pressed Back the next Find Chat press
+  showed the old page with a dead *Open Search* key. The folder now closes itself once the chat
+  opens, and *Open Search* always starts a new search. The log on the Mac now records each
+  search's open and selection outcome (never the titles).
+
+### Removed
+- **The optional "Vizhi Adaptive 3" layout** is no longer in the package. One layout, Vizhi Home,
+  is the one we keep correct; it is also downloadable from vizhi.dev/layouts for re-import. An
+  Adaptive 3 you imported before keeps working and keeps receiving the Home migrations.
 
 ## Vizhi Desktop [1.0.0] — 2026-09-29
 

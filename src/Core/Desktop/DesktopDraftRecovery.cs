@@ -1,12 +1,15 @@
 namespace Loupedeck.ClaudeConsolePlugin.Desktop
 {
     using System;
+    using System.IO;
+    using System.Text.Json;
 
     /// <summary>One unsent transcript, held in memory independently of the system clipboard.</summary>
     internal sealed class DesktopDraftRecovery
     {
         private readonly Object _gate = new();
         private readonly IDesktopAutomation _automation;
+        private readonly String _path;
         private String _text;
         private String _error;
         private Int64 _revision;
@@ -18,6 +21,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         internal Boolean Pending { get { lock (_gate) { return _text != null; } } }
         internal String RetryHint { get { lock (_gate) return _error switch
         {
+            "app-not-running" => "OPEN APP · TAP TO RETRY",
+            "not-trusted" => "ALLOW ACCESS",
             "composer-focus-changed" or "app-not-frontmost" => "FOCUS CHAT INPUT",
             "composer-selection-changed" => "CURSOR NOT READY",
             "draft-changed" or "draft-exists" => "INPUT CHANGED",
@@ -30,14 +35,50 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         internal Int64? PendingId { get { lock (_gate) { return _text != null ? _revision : null; } } }
         internal Int64? DiscardableId(VoicePhase phase) { lock (_gate) return phase == VoicePhase.Idle && !_inserting && _text != null ? _revision : null; }
 
-        internal DesktopDraftRecovery(IDesktopAutomation automation) => _automation = automation;
+        internal DesktopDraftRecovery(IDesktopAutomation automation, String path = null)
+        {
+            _automation = automation; _path = path;
+            try { if (path != null && File.Exists(path)) {
+                var saved = JsonSerializer.Deserialize<String[]>(File.ReadAllText(path));
+                if (saved?.Length == 2) { _text = saved[0]; _error = saved[1]; _revision++; }
+            } } catch { }
+        }
+        private void Save()
+        {
+            if (_path == null) return;
+            try {
+                if (_text == null)
+                {
+                    // The memory copy is already gone. A delete that fails (a scanner holding the file,
+                    // the directory mid-removal) must not leave the old draft to come back on the next
+                    // load: overwrite it with an empty document, which the constructor ignores.
+                    try { File.Delete(_path); }
+                    catch (Exception ex) when (File.Exists(_path))
+                    {
+                        PluginLog.Warning(ex, "Desktop draft file could not be deleted; emptied instead");
+                        File.WriteAllText(_path, "[]");
+                    }
+                    return;
+                }
+                PrivateFiles.EnsurePrivateDirectory(Path.GetDirectoryName(_path));
+                var temp = _path + ".tmp-" + Guid.NewGuid().ToString("N");
+                try {
+                    File.WriteAllText(temp, JsonSerializer.Serialize(new[] { _text, _error }));
+                    PrivateFiles.EnsurePrivateFile(temp); File.Move(temp, _path, true);
+                } finally { if (File.Exists(temp)) File.Delete(temp); }
+            } catch (Exception ex) {
+                PluginLog.Warning(ex, _text == null
+                    ? "Desktop draft file could not be cleared; a consumed draft may reappear after a reload"
+                    : "Desktop draft persistence failed; the draft is held in memory only until the next reload");
+            }
+        }
 
         internal Boolean Retain(String text) => Retain(text, null);
 
         internal Boolean Retain(String text, String error)
         {
             if (String.IsNullOrWhiteSpace(text)) { return false; }
-            lock (_gate) { _text = text; _error = error == null ? null : SafeError(error); _revision++; }
+            lock (_gate) { _text = text; _error = error == null ? null : SafeError(error); _revision++; Save(); }
             if (error != null) PluginLog.Warning("Desktop insertion initial: " + SafeError(error));
             Changed?.Invoke();
             return true;
@@ -51,7 +92,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             lock (_gate)
             {
                 if (_inserting || _text == null || _revision != expectedId) { return false; }
-                _text = null; _error = null;
+                _text = null; _error = null; Save();
             }
             Changed?.Invoke();
             Discarded?.Invoke();
@@ -91,7 +132,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 {
                     // A new transcript arriving during the slow native call belongs to its
                     // own retry; confirming this one must not clear the newer recording.
-                    if (_revision == revision) { _text = null; _error = null; }
+                    if (_revision == revision) { _text = null; _error = null; Save(); }
                 }
                 try { _automation.FocusApp(); } catch { }
                 Changed?.Invoke();
@@ -105,7 +146,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         private void RecordFailure(String error, Int64 revision)
         {
             var code = SafeError(error);
-            lock (_gate) if (_revision == revision) _error = code;
+            lock (_gate) if (_revision == revision) { _error = code; Save(); }
             // Only explicit failed insertions log a fixed code. Never include prompt,
             // clipboard, image, chat title, helper response, or exception text.
             PluginLog.Warning("Desktop insertion retry: " + code);

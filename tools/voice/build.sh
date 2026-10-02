@@ -4,12 +4,14 @@
 # and remember mic access independent of LogiPluginService. Run: bash build.sh
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-APP="$HERE/ClaudeVoiceHelper.app"
+APP="${VOICE_BUILD_APP:-$HERE/ClaudeVoiceHelper.app}"
 BIN="$APP/Contents/MacOS/ClaudeVoiceHelper"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$HERE/Info.plist" "$APP/Contents/Info.plist"
+python3 "$HERE/helper-metadata.py" "$APP/Contents/Info.plist" "${VOICE_PRODUCT:-ClaudeConsole}" "${VOICE_VERSION:-1.0.0}"
+BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")
 
 echo ">>> compiling (Swift, arm64)"
 swiftc -O "$HERE/ClaudeVoiceHelper.swift" -o "$BIN" \
@@ -21,23 +23,32 @@ swiftc -O "$HERE/ClaudeVoiceHelper.swift" -o "$BIN" \
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 if [ "$SIGN_IDENTITY" = "-" ]; then
   echo ">>> ad-hoc signing"
-  codesign --force --sign - --identifier com.rshankar.claudeconsole.voicehelper "$APP"
+  codesign --force --sign - --identifier "$BUNDLE_ID" "$APP"
 else
   echo ">>> Developer-ID signing (hardened runtime + mic entitlement): $SIGN_IDENTITY"
   ENT="${HELPER_ENTITLEMENTS:-$HERE/helper.entitlements}"
   codesign --force --timestamp --options runtime --entitlements "$ENT" \
-    --identifier com.rshankar.claudeconsole.voicehelper --sign "$SIGN_IDENTITY" "$APP"
+    --identifier "$BUNDLE_ID" --sign "$SIGN_IDENTITY" "$APP"
 fi
 
 echo ">>> signature:"
 codesign -dvv "$APP" 2>&1 | grep -E "Identifier=|Authority=|Signature=" || true
 echo "built: $APP"
 
-# Install to the plugin's runtime home (next to the whisper model + hooks). The plugin launches
-# the app from here, NOT from the source tree. NOTE: recompiling changes the ad-hoc code hash, so
-# macOS will re-prompt for Microphone permission the next time the Voice key is used. (A real
-# Developer-ID signature would keep the grant stable across rebuilds — for the shipping build.)
-RUNTIME="$HOME/.claude/claude-console/ClaudeVoiceHelper.app"
+if [ "${VOICE_NO_INSTALL:-0}" = "1" ]; then exit 0; fi
+
+# Install to the PRODUCT's runtime home (next to the whisper model + hooks) — the same place
+# BridgeManager.VoiceHelperApp resolves for that product (ProductRuntime.For), or a dev-linked
+# plugin looks for a helper that was installed somewhere else. The plugin launches the app from
+# here, NOT from the source tree. NOTE: recompiling changes the ad-hoc code hash, so macOS will
+# re-prompt for Microphone permission the next time the Voice key is used. (A real Developer-ID
+# signature would keep the grant stable across rebuilds — for the shipping build.)
+case "${VOICE_PRODUCT:-ClaudeConsole}" in
+  VizhiDesktop) RUNTIME_HOME="$HOME/Library/Application Support/Logi/LogiPluginService/PluginData/VizhiDesktop" ;;
+  VizhiCodex)   RUNTIME_HOME="$HOME/.codex/vizhi-runtime" ;;
+  *)            RUNTIME_HOME="$HOME/.claude/claude-console" ;;
+esac
+RUNTIME="$RUNTIME_HOME/ClaudeVoiceHelper.app"
 echo ">>> installing to $RUNTIME"
 mkdir -p "$(dirname "$RUNTIME")"
 rm -rf "$RUNTIME"
@@ -49,7 +60,7 @@ echo "installed: $RUNTIME"
 # whisper-cli, and the plugin downloads the speech model itself on first use.)
 if command -v whisper-cli >/dev/null 2>&1; then
   echo ">>> bundling self-contained whisper-cli"
-  bash "$HERE/bundle-whisper.sh"
+  VOICE_RUNTIME_HOME="$RUNTIME_HOME" bash "$HERE/bundle-whisper.sh"
 else
   echo ">>> skipping whisper bundle (no whisper-cli to vendor; 'brew install whisper-cpp' to enable)"
 fi

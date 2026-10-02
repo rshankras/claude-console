@@ -23,7 +23,7 @@ product. *(Not an OpenAI product; ChatGPT and Codex are trademarks of OpenAI.)*
 **Version 1.0.0, macOS only (first release):** two pages, Home and Tools.
 Approve and Deny take the family positions on Home in both modes; All Chats joins Find Chat on Tools, and Voice Chat moves to Tools.
 Stock Home and Tools pages migrate together, with a backup; a customized key on either page leaves both as they were.
-Custom assignments and the optional Adaptive 3 layout are preserved.
+Custom assignments and layouts you imported earlier are preserved.
 Spoken workflows now show **Your request** first, then a shorter labeled task instruction.
 Debug investigates before fixing and can report no bug found. Unchanged stock recipes upgrade
 with a settings backup; custom recipes remain intact. The speak → finish → review → Send
@@ -250,7 +250,7 @@ Actual attachment accessibility varies by app version and needs live testing.
 Up to eight sources (50,000 text characters total) can be staged. Source counts appear on capture
 keys. Captures do not submit messages. A failed capture does not reuse old clipboard contents;
 previously staged sources remain until used or cleared. Source text and the retained reply stay
-in memory; screenshots are private files under `~/.claude/claude-console/desktop-captures/`.
+in memory; screenshots are private files under `~/Library/Application Support/Logi/LogiPluginService/PluginData/VizhiDesktop/desktop-captures/`.
 Clear Sources clears staging only, not files, clipboard contents or text already in an app.
 
 **System access:** this installation adds an Ask ChatGPT page without replacing existing System
@@ -269,11 +269,11 @@ Source Closed. Paste Reply requires the original app and the empty field you exp
    **Send** on the keypad. Another Dictate press adds more detail without submitting.
    Insertion can temporarily use the clipboard for native paste and restores its contents,
    unless you copied something newer. If **Insert Draft · HOLD TO DISCARD** appears, the
-   transcript is retained in memory. **Tap** to retry against the original chat and draft,
+   transcript is retained privately on disk. **Tap** to retry against the original chat and draft,
    or **hold** until **Discarded** appears to forget the retained recording. Discarding
    does not clear text already in the app. If the chat or draft changed during recording,
    insertion is refused. Retries never overwrite another draft or send automatically.
-   The retained draft otherwise lasts until insertion or plugin restart. Releasing a hold
+   The retained draft survives a plugin restart; after reload, an explicit retry inserts into the current composer for review. Releasing a hold
    never retries insertion or starts another recording.
 4. Use **Stop** to interrupt a running response. Its square icon is distinct from navigation.
 
@@ -311,7 +311,7 @@ With the confirmed shortcut configured:
    means finish the local Voice Draft capture first. Rapid repeat presses are suppressed.
 4. **Stop** on Home interrupts task generation; it does not end Voice Chat.
 
-The local configuration is `~/.claude/claude-console/desktop-voice-shortcut.json`:
+The local configuration is `~/Library/Application Support/Logi/LogiPluginService/PluginData/VizhiDesktop/desktop-voice-shortcut.json`:
 
 ```json
 { "toggleVoiceChat": "Control+Shift+V" }
@@ -334,16 +334,17 @@ starts ChatGPT dictation, but this update retains the existing offline Voice Dra
 
 ## Choose a layout
 
-- **Vizhi Home** ships as the two-page default: Home and mode-aware Tools.
-- **Vizhi Adaptive 3** remains an optional three-page layout with approvals on its first page.
-  Import [VizhiDesktop-Adaptive3.lp5](package/optional-profiles/VizhiDesktop-Adaptive3.lp5) explicitly.
+- **Vizhi Home** ships as the two-page default: Home and mode-aware Tools. It is also
+  downloadable from [vizhi.dev/layouts](https://vizhi.dev/layouts/) for re-import.
+- The optional three-page *Vizhi Adaptive 3* layout is no longer shipped (1.1.0): one layout to
+  keep right. A copy you imported earlier keeps working and keeps receiving the Home migrations.
 - Installed Flow 2, Flow, Everyday, Adaptive and customized profiles are retained. Ordinary
   updates add the packaged layout without changing the selected profile. This user-authorized
   redesign installation explicitly selects Vizhi Home and preserves the System source page.
 
 ## Short chat labels and workflow favorites
 
-Configuration lives in `~/.claude/claude-console/`. Reload Vizhi Desktop or restart Logi Plugin
+Configuration lives in `~/Library/Application Support/Logi/LogiPluginService/PluginData/VizhiDesktop/`. Reload Vizhi Desktop or restart Logi Plugin
 Service after editing these files. Examples are in [package/examples](package/examples).
 
 **Conversation labels:** create `desktop-conversation-labels.json` with exact app titles:
@@ -394,3 +395,37 @@ entry in the Codex JSON with its example from `desktop-workflow-extras.json`.
 - The ChatGPT desktop app, signed in
 - Logi Options+ with the Logi Plugin Service 6.4 or newer
 - MX Creative Keypad
+
+
+### Runtime storage and recovery
+
+On macOS, Desktop owns `~/Library/Application Support/Logi/LogiPluginService/PluginData/VizhiDesktop/`; on Windows,
+`%LOCALAPPDATA%/Logi/LogiPluginService/PluginData/VizhiDesktop/` — the directory the Logi
+Actions SDK provides for a plugin's data (`Plugin.GetPluginDataDirectory()`), the same place
+Logitech's own plugins keep theirs. Settings, helpers, the voice model, captures and private IPC
+resolve within that directory. The first load copies existing Desktop settings from the legacy
+Claude Console directory without changing the originals.
+
+Failed dictation is retained as an unsent draft across plugin reloads. Retry inserts for
+review and never sends automatically. Failed Dictate & Send also copies the transcript to
+the clipboard when available. Recording ends at 180 seconds; the key then asks you to finish.
+Audio is removed after transcription. The first voice use displays the 148 MB model download;
+a verified model from another product is copied when available.
+
+Uninstall removes the Desktop runtime — helpers, the speech model, captures, private IPC — and
+its legacy temporary IPC directory. A small `VizhiDesktop Settings` sibling directory keeps user
+configuration for reinstall; delete that directory for a complete settings reset. Because Logi
+Options+ runs the same uninstall step when it replaces the package during an upgrade, two small
+things are parked there beside a timestamped receipt rather than deleted: an unsent dictation,
+and the registration with its custom or deleted profiles. A reinstall within ten minutes takes
+them back; an expired receipt is discarded on the next load. The speech model is not kept: the
+first voice press after an upgrade copies it from Claude Console or Vizhi for Codex when one of
+them has it, and downloads it again otherwise, saying so on the key. Claude Console and Vizhi for
+Codex files are left untouched.
+
+Deleting the current packaged profile is respected — by restarts, by disable/enable and by an
+upgrade. To get *Vizhi Home* back, download `VizhiDesktop-Home.lp5` from
+[vizhi.dev/layouts](https://vizhi.dev/layouts/) and import it in Options+ with Vizhi Desktop
+selected (⋯ → Import Profile); Options+ gives the import its own identity, so it sits beside your
+other profiles. Profile registration and upgrades take effect on the next normal service restart;
+Desktop does not restart Options+ or LPS itself.

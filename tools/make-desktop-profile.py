@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Rebuild Vizhi Home (two pages) and the optional Adaptive 3 profile.
+"""Rebuild Vizhi Home (two pages), the one layout the package ships.
 
 Each binding names VizhiDesktop; identity agrees in all four package documents. The default
-retains the Flow controls; Adaptive 3 is an explicit import outside auto-import profiles.
+retains the Flow controls. (The optional Adaptive 3 layout was dropped in 1.1.0; its page
+table below is kept only as the record of what users who imported it have.)
 The existing profile supplies only hardware geometry and service-owned dial bindings. Preview
 metadata is rebuilt with desktop labels and glyphs. Outputs have deterministic ZIP timestamps.
 
@@ -25,8 +26,9 @@ DONOR = OUT  # tracked desktop geometry; never depend on generated terminal prod
 # an additional profile and RETAINS the user-selected default and earlier profile, so existing user customization is never overwritten.
 # Never regenerate for ordinary updates or Options+ will accumulate duplicate profiles.
 GUID = "A8B982E4103C4F99A4C75070AF60A6E4"
-EVERYDAY_GUID = "390FE86F17D84EC6B4920C7A5C3F37FA"
-EVERYDAY_OUT = OUT.parent.parent / "optional-profiles/VizhiDesktop-Adaptive3.lp5"
+# Adaptive 3's identity, no longer built: DesktopHomeNavigationMigration still names it so an
+# imported copy keeps receiving the Home migrations.
+ADAPTIVE3_GUID = "390FE86F17D84EC6B4920C7A5C3F37FA"
 APP = "@_vizhidesktop"
 DISPLAY = "Vizhi Desktop"
 PROFILE_DISPLAY = "Vizhi Home"
@@ -227,12 +229,10 @@ def build_profile(out, guid, display_name, home, entries, controls=PAGE_TWO) -> 
 
 
 def main() -> None:
-    # Read once before replacing either output. A two-page default still needs the old
-    # three-page geometry when regenerating the optional layout on a subsequent invocation.
-    with zipfile.ZipFile(EVERYDAY_OUT if EVERYDAY_OUT.exists() else DONOR) as donor:
+    # Read the tracked layout once before replacing it: it supplies the hardware geometry.
+    with zipfile.ZipFile(DONOR) as donor:
         entries = {i.filename: donor.read(i.filename) for i in donor.infolist() if not i.is_dir()}
     build_profile(OUT, GUID, PROFILE_DISPLAY, HOME, entries, TOOLS)
-    build_profile(EVERYDAY_OUT, EVERYDAY_GUID, "Vizhi Adaptive 3", PAGE_ONE, entries)
 
 
 if __name__ == "__main__":
