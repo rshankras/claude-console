@@ -161,7 +161,7 @@ assert(comparableDraft("Reply") != comparableDraft("Reply Friday."))
 assert 'keyboardSetUnicodeString' not in source, 'Desktop text insertion must not fall back to chunked Unicode events'
 fixture += function('buttonLabels') + '\n' + function('normalizedButtonLabel') + '\n'
 fixture += '\n'.join(function(n) for n in ['normalizedSearchLabel', 'isSearchField', 'searchContainer', 'reportedSearchModes', 'searchModeError']) + '\n'
-fixture += function('scanWindows') + '\n'
+fixture += function('walkTree') + '\n' + function('scanWindows') + '\n'
 fixture += function('conversationRows') + '\n'
 fixture += function('conversationMatches') + '\n' + function('conversationState')
 fixture += '\n' + function('conversationRowState')

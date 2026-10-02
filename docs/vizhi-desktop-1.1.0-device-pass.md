@@ -141,7 +141,12 @@ for i in 1 2 3 4 5 6 7 8 9; do pgrep -fl "LogiPluginService|logioptionsplus_agen
     wait; close the Changes tab if open. Tools → Tasks → **View Changes** → the tab opens; press
     again → "already open" (stays).
 5.5 #147.2 Voice Chat. With a chat open, the **Voice Chat** key must read *Voice Chat* (not "No
-    Voice"); press → the app starts voice; press again → ends.
+    Voice"); press → the app starts voice AND the key flips to *End Voice* within a poll or two;
+    press again → ends. On the package from `ea16416` the key stayed on *Voice Chat* through the
+    session (2 Oct 12:17): the Mac app runs voice in a separate `AXDialog` window holding the
+    "Stop voice chat" button, and the bridge scanned only the main window — fixed in the next cut
+    (`voiceDialogNodes`). The Mac shows ONE start button (the composer's); the sidebar's "New
+    voice chat" is not a start label.
     → evidence on #144 #145 #146 #147.
 
 ## Phase 6 — the upgrade check (SDK contract; the one thing nobody has observed yet)

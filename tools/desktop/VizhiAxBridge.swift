@@ -605,9 +605,9 @@ func targetWindows() -> [AXUIElement] {
 // Capture once per invocation. A re-scan must never retarget another window after a wait.
 let operationWindows = targetWindows()
 
-// One DFS over the target window (never the menu bar — thousands of AXMenuItems of pure noise).
+// One DFS over the given roots (never the menu bar — thousands of AXMenuItems of pure noise).
 // Returns tree order, which the card-text heuristic depends on.
-func scanWindows() -> (nodes: [Node], webArea: Bool) {
+func walkTree(_ roots: [AXUIElement]) -> (nodes: [Node], webArea: Bool, complete: Bool) {
     var nodes: [Node] = []
     var webArea = false
     var complete = true
@@ -623,9 +623,27 @@ func scanWindows() -> (nodes: [Node], webArea: Bool) {
                                    "AXBusyIndicator", "AXGroup"].contains(role) ? buttonLabels(el) : []))
         for c in children(el) { rec(c, depth + 1) }
     }
-    for w in operationWindows { rec(w, 0) }
+    for w in roots { rec(w, 0) }
+    return (nodes, webArea, complete)
+}
+
+// The target window only.
+func scanWindows() -> (nodes: [Node], webArea: Bool) {
+    let tree = walkTree(operationWindows)
     // A partial tree cannot establish uniqueness or rule out an approval/running task.
-    return (nodes, webArea && complete)
+    return (tree.nodes, tree.webArea && tree.complete)
+}
+
+// Voice mode lives in a separate AXDialog window that the target scan never visits (device,
+// 2 Oct): the main window kept "Start voice chat" while the dialog held "Stop voice chat", so
+// the key read Ready through a whole session and could not end it. Only the voice verbs look
+// there; every other verb keeps its single-window contract.
+func voiceDialogNodes() -> [Node] {
+    let windows = (attr(appEl, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+    let dialogs = windows.filter { w in
+        !operationWindows.contains { CFEqual($0, w) } && str(w, kAXSubroleAttribute as String) == "AXDialog"
+    }
+    return dialogs.isEmpty ? [] : walkTree(dialogs).nodes
 }
 
 // Bounded wait for the web content tree — used by press/write (which must not act on a half
@@ -1815,7 +1833,7 @@ case "status":
         "approvalPresent": approve != nil,
         "denyPresent": deny != nil,
         "stopPresent": stop != nil,
-        "voiceChat": voiceState(nodes: nodes, start: argValues("--voice-start"), end: argValues("--voice-end")),
+        "voiceChat": voiceState(nodes: nodes + voiceDialogNodes(), start: argValues("--voice-start"), end: argValues("--voice-end")),
         "canSend": sendTarget(in: nodes) != nil,
         "canCopyAnswer": copyInspection.node != nil,
         "copyAnswerError": copyInspection.error,
@@ -1925,16 +1943,17 @@ case "voice":
     let starts = argValues("--voice-start")
     let ends = argValues("--voice-end")
     if !waitForWebContent(seconds: 2) { fail("surface-unavailable", 5) }
+    // The session's Stop button is in the voice dialog, not the target window (voiceDialogNodes).
     let initial = scanWindows()
     guard initial.webArea, sameOperationWindow(),
-          let target = voiceTarget(action: action, nodes: initial.nodes, start: starts, end: ends) else {
+          let target = voiceTarget(action: action, nodes: initial.nodes + voiceDialogNodes(), start: starts, end: ends) else {
         fail("voice-state-changed", 6)
     }
     let title = str(operationWindows[0], kAXTitleAttribute as String)
     let latest = scanWindows()
     guard latest.webArea, sameOperationWindow(),
           str(operationWindows[0], kAXTitleAttribute as String) == title,
-          let confirmed = voiceTarget(action: action, nodes: latest.nodes, start: starts, end: ends),
+          let confirmed = voiceTarget(action: action, nodes: latest.nodes + voiceDialogNodes(), start: starts, end: ends),
           CFEqual(target.el, confirmed.el) else { fail("voice-state-changed", 6) }
     guard AXUIElementPerformAction(confirmed.el, kAXPressAction as CFString) == .success else {
         fail("voice-press-failed", 5)

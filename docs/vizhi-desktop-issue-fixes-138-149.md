@@ -194,3 +194,21 @@ the box is open; a visible, different mode is still `mode-changed`, and a missin
 switcher with no box stays `mode-unavailable` on the retry page instead of a silent
 bounce. Test `An_unreadable_mode_opens_with_the_last_pinned_mode` replaces
 `An_unreadable_mode_opens_no_search`. The Windows change is compiled, not run.
+
+## Device-pass finding, 2 October: #147 Voice Chat never shows End Voice
+
+Step 5.5: the key read *Voice Chat*, the press started a session in the app, and the
+key stayed on *Voice Chat* — there was nothing to end with (12:17). With the session
+open the app has two windows: the standard window (sidebar now carrying a "New voice
+chat" button and a "Voice chat active" image, composer still offering "Start voice
+chat") and an `AXDialog` holding "Mute microphone", **"Stop voice chat"**, "Mute voice
+chat", "Hide activity". `targetWindows()` resolves to the focused or main window, so
+the dialog was never scanned, `voiceState` saw a start button and no end button, and
+reported Ready through the whole session; a second press would have started another.
+
+Fix: `scanWindows` is now `walkTree(operationWindows)`, and `voiceDialogNodes()` walks
+the app's other `AXDialog` windows. Only `status`'s `voiceChat` and the `voice` verb
+add those nodes; every other verb keeps the single-window contract. The adapter's
+labels were already right ("Stop voice chat"). Not unit-testable offline (AX walk);
+verified on the device in the next cut. Windows untouched: the UIA helper scans the
+process, and the Windows pass had already seen start and end.

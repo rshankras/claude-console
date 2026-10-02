@@ -78,9 +78,11 @@ pass with the installed package (docs/vizhi-desktop-1.1.0-device-pass.md) is wha
 - **Find Chat shows the app's results, chats only, with whole titles** (#144); **a chat inside
   a project is one chat** for Copy Reply and the Home cards (#145); **View Changes opens from
   the latest edited reply** when the summary row is gone (#146); **Voice Chat starts with the
-  composer's button** when the sidebar shows a second one, and **a second Find Chat press takes
+  composer's button** when the sidebar shows a second one, **a second Find Chat press takes
   over a search box that is already open** instead of reading "mode unreadable" because the box
-  hides the mode switcher (#147).
+  hides the mode switcher, and **Voice Chat now sees a running session and ends it**: on the Mac
+  the session lives in a separate voice window the key never looked at, so it kept offering to
+  start another and could not stop the one running (#147).
 - **Opening a Find Chat result leaves the page, and the search works again afterwards** (#151).
   The folder asked the Logi Plugin Service to go up a level with a generic action the service
   refuses, so it stayed on the result cards, and until you pressed Back the next Find Chat press
