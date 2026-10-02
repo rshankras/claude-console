@@ -1691,7 +1691,10 @@ case "search":
     if action == "open" {
         let scan = scanWindows()
         guard scan.webArea, sameOperationWindow() else { failSearch("no-surface") }
-        checkSearchMode(scan.nodes, pinned: false)
+        // The open search box hides the mode switcher (#147). A field that is already there
+        // excuses the hidden switcher, so a second Find Chat press takes over the open box; a
+        // visible, different mode is still refused.
+        checkSearchMode(scan.nodes, pinned: searchSurface(scan.nodes) != nil)
         if searchSurface(scan.nodes) == nil {
             // An existing field with an unsupported container must not make Retry toggle
             // an already-open search panel. Only press the opener when no field is present.

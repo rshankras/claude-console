@@ -128,7 +128,11 @@ for i in 1 2 3 4 5 6 7 8 9; do pgrep -fl "LogiPluginService|logioptionsplus_agen
 "$D/VizhiAxBridge" inspect --app com.openai.codex > ~/Desktop/find-chat-open.json
 ```
 5.2 #147.1 Switch ChatGPT to **Codex** mode; repeat 5.1. Then press Find Chat AGAIN while the box
-    is open → it focuses the field (no "Mode unreadable / Retry").
+    is open → the cards come back and the field keeps focus (no bounce back to Tools). On the
+    package built from `6f4048e` this bounced three times (2 Oct 11:53, "the app's mode is
+    unreadable": the open box hides the mode switcher) — fixed in the next cut: `log` shows
+    `FindChatDynamicFolder: mode unreadable, opening as <mode>` then `FindChat: open in <mode> —
+    search field ready`.
 5.3 #145 Project chat. In ChatGPT create a project (sidebar → Projects → +) and start a chat inside
     it. With that chat open: press **Copy Reply** → it copies (face not "Check Chat"). Press **Home**:
     the chat appears ONCE among the cards. Open another chat, press the project chat's card → it

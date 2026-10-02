@@ -176,3 +176,21 @@ of returning. The Mac log now records `FindChat: open in <mode> — …` and
 `FindChat: result opened` / `select refused — <error>` (outcomes only, never titles),
 which the Windows helper already did. Three tests pin the event, the re-open and the
 no-op callback. Suite: 2,437 passed, 29 skipped.
+
+## Device-pass finding, 2 October: #147 second press
+
+Step 5.2 pressed Find Chat while the search box was already open; the folder closed
+three times with "the app's mode is unreadable" (11:53:15–18) and the keypad bounced
+back to Tools with no face. The box hides the mode switcher, so neither the plugin's
+status read nor the helper's `open` could name the mode — #147 had recorded this as
+"press Esc first", and the pass doc's expectation was never implemented.
+
+Fix: `FindChatDynamicFolder.Open` no longer closes on an unreadable mode; it opens with
+the mode the last search was pinned to (ChatGPT before any) and lets the helper decide.
+Both helpers treat an `open` that finds the field already present as pinned
+(`checkSearchMode(…, pinned: searchSurface(nodes) != nil)` on the Mac, the same clause
+in `SearchVerbs.CheckedSearch` on Windows), so a hidden switcher is excused only when
+the box is open; a visible, different mode is still `mode-changed`, and a missing
+switcher with no box stays `mode-unavailable` on the retry page instead of a silent
+bounce. Test `An_unreadable_mode_opens_with_the_last_pinned_mode` replaces
+`An_unreadable_mode_opens_no_search`. The Windows change is compiled, not run.

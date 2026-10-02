@@ -50,10 +50,14 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             var state = automation.Status();
             if (!state.SurfaceAvailable) { PluginLog.Info("FindChatDynamicFolder: closed, the app's surface is unavailable"); return false; }
             var mode = app.ModeNames.FirstOrDefault(m => String.Equals(m, state.Mode, StringComparison.OrdinalIgnoreCase));
-            if (mode == null) { PluginLog.Info("FindChatDynamicFolder: closed, the app's mode is unreadable"); return false; }
+            // An open search box hides the mode switcher (#147), so a second Find Chat press read
+            // "mode unreadable" and bounced the keypad back. Open with the mode the last search was
+            // pinned to (ChatGPT before any): the helper takes over a box that is already open and
+            // still refuses a visible, different mode — then the retry page shows why.
+            if (mode == null) PluginLog.Info($"FindChatDynamicFolder: mode unreadable, opening as {search.Mode}");
             // The search is pinned to the mode it opened in. Keep the retry/Use App page
             // visible if the app's layout is unsupported.
-            search.Begin(mode);
+            search.Begin(mode ?? search.Mode);
             return true;
         }
 

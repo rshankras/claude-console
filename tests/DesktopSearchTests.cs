@@ -79,11 +79,25 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
-        public void An_unreadable_mode_opens_no_search()
+        public void An_unreadable_mode_opens_with_the_last_pinned_mode()
         {
-            var fake = new Fake { State = new() { SurfaceAvailable = true, Mode = "" } };
-            Assert.False(FindChatDynamicFolder.Open(fake, new OpenAiDesktopAdapter(), new DesktopSearch(fake)));
-            Assert.Empty(fake.Calls);
+            // The open search box hides the mode switcher (#147): a second Find Chat press must
+            // take the box over in the mode the search was pinned to, not bounce the keypad back.
+            var fake = new Fake { State = new() { SurfaceAvailable = true, Mode = "Codex" } };
+            var search = new DesktopSearch(fake);
+            Assert.True(FindChatDynamicFolder.Open(fake, new OpenAiDesktopAdapter(), search));
+            search.End();
+            fake.State = new() { SurfaceAvailable = true, Mode = "" };
+            Assert.True(FindChatDynamicFolder.Open(fake, new OpenAiDesktopAdapter(), search));
+            Assert.Equal("open", fake.Calls.Last().Action); Assert.Equal("Codex", fake.Modes.Last());
+            // Before any search, ChatGPT is the pin; the helper refuses if a different mode is visible.
+            var fresh = new Fake { State = new() { SurfaceAvailable = true, Mode = "" } };
+            Assert.True(FindChatDynamicFolder.Open(fresh, new OpenAiDesktopAdapter(), new DesktopSearch(fresh)));
+            Assert.Equal("ChatGPT", fresh.Modes.Last());
+            // No surface at all still closes the folder.
+            var gone = new Fake { State = new() { SurfaceAvailable = false } };
+            Assert.False(FindChatDynamicFolder.Open(gone, new OpenAiDesktopAdapter(), new DesktopSearch(gone)));
+            Assert.Empty(gone.Calls);
         }
 
         [Theory]
