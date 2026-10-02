@@ -182,6 +182,10 @@ pgrep -fl "VizhiAxBridge|ClaudeVoiceHelper|sleep 660" || echo "no plugin process
 
 8.1 Install; Phase 1.2–1.4 with `%LOCALAPPDATA%\Logi\LogiPluginService\PluginData\VizhiDesktop`.
 8.2 Phase 3.1, 3.3(i), 3.4 (the Windows helper's separate WAV delete).
+8.2b Phase 5.1 (#151: a result press leaves the Find Chat page by itself — shared C#) and Phase 5.2
+    second half (Find Chat pressed while the box is open takes it over — `SearchVerbs.CheckedSearch`
+    pins an `open` that finds the field; compiled, not run on Windows). Voice Chat needs no re-run:
+    the dialog scan is Mac-only.
 8.3 Phase 6 and Phase 7. The deferred timer no longer exists, so there is no process to watch for.
 
 ## Phase 9 — put the Mac back
