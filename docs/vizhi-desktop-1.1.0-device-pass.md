@@ -119,7 +119,11 @@ for i in 1 2 3 4 5 6 7 8 9; do pgrep -fl "LogiPluginService|logioptionsplus_agen
 
 5.1 #144 Find Chat. Tools → **Find Chat**, then **Speak Query** (or Type Now), say a word that is in
     a chat title. Expected: one result card per matching chat with the WHOLE title; press one → that
-    chat opens. While the search box is open, also capture the tree for the record:
+    chat opens AND the keypad leaves the Find Chat page by itself (#151 — on the first 1.1.0 package
+    it stayed on the cards; `log 20` must show `FindChat: result opened` then
+    `FindChatDynamicFolder: closed after opening the chat`). Press Find Chat again → fresh cards
+    (`FindChat: open in ChatGPT — search field ready`), and **Open Search** starts a new search.
+    While the search box is open, also capture the tree for the record:
 ```bash
 "$D/VizhiAxBridge" inspect --app com.openai.codex > ~/Desktop/find-chat-open.json
 ```

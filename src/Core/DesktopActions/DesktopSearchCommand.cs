@@ -51,7 +51,11 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 {
                     if (sink != null) BridgeManager.Instance.SearchTranscriptSink = sink;
                     BridgeManager.Instance.ToggleVoice(intent);
-                }, () => this.Plugin.ExecuteGenericAction(ActionString.FromString(PluginDynamicFolder.NavigateUpActionName).ActionName, null, 0));
+                },
+                // Leaving the page is the folder's job (DesktopSearch.Selected → FindChatDynamicFolder.Close).
+                // The generic NavigateUp action used here before is refused by the host ("Unknown
+                // command '@DynamicFolderGoUp'", device 2 Oct) and left the folder open (#151).
+                () => { });
             this.ActionImageChanged();
         }
 

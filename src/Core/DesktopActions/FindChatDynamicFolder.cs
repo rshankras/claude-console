@@ -67,6 +67,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             var app = DesktopServices.App;
             search.Changed -= OnChanged;
             search.Changed += OnChanged;
+            search.Selected -= OnSelected;
+            search.Selected += OnSelected;
             _timer?.Dispose(); _timer = null;
             PluginLog.Info("FindChatDynamicFolder: opened from the keypad");
             if (!DesktopServices.Run(() =>
@@ -79,7 +81,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                     if (generation == Interlocked.Read(ref _generation))
                         _timer = new Timer(_ => PollSearch(generation), null, 1000, Timeout.Infinite);
                 this.ButtonActionNamesChanged();
-            })) { PluginLog.Info("FindChatDynamicFolder: closed, another action is running"); search.Changed -= OnChanged; this.Close(); }
+            })) { PluginLog.Info("FindChatDynamicFolder: closed, another action is running"); search.Changed -= OnChanged; search.Selected -= OnSelected; this.Close(); }
             return true;
         }
 
@@ -116,12 +118,22 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             }
             if (_search == null) return true;
             _search.Changed -= OnChanged;
+            _search.Selected -= OnSelected;
             _search.End();
             BridgeManager.Instance.StopSearchCapture();
             return true;
         }
 
         private void OnChanged() => this.ButtonActionNamesChanged();
+
+        // The chat is open; leave the page. Only the folder's own Close() does that (#151), and the
+        // host then calls Deactivate, which ends the session, so the next Find Chat press starts
+        // a fresh search in whatever mode the app is in by then.
+        private void OnSelected()
+        {
+            PluginLog.Info("FindChatDynamicFolder: closed after opening the chat");
+            this.Close();
+        }
         internal static String[] Actions(String plugin, DesktopSearch search) =>
             new[] { "speak", "status" }.Concat(search.Current.Results.Select(search.ResultParameter))
                 .Select(p => ActionString.ToString(plugin, typeof(DesktopSearchCommand).FullName, p)).ToArray();

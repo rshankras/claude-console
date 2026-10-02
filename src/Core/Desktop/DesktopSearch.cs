@@ -57,6 +57,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         public String Feedback => _ended ? null : _feedback;
         public String Mode => _mode ?? "ChatGPT";
         public event Action Changed;
+        /// <summary>
+        /// A result was opened. The Find Chat folder closes itself on this: a plugin cannot drive the
+        /// host's generic "folder up" action (the host answers "Unknown command", device 2 Oct), so
+        /// only the folder's own Close() leaves the page — and until it does, the host neither
+        /// re-activates the folder nor starts a new session (#151).
+        /// </summary>
+        public event Action Selected;
 
         public Boolean Begin(String mode = null)
         {
@@ -98,10 +105,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             lock (_gate)
             {
-                if (_ended || _session == null) return;
+                if (_ended) return;
                 _feedback = null;
-                if (_current.Available) _current = _automation.Search("focus", _current.Target, _current.Query, mode: _mode);
-                else OpenLocked();
+                // No session left (a result was opened and the host kept the page): the press is
+                // a new search in the mode this one was pinned to, not a dead key (#151).
+                if (_session == null || !_current.Available) OpenLocked();
+                else _current = _automation.Search("focus", _current.Target, _current.Query, mode: _mode);
             }
             Changed?.Invoke();
         }
@@ -154,10 +163,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                     selected = next.Available;
                     if (selected) { _session = null; _current = new(); }
                     else { _current = next; _feedback = FeedbackFor(next.Error); }
+                    // Outcome, never the title: the Windows helper has logged these since #148; the
+                    // Mac log said nothing, and the device pass had to be read off the keypad.
+                    PluginLog.Info(selected ? "FindChat: result opened" : $"FindChat: select refused — {next.Error ?? "unknown"}");
                 }
                 catch (Exception ex) when (ex is FormatException or JsonException) { return false; }
             }
             Changed?.Invoke();
+            if (selected) Selected?.Invoke();
             return selected;
         }
 
@@ -170,6 +183,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             _feedback = null;
             _current = _automation.Search("open", mode: _mode);
             _waitingForField = CanAwaitField(_current);
+            PluginLog.Info(_current.Available ? $"FindChat: open in {Mode} — search field ready"
+                : $"FindChat: open in {Mode} — {_current.Error ?? "unavailable"}");
         }
         internal static Boolean CanAwaitField(DesktopSearchSnapshot state) => !state.Available
             && !String.IsNullOrEmpty(state.Origin)

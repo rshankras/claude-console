@@ -155,3 +155,24 @@ Also fixed:
 
 Still owed: the Windows deferred-cleanup command and the Windows helper changes are
 compiled but not run on hardware; the live checks listed above are unchanged.
+
+## Device-pass finding, 2 October: #151
+
+The Mac pass of the first 1.1.0 package (`c4f0a3ef…`) opened a Find Chat result and
+the keypad stayed on the result cards; the next Find Chat press showed the same page
+with a dead *Open Search* key. The service log had the cause: on the result press the
+command asked the host to run `$@Generic___@DynamicFolderGoUp`, which the host answered
+with `Unknown command '@DynamicFolderGoUp'`. The folder never closed, so `Deactivate`
+never ran, the search session stayed cleared (a successful `Select` sets it to null),
+and `TypeQuery` returned at its `_session == null` guard. Re-entering the folder created
+the layout mode again without calling `Activate`.
+
+Fix: `DesktopSearch` raises `Selected` after a successful selection;
+`FindChatDynamicFolder` subscribes in `Activate`, calls its own `Close()` on it (the
+only call that leaves the page), and unsubscribes in `Deactivate`. `DesktopSearchCommand`
+no longer drives the generic action (the `close` callback stays for the test rig).
+`TypeQuery` with no session re-opens the search in the mode it was pinned to instead
+of returning. The Mac log now records `FindChat: open in <mode> — …` and
+`FindChat: result opened` / `select refused — <error>` (outcomes only, never titles),
+which the Windows helper already did. Three tests pin the event, the re-open and the
+no-op callback. Suite: 2,437 passed, 29 skipped.
