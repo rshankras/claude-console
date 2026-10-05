@@ -49,7 +49,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         protected override void RunCommand(String actionParameter)
         {
             var shown = DesktopServices.Monitor?.Current;
-            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter, shown));
+            RunDesktopAction(actionParameter, () => this.RunDesktopCommand(actionParameter, shown));
         }
 
         private void RunDesktopCommand(String actionParameter, DesktopState shown)
@@ -122,7 +122,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         // with the white check / cross, coloured whether or not a request waits (their Yes/No
         // are too). The corner badge is the "something is waiting" cue; grey means the app
         // cannot be read at all.
-        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
+        protected override BitmapImage GetDesktopCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             var face = FaceFor(actionParameter, state, _confirmation, DateTime.UtcNow);

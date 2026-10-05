@@ -136,6 +136,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// </summary>
         String[] ShowDiffTurnLabels => Array.Empty<String>();
         String[] ChangesPanelLabels => Array.Empty<String>();
+        /// <summary>Names shared by a selected review tab and its app-owned tab panel.</summary>
+        String[] ChangesPanelTitles => Array.Empty<String>();
 
         /// <summary>
         /// Accessibility labels for a contextual control. Empty means this app cannot expose

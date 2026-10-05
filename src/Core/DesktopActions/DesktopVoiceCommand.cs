@@ -68,12 +68,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 id =>
                 {
                     if (DesktopServices.Declared)
-                        DesktopServices.Run(() => DesktopServices.DraftRecovery.Discard(id, BridgeManager.Instance.Voice.Phase));
+                        RunDesktopAction(actionParameter, () => DesktopServices.DraftRecovery.Discard(id, BridgeManager.Instance.Voice.Phase));
                 });
 
         protected override void RunCommand(String actionParameter)
         {
-            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter));
+            RunDesktopAction(actionParameter, () => this.RunDesktopCommand(actionParameter));
         }
 
         private void RunDesktopCommand(String actionParameter)
@@ -102,7 +102,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) => "\u200B";
 
-        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
+        protected override BitmapImage GetDesktopCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             if (BridgeManager.Instance.VoiceModelDownloading)
                 return KeyImage.RenderIntentTile(imageSize, "Downloading", "voice", "VOICE MODEL · 148 MB");

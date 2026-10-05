@@ -71,7 +71,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override void RunCommand(String actionParameter)
         {
-            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter));
+            RunDesktopAction(actionParameter, () => this.RunDesktopCommand(actionParameter));
         }
 
         private void RunDesktopCommand(String actionParameter)
@@ -146,7 +146,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             };
         }
 
-        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
+        protected override BitmapImage GetDesktopCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             if (actionParameter == ShowDiff)
             {

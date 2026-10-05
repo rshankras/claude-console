@@ -91,15 +91,16 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 var route = Resolve(parameter, state.Mode);
                 return route.Kind == "workflow" && DesktopServices.WorkflowVoice.Face(route.Id, state.Mode, BridgeManager.Instance.Voice)?.Label == "Insert Draft"
                     ? DesktopServices.DraftRecovery.DiscardableId(BridgeManager.Instance.Voice.Phase) : null;
-            }, () => this.RunCommand(parameter), id => DesktopServices.Run(() => DesktopServices.DraftRecovery.Discard(id, BridgeManager.Instance.Voice.Phase)));
+            }, () => this.RunCommand(parameter), id => RunDesktopAction(parameter, () => DesktopServices.DraftRecovery.Discard(id, BridgeManager.Instance.Voice.Phase)));
         }
 
         protected override void RunCommand(String parameter)
         {
-            if (!DesktopServices.Declared || !_shown.TryGetValue(parameter, out var shown) || Interlocked.Exchange(ref _busy, 1) != 0) return;
+            if (!DesktopServices.Declared || !_shown.TryGetValue(parameter, out var shown)) return;
+            if (Interlocked.Exchange(ref _busy, 1) != 0) { ShowBusy(parameter); return; }
             _parameter = parameter; _working = parameter; _feedbackMode = shown.Mode;
             // Region capture can wait for the user. Keep the SDK's drawing/dispatch thread free.
-            if (!DesktopServices.Run(() =>
+            if (!RunDesktopAction(parameter, () =>
             {
                 try
                 {
@@ -124,7 +125,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         }
 
         protected override String GetCommandDisplayName(String _, PluginImageSize __) => "\u200B";
-        protected override BitmapImage GetCommandImage(String parameter, PluginImageSize size)
+        protected override BitmapImage GetDesktopCommandImage(String parameter, PluginImageSize size)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             if (IsHidden(parameter, state.Mode))

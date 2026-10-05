@@ -67,7 +67,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override void RunCommand(String actionParameter)
         {
-            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter));
+            RunDesktopAction(actionParameter, () => this.RunDesktopCommand(actionParameter));
         }
 
         private void RunDesktopCommand(String actionParameter)
@@ -107,7 +107,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) => "\u200B";
 
-        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
+        protected override BitmapImage GetDesktopCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             var face = FaceFor(actionParameter, state.Mode, state.AvailableControls);

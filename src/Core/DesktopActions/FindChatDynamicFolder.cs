@@ -13,7 +13,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
     /// asking it to open one (the old Find Chat / View Changes command) is received and
     /// ignored, which left that key on "Opening".
     /// </summary>
-    public sealed class FindChatDynamicFolder : PluginDynamicFolder
+    public sealed class FindChatDynamicFolder : DesktopActionFolder
     {
         private Timer _timer;
         private Int32 _polling;
@@ -64,6 +64,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         public override Boolean Activate()
         {
             if (!DesktopServices.Declared) return false;
+            ClearRetry();
             _search ??= DesktopServices.Search;
             var generation = Interlocked.Increment(ref _generation);
             var search = _search;
@@ -84,8 +85,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 lock (_timerGate)
                     if (generation == Interlocked.Read(ref _generation))
                         _timer = new Timer(_ => PollSearch(generation), null, 1000, Timeout.Infinite);
-                this.ButtonActionNamesChanged();
-            })) { PluginLog.Info("FindChatDynamicFolder: closed, another action is running"); search.Changed -= OnChanged; search.Selected -= OnSelected; this.Close(); }
+                RefreshActions();
+            }, operation: nameof(FindChatDynamicFolder))) { PluginLog.Info("FindChatDynamicFolder: busy, waiting for the user to retry"); search.Changed -= OnChanged; search.Selected -= OnSelected; ShowRetry(); }
             return true;
         }
 
@@ -115,6 +116,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         public override Boolean Deactivate()
         {
+            ClearRetry();
             lock (_timerGate)
             {
                 Interlocked.Increment(ref _generation);
@@ -128,7 +130,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             return true;
         }
 
-        private void OnChanged() => this.ButtonActionNamesChanged();
+        private void OnChanged() => RefreshActions();
 
         // The chat is open; leave the page. Only the folder's own Close() does that (#151), and the
         // host then calls Deactivate, which ends the session, so the next Find Chat press starts
@@ -142,7 +144,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             new[] { "speak", "status" }.Concat(search.Current.Results.Select(search.ResultParameter))
                 .Select(p => ActionString.ToString(plugin, typeof(DesktopSearchCommand).FullName, p)).ToArray();
         public override IEnumerable<String> GetButtonPressActionNames(DeviceType _) =>
-            DesktopServices.Declared ? Actions(this.Plugin.Name, DesktopServices.Search) : Array.Empty<String>();
+            RetryPending ? RetryActions : DesktopServices.Declared ? Actions(this.Plugin.Name, DesktopServices.Search) : Array.Empty<String>();
         public override String GetButtonDisplayName(PluginImageSize _) => Face.Label;
         public override BitmapImage GetButtonImage(PluginImageSize size) => KeyImage.Render(size, Face.Label, KeyImage.Blue, Face.Icon);
 

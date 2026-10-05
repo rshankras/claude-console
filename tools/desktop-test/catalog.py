@@ -43,7 +43,7 @@ def registered_parameters(source, root=ROOT):
                 result.update(re.findall(r'Id = "([^"]+)"', block))
         else:
             raise ValueError(f'Uncovered registration expression: {expr}')
-    return result or ({'*'} if ': PluginDynamicFolder' in source else {''})
+    return result or ({'*'} if re.search(r':\s*(?:PluginDynamicFolder|DesktopActionFolder)\b', source) else {''})
 
 
 def profiles(root=ROOT):
@@ -85,7 +85,7 @@ def validate(catalog=None, root=ROOT):
     actual = set()
     for file in (root / 'src/Core/DesktopActions').glob('*.cs'):
         source = file.read_text()
-        for abstract, cls in re.findall(r'\b(?:(abstract)\s+)?class\s+(\w+)\s*:\s*(?:Loupedeck\.)?(?:PluginDynamic(?:Command|Folder)|DesktopCommandBase)\b', source):
+        for abstract, cls in re.findall(r'\b(?:(abstract)\s+)?class\s+(\w+)\s*:\s*(?:Loupedeck\.)?(?:PluginDynamic(?:Command|Folder)|DesktopCommandBase|DesktopActionFolder)\b', source):
             if abstract:
                 continue
             actual.update((cls, p) for p in registered_parameters(source, root))

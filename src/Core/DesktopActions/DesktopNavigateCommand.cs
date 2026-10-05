@@ -38,7 +38,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 return;
             }
             _feedback.Show("Opening");
-            if (!DesktopServices.Run(() => _feedback.Show(Execute(mode, DesktopServices.Automation,
+            if (!RunDesktopAction(parameter, () => _feedback.Show(Execute(mode, DesktopServices.Automation,
                 () => this.Plugin.ExecuteGenericAction(GenericActionNames.DynamicFolder, SearchFolderParameter, 0)))))
                 _feedback.Show("Busy");
         }
@@ -46,6 +46,9 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         internal static String Execute(String shownMode, IDesktopAutomation automation, Action openSearch)
         {
             if (shownMode is not ("ChatGPT" or "Codex")) return "Unavailable";
+            // Windows open-panel checks the live context before invoking anything. A status
+            // preflight only repeats that full tree read and delays the same guarded request.
+            if (shownMode == "Codex" && automation.ChecksChangesContext) return OpenChanges(automation);
             var current = automation.Status();
             if (!current.SurfaceAvailable) return "Open App";
             if (current.Mode != shownMode) return "Mode Changed";
@@ -56,8 +59,16 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         }
 
         internal static String OpenChanges(IDesktopAutomation automation) =>
-            automation.OpenChanges(out var error) ? "Opened" : error is "unsupported" or "panel-not-available"
-                or "panel-opener-missing" or "panel-opener-disabled" ? "Not available" : "Couldn't open";
+            automation.OpenChanges(out var error) ? "Opened" : error switch
+            {
+                "unsupported" or "panel-not-available" or "panel-opener-missing" or "panel-opener-disabled" => "Not available",
+                "mode-changed" => "Mode Changed",
+                "panel-unavailable" or "panel-surface-missing" => "Open App",
+                // The request may have opened the panel even when its confirmation is late
+                // or the helper reply is lost. Do not report that as a definite failure.
+                "panel-unconfirmed" or "no-helper-output" or "unexpected-reply" => "Check app",
+                _ => "Couldn't open",
+            };
 
         internal static (String Label, String Icon, Boolean Enabled, String Status) ReviewFace(DesktopState state)
         {
@@ -70,7 +81,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 !state.Available ? "Open App" : state.Mode == "ChatGPT" ? null : "Unavailable");
 
         protected override String GetCommandDisplayName(String parameter, PluginImageSize size) => "\u200B";
-        protected override BitmapImage GetCommandImage(String parameter, PluginImageSize size)
+        protected override BitmapImage GetDesktopCommandImage(String parameter, PluginImageSize size)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             _shownMode = state.Mode;

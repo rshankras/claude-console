@@ -195,12 +195,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 var mode = DesktopServices.Monitor.Current.Mode;
                 var face = DesktopServices.WorkflowVoice.Face(this.Resolve(parameter, mode)?.Id, mode, BridgeManager.Instance.Voice);
                 return face?.Label == "Insert Draft" ? DesktopServices.DraftRecovery.DiscardableId(BridgeManager.Instance.Voice.Phase) : null;
-            }, () => this.RunCommand(parameter), id => DesktopServices.Run(() => DesktopServices.DraftRecovery.Discard(id, BridgeManager.Instance.Voice.Phase)));
+            }, () => this.RunCommand(parameter), id => RunDesktopAction(parameter, () => DesktopServices.DraftRecovery.Discard(id, BridgeManager.Instance.Voice.Phase)));
         }
 
         protected override void RunCommand(String actionParameter)
         {
-            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter));
+            RunDesktopAction(actionParameter, () => this.RunDesktopCommand(actionParameter));
         }
 
         private void RunDesktopCommand(String actionParameter)
@@ -277,7 +277,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             return "\u200B"; // the full tile owns its label and submission strip
         }
 
-        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
+        protected override BitmapImage GetDesktopCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             var mode = state.Mode;

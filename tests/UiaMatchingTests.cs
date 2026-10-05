@@ -371,6 +371,63 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.False(UiaMatching.PanelRouteAvailable(twoRows, modeLabel, withReply, visible, turn));
         }
 
+        [Theory]
+        [InlineData(true, "TabItem", "Changes", "tabpanel", 1)]
+        [InlineData(false, "TabItem", "Changes", "tabpanel", 0)]
+        [InlineData(true, "Text", "Changes", "tabpanel", 0)]
+        [InlineData(true, "TabItem", "Other", "tabpanel", 0)]
+        [InlineData(true, "TabItem", "Changes", "group", 0)]
+        public void Review_confirmation_accepts_a_loading_selected_panel_but_not_lookalikes(
+            Boolean selected, String tabRole, String paneTitle, String paneRole, Int32 expected)
+        {
+            var nodes = Window(new[] {
+                N(3, tabRole, "Changes", selected: selected),
+                N(3, "Pane", paneTitle, aria: paneRole),
+                N(4, "ProgressBar", ""),
+            });
+            Assert.Equal(expected, UiaMatching.VisiblePanels(nodes, new[] { "Show files", "Hide files" }, new[] { "Changes" }));
+        }
+
+        [Fact]
+        public void Review_confirmation_does_not_borrow_a_panel_from_a_nested_preview()
+        {
+            var mode = "Switch mode, current mode: Codex";
+            var nodes = Window(new[] {
+                N(3, "Button", mode, pressable: true),
+                N(3, "TabItem", "Changes", selected: true),
+                N(3, "Document", "Preview"),
+                N(4, "Pane", "Changes", aria: "tabpanel"),
+            });
+            Assert.False(UiaMatching.PanelRouteAvailable(nodes, mode, Array.Empty<String>(),
+                new[] { "Show files" }, panelTitles: new[] { "Changes" }));
+        }
+
+        [Fact]
+        public void Review_confirmation_refuses_duplicate_tabs_panes_and_file_controls()
+        {
+            var panel = new[] { N(3, "TabItem", "Changes", selected: true), N(3, "Pane", "Changes", aria: "tabpanel") };
+            var visible = new[] { "Show files", "Hide files" };
+            foreach (var extra in new[] {
+                new[] { N(3, "TabItem", "Changes", selected: true) },
+                new[] { N(3, "Pane", "Changes", aria: "tabpanel") },
+                new[] { N(3, "Button", "Show files"), N(3, "Button", "Hide files") },
+            }) Assert.Equal(2, UiaMatching.VisiblePanels(Window(panel, extra), visible, new[] { "Changes" }));
+            Assert.Equal(1, UiaMatching.VisiblePanels(Window(panel, new[] { N(4, "Button", "Show files") }), visible, new[] { "Changes" }));
+        }
+
+        [Fact]
+        public void A_loading_review_remains_available_only_in_the_expected_unobstructed_document()
+        {
+            var mode = "Switch mode, current mode: Codex";
+            var panel = new[] { N(3, "Button", mode, pressable: true),
+                N(3, "TabItem", "Changes", selected: true), N(3, "Pane", "Changes", aria: "tabpanel") };
+            Boolean Available(List<UiaNode> nodes, String label) => UiaMatching.PanelRouteAvailable(nodes, label,
+                Array.Empty<String>(), new[] { "Show files" }, panelTitles: new[] { "Changes" });
+            Assert.True(Available(Window(panel), mode));
+            Assert.False(Available(Window(panel), "Switch mode, current mode: ChatGPT"));
+            Assert.False(Available(Window(panel, new[] { N(3, "Group", "Confirm", aria: "dialog") }), mode));
+        }
+
         [Fact]
         public void An_empty_composer_renders_its_hint_into_its_value_and_is_still_empty()
         {

@@ -28,6 +28,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Cheap process-only foreground check for passive polling; no UI traversal.</summary>
         Boolean? IsAppFrontmost() => true;
 
+        /// <summary>OpenChanges validates the current surface, mode and panel route itself.
+        /// Such implementations do not need a separate full status read before navigation.</summary>
+        Boolean ChecksChangesContext => false;
+
         /// <summary>
         /// Search-only operations. Unsupported platforms never fall back to the composer.
         /// <paramref name="mode"/> is the app mode the search was opened in; every step of one
@@ -53,6 +57,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         /// <summary>Open one exact, unambiguous sidebar title. Unsupported helpers fail closed.</summary>
         Boolean PressConversation(String title) => false;
+
+        /// <summary>Open and foreground one exact conversation. Platforms may combine both
+        /// steps into one native operation; a landed press is never repeated for a focus failure.</summary>
+        Boolean OpenConversation(String title)
+        {
+            if (!PressConversation(title)) return false;
+            FocusApp();
+            return true;
+        }
 
         /// <summary>Press a contextual destination only if the observed mode still matches.</summary>
         Boolean PressInMode(String[] labels, String mode, out String matched) { matched = null; return false; }

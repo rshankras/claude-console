@@ -1,9 +1,8 @@
-// vizhi-desktop-uia — one-shot Windows UI Automation verbs for desktop agent apps.
+// vizhi-desktop-uia — bounded Windows UI Automation operations for desktop agent apps.
 //
 // The Windows half of the desktop seam: what tools/desktop/VizhiAxBridge.swift is on macOS. Every
-// invocation does ONE thing and exits with ONE line of JSON on stdout — deliberately not a daemon:
-// the plugin spawns it through BoundedProcess (timeout + kill-tree), so a hung or malformed
-// Chromium tree can be killed without wedging LogiPluginService.
+// request does one operation and emits one JSON result. The plugin owns persistent servers
+// with timeout + kill-tree isolation; one-shot mode remains available for diagnostics.
 //
 // App-agnostic BY CONTRACT: this binary knows no control labels and no app names. Which app to
 // drive (--process) and which labels mean approve/deny/stop/attention arrive as arguments from
@@ -42,6 +41,12 @@
 //   context-selection|clipboard|screenshot|window|return|paste, copy-reply, search: see the
 //           other files
 //   focus                                   the ONE deliberate foreground activation
+//   serve                                   stay running; one JSON argv per stdin line, one
+//                                           {"exit","out"} per stdout line (ServeProtocol, #155)
+//   serve-win32                             restricted server: ping, frontmost, focus, restore-front;
+//                                           never creates a UIA connection
+//   press --focus-after                     focus the exact window after a successful press
+//   --timing / --full-scan                   diagnostic phase timings / disable the narrow query
 //
 // Exit codes: 0 ok · 3 app not running · 4 no match / not found · 5 UIA error · 6 ambiguous or changed.
 
@@ -65,8 +70,8 @@ internal static partial class Program
 
     private static readonly Int32[] CachedProperties =
     {
-        UiaIds.RuntimeId, UiaIds.BoundingRectangle, UiaIds.ProcessId, UiaIds.ControlType, UiaIds.Name, UiaIds.IsEnabled, UiaIds.AutomationId,
-        UiaIds.ClassName, UiaIds.HelpText, UiaIds.NativeWindowHandle, UiaIds.IsOffscreen,
+        UiaIds.RuntimeId, UiaIds.BoundingRectangle, UiaIds.ControlType, UiaIds.Name, UiaIds.IsEnabled,
+        UiaIds.HelpText,
         UiaIds.IsExpandCollapseAvailable, UiaIds.IsInvokeAvailable, UiaIds.IsSelectionItemAvailable,
         UiaIds.IsToggleAvailable, UiaIds.IsValueAvailable, UiaIds.ValueValue, UiaIds.ValueIsReadOnly,
         UiaIds.SelectionItemIsSelected, UiaIds.LegacyDescription, UiaIds.AriaRole, UiaIds.AriaProperties,
@@ -84,10 +89,119 @@ internal static partial class Program
     private static IUIAutomation Uia => _uia ??= (IUIAutomation)new CUIAutomation();
     private static HashSet<Int32> _appPids = new();
     private static Dictionary<String, List<String>> _options = new();
+    private static readonly UiaRootCache<IUIAutomationElement> Roots = new();
+    private static readonly Dictionary<(Boolean CachedOnly, Boolean PanelControls), IUIAutomationCacheRequest> CacheRequests = new();
+    private static Stopwatch _requestTime = new();
+    private static Int64 _targetMs, _scanMs, _invokeMs, _focusMs;
+    private static Int32 _fullScans;
+    private static readonly List<Dictionary<String, Object?>> ScanTimings = new();
+    private static String _scanPath = "none";
+    private static String _queryDetail = "none";
 
-    [STAThread]
-    private static Int32 Main(String[] args)
+    // UIA runs on one long-lived MTA thread, with no windows of its own. The clipboard
+    // uses Win32 directly (not OLE/WinForms), so it does not require an STA apartment.
+    [MTAThread]
+    private static Int32 Main(String[] args) => args.FirstOrDefault() switch
     {
+        "serve" => Serve(win32Only: false),
+        "serve-win32" => Serve(win32Only: true),
+        _ => Run(args),
+    };
+
+    // ---- serve (#155) ------------------------------------------------------
+
+    // One process for the whole plugin session. Starting this 14 MB single-file helper costs
+    // ~0.6 s on a managed Windows endpoint (EDR inspects every new process), and a key press
+    // took two or three of them: 1–6 s per press against 0.3–0.6 s on the Mac. The plugin
+    // starts `serve` once and sends each call as a line (ServeProtocol); the verbs and their
+    // output are exactly the one-shot ones. stdin closing — plugin unloaded, service gone —
+    // ends the process, so nothing outlives the plugin.
+    private static Int32 Serve(Boolean win32Only)
+    {
+        var output = Console.OpenStandardOutput();
+        var console = Console.Out;
+        if (!win32Only) try { _ = Uia; } catch (Exception) { /* the first request reports it */ }
+        var ready = Encoding.UTF8.GetBytes("{\"ready\":1}\n");
+        output.Write(ready, 0, ready.Length);
+        output.Flush();
+
+        // Read input separately; only this long-lived worker owns the UIA connection and
+        // its cached roots. Requests remain serial within a lane.
+        var lines = new System.Collections.Concurrent.ConcurrentQueue<String?>();
+        var arrived = new AutoResetEvent(false);
+        var reader = new Thread(() =>
+        {
+            using var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
+            String? next;
+            try { while ((next = input.ReadLine()) != null) { lines.Enqueue(next); arrived.Set(); } }
+            catch (IOException) { }
+            lines.Enqueue(null);
+            arrived.Set();
+        }) { IsBackground = true, Name = "serve-stdin" };
+        reader.Start();
+
+        var served = 0;
+        while (true)
+        {
+            String? line;
+            while (!lines.TryDequeue(out line)) arrived.WaitOne();
+            if (line == null) break;
+            if (line.Length == 0) continue;
+            var args = ServeProtocol.ParseRequest(line);
+            Int32 exit;
+            String captured;
+            if (args == null || args[0] is "serve" or "serve-win32"
+                || (win32Only && args[0] is not ("ping" or "focus" or "frontmost" or "restore-front")))
+            {
+                exit = ExitError;
+                captured = "{\"ok\":false,\"error\":\"bad-request\"}";
+            }
+            else
+            {
+                var buffer = new StringWriter();
+                Console.SetOut(buffer);
+                try
+                {
+                    ResetRequestState();
+                    exit = Run(args);
+                }
+                finally
+                {
+                    Console.SetOut(console);
+                }
+                captured = buffer.ToString();
+            }
+            var bytes = Encoding.UTF8.GetBytes(ServeProtocol.Response(exit, captured) + "\n");
+            output.Write(bytes, 0, bytes.Length);
+            output.Flush();
+            // Every scan leaves COM wrappers for the finalizer; a one-shot process never lived
+            // long enough to notice.
+            if (++served % 50 == 0)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+        }
+        return 0;
+    }
+
+    // What a one-shot run starts with. The UIA connection is the one thing kept: it is the
+    // point of serving.
+    private static void ResetRequestState()
+    {
+        _options = new();
+        _appPids = new();
+        _verifiedSearchOrigin = null;
+    }
+
+    private static Int32 Run(String[] args)
+    {
+        _requestTime = Stopwatch.StartNew();
+        _targetMs = _scanMs = _invokeMs = _focusMs = 0;
+        _fullScans = 0;
+        _scanPath = "none";
+        _queryDetail = "none";
+        ScanTimings.Clear();
         try
         {
             var verb = args.FirstOrDefault() ?? "help";
@@ -99,6 +213,7 @@ internal static partial class Program
                 Console.WriteLine("vizhi-desktop-uia <verb> [options] — see the source header for the verbs");
                 return 0;
             }
+            if (verb == "ping") return Emit(new Dictionary<String, Object?>());
 
             var pids = ProcessIds(Values(options, "--process"));
             _appPids = pids;
@@ -124,10 +239,13 @@ internal static partial class Program
                 return InspectWindows();
             }
 
+            var targetTime = Stopwatch.StartNew();
             var (target, error) = FindTarget(pids, Values(options, "--process").Count > 0,
                 Values(options, "--window"), options.ContainsKey("--require-process"));
+            _targetMs = targetTime.ElapsedMilliseconds;
             if (target == null)
             {
+                Roots.Invalidate();
                 return Fail(error!, error == "ambiguous-app" ? ExitChanged : ExitNotRunning);
             }
 
@@ -154,6 +272,7 @@ internal static partial class Program
         }
         catch (COMException ex)
         {
+            Roots.Invalidate();
             return Fail($"uia-error: 0x{ex.HResult:X8}", ExitError);
         }
         catch (Exception ex)
@@ -282,16 +401,19 @@ internal static partial class Program
 
     // ---- scan --------------------------------------------------------------
 
-    private static IUIAutomationCacheRequest CacheRequest()
+    private static IUIAutomationCacheRequest CacheRequest(Boolean cachedOnly = false, Boolean panelControls = false)
     {
+        var key = (cachedOnly, panelControls);
+        if (CacheRequests.TryGetValue(key, out var previous)) return previous;
         var request = Uia.CreateCacheRequest();
         foreach (var id in CachedProperties)
         {
             request.AddProperty(id);
         }
         request.TreeScope = UiaIds.TreeScopeSubtree;
-        request.TreeFilter = Uia.RawViewCondition;
-        request.AutomationElementMode = UiaIds.ElementModeFull;
+        request.TreeFilter = panelControls ? PanelTreeFilter() : Uia.RawViewCondition;
+        request.AutomationElementMode = cachedOnly ? UiaIds.ElementModeNone : UiaIds.ElementModeFull;
+        CacheRequests.Add(key, request);
         return request;
     }
 
@@ -300,11 +422,46 @@ internal static partial class Program
     /// (a cache request scoped to the subtree); the walk below is then in-process. Per-node
     /// property reads, the WPF wrapper's way, cost ~2 s for a 365-node tree on the live app.
     /// </summary>
-    private static Scan ScanTarget(Target target) => ScanWindow(target.Hwnd);
-
-    private static Scan ScanWindow(IntPtr hwnd)
+    private static Scan ScanTarget(Target target, Boolean cachedOnly = false, Boolean panelControls = false)
     {
-        var root = Uia.ElementFromHandleBuildCache(hwnd, CacheRequest());
+        RequireTarget(target);
+        return ScanWindow(target.Hwnd, cachedOnly, panelControls);
+    }
+
+    private static void RequireTarget(Target target)
+    {
+        if (Win32.PidOf(target.Hwnd) != target.Pid)
+        {
+            Roots.Invalidate();
+            throw new COMException("target-changed", unchecked((Int32)0x80040201));
+        }
+    }
+
+    private static Scan ScanWindow(IntPtr hwnd, Boolean cachedOnly = false, Boolean panelControls = false)
+    {
+        _fullScans++;
+        var timer = Stopwatch.StartNew();
+        try
+        {
+            var root = Roots.Read(hwnd.ToInt64(), Win32.PidOf(hwnd), () => Uia.ElementFromHandle(hwnd),
+                element => element.BuildUpdatedCache(CacheRequest(cachedOnly, panelControls)));
+            var fetchMs = timer.ElapsedMilliseconds;
+            _scanPath = panelControls ? "panel-controls" : _scanPath is "query" or "full-fallback" ? "full-fallback" : "full";
+            var scan = ReadTree(root);
+            if (_options.ContainsKey("--timing")) ScanTimings.Add(new Dictionary<String, Object?>
+            {
+                ["fetchMs"] = fetchMs, ["walkMs"] = timer.ElapsedMilliseconds - fetchMs,
+                ["nodes"] = scan.Nodes.Count, ["complete"] = scan.Complete,
+                ["panelTabs"] = scan.Nodes.Count(n => n.Role == "TabItem" && n.Selected && Values(_options, "--panel-tab").Contains(n.Text)),
+                ["panelPanes"] = scan.Nodes.Count(n => n.AriaRole == "tabpanel" && Values(_options, "--panel-tab").Contains(n.Text)),
+            });
+            return scan;
+        }
+        finally { _scanMs += timer.ElapsedMilliseconds; }
+    }
+
+    private static Scan ReadTree(IUIAutomationElement root)
+    {
         var nodes = new List<UiaNode>();
         var complete = true;
 
@@ -319,7 +476,7 @@ internal static partial class Program
             nodes.Add(Read(element, nodes.Count, depth));
 
             IUIAutomationElementArray? children = null;
-            try { children = element.GetCachedChildren(); } catch (COMException) { }
+            try { children = element.GetCachedChildren(); } catch (COMException) { complete = false; }
             if (children == null)
             {
                 return;
@@ -379,12 +536,12 @@ internal static partial class Program
 
     // Bounded wait for the web content — used by the acting verbs (which must not act on a
     // half tree), NOT by status (a status poll reports surface=false immediately and cheaply).
-    private static Scan? WaitForSurface(Target target, Int32 milliseconds)
+    private static Scan? WaitForSurface(Target target, Int32 milliseconds, Boolean cachedOnly = false, Boolean panelControls = false)
     {
         var deadline = Stopwatch.StartNew();
         do
         {
-            var scan = ScanTarget(target);
+            var scan = ScanTarget(target, cachedOnly, panelControls);
             if (scan.Surface)
             {
                 return scan;
@@ -421,7 +578,7 @@ internal static partial class Program
     private static Int32 InspectTarget(Target target, Boolean all)
     {
         var timer = Stopwatch.StartNew();
-        var scan = ScanTarget(target);
+        var scan = ScanTarget(target, panelControls: _options.ContainsKey("--panel-controls"));
         var elapsed = timer.ElapsedMilliseconds;
         var interesting = scan.Nodes.Where(n => all || n.Pressable
                 || n.Role is "Image" or "ProgressBar" or "Edit" or "Document" or "StatusBar" or "Window" or "Menu" or "Hyperlink" or "ComboBox")
@@ -455,7 +612,9 @@ internal static partial class Program
 
     private static Int32 Status(Target target, Dictionary<String, List<String>> options)
     {
-        var scan = ScanTarget(target);
+        // Status only reads cached properties. It needs a fresh snapshot, not a live COM
+        // reference to every control in the transcript. Acting verbs keep full references.
+        var scan = ScanTarget(target, cachedOnly: !options.ContainsKey("--live-snapshot"));
         if (!scan.Surface)
         {
             // Screen locked / window hidden: the tree evaporates. Say so — the monitor must
@@ -500,7 +659,7 @@ internal static partial class Program
             ["searchPresent"] = Present("--search"),
             ["changesPresent"] = mode.Length > 0 && mode == panelMode && UiaMatching.PanelRouteAvailable(nodes,
                 modePrefix + mode, Values(options, "--changes"), Values(options, "--panel-visible"),
-                Values(options, "--changes-turn")),
+                Values(options, "--changes-turn"), Values(options, "--panel-tab")),
             ["projectsPresent"] = Present("--projects"),
             ["pluginsPresent"] = Present("--plugins"),
             ["attachFilesPresent"] = Present("--attach-files"),
@@ -525,6 +684,14 @@ internal static partial class Program
             return Fail("no --label given", ExitNoMatch);
         }
 
+        var marker = Value(options, "--conversation");
+        if (marker != null && !options.ContainsKey("--full-scan")
+            && !options.ContainsKey("--expect-mode") && !options.ContainsKey("--expect-near"))
+        {
+            var found = QueryConversation(target, labels[0], marker);
+            if (found != null) return CompletePress(target, options, found);
+        }
+
         var scan = WaitForSurface(target, 2000);
         if (scan == null)
         {
@@ -545,7 +712,6 @@ internal static partial class Program
         }
 
         UiaNode? candidate;
-        var marker = Value(options, "--conversation");
         if (marker != null)
         {
             var matches = UiaMatching.ConversationMatches(nodes, labels[0], marker);
@@ -582,6 +748,12 @@ internal static partial class Program
             }
         }
 
+        return CompletePress(target, options, candidate);
+    }
+
+    private static Int32 CompletePress(Target target, Dictionary<String, List<String>> options, UiaNode candidate)
+    {
+        RequireTarget(target);
         if (options.ContainsKey("--dry"))
         {
             return Emit(new Dictionary<String, Object?> { ["matched"] = candidate.Text, ["dry"] = true });
@@ -589,7 +761,10 @@ internal static partial class Program
 
         var beforeWindow = Win32.GetForegroundWindow();
         var before = ProcessName(Win32.ForegroundPid());
-        if (!Invoke(candidate))
+        var timer = Stopwatch.StartNew();
+        var invoked = Invoke(candidate);
+        _invokeMs = timer.ElapsedMilliseconds;
+        if (!invoked)
         {
             return Fail("press-failed", ExitError);
         }
@@ -599,14 +774,21 @@ internal static partial class Program
         // can hand focus back with restore-front; this process cannot (see there).
         var afterPid = Win32.ForegroundPid();
         var beforePid = Win32.PidOf(beforeWindow);
-        return Emit(new Dictionary<String, Object?>
+        var result = new Dictionary<String, Object?>
         {
             ["matched"] = candidate.Text,
             ["frontBefore"] = before,
             ["frontAfter"] = ProcessName(afterPid),
             ["frontBeforeHwnd"] = beforeWindow.ToInt64(),
             ["frontMoved"] = beforeWindow != IntPtr.Zero && beforePid != target.Pid && afterPid == target.Pid,
-        });
+        };
+        if (options.ContainsKey("--focus-after"))
+        {
+            timer.Restart();
+            result["focused"] = Win32.PidOf(target.Hwnd) == target.Pid && Raise(target.Hwnd);
+            _focusMs = timer.ElapsedMilliseconds;
+        }
+        return Emit(result);
     }
 
     /// <summary>
@@ -653,16 +835,18 @@ internal static partial class Program
         {
             Win32.ShowWindow(hwnd, Win32.SW_RESTORE);
         }
-        var pid = Win32.PidOf(hwnd);
+        // Chromium can activate a minimized window without restoring it during Invoke.
+        // Always restore first, even when the foreground already names this HWND.
+        if (Win32.GetForegroundWindow() == hwnd) return true;
         Boolean Arrived()
         {
-            for (var attempt = 0; attempt < 6; attempt++)
+            for (var attempt = 0; attempt < 24; attempt++)
             {
-                Thread.Sleep(100);
-                if (Win32.ForegroundPid() == pid)
+                if (Win32.GetForegroundWindow() == hwnd)
                 {
                     return true;
                 }
+                Thread.Sleep(25);
             }
             return false;
         }
@@ -765,22 +949,28 @@ internal static partial class Program
         var openers = Values(options, "--panel-open");
         var turnOpeners = Values(options, "--panel-open-turn");
         var visibleLabels = Values(options, "--panel-visible");
+        var panelTitles = Values(options, "--panel-tab");
         if (expectedMode.Length == 0 || prefix.Length == 0 || openers.Count == 0 || visibleLabels.Count == 0)
         {
             return Fail("panel-arguments", ExitNoMatch);
         }
-        if (!AppIsFrontmost(target) || WaitForSurface(target, 1000) == null)
+        if (!AppIsFrontmost(target))
         {
             return Fail("panel-unavailable", ExitNoMatch);
         }
+        var panelControls = !options.ContainsKey("--full-scan");
+        var initial = WaitForSurface(target, 1000, cachedOnly: true, panelControls: panelControls);
+        if (initial == null) return Fail("panel-unavailable", ExitNoMatch);
         var marker = Value(options, "--conv-marker") ?? "";
-        var conversation = UiaMatching.SelectedConversation(ScanTarget(target).Nodes, marker);
+        var conversation = UiaMatching.SelectedConversation(initial.Nodes, marker);
+        if (conversation == null) return Fail("panel-conversation-changed", ExitChanged);
 
-        (List<UiaNode>? Content, String? Error, Int32 Code) Checked()
+        (List<UiaNode>? Content, String? Error, Int32 Code) Checked(Scan? observation = null, Boolean forInvocation = false)
         {
+            RequireTarget(target);
             if (!AppIsFrontmost(target)) return (null, "panel-foreground-changed", ExitChanged);
             if (Win32.WindowTitle(target.Hwnd) != target.Title) return (null, "panel-window-changed", ExitChanged);
-            var scan = ScanTarget(target);
+            var scan = observation ?? ScanTarget(target, cachedOnly: !forInvocation, panelControls: panelControls);
             if (!scan.Surface) return (null, "panel-surface-missing", ExitChanged);
             if (UiaMatching.SelectedConversation(scan.Nodes, marker) != conversation) return (null, "panel-conversation-changed", ExitChanged);
             var modes = scan.Nodes.Where(n => n.Text.StartsWith(prefix, StringComparison.Ordinal)).ToList();
@@ -790,12 +980,28 @@ internal static partial class Program
             return owners.Count == 1 ? (owners[0], null, 0) : (null, "panel-not-available", ExitNoMatch);
         }
 
-        Int32 Visible(List<UiaNode> content) => UiaMatching.ExactButtons(content, visibleLabels).Count;
+        Int32 Visible(List<UiaNode> content) => UiaMatching.VisiblePanels(content, visibleLabels, panelTitles);
 
-        var (nodes, error, code) = Checked();
+        // One current snapshot establishes both the context and the existing panel state.
+        // Only a possible invocation needs a second read to reconfirm the same target.
+        var (nodes, error, code) = Checked(initial);
         if (nodes == null) return Fail(error!, code);
+        Dictionary<String, Object?> PanelResult(Boolean alreadyOpen, Boolean dry = false)
+        {
+            var result = new Dictionary<String, Object?> { ["opened"] = !dry };
+            if (dry) { result["dry"] = true; result["wouldOpen"] = true; }
+            else result["alreadyOpen"] = alreadyOpen;
+            // Native parity checks compare context and target identity across tree views.
+            // Only a hash leaves the helper; no conversation labels or element ids do.
+            if (options.ContainsKey("--dry") && options.ContainsKey("--audit-panel-view"))
+                result["contextFingerprint"] = UiaMatching.Fingerprint(String.Join("\n", new[] {
+                    conversation, expectedMode, nodes[0].RuntimeId, Visible(nodes).ToString(),
+                    String.Join("\n", UiaMatching.PanelOpeners(nodes, openers, turnOpeners).Select(n => n.RuntimeId)),
+                }));
+            return result;
+        }
         if (Visible(nodes) > 1) return Fail("panel-ambiguous", ExitNoMatch);
-        if (Visible(nodes) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
+        if (Visible(nodes) == 1) return Emit(PanelResult(alreadyOpen: true));
 
         var candidates = UiaMatching.PanelOpeners(nodes, openers, turnOpeners);
         if (candidates.Count > 1) return Fail("panel-opener-multiple", ExitNoMatch);
@@ -803,38 +1009,59 @@ internal static partial class Program
         // tree, and must not trigger a guessed shortcut, toggle, or text entry.
         if (candidates.Count != 1) return Fail("panel-not-available", ExitNoMatch);
 
-        var (fresh, freshError, freshCode) = Checked();
+        var (fresh, freshError, freshCode) = Checked(forInvocation: true);
         if (fresh == null) return Fail(freshError!, freshCode);
-        if (Visible(fresh) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
+        if (Visible(fresh) > 1) return Fail("panel-ambiguous", ExitNoMatch);
+        if (Visible(fresh) == 1) return Emit(PanelResult(alreadyOpen: true));
         var confirmed = UiaMatching.PanelOpeners(fresh, openers, turnOpeners);
         if (confirmed.Count != 1 || !SameElement(candidates[0], confirmed[0])) return Fail("panel-target-changed", ExitChanged);
+        if (options.ContainsKey("--dry"))
+            return Emit(PanelResult(alreadyOpen: false, dry: true));
+        var invokeTime = Stopwatch.StartNew();
         if (!Invoke(confirmed[0])) return Fail("panel-press-failed", ExitError);
+        _invokeMs = invokeTime.ElapsedMilliseconds;
 
-        // The macOS helper waits 1.2 s. Here one check is a whole UIA scan (~350 ms), and the
-        // first review after a turn loads slower than a reopened one: the device pass recorded
-        // panel-unconfirmed on a tab that did open. A confirmed panel returns at once.
+        // A provider can capture the pre-open tree, then block while the app renders before
+        // returning it. That first stale observation must not consume the whole confirmation
+        // window: allow one fresh read after it returns. The client's overall 7 s deadline
+        // still bounds the request, and the opener is never invoked again.
         var deadline = Stopwatch.StartNew();
-        while (deadline.ElapsedMilliseconds < 3000)
+        var observations = 0;
+        while (deadline.ElapsedMilliseconds < 3000 || observations < 2)
         {
-            Thread.Sleep(80);
             var (again, againError, againCode) = Checked();
+            observations++;
             if (again == null) return Fail(againError!, againCode);
+            if (Visible(again) > 1) return Fail("panel-ambiguous", ExitNoMatch);
             if (Visible(again) == 1)
             {
                 return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = false, ["method"] = "button" });
             }
+            Thread.Sleep(80);
         }
         return Fail("panel-unconfirmed", ExitError);
     }
 
-    private static Int32 Focus(Target target) =>
-        Raise(target.Hwnd) ? Emit(new Dictionary<String, Object?>()) : Fail("focus-failed", ExitError);
+    private static Int32 Focus(Target target)
+    {
+        RequireTarget(target);
+        return Raise(target.Hwnd) ? Emit(new Dictionary<String, Object?>()) : Fail("focus-failed", ExitError);
+    }
 
     // ---- output ------------------------------------------------------------
 
     private static Int32 Emit(Dictionary<String, Object?> payload, Int32 code = 0)
     {
         payload["ok"] = code == 0;
+        if (_options.ContainsKey("--timing")) payload["timing"] = new Dictionary<String, Object?>
+        {
+            ["totalMs"] = _requestTime.ElapsedMilliseconds, ["targetMs"] = _targetMs,
+            ["scanMs"] = _scanMs, ["invokeMs"] = _invokeMs, ["focusMs"] = _focusMs, ["scanPath"] = _scanPath,
+            ["fullScans"] = _fullScans,
+            ["apartment"] = Thread.CurrentThread.GetApartmentState().ToString(),
+            ["scans"] = ScanTimings,
+            ["queryDetail"] = _queryDetail,
+        };
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {

@@ -35,11 +35,12 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             if (Interlocked.Exchange(ref _busy, 1) != 0)
             {
                 if (parameter == "copy") DesktopServices.Context.TraceCopy("command-busy");
+                ShowBusy(parameter);
                 return;
             }
             _working = parameter;
             // The system screenshot picker waits on the user; never block SDK rendering/dispatch.
-            if (!DesktopServices.Run(() =>
+            if (!RunDesktopAction(parameter, () =>
             {
                 try
                 {
@@ -98,7 +99,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             var face = CopyFace(state, feedback, copying);
             return KeyImage.RenderControlTile(size, face.Label, face.Icon, face.Enabled, face.Footer);
         }
-        protected override BitmapImage GetCommandImage(String parameter, PluginImageSize size)
+        protected override BitmapImage GetDesktopCommandImage(String parameter, PluginImageSize size)
         {
             if (parameter == "copy") return RenderCopy(size,
                 DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable,

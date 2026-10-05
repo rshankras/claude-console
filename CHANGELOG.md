@@ -1,3 +1,38 @@
+## Vizhi Desktop [1.1.1] — 2026-10-05 — Windows keys answer without the wait
+
+### Fixed
+- **Windows: remove repeated helper startup from key presses** (#155, reported by Logitech QA on a managed
+  Windows 11 laptop). Every UI Automation call started a new copy of the 14 MB helper, and a press
+  made two or three calls; on a machine with endpoint security each start cost about 0.6 s before
+  any work, and a call that ran past its budget was killed, so that press did nothing. The plugin
+  now starts the helper once and keeps it running while the plugin is loaded, one for the
+  background status reads and one for the keys, plus a Win32-only lane for foreground restoration.
+  A key's own status check stays on its action lane. Calls
+  keep their time limits; a helper that hangs is replaced, a call is never repeated, and the
+  helpers end when the plugin stops or is uninstalled. The Mac is unchanged.
+- **Busy presses give visible feedback on both platforms** (#157). A rejected key shows
+  "Busy / PRESS AGAIN" briefly; Find Chat and Attach Files keep a retry page instead of closing
+  silently. Presses are never queued, including Approve, Deny, Send, and hold-to-discard.
+- Helper startup uses a readiness handshake. A failed write, crash, timeout, or malformed reply
+  never replays an action. Shutdown stops serving and fallback children and prevents late calls
+  from starting a replacement until the plugin is enabled again.
+- Windows conversation keys resolve and focus in one helper request. Exact-title queries read
+  matching subtrees, with a full-tree fallback for ambiguous/project duplicates. Window roots
+  are reused while control data stays fresh. Already-focused windows skip the fixed focus wait.
+- Helpers warm at load and measure readiness separately from request execution. Cold requests
+  retain the same action deadline as warm ones. Whole-action and optional phase timings support
+  the managed-Windows performance pass without logging chat titles or draft text in those timings.
+- Windows View Changes avoids duplicate status/tree reads while retaining native context and
+  target checks. Passive status reads fetch fresh cached properties without keeping live
+  references to every UI control. Slow-call logs identify the worker and operation.
+- Windows View Changes also recognizes the selected review tab and its matching app-owned
+  panel while file controls are loading, avoiding a false failure after the panel opens.
+  Confirmation reads use cached-only references; the invocation still resolves and checks a
+  fresh live target. Persistent UIA workers now use a long-lived MTA thread.
+  An unconfirmed or lost panel reply shows "Check app", since the request may have succeeded.
+- Windows View Changes reads a smaller control tree while preserving conversation, document,
+  dialog and target checks; transcript and diff text no longer inflate every panel scan.
+
 ## Vizhi Desktop [1.1.0] — 2026-10-02 — Windows, and the 1.0.0 QA fixes
 
 Packaged for Windows (`pluginFolderWin`, the toolkit and the UI Automation helper, signed at

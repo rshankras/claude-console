@@ -20,7 +20,8 @@ internal static partial class Program
 
     private sealed record SearchSurface(UiaNode Field, List<UiaNode> Nodes, String Query, String Token);
 
-    // Per invocation only. A successful open checks mode before a modal may hide its selector.
+    // Per request only (serve resets it in ResetRequestState). A successful open checks mode
+    // before a modal may hide its selector.
     private static String? _verifiedSearchOrigin;
 
     private static String? SearchOrigin(Target target, Dictionary<String, List<String>> options)

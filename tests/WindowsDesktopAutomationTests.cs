@@ -26,6 +26,36 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             return (auto, calls);
         }
 
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Open_conversation_is_one_helper_request_even_when_focus_is_refused(Boolean focused)
+        {
+            var (auto, calls) = Build("{\"ok\":true,\"focused\":" + (focused ? "true" : "false") + "}");
+            Assert.True(DesktopActions.DesktopConversationCommand.Execute(new DesktopConversation { Title = "Chosen" }, auto));
+            var request = Assert.Single(calls);
+            Assert.Equal("press", request[0]); Assert.Contains("--focus-after", request);
+            Assert.Contains("--conversation", request); Assert.Contains("Chosen", request);
+        }
+
+        [Fact]
+        public void Failed_conversation_never_focuses_and_legacy_success_only_adds_a_focus_request()
+        {
+            var (failed, failures) = Build("{\"ok\":false,\"error\":\"ambiguous-conversation\"}");
+            Assert.False(failed.OpenConversation("Chosen")); Assert.Single(failures);
+            var (legacy, calls) = Build("{\"ok\":true}", "{\"ok\":true}");
+            Assert.True(legacy.OpenConversation("Chosen")); Assert.Equal(2, calls.Count); Assert.Equal("focus", calls[1][0]);
+        }
+
+        [Fact]
+        public void Foreground_restoration_and_explicit_focus_never_share_a_UIA_worker()
+        {
+            Assert.True(WindowsDesktopAutomation.UseForegroundLane(new() { "restore-front" }));
+            Assert.True(WindowsDesktopAutomation.UseForegroundLane(new() { "focus" }));
+            Assert.False(WindowsDesktopAutomation.UseForegroundLane(new() { "press", "--focus-after" }));
+            Assert.False(WindowsDesktopAutomation.UseForegroundLane(new() { "status" }));
+        }
+
         [Fact]
         public void Conversation_navigation_uses_exact_sidebar_selector()
         {
@@ -42,6 +72,30 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("Plan", captured);
             auto.Runner = (_, _) => "{\"ok\":false,\"error\":\"ambiguous-conversation\"}";
             Assert.False(auto.PressConversation("Plan"));
+        }
+
+        [Fact]
+        public void Windows_view_changes_uses_one_guarded_request_without_a_status_preflight()
+        {
+            var (auto, calls) = Build("{\"ok\":true,\"opened\":true,\"alreadyOpen\":true}");
+            Assert.Equal("Opened", DesktopActions.DesktopNavigateCommand.Execute("Codex", auto, () => Assert.Fail("Not search")));
+            var request = Assert.Single(calls);
+            Assert.Equal("open-panel", request[0]);
+            Assert.Contains("--expect-mode", request); Assert.Contains("Codex", request);
+            Assert.Contains("--conv-marker", request); Assert.Contains("--panel-visible", request);
+            Assert.Equal("Changes", request[request.IndexOf("--panel-tab") + 1]);
+        }
+
+        [Theory]
+        [InlineData("mode-changed", "Mode Changed")]
+        [InlineData("panel-unavailable", "Open App")]
+        [InlineData("panel-not-available", "Not available")]
+        [InlineData("panel-conversation-changed", "Couldn't open")]
+        public void Native_view_changes_refusals_are_shown_without_a_second_request(String error, String expected)
+        {
+            var (auto, calls) = Build("{\"ok\":false,\"error\":\"" + error + "\"}");
+            Assert.Equal(expected, DesktopActions.DesktopNavigateCommand.Execute("Codex", auto, () => Assert.Fail("Not search")));
+            Assert.Equal("open-panel", Assert.Single(calls)[0]);
         }
 
         [Fact]

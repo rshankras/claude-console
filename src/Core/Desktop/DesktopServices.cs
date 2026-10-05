@@ -27,10 +27,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         internal static DesktopLifetime Lifetime { get; private set; } = new();
         internal static DesktopActionRunner Actions { get; private set; } = new();
 
-        internal static Boolean Run(Action work, Action rejected = null)
+        internal static Boolean Run(Action work, Action rejected = null, String operation = null)
         {
             if (!Declared || !Actions.Active) return false;
-            if (Actions.TryRun(work)) return true;
+            if (Actions.TryRun(work, operation: operation)) return true;
             rejected?.Invoke();
             return false;
         }
@@ -77,7 +77,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             var changesTrace = new DesktopChangesTrace(System.IO.Path.Combine(
                 ProductRuntime.Home, "desktop-changes-trace-until"), message => PluginLog.Info(message)).Write;
             if (automation is MacDesktopAutomation mac) mac.ChangesTrace = changesTrace;
-            if (automation is WindowsDesktopAutomation windows) windows.ChangesTrace = changesTrace;
+            if (automation is WindowsDesktopAutomation windows)
+            {
+                windows.ChangesTrace = changesTrace;
+                // The serving helpers must end with the plugin: a running helper would hold its
+                // executable open while Options+ uninstalls or replaces the package (#155).
+                Lifetime.Bind(windows.Start, windows.Shutdown);
+            }
             Files = new DesktopFilePicker(automation, Context, System.IO.Path.Combine(
                 BridgeManager.HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"));
             Lifetime.OnStop(Files.End);

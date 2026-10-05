@@ -77,7 +77,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         {
             var shown = DesktopServices.Monitor?.Current;
             var slot = DesktopServices.Declared ? Slot(actionParameter) : null;
-            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter, shown, slot));
+            RunDesktopAction(actionParameter, () => this.RunDesktopCommand(actionParameter, shown, slot));
         }
 
         private void RunDesktopCommand(String actionParameter, DesktopState shown, DesktopConversation slot)
@@ -103,9 +103,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         internal static Boolean Execute(DesktopConversation conversation, IDesktopAutomation automation)
         {
             if (conversation == null || String.IsNullOrWhiteSpace(conversation.Title)) { return false; }
-            if (!automation.PressConversation(conversation.Title)) { return false; }
-            automation.FocusApp();
-            return true;
+            return automation.OpenConversation(conversation.Title);
         }
 
         // The full widget draws both title and state. A zero-width space suppresses the SDK's
@@ -113,7 +111,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) =>
             "\u200B";
 
-        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
+        protected override BitmapImage GetDesktopCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var conv = Slot(actionParameter);
             if (conv == null)
