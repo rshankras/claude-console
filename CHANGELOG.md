@@ -1,4 +1,4 @@
-## Vizhi Desktop [1.1.1] — Unreleased — Windows keys answer without the wait
+## Vizhi Desktop [1.1.1] — 2026-10-05 — Windows keys answer without the wait
 
 ### Fixed
 - **Windows: remove repeated helper startup from key presses** (#155, reported by Logitech QA on a managed
