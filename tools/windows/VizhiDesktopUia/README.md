@@ -31,6 +31,12 @@ boundary behind the foreground-restoration finding below without starting an exe
 every hand-back. Keep that boundary: a second request to the same UIA process is not equivalent
 to the old second process. Actual foreground hand-back still needs the hardware/EDR press pass.
 
+Each UIA worker owns its connection and roots on one long-lived MTA thread, following
+[Microsoft's UIA threading guidance](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-threading).
+The helper owns no UI windows and uses Win32 clipboard calls rather than STA-only OLE APIs.
+The native lane smoke verifies the apartment and process isolation. `Test-UiaRepeatedSnapshots.ps1`
+exercises reads past periodic COM-wrapper collection and reports timing without app content.
+
 Conversation keys use one `press --conversation ... --focus-after` request. The helper resolves
 the exact row, invokes it, and verifies the exact target HWND is foreground. An already-focused
 window needs no artificial 100 ms sleep. If focus is refused after the press, the response records
@@ -65,8 +71,15 @@ View Changes performs its context validation inside `open-panel`, avoiding a sep
 status preflight. One fresh snapshot establishes the selected conversation, mode, modal state,
 document ownership and whether the panel is already open. An actual press still requires a
 second fresh snapshot with the same target identity, followed by panel confirmation. An already
-open panel needs only one full scan. `--timing` reports `fullScans`; `open-panel --dry` validates
-the route without invoking the opener. The helper still refuses ambiguous or changed context.
+open panel needs only one full scan. The first observation and post-press confirmation use
+cached-only references; the second observation obtains live references for the invocation.
+A selected review tab and matching app-owned tabpanel (`--panel-tab`) confirm an open panel
+even while its file controls are loading. Unselected tabs, duplicate panels and nested preview
+documents do not count. `--timing` reports `fullScans`, the apartment, and numeric fetch/walk
+timings per scan; `open-panel --dry` validates the route without invoking the opener.
+The helper still refuses ambiguous or changed context.
+If confirmation times out or its reply is lost, the keypad says "Check app" rather than
+asserting that the panel failed to open. It never repeats the invocation automatically.
 
 Startup and work have separate deadlines. The readiness handshake measures startup, with a 5 s
 ceiling; once ready, each request gets its own existing operation budget. A first action cannot
@@ -176,7 +189,8 @@ What the Windows app does differently, and how the port answers it:
   ships beside this helper; the window-behind capture is `PrintWindow`.
 - App 26.928 shows no Changes summary row. The reply's edit summary carries "View changes",
   which opens the same Changes tab; `open-panel` takes it as an opener and confirms by
-  "Show files" (2026-09-30: `alreadyOpen` on an open tab, `method: button` on a closed one).
+  "Show files" or the selected Changes tab with its matching tabpanel. The tab and panel can
+  establish the destination without waiting for its file controls (2026-10-05 device retest).
   "View changed files" beside it is the file disclosure and is never pressed.
   Every edited reply keeps its own "View changes", and each opens the same tab on the last
   turn, so the adapter names it a turn label (`--changes-turn`, `--panel-open-turn`): with no

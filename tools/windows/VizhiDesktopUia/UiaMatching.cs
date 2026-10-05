@@ -978,8 +978,30 @@ internal static class UiaMatching
         return ExactButtons(nodes, names).Where(n => n.Pressable && n.Enabled).ToList();
     }
 
+    // A review tab is already open while its file controls are still loading. Confirm the
+    // selected tab together with its matching tabpanel in the app-owned document. Neither
+    // an unselected tab, transcript text, nor a preview document is confirmation.
+    // Return 2 for ambiguity so callers never treat duplicate panel controls as success.
+    public static Int32 VisiblePanels(IReadOnlyList<UiaNode> content, IReadOnlyList<String> visibleLabels,
+        IReadOnlyList<String>? panelTitles = null)
+    {
+        var buttons = ExactButtons(content, visibleLabels).Count;
+        if (buttons > 1) return 2;
+        var names = (panelTitles ?? Array.Empty<String>()).Select(NormalizeLabel)
+            .Where(s => s.Length > 0).ToHashSet(StringComparer.Ordinal);
+        var tabs = content.Where(n => n.Role == "TabItem" && n.Selected && n.Enabled
+            && names.Contains(NormalizeLabel(n.Text))).ToList();
+        var panes = content.Where(n => n.AriaRole == "tabpanel"
+            && names.Contains(NormalizeLabel(n.Text))).ToList();
+        if (tabs.Count > 1 || panes.Count > 1) return 2;
+        if (tabs.Count == 1 && panes.Count == 1
+            && NormalizeLabel(tabs[0].Text) == NormalizeLabel(panes[0].Text)) return 1;
+        return buttons;
+    }
+
     public static Boolean PanelRouteAvailable(IReadOnlyList<UiaNode> nodes, String modeLabel,
-        IReadOnlyList<String> openLabels, IReadOnlyList<String> visibleLabels, IReadOnlyList<String>? turnLabels = null)
+        IReadOnlyList<String> openLabels, IReadOnlyList<String> visibleLabels, IReadOnlyList<String>? turnLabels = null,
+        IReadOnlyList<String>? panelTitles = null)
     {
         if (modeLabel.Length == 0 || PanelObstructed(nodes))
         {
@@ -990,7 +1012,7 @@ internal static class UiaMatching
         {
             return false;
         }
-        var panels = ExactButtons(owners[0], visibleLabels);
-        return panels.Count != 0 ? panels.Count == 1 : PanelOpeners(owners[0], openLabels, turnLabels).Count == 1;
+        var panels = VisiblePanels(owners[0], visibleLabels, panelTitles);
+        return panels != 0 ? panels == 1 : PanelOpeners(owners[0], openLabels, turnLabels).Count == 1;
     }
 }

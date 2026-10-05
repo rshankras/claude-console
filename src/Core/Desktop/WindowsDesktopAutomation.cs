@@ -217,6 +217,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             AddEach(args, "--panel-open", _app.ShowDiffLabels);
             AddEach(args, "--panel-open-turn", _app.ShowDiffTurnLabels);
             AddEach(args, "--panel-visible", _app.ChangesPanelLabels);
+            AddEach(args, "--panel-tab", _app.ChangesPanelTitles);
             AddOne(args, "--conv-marker", _app.ConversationItemMarker);
             // The helper waits up to 3 s for the panel after its checks and the press.
             var json = this.Runner(args, 7000);
@@ -554,6 +555,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             AddEach(args, "--changes", _app.ControlLabels(DesktopControl.Changes));
             AddEach(args, "--changes-turn", _app.ShowDiffTurnLabels);
             AddEach(args, "--panel-visible", _app.ChangesPanelLabels);
+            AddEach(args, "--panel-tab", _app.ChangesPanelTitles);
             AddOne(args, "--panel-mode", "Codex");
             AddEach(args, "--projects", _app.ControlLabels(DesktopControl.Projects));
             AddEach(args, "--plugins", _app.ControlLabels(DesktopControl.Plugins));

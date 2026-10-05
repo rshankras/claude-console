@@ -128,6 +128,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         // One "View changes" per edited reply; each opens the same tab on the last turn.
         public String[] ShowDiffTurnLabels => new[] { "View changes" };
         public String[] ChangesPanelLabels => new[] { "Show files", "Hide files" };
+        public String[] ChangesPanelTitles => new[] { "Changes" };
 
         public String[] ControlLabels(DesktopControl control) => control switch
         {

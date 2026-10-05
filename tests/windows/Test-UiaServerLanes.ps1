@@ -28,7 +28,9 @@ try {
     if (@($children | ForEach-Object { $_.process.Id } | Select-Object -Unique).Count -ne 3) { throw 'Lanes are not isolated' }
     foreach ($child in $children) {
         $process = $child.process
-        if ((Send $process '["ping"]').exit -ne 0) { throw "$($child.lane) ping failed" }
+        $ping = Send $process '["ping","--timing"]'
+        if ($ping.exit -ne 0) { throw "$($child.lane) ping failed" }
+        if ((ConvertFrom-Json -InputObject $ping.out).timing.apartment -ne 'MTA') { throw "$($child.lane) is not MTA" }
         if ($child.lane -eq 'foreground') {
             $refusal = Send $process '["status"]'
             if ($refusal.exit -eq 0 -or (ConvertFrom-Json -InputObject $refusal.out).error -ne 'bad-request') {

@@ -106,7 +106,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 if (cold)
                 {
                     var ready = process.StandardOutput.ReadLineAsync();
-                    if (!Wait(ready, sw, ColdStartAllowanceMs)) return Overrun(process, file, ColdStartAllowanceMs);
+                    if (!Wait(ready, sw, ColdStartAllowanceMs)) return Overrun(process, file, ColdStartAllowanceMs, "startup");
                     Volatile.Write(ref _startupMs, (Int32)sw.ElapsedMilliseconds);
                     if (ready.Result != "{\"ready\":1}")
                     {
@@ -128,7 +128,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 if (!Current(generation)) return null;
                 sw.Restart();
                 var exchange = Exchange(process, args);
-                if (!Wait(exchange, sw, timeoutMs)) return Overrun(process, file, timeoutMs);
+                if (!Wait(exchange, sw, timeoutMs)) return Overrun(process, file, timeoutMs, args.Count > 0 ? args[0] : "unknown");
                 var response = ParseResponse(exchange.Result);
                 if (response == null) { Discard(process); return null; }
                 if (!Current(generation)) return null;
@@ -166,7 +166,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 var exit = process.WaitForExitAsync();
                 var budget = timeoutMs + (StartupMs >= 0 ? StartupMs + 250 : ColdStartAllowanceMs);
                 if (!Wait(Task.WhenAll(output, exit), sw, budget))
-                    return Overrun(process, file, budget);
+                    return Overrun(process, file, budget, args.Count > 0 ? args[0] : "unknown");
                 return Current(generation) ? output.Result.Trim() : null;
             }
             catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException or AggregateException)
@@ -203,9 +203,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             }
         }
 
-        private String Overrun(Process process, String file, Int32 budget)
+        private String Overrun(Process process, String file, Int32 budget, String verb)
         {
-            PluginLog.Warning($"{file} exceeded {budget}ms — killing ({BoundedProcess.NoteOverrun(file)})");
+            PluginLog.Warning($"UiaHelperHost({_lane}, {verb}): {file} exceeded {budget}ms — killing ({BoundedProcess.NoteOverrun(file)})");
             Discard(process);
             return null;
         }

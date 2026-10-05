@@ -25,6 +25,11 @@
 - Windows View Changes avoids duplicate status/tree reads while retaining native context and
   target checks. Passive status reads fetch fresh cached properties without keeping live
   references to every UI control. Slow-call logs identify the worker and operation.
+- Windows View Changes also recognizes the selected review tab and its matching app-owned
+  panel while file controls are loading, avoiding a false failure after the panel opens.
+  Confirmation reads use cached-only references; the invocation still resolves and checks a
+  fresh live target. Persistent UIA workers now use a long-lived MTA thread.
+  An unconfirmed or lost panel reply shows "Check app", since the request may have succeeded.
 
 ## Vizhi Desktop [1.1.0] — 2026-10-02 — Windows, and the 1.0.0 QA fixes
 

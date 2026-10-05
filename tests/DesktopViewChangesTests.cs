@@ -55,7 +55,9 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
         [Theory]
         [InlineData("panel-not-available", "Not available")]
-        [InlineData("panel-unconfirmed", "Couldn't open")]
+        [InlineData("panel-unconfirmed", "Check app")]
+        [InlineData("no-helper-output", "Check app")]
+        [InlineData("unexpected-reply", "Check app")]
         [InlineData("panel-target-changed", "Couldn't open")]
         public void Missing_capability_and_a_failed_open_have_distinct_feedback(String error, String expected)
         {

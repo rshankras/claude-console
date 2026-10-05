@@ -95,10 +95,13 @@ internal static partial class Program
     private static Stopwatch _requestTime = new();
     private static Int64 _targetMs, _scanMs, _invokeMs, _focusMs;
     private static Int32 _fullScans;
+    private static readonly List<Dictionary<String, Object?>> ScanTimings = new();
     private static String _scanPath = "none";
     private static String _queryDetail = "none";
 
-    [STAThread]
+    // UIA runs on one long-lived MTA thread, with no windows of its own. The clipboard
+    // uses Win32 directly (not OLE/WinForms), so it does not require an STA apartment.
+    [MTAThread]
     private static Int32 Main(String[] args) => args.FirstOrDefault() switch
     {
         "serve" => Serve(win32Only: false),
@@ -123,9 +126,8 @@ internal static partial class Program
         output.Write(ready, 0, ready.Length);
         output.Flush();
 
-        // stdin is read on its own thread. This one is a COM STA and lives for the whole session,
-        // so it must not sit in a blocking ReadLine: an STA that never pumps stalls anything that
-        // sends it a message. A managed wait on an STA pumps, so it waits for lines instead.
+        // Read input separately; only this long-lived worker owns the UIA connection and
+        // its cached roots. Requests remain serial within a lane.
         var lines = new System.Collections.Concurrent.ConcurrentQueue<String?>();
         var arrived = new AutoResetEvent(false);
         var reader = new Thread(() =>
@@ -200,6 +202,7 @@ internal static partial class Program
         _fullScans = 0;
         _scanPath = "none";
         _queryDetail = "none";
+        ScanTimings.Clear();
         try
         {
             var verb = args.FirstOrDefault() ?? "help";
@@ -444,8 +447,17 @@ internal static partial class Program
         {
             var root = Roots.Read(hwnd.ToInt64(), Win32.PidOf(hwnd), () => Uia.ElementFromHandle(hwnd),
                 element => element.BuildUpdatedCache(CacheRequest(cachedOnly)));
+            var fetchMs = timer.ElapsedMilliseconds;
             _scanPath = _scanPath is "query" or "full-fallback" ? "full-fallback" : "full";
-            return ReadTree(root);
+            var scan = ReadTree(root);
+            if (_options.ContainsKey("--timing")) ScanTimings.Add(new Dictionary<String, Object?>
+            {
+                ["fetchMs"] = fetchMs, ["walkMs"] = timer.ElapsedMilliseconds - fetchMs,
+                ["nodes"] = scan.Nodes.Count, ["complete"] = scan.Complete,
+                ["panelTabs"] = scan.Nodes.Count(n => n.Role == "TabItem" && n.Selected && Values(_options, "--panel-tab").Contains(n.Text)),
+                ["panelPanes"] = scan.Nodes.Count(n => n.AriaRole == "tabpanel" && Values(_options, "--panel-tab").Contains(n.Text)),
+            });
+            return scan;
         }
         finally { _scanMs += timer.ElapsedMilliseconds; }
     }
@@ -526,12 +538,12 @@ internal static partial class Program
 
     // Bounded wait for the web content — used by the acting verbs (which must not act on a
     // half tree), NOT by status (a status poll reports surface=false immediately and cheaply).
-    private static Scan? WaitForSurface(Target target, Int32 milliseconds)
+    private static Scan? WaitForSurface(Target target, Int32 milliseconds, Boolean cachedOnly = false)
     {
         var deadline = Stopwatch.StartNew();
         do
         {
-            var scan = ScanTarget(target);
+            var scan = ScanTarget(target, cachedOnly);
             if (scan.Surface)
             {
                 return scan;
@@ -649,7 +661,7 @@ internal static partial class Program
             ["searchPresent"] = Present("--search"),
             ["changesPresent"] = mode.Length > 0 && mode == panelMode && UiaMatching.PanelRouteAvailable(nodes,
                 modePrefix + mode, Values(options, "--changes"), Values(options, "--panel-visible"),
-                Values(options, "--changes-turn")),
+                Values(options, "--changes-turn"), Values(options, "--panel-tab")),
             ["projectsPresent"] = Present("--projects"),
             ["pluginsPresent"] = Present("--plugins"),
             ["attachFilesPresent"] = Present("--attach-files"),
@@ -939,6 +951,7 @@ internal static partial class Program
         var openers = Values(options, "--panel-open");
         var turnOpeners = Values(options, "--panel-open-turn");
         var visibleLabels = Values(options, "--panel-visible");
+        var panelTitles = Values(options, "--panel-tab");
         if (expectedMode.Length == 0 || prefix.Length == 0 || openers.Count == 0 || visibleLabels.Count == 0)
         {
             return Fail("panel-arguments", ExitNoMatch);
@@ -947,18 +960,18 @@ internal static partial class Program
         {
             return Fail("panel-unavailable", ExitNoMatch);
         }
-        var initial = WaitForSurface(target, 1000);
+        var initial = WaitForSurface(target, 1000, cachedOnly: true);
         if (initial == null) return Fail("panel-unavailable", ExitNoMatch);
         var marker = Value(options, "--conv-marker") ?? "";
         var conversation = UiaMatching.SelectedConversation(initial.Nodes, marker);
         if (conversation == null) return Fail("panel-conversation-changed", ExitChanged);
 
-        (List<UiaNode>? Content, String? Error, Int32 Code) Checked(Scan? observation = null)
+        (List<UiaNode>? Content, String? Error, Int32 Code) Checked(Scan? observation = null, Boolean forInvocation = false)
         {
             RequireTarget(target);
             if (!AppIsFrontmost(target)) return (null, "panel-foreground-changed", ExitChanged);
             if (Win32.WindowTitle(target.Hwnd) != target.Title) return (null, "panel-window-changed", ExitChanged);
-            var scan = observation ?? ScanTarget(target);
+            var scan = observation ?? ScanTarget(target, cachedOnly: !forInvocation);
             if (!scan.Surface) return (null, "panel-surface-missing", ExitChanged);
             if (UiaMatching.SelectedConversation(scan.Nodes, marker) != conversation) return (null, "panel-conversation-changed", ExitChanged);
             var modes = scan.Nodes.Where(n => n.Text.StartsWith(prefix, StringComparison.Ordinal)).ToList();
@@ -968,7 +981,7 @@ internal static partial class Program
             return owners.Count == 1 ? (owners[0], null, 0) : (null, "panel-not-available", ExitNoMatch);
         }
 
-        Int32 Visible(List<UiaNode> content) => UiaMatching.ExactButtons(content, visibleLabels).Count;
+        Int32 Visible(List<UiaNode> content) => UiaMatching.VisiblePanels(content, visibleLabels, panelTitles);
 
         // One current snapshot establishes both the context and the existing panel state.
         // Only a possible invocation needs a second read to reconfirm the same target.
@@ -983,8 +996,9 @@ internal static partial class Program
         // tree, and must not trigger a guessed shortcut, toggle, or text entry.
         if (candidates.Count != 1) return Fail("panel-not-available", ExitNoMatch);
 
-        var (fresh, freshError, freshCode) = Checked();
+        var (fresh, freshError, freshCode) = Checked(forInvocation: true);
         if (fresh == null) return Fail(freshError!, freshCode);
+        if (Visible(fresh) > 1) return Fail("panel-ambiguous", ExitNoMatch);
         if (Visible(fresh) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
         var confirmed = UiaMatching.PanelOpeners(fresh, openers, turnOpeners);
         if (confirmed.Count != 1 || !SameElement(candidates[0], confirmed[0])) return Fail("panel-target-changed", ExitChanged);
@@ -1002,6 +1016,7 @@ internal static partial class Program
         {
             var (again, againError, againCode) = Checked();
             if (again == null) return Fail(againError!, againCode);
+            if (Visible(again) > 1) return Fail("panel-ambiguous", ExitNoMatch);
             if (Visible(again) == 1)
             {
                 return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = false, ["method"] = "button" });
@@ -1027,6 +1042,8 @@ internal static partial class Program
             ["totalMs"] = _requestTime.ElapsedMilliseconds, ["targetMs"] = _targetMs,
             ["scanMs"] = _scanMs, ["invokeMs"] = _invokeMs, ["focusMs"] = _focusMs, ["scanPath"] = _scanPath,
             ["fullScans"] = _fullScans,
+            ["apartment"] = Thread.CurrentThread.GetApartmentState().ToString(),
+            ["scans"] = ScanTimings,
             ["queryDetail"] = _queryDetail,
         };
         using var stream = new MemoryStream();

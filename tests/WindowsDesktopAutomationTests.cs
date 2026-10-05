@@ -83,6 +83,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal("open-panel", request[0]);
             Assert.Contains("--expect-mode", request); Assert.Contains("Codex", request);
             Assert.Contains("--conv-marker", request); Assert.Contains("--panel-visible", request);
+            Assert.Equal("Changes", request[request.IndexOf("--panel-tab") + 1]);
         }
 
         [Theory]
