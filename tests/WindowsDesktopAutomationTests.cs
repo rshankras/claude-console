@@ -26,6 +26,36 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             return (auto, calls);
         }
 
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Open_conversation_is_one_helper_request_even_when_focus_is_refused(Boolean focused)
+        {
+            var (auto, calls) = Build("{\"ok\":true,\"focused\":" + (focused ? "true" : "false") + "}");
+            Assert.True(DesktopActions.DesktopConversationCommand.Execute(new DesktopConversation { Title = "Chosen" }, auto));
+            var request = Assert.Single(calls);
+            Assert.Equal("press", request[0]); Assert.Contains("--focus-after", request);
+            Assert.Contains("--conversation", request); Assert.Contains("Chosen", request);
+        }
+
+        [Fact]
+        public void Failed_conversation_never_focuses_and_legacy_success_only_adds_a_focus_request()
+        {
+            var (failed, failures) = Build("{\"ok\":false,\"error\":\"ambiguous-conversation\"}");
+            Assert.False(failed.OpenConversation("Chosen")); Assert.Single(failures);
+            var (legacy, calls) = Build("{\"ok\":true}", "{\"ok\":true}");
+            Assert.True(legacy.OpenConversation("Chosen")); Assert.Equal(2, calls.Count); Assert.Equal("focus", calls[1][0]);
+        }
+
+        [Fact]
+        public void Foreground_restoration_and_explicit_focus_never_share_a_UIA_worker()
+        {
+            Assert.True(WindowsDesktopAutomation.UseForegroundLane(new() { "restore-front" }));
+            Assert.True(WindowsDesktopAutomation.UseForegroundLane(new() { "focus" }));
+            Assert.False(WindowsDesktopAutomation.UseForegroundLane(new() { "press", "--focus-after" }));
+            Assert.False(WindowsDesktopAutomation.UseForegroundLane(new() { "status" }));
+        }
+
         [Fact]
         public void Conversation_navigation_uses_exact_sidebar_selector()
         {

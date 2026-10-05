@@ -27,10 +27,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         internal static DesktopLifetime Lifetime { get; private set; } = new();
         internal static DesktopActionRunner Actions { get; private set; } = new();
 
-        internal static Boolean Run(Action work, Action rejected = null)
+        internal static Boolean Run(Action work, Action rejected = null, String operation = null)
         {
             if (!Declared || !Actions.Active) return false;
-            if (Actions.TryRun(work)) return true;
+            if (Actions.TryRun(work, operation: operation)) return true;
             rejected?.Invoke();
             return false;
         }

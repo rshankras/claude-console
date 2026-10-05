@@ -343,6 +343,17 @@ internal static class UiaMatching
         return ConversationRows(nodes, marker).Where(x => x.Row.Text == title).Select(x => x.Row).ToList();
     }
 
+    /// <summary>The exact-title query reads every matching subtree in the window. One real
+    /// sidebar row is sufficient; duplicates need the full tree's project/Recents context.</summary>
+    public static UiaNode? UniqueQueriedConversation(IEnumerable<IReadOnlyList<UiaNode>> branches, String title, String marker)
+    {
+        var candidates = branches.SelectMany(nodes => ConversationMatches(nodes, title, marker)).ToList();
+        // Name is often duplicated on a row and its wrapper. Those query roots can contain
+        // the same physical button; only UIA's runtime identity may collapse that overlap.
+        var unique = candidates.DistinctBy(node => node.RuntimeId.Length > 0 ? (Object)node.RuntimeId : node).ToList();
+        return unique.Count == 1 && candidates.All(node => node.Enabled) ? unique[0] : null;
+    }
+
     /// <summary>
     /// The one button that starts a voice chat. The Windows app shows two at once — the
     /// composer's "Start voice chat" and the sidebar's "Start new voice chat" — so the

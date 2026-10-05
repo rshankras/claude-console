@@ -22,7 +22,8 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             _picker = DesktopServices.Files;
             var generation = Interlocked.Increment(ref _generation);
             _picker.Changed -= OnChanged; _picker.Changed += OnChanged;
-            if (!DesktopServices.Run(() => { if (generation == Interlocked.Read(ref _generation)) { _picker.Begin(); RefreshActions(); } })) ShowRetry();
+            if (!DesktopServices.Run(() => { if (generation == Interlocked.Read(ref _generation)) { _picker.Begin(); RefreshActions(); } },
+                operation: nameof(DesktopFilesDynamicFolder))) ShowRetry();
             return true;
         }
         public override Boolean Deactivate()

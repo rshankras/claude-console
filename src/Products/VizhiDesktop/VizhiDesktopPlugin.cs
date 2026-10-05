@@ -36,6 +36,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         private readonly IDesktopAppAdapter _app;
         private readonly DesktopLifetime _lifetime;
         private readonly DesktopActionRunner _actions;
+        private readonly WindowsDesktopAutomation _windows;
 
         /// <summary>
         /// Vizhi Desktop drives the same OpenAI app as Vizhi for Codex, through the desktop
@@ -93,6 +94,7 @@ namespace Loupedeck.ClaudeConsolePlugin
                 ? new WindowsDesktopAutomation(_app)
                 : new MacDesktopAutomation(_app, DesktopVoiceShortcut.Load(DesktopVoiceShortcut.ConfigPath));
             _monitor = new DesktopMonitor(automation);
+            _windows = automation as WindowsDesktopAutomation;
             DesktopServices.Declare(_app, automation, _monitor);
             _lifetime = DesktopServices.Lifetime;
             _actions = DesktopServices.Actions;
@@ -151,6 +153,7 @@ namespace Loupedeck.ClaudeConsolePlugin
             // Package-only installs: copy the AX helper out of the .lplug4 (dev builds already
             // have it from tools/desktop/build.sh). Voice installs itself lazily on first press.
             DesktopRuntime.EnsureInstalled(this.AssemblyFilePath);
+            _windows?.WarmUp();
 
             _monitor.Start();
 

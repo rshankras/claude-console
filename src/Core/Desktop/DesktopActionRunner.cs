@@ -2,6 +2,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 {
     using System;
     using System.Threading;
+    using System.Diagnostics;
     using System.Threading.Tasks;
 
     /// <summary>One desktop gesture at a time, without holding Logitech's input callback.
@@ -17,7 +18,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         internal Boolean IsBusy { get { lock (_gate) return _busy; } }
         internal Boolean Active { get { lock (_gate) return _active; } }
 
-        internal Boolean TryRun(Action work, Action completed = null)
+        internal Boolean TryRun(Action work, Action completed = null, String operation = null)
         {
             Int64 generation;
             lock (_gate)
@@ -25,6 +26,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 if (!_active || _busy) return false;
                 _busy = true; generation = _generation;
             }
+            var elapsed = Stopwatch.StartNew();
             try
             {
                 Schedule(() =>
@@ -42,6 +44,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                         Executing.Value = previous;
                         Boolean notify;
                         lock (_gate) { _busy = false; notify = _active && generation == _generation; }
+                        if (notify && operation != null) PluginLog.Info($"DesktopAction({operation}): finished in {elapsed.ElapsedMilliseconds}ms");
                         if (notify) try { completed?.Invoke(); } catch { }
                     }
                 });

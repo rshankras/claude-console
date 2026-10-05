@@ -19,11 +19,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         private readonly IDesktopAppAdapter _app;
 
-        // Two serving helpers (#155): the monitor's polls and the keys run on different threads,
+        // The monitor's polls and keys use separate serving helpers (#155),
         // and a status read must never hold up a press. Each lane falls back to a one-shot
         // process when it is busy, so neither waits on the other's work.
         private readonly UiaHelperHost _poll;
         private readonly UiaHelperHost _keys;
+        private readonly UiaHelperHost _foreground;
 
         internal Func<List<String>, Int32, String> Runner { get; set; }
 
@@ -34,21 +35,27 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             _app = app;
             _poll = new UiaHelperHost("poll", () => PluginPaths.PackagedFile(HelperFileName));
             _keys = new UiaHelperHost("keys", () => PluginPaths.PackagedFile(HelperFileName));
-            this.Runner = (args, timeoutMs) => (UsePollLane(args) ? _poll : _keys).Run(args, timeoutMs);
+            // A Win32-only process never invokes UIA. Windows can refuse restoration from the
+            // process that performed the UIA click; sharing the key server broke that boundary.
+            _foreground = new UiaHelperHost("foreground", () => PluginPaths.PackagedFile(HelperFileName), serveVerb: "serve-win32");
+            this.Runner = (args, timeoutMs) => (UseForegroundLane(args) ? _foreground : UsePollLane(args) ? _poll : _keys).Run(args, timeoutMs);
         }
 
         internal static Boolean IsPollVerb(List<String> args) => args.Count > 0 && args[0] is "frontmost" or "status";
         // A key's safety/status checks belong with the key too, even if a monitor status read
         // is already in flight. Routing only by verb forced these checks into one-shot fallbacks.
         internal static Boolean UsePollLane(List<String> args) => IsPollVerb(args) && !DesktopActionRunner.IsExecuting;
+        internal static Boolean UseForegroundLane(List<String> args) => args.Count > 0 && args[0] is "focus" or "restore-front";
 
-        /// <summary>Ends both serving helpers; called when the plugin stops, so nothing outlives it.</summary>
+        /// <summary>Ends all serving helpers; called when the plugin stops, so nothing outlives it.</summary>
         internal void Shutdown()
         {
             _poll.Shutdown();
             _keys.Shutdown();
+            _foreground.Shutdown();
         }
-        internal void Start() { _poll.Start(); _keys.Start(); }
+        internal void Start() { _poll.Start(); _keys.Start(); _foreground.Start(); }
+        internal void WarmUp() { _poll.WarmUp(); _keys.WarmUp(); _foreground.WarmUp(); }
 
         public Boolean? IsAppFrontmost()
         {
@@ -142,7 +149,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>
         /// A press is a click to Chromium, and a click activates the window — so on Windows an
         /// Approve pressed from the editor would leave the user in the chat app. The helper
-        /// reports the move; a second, UIA-free invocation hands the foreground back (the
+        /// reports the move; a separate, persistent UIA-free process hands the foreground back (the
         /// process that made the UIA call is refused; measured live 2026-09-30). The press has
         /// already landed, so a refused restore is logged, never a failure.
         /// </summary>
@@ -256,16 +263,28 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         }
 
         public Boolean PressConversation(String title)
+            => PressConversation(title, focus: false);
+
+        public Boolean OpenConversation(String title)
+            => PressConversation(title, focus: true);
+
+        private Boolean PressConversation(String title, Boolean focus)
         {
             if (String.IsNullOrWhiteSpace(title) || String.IsNullOrEmpty(_app.ConversationItemMarker))
             {
                 return false;
             }
-            // No focus hand-back here: the conversation key shows the chat it opened, so its
-            // caller brings the app forward on purpose right after this.
+            // No focus hand-back: navigation deliberately brings the chosen chat forward.
             var args = BaseArgs("press");
             args.AddRange(new[] { "--label", title, "--conversation", _app.ConversationItemMarker });
-            if (!TryParseOk(this.Runner(args, 4000), out _)) { return false; }
+            if (focus) args.Add("--focus-after");
+            if (!TryParseOk(this.Runner(args, focus ? 6000 : 4000), out var result)) { return false; }
+            if (focus)
+            {
+                if (!result.TryGetProperty("focused", out var focused)) this.FocusApp(); // pre-1.1.1 helper
+                else if (focused.ValueKind == JsonValueKind.False)
+                    PluginLog.Warning("WindowsDesktopAutomation.OpenConversation: chat opened but Windows refused focus; press not repeated");
+            }
             PluginLog.Info("WindowsDesktopAutomation.PressConversation: opened the chosen chat");
             return true;
         }

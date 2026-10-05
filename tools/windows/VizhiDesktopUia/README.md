@@ -1,13 +1,93 @@
 # Vizhi Desktop — the Windows UI Automation helper
 
 `vizhi-desktop-uia.exe` is the Windows half of the desktop seam: what `tools/desktop/VizhiAxBridge`
-is on macOS. One short-lived process per verb, one line of JSON on stdout, the same snapshot
+is on macOS. Persistent, bounded helper processes, one JSON response per request, the same snapshot
 contract on both operating systems. `Program.cs` holds the verbs and the UIA plumbing;
 `UiaMatching.cs` holds the matching rules and has no UIA in it, so the test suite links it and
 holds it to the macOS helper's answers (`tests/UiaMatchingTests.cs`).
 
 Built like every other Windows helper since #83: self-contained, trimmed, single file, UI
 Automation through its COM interface (`UiaInterop.cs`) rather than the WPF wrapper. About 12 MB.
+
+## Windows request architecture (#155, #157)
+
+```mermaid
+flowchart LR
+  Key[Key press] --> Gate[One active action]
+  Gate -->|Already active| Busy[Busy / Press again]
+  Gate --> Client[WindowsDesktopAutomation]
+  Monitor[Background monitor] --> Poll[Persistent UIA poll process]
+  Client --> Action[Persistent UIA action process]
+  Client --> Foreground[Persistent Win32-only process]
+  Action --> Query[Fresh query under the selected window root]
+  Query --> Guard[Resolve and validate]
+  Guard --> Invoke[Invoke once]
+```
+
+The plugin warms the three lanes asynchronously after its package path is available. Polling
+and a key's own status checks use different UIA processes. `focus` and `restore-front` use
+`serve-win32`, which never initializes UIA and refuses UIA verbs. This preserves the process
+boundary behind the foreground-restoration finding below without starting an executable for
+every hand-back. Keep that boundary: a second request to the same UIA process is not equivalent
+to the old second process. Actual foreground hand-back still needs the hardware/EDR press pass.
+
+Conversation keys use one `press --conversation ... --focus-after` request. The helper resolves
+the exact row, invokes it, and verifies the exact target HWND is foreground. An already-focused
+window needs no artificial 100 ms sleep. If focus is refused after the press, the response records
+that separately; the client never replays the press. Older helpers that omit the `focused` field
+retain the separate focus request for compatibility. macOS retains its existing implementation
+through the default `IDesktopAutomation.OpenConversation` method.
+
+`UiaRootCache` retains one root keyed by HWND and PID. Every operation queries the current provider
+again. A changed window/process or unavailable provider invalidates the root; a failed read can
+reacquire it once. Action invocations are never retried. The reusable `CacheRequest` contains only
+properties consumed by the reader. Cached property values and child lists never survive a request.
+This is the freshness boundary described in
+[Microsoft's caching guidance](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-cachingforclients).
+Structure-change subscriptions are unnecessary for this root-only cache because no saved control
+snapshot is trusted on the next operation.
+
+For an exact conversation title, `FindAllBuildCache` searches the selected window and fetches only
+matching subtrees. Conditions include every property from which the reader derives display text.
+A match still needs the adapter's sidebar marker. Overlapping query roots are deduplicated by UIA
+runtime ID, never by title. Distinct rows, truncated data, and unknown layouts fall back to the full
+tree so the existing project/Recents deduplication and ambiguity rules remain authoritative.
+Approval/card checks, Send, and other state-sensitive operations continue to read a fresh full
+snapshot. No element discovered by a previous key press is saved as a later action target.
+
+Startup and work have separate deadlines. The readiness handshake measures startup, with a 5 s
+ceiling; once ready, each request gets its own existing operation budget. A first action cannot
+consume unused startup time. Compatibility/contended one-shots use measured startup plus a 250 ms
+margin when available. Shutdown cancels all owned children and generation checks prevent late
+callbacks from starting a replacement after unload.
+
+Rejected presses are never queued. Commands show a per-key Busy face for 1.8 s; Find Chat and
+Attach Files remain on a retry page until the user retries or goes back. This also applies to
+Approve, Deny, Send, and hold-to-discard. The `DesktopAction(...)` log measures the whole dispatched
+action, including its helper requests, and names only the command class (no chat title or draft).
+
+## Measuring the changes
+
+`../measure-uia-helper.ps1` compares one-shot and served frontmost/status reads. To compare full
+conversation resolution with the narrow query, save an exact visible chat title in a UTF-8 file
+without a trailing newline, then run in Windows PowerShell 5.1 or newer:
+
+```powershell
+powershell -File tools/windows/measure-uia-actions.ps1 `
+  -Exe path/to/vizhi-desktop-uia.exe -TitleFile title.txt -Count 10 -OutputPath timings.json
+```
+
+This is read-only by default (`--dry`). `-Invoke` explicitly opens the named chat for each sample,
+without typing or sending. In that mode the full-scan baseline includes a separate focus request;
+the query path includes focus in the press request. A refusal stops the run rather than retrying an
+action. Samples include wall time, scan/invoke/focus time, and fallback counts, but no UI text.
+Use `--full-scan` only to compare resolution paths, and `--timing` for the phase counters.
+
+Local read-only timings do not establish complete-press latency on a managed endpoint. Before
+release, repeat the QA report's conversation, Approve/Deny, Find Chat, and View Changes pass under
+CrowdStrike; collect a nine-minute log and confirm no routine overruns. Include duplicate/project
+titles, changed app windows, rapid presses, disable/enable, and uninstall. Never automate an
+approval or Send against an uncontrolled live conversation. macOS needs the Busy-face device pass.
 
 ## What the reconnaissance established (2026-09-30, on the live app)
 

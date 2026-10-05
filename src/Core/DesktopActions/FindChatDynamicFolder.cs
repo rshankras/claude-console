@@ -86,7 +86,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                     if (generation == Interlocked.Read(ref _generation))
                         _timer = new Timer(_ => PollSearch(generation), null, 1000, Timeout.Infinite);
                 RefreshActions();
-            })) { PluginLog.Info("FindChatDynamicFolder: busy, waiting for the user to retry"); search.Changed -= OnChanged; search.Selected -= OnSelected; ShowRetry(); }
+            }, operation: nameof(FindChatDynamicFolder))) { PluginLog.Info("FindChatDynamicFolder: busy, waiting for the user to retry"); search.Changed -= OnChanged; search.Selected -= OnSelected; ShowRetry(); }
             return true;
         }
 

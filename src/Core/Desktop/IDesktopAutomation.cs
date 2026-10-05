@@ -54,6 +54,15 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Open one exact, unambiguous sidebar title. Unsupported helpers fail closed.</summary>
         Boolean PressConversation(String title) => false;
 
+        /// <summary>Open and foreground one exact conversation. Platforms may combine both
+        /// steps into one native operation; a landed press is never repeated for a focus failure.</summary>
+        Boolean OpenConversation(String title)
+        {
+            if (!PressConversation(title)) return false;
+            FocusApp();
+            return true;
+        }
+
         /// <summary>Press a contextual destination only if the observed mode still matches.</summary>
         Boolean PressInMode(String[] labels, String mode, out String matched) { matched = null; return false; }
 

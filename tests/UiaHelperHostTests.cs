@@ -185,7 +185,17 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         {
             var host = Host("cold");
             Assert.NotNull(host.Run(Args("pid"), 200));
+            Assert.True(host.StartupMs >= 400);
             Assert.Null(host.Run(Args("sleep", "1000"), 200));
+        }
+
+        [Fact]
+        public void A_cold_request_cannot_borrow_unused_startup_time_to_exceed_its_action_budget()
+        {
+            var host = Host("cold"); var elapsed = Stopwatch.StartNew();
+            Assert.Null(host.Run(Args("sleep", "2000"), 100));
+            Assert.True(elapsed.ElapsedMilliseconds < 2000);
+            Assert.Null(host.ServingPid);
         }
 
         [Fact]

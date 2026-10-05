@@ -1,9 +1,8 @@
-// vizhi-desktop-uia — one-shot Windows UI Automation verbs for desktop agent apps.
+// vizhi-desktop-uia — bounded Windows UI Automation operations for desktop agent apps.
 //
 // The Windows half of the desktop seam: what tools/desktop/VizhiAxBridge.swift is on macOS. Every
-// invocation does ONE thing and exits with ONE line of JSON on stdout — deliberately not a daemon:
-// the plugin spawns it through BoundedProcess (timeout + kill-tree), so a hung or malformed
-// Chromium tree can be killed without wedging LogiPluginService.
+// request does one operation and emits one JSON result. The plugin owns persistent servers
+// with timeout + kill-tree isolation; one-shot mode remains available for diagnostics.
 //
 // App-agnostic BY CONTRACT: this binary knows no control labels and no app names. Which app to
 // drive (--process) and which labels mean approve/deny/stop/attention arrive as arguments from
@@ -44,6 +43,10 @@
 //   focus                                   the ONE deliberate foreground activation
 //   serve                                   stay running; one JSON argv per stdin line, one
 //                                           {"exit","out"} per stdout line (ServeProtocol, #155)
+//   serve-win32                             restricted server: ping, frontmost, focus, restore-front;
+//                                           never creates a UIA connection
+//   press --focus-after                     focus the exact window after a successful press
+//   --timing / --full-scan                   diagnostic phase timings / disable the narrow query
 //
 // Exit codes: 0 ok · 3 app not running · 4 no match / not found · 5 UIA error · 6 ambiguous or changed.
 
@@ -67,8 +70,8 @@ internal static partial class Program
 
     private static readonly Int32[] CachedProperties =
     {
-        UiaIds.RuntimeId, UiaIds.BoundingRectangle, UiaIds.ProcessId, UiaIds.ControlType, UiaIds.Name, UiaIds.IsEnabled, UiaIds.AutomationId,
-        UiaIds.ClassName, UiaIds.HelpText, UiaIds.NativeWindowHandle, UiaIds.IsOffscreen,
+        UiaIds.RuntimeId, UiaIds.BoundingRectangle, UiaIds.ControlType, UiaIds.Name, UiaIds.IsEnabled,
+        UiaIds.HelpText,
         UiaIds.IsExpandCollapseAvailable, UiaIds.IsInvokeAvailable, UiaIds.IsSelectionItemAvailable,
         UiaIds.IsToggleAvailable, UiaIds.IsValueAvailable, UiaIds.ValueValue, UiaIds.ValueIsReadOnly,
         UiaIds.SelectionItemIsSelected, UiaIds.LegacyDescription, UiaIds.AriaRole, UiaIds.AriaProperties,
@@ -86,10 +89,20 @@ internal static partial class Program
     private static IUIAutomation Uia => _uia ??= (IUIAutomation)new CUIAutomation();
     private static HashSet<Int32> _appPids = new();
     private static Dictionary<String, List<String>> _options = new();
+    private static readonly UiaRootCache<IUIAutomationElement> Roots = new();
+    private static IUIAutomationCacheRequest? _cacheRequest;
+    private static Stopwatch _requestTime = new();
+    private static Int64 _targetMs, _scanMs, _invokeMs, _focusMs;
+    private static String _scanPath = "none";
+    private static String _queryDetail = "none";
 
     [STAThread]
-    private static Int32 Main(String[] args) =>
-        args.FirstOrDefault() == "serve" ? Serve() : Run(args);
+    private static Int32 Main(String[] args) => args.FirstOrDefault() switch
+    {
+        "serve" => Serve(win32Only: false),
+        "serve-win32" => Serve(win32Only: true),
+        _ => Run(args),
+    };
 
     // ---- serve (#155) ------------------------------------------------------
 
@@ -99,11 +112,11 @@ internal static partial class Program
     // starts `serve` once and sends each call as a line (ServeProtocol); the verbs and their
     // output are exactly the one-shot ones. stdin closing — plugin unloaded, service gone —
     // ends the process, so nothing outlives the plugin.
-    private static Int32 Serve()
+    private static Int32 Serve(Boolean win32Only)
     {
         var output = Console.OpenStandardOutput();
         var console = Console.Out;
-        try { _ = Uia; } catch (Exception) { /* the first request reports it */ }
+        if (!win32Only) try { _ = Uia; } catch (Exception) { /* the first request reports it */ }
         var ready = Encoding.UTF8.GetBytes("{\"ready\":1}\n");
         output.Write(ready, 0, ready.Length);
         output.Flush();
@@ -134,7 +147,8 @@ internal static partial class Program
             var args = ServeProtocol.ParseRequest(line);
             Int32 exit;
             String captured;
-            if (args == null || args[0] == "serve")
+            if (args == null || args[0] is "serve" or "serve-win32"
+                || (win32Only && args[0] is not ("ping" or "focus" or "frontmost" or "restore-front")))
             {
                 exit = ExitError;
                 captured = "{\"ok\":false,\"error\":\"bad-request\"}";
@@ -179,6 +193,10 @@ internal static partial class Program
 
     private static Int32 Run(String[] args)
     {
+        _requestTime = Stopwatch.StartNew();
+        _targetMs = _scanMs = _invokeMs = _focusMs = 0;
+        _scanPath = "none";
+        _queryDetail = "none";
         try
         {
             var verb = args.FirstOrDefault() ?? "help";
@@ -190,6 +208,7 @@ internal static partial class Program
                 Console.WriteLine("vizhi-desktop-uia <verb> [options] — see the source header for the verbs");
                 return 0;
             }
+            if (verb == "ping") return Emit(new Dictionary<String, Object?>());
 
             var pids = ProcessIds(Values(options, "--process"));
             _appPids = pids;
@@ -215,10 +234,13 @@ internal static partial class Program
                 return InspectWindows();
             }
 
+            var targetTime = Stopwatch.StartNew();
             var (target, error) = FindTarget(pids, Values(options, "--process").Count > 0,
                 Values(options, "--window"), options.ContainsKey("--require-process"));
+            _targetMs = targetTime.ElapsedMilliseconds;
             if (target == null)
             {
+                Roots.Invalidate();
                 return Fail(error!, error == "ambiguous-app" ? ExitChanged : ExitNotRunning);
             }
 
@@ -245,6 +267,7 @@ internal static partial class Program
         }
         catch (COMException ex)
         {
+            Roots.Invalidate();
             return Fail($"uia-error: 0x{ex.HResult:X8}", ExitError);
         }
         catch (Exception ex)
@@ -375,6 +398,7 @@ internal static partial class Program
 
     private static IUIAutomationCacheRequest CacheRequest()
     {
+        if (_cacheRequest != null) return _cacheRequest;
         var request = Uia.CreateCacheRequest();
         foreach (var id in CachedProperties)
         {
@@ -383,7 +407,7 @@ internal static partial class Program
         request.TreeScope = UiaIds.TreeScopeSubtree;
         request.TreeFilter = Uia.RawViewCondition;
         request.AutomationElementMode = UiaIds.ElementModeFull;
-        return request;
+        return _cacheRequest = request;
     }
 
     /// <summary>
@@ -391,11 +415,36 @@ internal static partial class Program
     /// (a cache request scoped to the subtree); the walk below is then in-process. Per-node
     /// property reads, the WPF wrapper's way, cost ~2 s for a 365-node tree on the live app.
     /// </summary>
-    private static Scan ScanTarget(Target target) => ScanWindow(target.Hwnd);
+    private static Scan ScanTarget(Target target)
+    {
+        RequireTarget(target);
+        return ScanWindow(target.Hwnd);
+    }
+
+    private static void RequireTarget(Target target)
+    {
+        if (Win32.PidOf(target.Hwnd) != target.Pid)
+        {
+            Roots.Invalidate();
+            throw new COMException("target-changed", unchecked((Int32)0x80040201));
+        }
+    }
 
     private static Scan ScanWindow(IntPtr hwnd)
     {
-        var root = Uia.ElementFromHandleBuildCache(hwnd, CacheRequest());
+        var timer = Stopwatch.StartNew();
+        try
+        {
+            var root = Roots.Read(hwnd.ToInt64(), Win32.PidOf(hwnd), () => Uia.ElementFromHandle(hwnd),
+                element => element.BuildUpdatedCache(CacheRequest()));
+            _scanPath = _scanPath is "query" or "full-fallback" ? "full-fallback" : "full";
+            return ReadTree(root);
+        }
+        finally { _scanMs += timer.ElapsedMilliseconds; }
+    }
+
+    private static Scan ReadTree(IUIAutomationElement root)
+    {
         var nodes = new List<UiaNode>();
         var complete = true;
 
@@ -410,7 +459,7 @@ internal static partial class Program
             nodes.Add(Read(element, nodes.Count, depth));
 
             IUIAutomationElementArray? children = null;
-            try { children = element.GetCachedChildren(); } catch (COMException) { }
+            try { children = element.GetCachedChildren(); } catch (COMException) { complete = false; }
             if (children == null)
             {
                 return;
@@ -616,6 +665,14 @@ internal static partial class Program
             return Fail("no --label given", ExitNoMatch);
         }
 
+        var marker = Value(options, "--conversation");
+        if (marker != null && !options.ContainsKey("--full-scan")
+            && !options.ContainsKey("--expect-mode") && !options.ContainsKey("--expect-near"))
+        {
+            var found = QueryConversation(target, labels[0], marker);
+            if (found != null) return CompletePress(target, options, found);
+        }
+
         var scan = WaitForSurface(target, 2000);
         if (scan == null)
         {
@@ -636,7 +693,6 @@ internal static partial class Program
         }
 
         UiaNode? candidate;
-        var marker = Value(options, "--conversation");
         if (marker != null)
         {
             var matches = UiaMatching.ConversationMatches(nodes, labels[0], marker);
@@ -673,6 +729,12 @@ internal static partial class Program
             }
         }
 
+        return CompletePress(target, options, candidate);
+    }
+
+    private static Int32 CompletePress(Target target, Dictionary<String, List<String>> options, UiaNode candidate)
+    {
+        RequireTarget(target);
         if (options.ContainsKey("--dry"))
         {
             return Emit(new Dictionary<String, Object?> { ["matched"] = candidate.Text, ["dry"] = true });
@@ -680,7 +742,10 @@ internal static partial class Program
 
         var beforeWindow = Win32.GetForegroundWindow();
         var before = ProcessName(Win32.ForegroundPid());
-        if (!Invoke(candidate))
+        var timer = Stopwatch.StartNew();
+        var invoked = Invoke(candidate);
+        _invokeMs = timer.ElapsedMilliseconds;
+        if (!invoked)
         {
             return Fail("press-failed", ExitError);
         }
@@ -690,14 +755,21 @@ internal static partial class Program
         // can hand focus back with restore-front; this process cannot (see there).
         var afterPid = Win32.ForegroundPid();
         var beforePid = Win32.PidOf(beforeWindow);
-        return Emit(new Dictionary<String, Object?>
+        var result = new Dictionary<String, Object?>
         {
             ["matched"] = candidate.Text,
             ["frontBefore"] = before,
             ["frontAfter"] = ProcessName(afterPid),
             ["frontBeforeHwnd"] = beforeWindow.ToInt64(),
             ["frontMoved"] = beforeWindow != IntPtr.Zero && beforePid != target.Pid && afterPid == target.Pid,
-        });
+        };
+        if (options.ContainsKey("--focus-after"))
+        {
+            timer.Restart();
+            result["focused"] = Win32.PidOf(target.Hwnd) == target.Pid && Raise(target.Hwnd);
+            _focusMs = timer.ElapsedMilliseconds;
+        }
+        return Emit(result);
     }
 
     /// <summary>
@@ -744,16 +816,18 @@ internal static partial class Program
         {
             Win32.ShowWindow(hwnd, Win32.SW_RESTORE);
         }
-        var pid = Win32.PidOf(hwnd);
+        // Chromium can activate a minimized window without restoring it during Invoke.
+        // Always restore first, even when the foreground already names this HWND.
+        if (Win32.GetForegroundWindow() == hwnd) return true;
         Boolean Arrived()
         {
-            for (var attempt = 0; attempt < 6; attempt++)
+            for (var attempt = 0; attempt < 24; attempt++)
             {
-                Thread.Sleep(100);
-                if (Win32.ForegroundPid() == pid)
+                if (Win32.GetForegroundWindow() == hwnd)
                 {
                     return true;
                 }
+                Thread.Sleep(25);
             }
             return false;
         }
@@ -918,14 +992,23 @@ internal static partial class Program
         return Fail("panel-unconfirmed", ExitError);
     }
 
-    private static Int32 Focus(Target target) =>
-        Raise(target.Hwnd) ? Emit(new Dictionary<String, Object?>()) : Fail("focus-failed", ExitError);
+    private static Int32 Focus(Target target)
+    {
+        RequireTarget(target);
+        return Raise(target.Hwnd) ? Emit(new Dictionary<String, Object?>()) : Fail("focus-failed", ExitError);
+    }
 
     // ---- output ------------------------------------------------------------
 
     private static Int32 Emit(Dictionary<String, Object?> payload, Int32 code = 0)
     {
         payload["ok"] = code == 0;
+        if (_options.ContainsKey("--timing")) payload["timing"] = new Dictionary<String, Object?>
+        {
+            ["totalMs"] = _requestTime.ElapsedMilliseconds, ["targetMs"] = _targetMs,
+            ["scanMs"] = _scanMs, ["invokeMs"] = _invokeMs, ["focusMs"] = _focusMs, ["scanPath"] = _scanPath,
+            ["queryDetail"] = _queryDetail,
+        };
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {

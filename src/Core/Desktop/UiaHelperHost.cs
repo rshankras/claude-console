@@ -15,6 +15,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
     internal sealed class UiaHelperHost
     {
         internal const Int32 ColdStartAllowanceMs = 5000;
+        private readonly String _serveVerb;
+        private Int32 _startupMs = -1;
         private readonly String _lane;
         private readonly Func<String> _helper;
         private readonly Func<String, List<String>, Int32, String> _oneShot;
@@ -27,8 +29,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         internal UiaHelperHost(String lane, Func<String> helper,
             Func<String, List<String>, Int32, String> oneShot = null,
-            Func<String, ProcessStartInfo> startInfo = null)
-        { _lane = lane; _helper = helper; _oneShot = oneShot; _startInfo = startInfo; }
+            Func<String, ProcessStartInfo> startInfo = null, String serveVerb = "serve")
+        { _lane = lane; _helper = helper; _oneShot = oneShot; _startInfo = startInfo; _serveVerb = serveVerb; }
+
+        internal void WarmUp()
+        {
+            Int64 generation;
+            lock (_lifecycle) { if (!_enabled) return; generation = _generation; }
+            _ = Task.Run(() => { if (Current(generation)) Run(new List<String> { "ping" }, 1000); });
+        }
+        internal Int32 StartupMs => Volatile.Read(ref _startupMs);
 
         internal Int32? ServingPid
         { get { lock (_lifecycle) { try { return _process != null && !_process.HasExited ? _process.Id : null; } catch { return null; } } } }
@@ -80,24 +90,24 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         private String Serve(String file, List<String> args, Int32 timeoutMs, Int64 generation)
         {
+            var sw = Stopwatch.StartNew();
             var process = _process;
             var cold = process == null || HasExited(process);
             if (cold)
             {
                 Discard(process);
-                process = Launch(file, new[] { "serve" }, generation);
+                process = Launch(file, new[] { _serveVerb }, generation);
                 if (process == null) return null;
                 lock (_lifecycle)
                 { if (_enabled && generation == _generation) _process = process; }
             }
-            var sw = Stopwatch.StartNew();
-            var budget = timeoutMs + (cold ? ColdStartAllowanceMs : 0);
             try
             {
                 if (cold)
                 {
                     var ready = process.StandardOutput.ReadLineAsync();
-                    if (!Wait(ready, sw, budget)) return Overrun(process, file, budget);
+                    if (!Wait(ready, sw, ColdStartAllowanceMs)) return Overrun(process, file, ColdStartAllowanceMs);
+                    Volatile.Write(ref _startupMs, (Int32)sw.ElapsedMilliseconds);
                     if (ready.Result != "{\"ready\":1}")
                     {
                         // No action was sent. Only an explicit old-helper response permits
@@ -113,15 +123,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                         PluginLog.Warning($"UiaHelperHost({_lane}): old helper; using one process per call");
                         return OneShot(file, args, timeoutMs, generation);
                     }
+                    PluginLog.Info($"UiaHelperHost({_lane}): ready in {StartupMs}ms; requests retain their own budgets");
                 }
                 if (!Current(generation)) return null;
+                sw.Restart();
                 var exchange = Exchange(process, args);
-                if (!Wait(exchange, sw, budget)) return Overrun(process, file, budget);
+                if (!Wait(exchange, sw, timeoutMs)) return Overrun(process, file, timeoutMs);
                 var response = ParseResponse(exchange.Result);
                 if (response == null) { Discard(process); return null; }
                 if (!Current(generation)) return null;
-                if (cold) PluginLog.Info($"UiaHelperHost({_lane}): first call took {sw.ElapsedMilliseconds}ms");
-                else if (BoundedProcess.SlowNote(file, sw.ElapsedMilliseconds, timeoutMs) is String slow) PluginLog.Warning(slow);
+                if (BoundedProcess.SlowNote(file, sw.ElapsedMilliseconds, timeoutMs) is String slow) PluginLog.Warning(slow);
                 return response.Value.Output.Trim();
             }
             catch { Discard(process); throw; }
@@ -145,15 +156,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             if (!Current(generation)) return null;
             if (_oneShot != null) return _oneShot(file, args, timeoutMs);
+            var sw = Stopwatch.StartNew();
             var process = Launch(file, args, generation);
             if (process == null) return null;
             try
             {
-                var sw = Stopwatch.StartNew();
                 var output = process.StandardOutput.ReadToEndAsync();
                 var exit = process.WaitForExitAsync();
-                if (!Wait(Task.WhenAll(output, exit), sw, timeoutMs + ColdStartAllowanceMs))
-                    return Overrun(process, file, timeoutMs + ColdStartAllowanceMs);
+                var budget = timeoutMs + (StartupMs >= 0 ? StartupMs + 250 : ColdStartAllowanceMs);
+                if (!Wait(Task.WhenAll(output, exit), sw, budget))
+                    return Overrun(process, file, budget);
                 return Current(generation) ? output.Result.Trim() : null;
             }
             catch (Exception ex) when (ex is IOException or InvalidOperationException or ObjectDisposedException or AggregateException)
@@ -211,13 +223,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         { try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { } }
         private static Boolean HasExited(Process process)
         { try { return process.HasExited; } catch { return true; } }
-        private static Boolean IsLegacy(String line)
+        private Boolean IsLegacy(String line)
         {
             try
             {
                 using var doc = JsonDocument.Parse(line ?? "null");
                 return doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var error)
-                    && error.ValueKind == JsonValueKind.String && error.GetString() == "unknown-verb serve";
+                    && error.ValueKind == JsonValueKind.String && error.GetString() == "unknown-verb " + _serveVerb;
             }
             catch (JsonException) { return false; }
         }

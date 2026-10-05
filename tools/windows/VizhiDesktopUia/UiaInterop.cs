@@ -16,6 +16,7 @@ namespace VizhiDesktopUia;
 internal static class UiaIds
 {
     public const Int32 TreeScopeSubtree = 7;
+    public const Int32 TreeScopeDescendants = 4;
     public const Int32 ElementModeFull = 1;
 
     // Properties
@@ -114,6 +115,10 @@ internal interface IUIAutomation
     IUIAutomationCondition RawViewCondition { get; }
     void _VtblGap4_2();                                             // ControlViewCondition, ContentViewCondition
     IUIAutomationCacheRequest CreateCacheRequest();
+    void _VtblGap6_2();                                             // CreateTrueCondition, CreateFalseCondition
+    IUIAutomationCondition CreatePropertyCondition(Int32 propertyId, [MarshalAs(UnmanagedType.Struct)] Object value);
+    void _VtblGap7_4();                                             // CreatePropertyConditionEx, CreateAndCondition, ...FromArray, ...FromNativeArray
+    IUIAutomationCondition CreateOrCondition(IUIAutomationCondition first, IUIAutomationCondition second);
 }
 
 [SupportedOSPlatform("windows")]
@@ -121,7 +126,8 @@ internal interface IUIAutomation
 internal interface IUIAutomationElement
 {
     void SetFocus();
-    void _VtblGap1_5();                                             // GetRuntimeId … FindAllBuildCache
+    void _VtblGap1_4();                                             // GetRuntimeId, FindFirst, FindAll, FindFirstBuildCache
+    IUIAutomationElementArray? FindAllBuildCache(Int32 scope, IUIAutomationCondition condition, IUIAutomationCacheRequest cacheRequest);
     IUIAutomationElement BuildUpdatedCache(IUIAutomationCacheRequest cacheRequest);
     [return: MarshalAs(UnmanagedType.Struct)]
     Object? GetCurrentPropertyValue(Int32 propertyId);

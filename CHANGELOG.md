@@ -6,7 +6,8 @@
   made two or three calls; on a machine with endpoint security each start cost about 0.6 s before
   any work, and a call that ran past its budget was killed, so that press did nothing. The plugin
   now starts the helper once and keeps it running while the plugin is loaded, one for the
-  background status reads and one for the keys, so a status read never holds up a press. Calls
+  background status reads and one for the keys, plus a Win32-only lane for foreground restoration.
+  A key's own status check stays on its action lane. Calls
   keep their time limits; a helper that hangs is replaced, a call is never repeated, and the
   helpers end when the plugin stops or is uninstalled. The Mac is unchanged.
 - **Busy presses give visible feedback on both platforms** (#157). A rejected key shows
@@ -15,6 +16,12 @@
 - Helper startup uses a readiness handshake. A failed write, crash, timeout, or malformed reply
   never replays an action. Shutdown stops serving and fallback children and prevents late calls
   from starting a replacement until the plugin is enabled again.
+- Windows conversation keys resolve and focus in one helper request. Exact-title queries read
+  matching subtrees, with a full-tree fallback for ambiguous/project duplicates. Window roots
+  are reused while control data stays fresh. Already-focused windows skip the fixed focus wait.
+- Helpers warm at load and measure readiness separately from request execution. Cold requests
+  retain the same action deadline as warm ones. Whole-action and optional phase timings support
+  the managed-Windows performance pass without logging chat titles or draft text in those timings.
 
 ## Vizhi Desktop [1.1.0] — 2026-10-02 — Windows, and the 1.0.0 QA fixes
 

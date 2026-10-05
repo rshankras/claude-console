@@ -26,7 +26,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             // Clear before admission: clearing after TryRun could erase feedback from a second
             // press that was rejected on another SDK callback thread in the meantime.
             _busyFeedback.Clear(parameter);
-            return DesktopServices.Run(work, () => ShowBusy(parameter));
+            return DesktopServices.Run(work, () => ShowBusy(parameter), this.GetType().Name);
         }
 
         protected void ShowBusy(String parameter) => _busyFeedback.Show(parameter);

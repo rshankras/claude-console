@@ -103,9 +103,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         internal static Boolean Execute(DesktopConversation conversation, IDesktopAutomation automation)
         {
             if (conversation == null || String.IsNullOrWhiteSpace(conversation.Title)) { return false; }
-            if (!automation.PressConversation(conversation.Title)) { return false; }
-            automation.FocusApp();
-            return true;
+            return automation.OpenConversation(conversation.Title);
         }
 
         // The full widget draws both title and state. A zero-width space suppresses the SDK's
