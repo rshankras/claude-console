@@ -91,8 +91,10 @@ internal static partial class Program
     private static Dictionary<String, List<String>> _options = new();
     private static readonly UiaRootCache<IUIAutomationElement> Roots = new();
     private static IUIAutomationCacheRequest? _cacheRequest;
+    private static IUIAutomationCacheRequest? _readCacheRequest;
     private static Stopwatch _requestTime = new();
     private static Int64 _targetMs, _scanMs, _invokeMs, _focusMs;
+    private static Int32 _fullScans;
     private static String _scanPath = "none";
     private static String _queryDetail = "none";
 
@@ -195,6 +197,7 @@ internal static partial class Program
     {
         _requestTime = Stopwatch.StartNew();
         _targetMs = _scanMs = _invokeMs = _focusMs = 0;
+        _fullScans = 0;
         _scanPath = "none";
         _queryDetail = "none";
         try
@@ -396,9 +399,10 @@ internal static partial class Program
 
     // ---- scan --------------------------------------------------------------
 
-    private static IUIAutomationCacheRequest CacheRequest()
+    private static IUIAutomationCacheRequest CacheRequest(Boolean cachedOnly = false)
     {
-        if (_cacheRequest != null) return _cacheRequest;
+        var previous = cachedOnly ? _readCacheRequest : _cacheRequest;
+        if (previous != null) return previous;
         var request = Uia.CreateCacheRequest();
         foreach (var id in CachedProperties)
         {
@@ -406,8 +410,10 @@ internal static partial class Program
         }
         request.TreeScope = UiaIds.TreeScopeSubtree;
         request.TreeFilter = Uia.RawViewCondition;
-        request.AutomationElementMode = UiaIds.ElementModeFull;
-        return _cacheRequest = request;
+        request.AutomationElementMode = cachedOnly ? UiaIds.ElementModeNone : UiaIds.ElementModeFull;
+        if (cachedOnly) _readCacheRequest = request;
+        else _cacheRequest = request;
+        return request;
     }
 
     /// <summary>
@@ -415,10 +421,10 @@ internal static partial class Program
     /// (a cache request scoped to the subtree); the walk below is then in-process. Per-node
     /// property reads, the WPF wrapper's way, cost ~2 s for a 365-node tree on the live app.
     /// </summary>
-    private static Scan ScanTarget(Target target)
+    private static Scan ScanTarget(Target target, Boolean cachedOnly = false)
     {
         RequireTarget(target);
-        return ScanWindow(target.Hwnd);
+        return ScanWindow(target.Hwnd, cachedOnly);
     }
 
     private static void RequireTarget(Target target)
@@ -430,13 +436,14 @@ internal static partial class Program
         }
     }
 
-    private static Scan ScanWindow(IntPtr hwnd)
+    private static Scan ScanWindow(IntPtr hwnd, Boolean cachedOnly = false)
     {
+        _fullScans++;
         var timer = Stopwatch.StartNew();
         try
         {
             var root = Roots.Read(hwnd.ToInt64(), Win32.PidOf(hwnd), () => Uia.ElementFromHandle(hwnd),
-                element => element.BuildUpdatedCache(CacheRequest()));
+                element => element.BuildUpdatedCache(CacheRequest(cachedOnly)));
             _scanPath = _scanPath is "query" or "full-fallback" ? "full-fallback" : "full";
             return ReadTree(root);
         }
@@ -595,7 +602,9 @@ internal static partial class Program
 
     private static Int32 Status(Target target, Dictionary<String, List<String>> options)
     {
-        var scan = ScanTarget(target);
+        // Status only reads cached properties. It needs a fresh snapshot, not a live COM
+        // reference to every control in the transcript. Acting verbs keep full references.
+        var scan = ScanTarget(target, cachedOnly: !options.ContainsKey("--live-snapshot"));
         if (!scan.Surface)
         {
             // Screen locked / window hidden: the tree evaporates. Say so — the monitor must
@@ -934,18 +943,22 @@ internal static partial class Program
         {
             return Fail("panel-arguments", ExitNoMatch);
         }
-        if (!AppIsFrontmost(target) || WaitForSurface(target, 1000) == null)
+        if (!AppIsFrontmost(target))
         {
             return Fail("panel-unavailable", ExitNoMatch);
         }
+        var initial = WaitForSurface(target, 1000);
+        if (initial == null) return Fail("panel-unavailable", ExitNoMatch);
         var marker = Value(options, "--conv-marker") ?? "";
-        var conversation = UiaMatching.SelectedConversation(ScanTarget(target).Nodes, marker);
+        var conversation = UiaMatching.SelectedConversation(initial.Nodes, marker);
+        if (conversation == null) return Fail("panel-conversation-changed", ExitChanged);
 
-        (List<UiaNode>? Content, String? Error, Int32 Code) Checked()
+        (List<UiaNode>? Content, String? Error, Int32 Code) Checked(Scan? observation = null)
         {
+            RequireTarget(target);
             if (!AppIsFrontmost(target)) return (null, "panel-foreground-changed", ExitChanged);
             if (Win32.WindowTitle(target.Hwnd) != target.Title) return (null, "panel-window-changed", ExitChanged);
-            var scan = ScanTarget(target);
+            var scan = observation ?? ScanTarget(target);
             if (!scan.Surface) return (null, "panel-surface-missing", ExitChanged);
             if (UiaMatching.SelectedConversation(scan.Nodes, marker) != conversation) return (null, "panel-conversation-changed", ExitChanged);
             var modes = scan.Nodes.Where(n => n.Text.StartsWith(prefix, StringComparison.Ordinal)).ToList();
@@ -957,7 +970,9 @@ internal static partial class Program
 
         Int32 Visible(List<UiaNode> content) => UiaMatching.ExactButtons(content, visibleLabels).Count;
 
-        var (nodes, error, code) = Checked();
+        // One current snapshot establishes both the context and the existing panel state.
+        // Only a possible invocation needs a second read to reconfirm the same target.
+        var (nodes, error, code) = Checked(initial);
         if (nodes == null) return Fail(error!, code);
         if (Visible(nodes) > 1) return Fail("panel-ambiguous", ExitNoMatch);
         if (Visible(nodes) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
@@ -973,7 +988,11 @@ internal static partial class Program
         if (Visible(fresh) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
         var confirmed = UiaMatching.PanelOpeners(fresh, openers, turnOpeners);
         if (confirmed.Count != 1 || !SameElement(candidates[0], confirmed[0])) return Fail("panel-target-changed", ExitChanged);
+        if (options.ContainsKey("--dry"))
+            return Emit(new Dictionary<String, Object?> { ["opened"] = false, ["dry"] = true, ["wouldOpen"] = true });
+        var invokeTime = Stopwatch.StartNew();
         if (!Invoke(confirmed[0])) return Fail("panel-press-failed", ExitError);
+        _invokeMs = invokeTime.ElapsedMilliseconds;
 
         // The macOS helper waits 1.2 s. Here one check is a whole UIA scan (~350 ms), and the
         // first review after a turn loads slower than a reopened one: the device pass recorded
@@ -981,13 +1000,13 @@ internal static partial class Program
         var deadline = Stopwatch.StartNew();
         while (deadline.ElapsedMilliseconds < 3000)
         {
-            Thread.Sleep(80);
             var (again, againError, againCode) = Checked();
             if (again == null) return Fail(againError!, againCode);
             if (Visible(again) == 1)
             {
                 return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = false, ["method"] = "button" });
             }
+            Thread.Sleep(80);
         }
         return Fail("panel-unconfirmed", ExitError);
     }
@@ -1007,6 +1026,7 @@ internal static partial class Program
         {
             ["totalMs"] = _requestTime.ElapsedMilliseconds, ["targetMs"] = _targetMs,
             ["scanMs"] = _scanMs, ["invokeMs"] = _invokeMs, ["focusMs"] = _focusMs, ["scanPath"] = _scanPath,
+            ["fullScans"] = _fullScans,
             ["queryDetail"] = _queryDetail,
         };
         using var stream = new MemoryStream();

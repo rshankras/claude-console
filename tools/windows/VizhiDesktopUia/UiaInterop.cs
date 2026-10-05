@@ -18,6 +18,7 @@ internal static class UiaIds
     public const Int32 TreeScopeSubtree = 7;
     public const Int32 TreeScopeDescendants = 4;
     public const Int32 ElementModeFull = 1;
+    public const Int32 ElementModeNone = 0;
 
     // Properties
     public const Int32 RuntimeId = 30000;

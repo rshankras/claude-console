@@ -132,7 +132,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 var response = ParseResponse(exchange.Result);
                 if (response == null) { Discard(process); return null; }
                 if (!Current(generation)) return null;
-                if (BoundedProcess.SlowNote(file, sw.ElapsedMilliseconds, timeoutMs) is String slow) PluginLog.Warning(slow);
+                if (BoundedProcess.SlowNote(file, sw.ElapsedMilliseconds, timeoutMs) is String slow)
+                    PluginLog.Warning($"UiaHelperHost({_lane}, {(args.Count > 0 ? args[0] : "empty")}): {slow}");
                 return response.Value.Output.Trim();
             }
             catch { Discard(process); throw; }

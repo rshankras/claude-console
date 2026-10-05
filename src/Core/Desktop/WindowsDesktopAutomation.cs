@@ -205,6 +205,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         }
 
         internal Action<String> ChangesTrace { get; set; }
+        public Boolean ChecksChangesContext => true;
 
         public Boolean OpenChanges(out String error)
         {

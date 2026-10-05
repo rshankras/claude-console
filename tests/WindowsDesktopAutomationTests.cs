@@ -75,6 +75,29 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         }
 
         [Fact]
+        public void Windows_view_changes_uses_one_guarded_request_without_a_status_preflight()
+        {
+            var (auto, calls) = Build("{\"ok\":true,\"opened\":true,\"alreadyOpen\":true}");
+            Assert.Equal("Opened", DesktopActions.DesktopNavigateCommand.Execute("Codex", auto, () => Assert.Fail("Not search")));
+            var request = Assert.Single(calls);
+            Assert.Equal("open-panel", request[0]);
+            Assert.Contains("--expect-mode", request); Assert.Contains("Codex", request);
+            Assert.Contains("--conv-marker", request); Assert.Contains("--panel-visible", request);
+        }
+
+        [Theory]
+        [InlineData("mode-changed", "Mode Changed")]
+        [InlineData("panel-unavailable", "Open App")]
+        [InlineData("panel-not-available", "Not available")]
+        [InlineData("panel-conversation-changed", "Couldn't open")]
+        public void Native_view_changes_refusals_are_shown_without_a_second_request(String error, String expected)
+        {
+            var (auto, calls) = Build("{\"ok\":false,\"error\":\"" + error + "\"}");
+            Assert.Equal(expected, DesktopActions.DesktopNavigateCommand.Execute("Codex", auto, () => Assert.Fail("Not search")));
+            Assert.Equal("open-panel", Assert.Single(calls)[0]);
+        }
+
+        [Fact]
         public void View_changes_outlasts_the_helpers_own_wait_for_the_panel()
         {
             // The helper checks the target twice, presses, then waits up to 3 s for the panel;

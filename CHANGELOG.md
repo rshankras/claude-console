@@ -22,6 +22,9 @@
 - Helpers warm at load and measure readiness separately from request execution. Cold requests
   retain the same action deadline as warm ones. Whole-action and optional phase timings support
   the managed-Windows performance pass without logging chat titles or draft text in those timings.
+- Windows View Changes avoids duplicate status/tree reads while retaining native context and
+  target checks. Passive status reads fetch fresh cached properties without keeping live
+  references to every UI control. Slow-call logs identify the worker and operation.
 
 ## Vizhi Desktop [1.1.0] — 2026-10-02 — Windows, and the 1.0.0 QA fixes
 

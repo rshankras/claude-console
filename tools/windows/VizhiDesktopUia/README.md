@@ -55,6 +55,19 @@ tree so the existing project/Recents deduplication and ambiguity rules remain au
 Approval/card checks, Send, and other state-sensitive operations continue to read a fresh full
 snapshot. No element discovered by a previous key press is saved as a later action target.
 
+Status snapshots use `AutomationElementMode_None`: all properties are freshly fetched, but the
+snapshot does not retain live references to every control. The monitor only reads cached values;
+acting verbs still request full references. `tests/windows/Test-UiaStatusSnapshots.ps1` compares
+all status fields against the full-reference path (`status --live-snapshot`) on the live app,
+without printing or saving UI text.
+
+View Changes performs its context validation inside `open-panel`, avoiding a separate Windows
+status preflight. One fresh snapshot establishes the selected conversation, mode, modal state,
+document ownership and whether the panel is already open. An actual press still requires a
+second fresh snapshot with the same target identity, followed by panel confirmation. An already
+open panel needs only one full scan. `--timing` reports `fullScans`; `open-panel --dry` validates
+the route without invoking the opener. The helper still refuses ambiguous or changed context.
+
 Startup and work have separate deadlines. The readiness handshake measures startup, with a 5 s
 ceiling; once ready, each request gets its own existing operation budget. A first action cannot
 consume unused startup time. Compatibility/contended one-shots use measured startup plus a 250 ms

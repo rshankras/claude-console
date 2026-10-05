@@ -28,6 +28,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Cheap process-only foreground check for passive polling; no UI traversal.</summary>
         Boolean? IsAppFrontmost() => true;
 
+        /// <summary>OpenChanges validates the current surface, mode and panel route itself.
+        /// Such implementations do not need a separate full status read before navigation.</summary>
+        Boolean ChecksChangesContext => false;
+
         /// <summary>
         /// Search-only operations. Unsupported platforms never fall back to the composer.
         /// <paramref name="mode"/> is the app mode the search was opened in; every step of one
