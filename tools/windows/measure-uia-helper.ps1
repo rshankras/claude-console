@@ -22,8 +22,8 @@ function Stats([String]$label, [Double[]]$ms) {
 }
 
 function OneShot([String[]]$argv) {
-    $psi = New-Object Diagnostics.ProcessStartInfo $Exe
-    foreach ($a in $argv) { $psi.ArgumentList.Add($a) }
+    # Arguments as one string: Windows PowerShell 5.1 has no ArgumentList. None contains a space.
+    $psi = New-Object Diagnostics.ProcessStartInfo $Exe, ($argv -join ' ')
     $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.CreateNoWindow = $true
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $p = [Diagnostics.Process]::Start($psi)
@@ -37,8 +37,7 @@ Stats '  frontmost' (1..$Count | ForEach-Object { OneShot (@('frontmost') + $bas
 Stats '  status' (1..$Count | ForEach-Object { OneShot (@('status') + $base) })
 
 "Served (1.1.1 behaviour):"
-$psi = New-Object Diagnostics.ProcessStartInfo $Exe
-$psi.ArgumentList.Add('serve')
+$psi = New-Object Diagnostics.ProcessStartInfo $Exe, 'serve'
 $psi.UseShellExecute = $false; $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.CreateNoWindow = $true
 $psi.StandardOutputEncoding = New-Object Text.UTF8Encoding $false
 $start = [Diagnostics.Stopwatch]::StartNew()
