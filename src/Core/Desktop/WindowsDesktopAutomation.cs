@@ -19,23 +19,40 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
 
         private readonly IDesktopAppAdapter _app;
 
-        internal Func<List<String>, Int32, String> Runner { get; set; } =
-            (args, timeoutMs) =>
-            {
-                var helper = PluginPaths.PackagedFile(HelperFileName);
-                return helper == null ? null : BoundedProcess.Run(helper, args, timeoutMs, wantOutput: true);
-            };
+        // Two serving helpers (#155): the monitor's polls and the keys run on different threads,
+        // and a status read must never hold up a press. Each lane falls back to a one-shot
+        // process when it is busy, so neither waits on the other's work.
+        private readonly UiaHelperHost _poll;
+        private readonly UiaHelperHost _keys;
+
+        internal Func<List<String>, Int32, String> Runner { get; set; }
 
         internal static Boolean IsPackaged => PluginPaths.PackagedFile(HelperFileName) != null;
 
-        public WindowsDesktopAutomation(IDesktopAppAdapter app) => _app = app;
+        public WindowsDesktopAutomation(IDesktopAppAdapter app)
+        {
+            _app = app;
+            _poll = new UiaHelperHost("poll", () => PluginPaths.PackagedFile(HelperFileName));
+            _keys = new UiaHelperHost("keys", () => PluginPaths.PackagedFile(HelperFileName));
+            this.Runner = (args, timeoutMs) => (IsPollVerb(args) ? _poll : _keys).Run(args, timeoutMs);
+        }
+
+        internal static Boolean IsPollVerb(List<String> args) => args.Count > 0 && args[0] is "frontmost" or "status";
+
+        /// <summary>Ends both serving helpers; called when the plugin stops, so nothing outlives it.</summary>
+        internal void Shutdown()
+        {
+            _poll.Shutdown();
+            _keys.Shutdown();
+        }
 
         public Boolean? IsAppFrontmost()
         {
             // A process check only: passive polling backs off in other apps without asking
-            // Chromium to build or traverse its accessibility tree. Two seconds, not one: a
-            // 14 MB single-file helper can take over a second to start after the machine has
-            // been idle, and a killed check reads as a false "not in front" (seen 2026-09-30).
+            // Chromium to build or traverse its accessibility tree. Two seconds, not one: when the
+            // serving helper is busy this runs as a one-shot process, and the 14 MB single-file
+            // helper can take over a second to start on an idle or EDR-managed machine; a killed
+            // check reads as a false "not in front" (seen 2026-09-30).
             var json = this.Runner(BaseArgs("frontmost"), 2000);
             return TryParseOk(json, out var root) && root.TryGetProperty("frontmost", out var front)
                 && front.ValueKind is JsonValueKind.True or JsonValueKind.False ? front.GetBoolean() : null;

@@ -42,6 +42,8 @@
 //   context-selection|clipboard|screenshot|window|return|paste, copy-reply, search: see the
 //           other files
 //   focus                                   the ONE deliberate foreground activation
+//   serve                                   stay running; one JSON argv per stdin line, one
+//                                           {"exit","out"} per stdout line (ServeProtocol, #155)
 //
 // Exit codes: 0 ok · 3 app not running · 4 no match / not found · 5 UIA error · 6 ambiguous or changed.
 
@@ -86,7 +88,93 @@ internal static partial class Program
     private static Dictionary<String, List<String>> _options = new();
 
     [STAThread]
-    private static Int32 Main(String[] args)
+    private static Int32 Main(String[] args) =>
+        args.FirstOrDefault() == "serve" ? Serve() : Run(args);
+
+    // ---- serve (#155) ------------------------------------------------------
+
+    // One process for the whole plugin session. Starting this 14 MB single-file helper costs
+    // ~0.6 s on a managed Windows endpoint (EDR inspects every new process), and a key press
+    // took two or three of them: 1–6 s per press against 0.3–0.6 s on the Mac. The plugin
+    // starts `serve` once and sends each call as a line (ServeProtocol); the verbs and their
+    // output are exactly the one-shot ones. stdin closing — plugin unloaded, service gone —
+    // ends the process, so nothing outlives the plugin.
+    private static Int32 Serve()
+    {
+        var output = Console.OpenStandardOutput();
+        var console = Console.Out;
+        try { _ = Uia; } catch (Exception) { /* the first request reports it */ }
+
+        // stdin is read on its own thread. This one is a COM STA and lives for the whole session,
+        // so it must not sit in a blocking ReadLine: an STA that never pumps stalls anything that
+        // sends it a message. A managed wait on an STA pumps, so it waits for lines instead.
+        var lines = new System.Collections.Concurrent.ConcurrentQueue<String?>();
+        var arrived = new AutoResetEvent(false);
+        var reader = new Thread(() =>
+        {
+            using var input = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
+            String? next;
+            try { while ((next = input.ReadLine()) != null) { lines.Enqueue(next); arrived.Set(); } }
+            catch (IOException) { }
+            lines.Enqueue(null);
+            arrived.Set();
+        }) { IsBackground = true, Name = "serve-stdin" };
+        reader.Start();
+
+        var served = 0;
+        while (true)
+        {
+            String? line;
+            while (!lines.TryDequeue(out line)) arrived.WaitOne();
+            if (line == null) break;
+            if (line.Length == 0) continue;
+            var args = ServeProtocol.ParseRequest(line);
+            Int32 exit;
+            String captured;
+            if (args == null || args[0] == "serve")
+            {
+                exit = ExitError;
+                captured = "{\"ok\":false,\"error\":\"bad-request\"}";
+            }
+            else
+            {
+                var buffer = new StringWriter();
+                Console.SetOut(buffer);
+                try
+                {
+                    ResetRequestState();
+                    exit = Run(args);
+                }
+                finally
+                {
+                    Console.SetOut(console);
+                }
+                captured = buffer.ToString();
+            }
+            var bytes = Encoding.UTF8.GetBytes(ServeProtocol.Response(exit, captured) + "\n");
+            output.Write(bytes, 0, bytes.Length);
+            output.Flush();
+            // Every scan leaves COM wrappers for the finalizer; a one-shot process never lived
+            // long enough to notice.
+            if (++served % 50 == 0)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+        }
+        return 0;
+    }
+
+    // What a one-shot run starts with. The UIA connection is the one thing kept: it is the
+    // point of serving.
+    private static void ResetRequestState()
+    {
+        _options = new();
+        _appPids = new();
+        _verifiedSearchOrigin = null;
+    }
+
+    private static Int32 Run(String[] args)
     {
         try
         {

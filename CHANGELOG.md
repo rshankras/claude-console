@@ -1,3 +1,15 @@
+## Vizhi Desktop [1.1.1] — Unreleased — Windows keys answer without the wait
+
+### Fixed
+- **Windows: a key press no longer waits 1–6 seconds** (#155, reported by Logitech QA on a managed
+  Windows 11 laptop). Every UI Automation call started a new copy of the 14 MB helper, and a press
+  made two or three calls; on a machine with endpoint security each start cost about 0.6 s before
+  any work, and a call that ran past its budget was killed, so that press did nothing. The plugin
+  now starts the helper once and keeps it running while the plugin is loaded, one for the
+  background status reads and one for the keys, so a status read never holds up a press. Calls
+  keep their time limits; a helper that hangs is replaced, a call is never repeated, and the
+  helpers end when the plugin stops or is uninstalled. The Mac is unchanged.
+
 ## Vizhi Desktop [1.1.0] — 2026-10-02 — Windows, and the 1.0.0 QA fixes
 
 Packaged for Windows (`pluginFolderWin`, the toolkit and the UI Automation helper, signed at

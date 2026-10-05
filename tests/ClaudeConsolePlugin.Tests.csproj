@@ -57,6 +57,7 @@
     <!-- The Windows desktop helper's matching rules, kept free of UI Automation so the suite
          can hold them to the macOS helper's answers on any platform. -->
     <Compile Include="..\tools\windows\VizhiDesktopUia\UiaMatching.cs" />
+    <Compile Include="..\tools\windows\VizhiDesktopUia\ServeProtocol.cs" />
     <Compile Include="..\src\Agents\**\*.cs" />
     <!-- Each product's application binding broke clean installs in 1.8.0-1.8.4 by naming a process
          that doesn't exist on the running OS, so every product's belongs under test. The desktop
