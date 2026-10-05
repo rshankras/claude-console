@@ -82,7 +82,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 windows.ChangesTrace = changesTrace;
                 // The serving helpers must end with the plugin: a running helper would hold its
                 // executable open while Options+ uninstalls or replaces the package (#155).
-                Lifetime.OnStop(windows.Shutdown);
+                Lifetime.Bind(windows.Start, windows.Shutdown);
             }
             Files = new DesktopFilePicker(automation, Context, System.IO.Path.Combine(
                 BridgeManager.HomeOverride ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"));

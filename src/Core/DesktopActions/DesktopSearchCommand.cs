@@ -40,7 +40,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override void RunCommand(String parameter)
         {
-            DesktopServices.Run(() => this.RunDesktopCommand(parameter));
+            RunDesktopAction(parameter, () => this.RunDesktopCommand(parameter));
         }
 
         private void RunDesktopCommand(String parameter)
@@ -60,7 +60,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         }
 
         protected override String GetCommandDisplayName(String parameter, PluginImageSize size) => "\u200B";
-        protected override BitmapImage GetCommandImage(String parameter, PluginImageSize size)
+        protected override BitmapImage GetDesktopCommandImage(String parameter, PluginImageSize size)
         {
             if (!DesktopServices.Declared) return KeyImage.RenderControlTile(size, "Find Chat", "search", false, "Unavailable");
             var search = DesktopServices.Search;

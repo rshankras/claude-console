@@ -38,7 +38,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 return;
             }
             _feedback.Show("Opening");
-            if (!DesktopServices.Run(() => _feedback.Show(Execute(mode, DesktopServices.Automation,
+            if (!RunDesktopAction(parameter, () => _feedback.Show(Execute(mode, DesktopServices.Automation,
                 () => this.Plugin.ExecuteGenericAction(GenericActionNames.DynamicFolder, SearchFolderParameter, 0)))))
                 _feedback.Show("Busy");
         }
@@ -70,7 +70,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 !state.Available ? "Open App" : state.Mode == "ChatGPT" ? null : "Unavailable");
 
         protected override String GetCommandDisplayName(String parameter, PluginImageSize size) => "\u200B";
-        protected override BitmapImage GetCommandImage(String parameter, PluginImageSize size)
+        protected override BitmapImage GetDesktopCommandImage(String parameter, PluginImageSize size)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             _shownMode = state.Mode;

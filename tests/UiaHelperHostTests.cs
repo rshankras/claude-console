@@ -15,7 +15,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
 
     /// <summary>
     /// #155: the Windows helper is served from one long-lived process per lane. These tests drive
-    /// the host against a Python stand-in that speaks the same line protocol, so the lifecycle
+    /// the host against a .NET stand-in that speaks the same line protocol, so the lifecycle
     /// (reuse, overrun, death, busy fallback, an old helper) is pinned on any platform.
     /// </summary>
     public sealed class UiaHelperHostTests : IDisposable
@@ -23,57 +23,33 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         private readonly String _dir = Path.Combine(Path.GetTempPath(), "uia-host-" + Guid.NewGuid().ToString("N"));
         private readonly List<UiaHelperHost> _hosts = new();
 
-        // Answers ["pid"] with its pid, ["sleep", ms] after a pause, ["die"] by exiting,
-        // anything else by echoing the argv back as the "out" JSON.
-        private const String ServingHelper = """
-            #!/usr/bin/env python3
-            import json, os, sys, time
-            if sys.argv[1:] != ["serve"]:
-                print(json.dumps({"ok": True, "oneshot": sys.argv[1:]})); sys.exit(0)
-            for line in sys.stdin:
-                args = json.loads(line)
-                if args[0] == "die": sys.exit(0)
-                if args[0] == "sleep": time.sleep(int(args[1]) / 1000)
-                out = str(os.getpid()) if args[0] == "pid" else json.dumps(args)
-                sys.stdout.write(json.dumps({"exit": 0, "out": out}) + "\n"); sys.stdout.flush()
-            """;
-
-        // What a helper from before #155 does with `serve`: an unknown verb, then exit.
-        private const String OldHelper = """
-            #!/usr/bin/env python3
-            import json, sys
-            print(json.dumps({"ok": False, "error": "unknown-verb " + sys.argv[1]}))
-            """;
-
         public UiaHelperHostTests() => Directory.CreateDirectory(_dir);
-
         public void Dispose()
         {
             foreach (var host in _hosts) host.Shutdown();
             try { Directory.Delete(_dir, recursive: true); } catch { }
         }
-
-        private String Script(String name, String body)
+        private UiaHelperHost Host(String mode = "normal", Func<String, List<String>, Int32, String> oneShot = null)
         {
-            var path = Path.Combine(_dir, name);
-            File.WriteAllText(path, body.Replace("\r\n", "\n"));
-            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-            return path;
-        }
-
-        private UiaHelperHost Host(String script, Func<String, List<String>, Int32, String> oneShot = null)
-        {
-            var host = new UiaHelperHost("test", () => script, oneShot);
+            var dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+            if (String.IsNullOrEmpty(dotnet)) dotnet = Path.GetFullPath(Path.Combine(
+                System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", "..", OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet"));
+            var host = new UiaHelperHost("test", () => dotnet, oneShot, file =>
+            {
+                var info = new ProcessStartInfo(file);
+                info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "uia-fixture", "UiaHostFixture.dll"));
+                info.ArgumentList.Add(mode);
+                return info;
+            });
             _hosts.Add(host);
             return host;
         }
-
         private static List<String> Args(params String[] args) => new(args);
 
-        [ScriptHelperFact]
+        [Fact]
         public void One_process_serves_every_call_and_returns_the_verb_output()
         {
-            var host = this.Host(this.Script("helper", ServingHelper));
+            var host = this.Host("normal");
             var first = host.Run(Args("pid"), 2000);
             Assert.Equal(first, host.Run(Args("pid"), 2000));
             Assert.Equal(first, host.ServingPid?.ToString());
@@ -81,10 +57,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(new[] { "status", "--text", "தமிழ் \"quoted\"\nline" }, echoed);
         }
 
-        [ScriptHelperFact]
+        [Fact]
         public void An_overrun_is_killed_returns_nothing_and_the_next_call_starts_afresh()
         {
-            var host = this.Host(this.Script("helper", ServingHelper));
+            var host = this.Host("normal");
             var before = host.Run(Args("pid"), 2000);
             Assert.Null(host.Run(Args("sleep", "1500"), 300));
             Assert.Null(host.ServingPid);
@@ -93,10 +69,10 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.NotEqual(before, after);
         }
 
-        [ScriptHelperFact]
+        [Fact]
         public void A_helper_that_died_between_calls_is_replaced_without_losing_the_call()
         {
-            var host = this.Host(this.Script("helper", ServingHelper));
+            var host = this.Host("normal");
             var before = host.Run(Args("pid"), 2000);
             // Dies while answering: the call that killed it reports nothing (never repeated)...
             Assert.Null(host.Run(Args("die"), 2000));
@@ -106,11 +82,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.NotEqual(before, after);
         }
 
-        [ScriptHelperFact]
+        [Fact]
         public void A_busy_lane_runs_the_call_as_a_one_shot_instead_of_waiting()
         {
             var oneShots = 0;
-            var host = this.Host(this.Script("helper", ServingHelper), (_, _, _) => { Interlocked.Increment(ref oneShots); return "one-shot"; });
+            var host = this.Host("normal", (_, _, _) => { Interlocked.Increment(ref oneShots); return "one-shot"; });
             host.Run(Args("pid"), 2000);
             var slow = Task.Run(() => host.Run(Args("sleep", "800"), 3000));
             Thread.Sleep(200);
@@ -121,21 +97,21 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Equal(1, oneShots);
         }
 
-        [ScriptHelperFact]
+        [Fact]
         public void A_helper_without_serve_falls_back_to_one_process_per_call_for_the_load()
         {
             var oneShots = new List<List<String>>();
-            var host = this.Host(this.Script("old-helper", OldHelper), (_, args, _) => { oneShots.Add(args); return "one-shot"; });
+            var host = this.Host("old", (_, args, _) => { oneShots.Add(args); return "one-shot"; });
             Assert.Equal("one-shot", host.Run(Args("status"), 2000));
             Assert.Equal("one-shot", host.Run(Args("press"), 2000));
             Assert.Equal(2, oneShots.Count);
             Assert.Null(host.ServingPid);
         }
 
-        [ScriptHelperFact]
+        [Fact]
         public void Shutdown_ends_the_serving_process()
         {
-            var host = this.Host(this.Script("helper", ServingHelper));
+            var host = this.Host("normal");
             var pid = Int32.Parse(host.Run(Args("pid"), 2000));
             host.Shutdown();
             Assert.Null(host.ServingPid);
@@ -163,6 +139,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Null(ServeProtocol.ParseRequest("{\"verb\":\"status\"}"));
             Assert.Null(ServeProtocol.ParseRequest("[]"));
             Assert.Null(ServeProtocol.ParseRequest("[\"status\",1]"));
+            Assert.Null(UiaHelperHost.ParseResponse("{\"exit\":9999999999999999,\"out\":\"\"}"));
+            Assert.Null(ServeProtocol.ParseResponse("{\"exit\":9999999999999999,\"out\":\"\"}"));
         }
 
         [Fact]
@@ -173,6 +151,16 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.False(WindowsDesktopAutomation.IsPollVerb(Args("press")));
             Assert.False(WindowsDesktopAutomation.IsPollVerb(Args("focus")));
             Assert.False(WindowsDesktopAutomation.IsPollVerb(Args()));
+            Assert.True(WindowsDesktopAutomation.UsePollLane(Args("status")));
+            var runner = new DesktopActionRunner { Schedule = action => action() };
+            var statusUsesPoll = true; var frontmostUsesPoll = true;
+            Assert.True(runner.TryRun(() =>
+            {
+                statusUsesPoll = WindowsDesktopAutomation.UsePollLane(Args("status"));
+                frontmostUsesPoll = WindowsDesktopAutomation.UsePollLane(Args("frontmost"));
+            }));
+            Assert.False(statusUsesPoll); Assert.False(frontmostUsesPoll);
+            Assert.True(WindowsDesktopAutomation.UsePollLane(Args("status")));
         }
 
         private static Boolean Alive(Int32 pid)
@@ -180,18 +168,72 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             try { using var p = Process.GetProcessById(pid); return !p.HasExited; }
             catch (ArgumentException) { return false; }
         }
-    }
 
-    /// <summary>
-    /// A fact that runs a Python stand-in for the helper as an executable script, so it needs a
-    /// Unix shebang. On Windows it is REPORTED as skipped; the real helper is covered there by
-    /// the device pass (#155).
-    /// </summary>
-    public sealed class ScriptHelperFactAttribute : FactAttribute
-    {
-        public ScriptHelperFactAttribute()
+        [Fact]
+        public void A_corrupt_response_after_an_action_never_replays_that_action()
         {
-            if (OperatingSystem.IsWindows()) this.Skip = "the helper stand-in is a Python script run through its shebang";
+            var fallback = 0;
+            var host = Host("normal", (_, _, _) => { fallback++; return "replayed"; });
+            var evidence = Path.Combine(_dir, "acted");
+            Assert.Null(host.Run(Args("corrupt", evidence), 1000));
+            Assert.Single(File.ReadAllLines(evidence)); Assert.Equal(0, fallback);
+            Assert.NotNull(host.Run(Args("pid"), 1000));
+        }
+
+        [Fact]
+        public void Startup_has_an_allowance_but_warm_requests_keep_their_own_budget()
+        {
+            var host = Host("cold");
+            Assert.NotNull(host.Run(Args("pid"), 200));
+            Assert.Null(host.Run(Args("sleep", "1000"), 200));
+        }
+
+        [Fact]
+        public async Task Shutdown_cancels_a_request_and_cannot_restart_until_explicitly_started()
+        {
+            var host = Host();
+            var pid = Int32.Parse(host.Run(Args("pid"), 2000));
+            var entered = Path.Combine(_dir, "entered");
+            var running = Task.Run(() => host.Run(Args("sleep", "30000", entered), 35000));
+            await WaitForFile(entered);
+            host.Shutdown();
+            Assert.Null(await running.WaitAsync(TimeSpan.FromSeconds(3)));
+            Assert.Null(host.Run(Args("pid"), 1000));
+            Assert.True(SpinWait.SpinUntil(() => !Alive(pid), 3000));
+            host.Start(); Assert.NotNull(host.Run(Args("pid"), 2000));
+        }
+
+        [Fact]
+        public async Task Shutdown_also_terminates_a_contended_one_shot()
+        {
+            var host = Host(); host.Run(Args("pid"), 2000);
+            var entered = Path.Combine(_dir, "first"); var second = Path.Combine(_dir, "second");
+            var first = Task.Run(() => host.Run(Args("sleep", "30000", entered), 35000));
+            await WaitForFile(entered);
+            var fallback = Task.Run(() => host.Run(Args("sleep", "30000", second), 35000));
+            await WaitForFile(second);
+            var pid = Int32.Parse(File.ReadAllText(second));
+            host.Shutdown();
+            Assert.Null(await first.WaitAsync(TimeSpan.FromSeconds(3)));
+            Assert.Null(await fallback.WaitAsync(TimeSpan.FromSeconds(3)));
+            Assert.True(SpinWait.SpinUntil(() => !Alive(pid), 3000));
+        }
+
+        [Fact]
+        public void A_helper_that_stops_reading_cannot_block_a_large_write_forever()
+        {
+            var host = Host("no-read"); var watch = Stopwatch.StartNew();
+            Assert.Null(host.Run(Args("write", new String('x', 2_000_000)), 100));
+            Assert.True(watch.ElapsedMilliseconds < 10000);
+            Assert.Null(host.ServingPid);
+        }
+
+        private static async Task WaitForFile(String path)
+        {
+            var deadline = Stopwatch.StartNew();
+            while ((!File.Exists(path) || new FileInfo(path).Length == 0) && deadline.ElapsedMilliseconds < 5000) await Task.Delay(20);
+            Assert.True(File.Exists(path));
         }
     }
+
 }

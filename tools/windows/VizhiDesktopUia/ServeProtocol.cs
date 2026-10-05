@@ -4,6 +4,7 @@
 //
 //   request   ["status","--process","app.exe",...]       the same argv a one-shot run takes
 //   response  {"exit":0,"out":"{\"ok\":true,...}"}        the one-shot exit code and stdout
+// The server first writes {"ready":1}; the client sends no action before that handshake.
 //
 // Both sides escape non-ASCII, so the console code page never touches dictated text.
 
@@ -73,7 +74,7 @@ internal static class ServeProtocol
                 || !root.TryGetProperty("exit", out var exit) || exit.ValueKind != JsonValueKind.Number
                 || !root.TryGetProperty("out", out var output) || output.ValueKind != JsonValueKind.String)
                 return null;
-            return (exit.GetInt32(), output.GetString()!);
+            return exit.TryGetInt32(out var code) ? (code, output.GetString()!) : null;
         }
         catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException)
         {

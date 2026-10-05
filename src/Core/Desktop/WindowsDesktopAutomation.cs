@@ -34,10 +34,13 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             _app = app;
             _poll = new UiaHelperHost("poll", () => PluginPaths.PackagedFile(HelperFileName));
             _keys = new UiaHelperHost("keys", () => PluginPaths.PackagedFile(HelperFileName));
-            this.Runner = (args, timeoutMs) => (IsPollVerb(args) ? _poll : _keys).Run(args, timeoutMs);
+            this.Runner = (args, timeoutMs) => (UsePollLane(args) ? _poll : _keys).Run(args, timeoutMs);
         }
 
         internal static Boolean IsPollVerb(List<String> args) => args.Count > 0 && args[0] is "frontmost" or "status";
+        // A key's safety/status checks belong with the key too, even if a monitor status read
+        // is already in flight. Routing only by verb forced these checks into one-shot fallbacks.
+        internal static Boolean UsePollLane(List<String> args) => IsPollVerb(args) && !DesktopActionRunner.IsExecuting;
 
         /// <summary>Ends both serving helpers; called when the plugin stops, so nothing outlives it.</summary>
         internal void Shutdown()
@@ -45,6 +48,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             _poll.Shutdown();
             _keys.Shutdown();
         }
+        internal void Start() { _poll.Start(); _keys.Start(); }
 
         public Boolean? IsAppFrontmost()
         {

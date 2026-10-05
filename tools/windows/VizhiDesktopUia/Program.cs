@@ -104,6 +104,9 @@ internal static partial class Program
         var output = Console.OpenStandardOutput();
         var console = Console.Out;
         try { _ = Uia; } catch (Exception) { /* the first request reports it */ }
+        var ready = Encoding.UTF8.GetBytes("{\"ready\":1}\n");
+        output.Write(ready, 0, ready.Length);
+        output.Flush();
 
         // stdin is read on its own thread. This one is a COM STA and lives for the whole session,
         // so it must not sit in a blocking ReadLine: an STA that never pumps stalls anything that

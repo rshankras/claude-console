@@ -22,14 +22,14 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         protected override void RunCommand(String parameter)
         {
             if (!DesktopServices.Declared) return;
-            DesktopServices.Run(() =>
+            RunDesktopAction(parameter, () =>
             {
                 if (DesktopServices.Files.Execute(parameter, DesktopServices.App, BridgeManager.Instance.Voice))
                     this.Plugin.ExecuteGenericAction(ActionString.FromString(PluginDynamicFolder.NavigateUpActionName).ActionName, null, 0);
             });
         }
         protected override String GetCommandDisplayName(String _, PluginImageSize __) => "\u200B";
-        protected override BitmapImage GetCommandImage(String parameter, PluginImageSize size)
+        protected override BitmapImage GetDesktopCommandImage(String parameter, PluginImageSize size)
         {
             var picker = DesktopServices.Files; var state = picker?.Current ?? new();
             if (parameter == "attach") return KeyImage.RenderIntentTile(size, state.Busy ? state.Feedback ?? "Loading" : "Attach " + state.Selected.Length,

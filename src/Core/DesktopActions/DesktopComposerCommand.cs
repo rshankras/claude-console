@@ -29,7 +29,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         protected override void RunCommand(String actionParameter)
         {
             var shownIntent = _shownSendStop;
-            DesktopServices.Run(() => this.RunDesktopCommand(actionParameter, shownIntent));
+            RunDesktopAction(actionParameter, () => this.RunDesktopCommand(actionParameter, shownIntent));
         }
 
         private void RunDesktopCommand(String actionParameter, String shownIntent)
@@ -100,7 +100,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) => "\u200B";
 
-        protected override BitmapImage GetCommandImage(String actionParameter, PluginImageSize imageSize)
+        protected override BitmapImage GetDesktopCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
             if (actionParameter == "send_stop") _shownSendStop = SendStopIntent(state);
