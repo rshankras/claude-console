@@ -30,6 +30,8 @@
   Confirmation reads use cached-only references; the invocation still resolves and checks a
   fresh live target. Persistent UIA workers now use a long-lived MTA thread.
   An unconfirmed or lost panel reply shows "Check app", since the request may have succeeded.
+- Windows View Changes reads a smaller control tree while preserving conversation, document,
+  dialog and target checks; transcript and diff text no longer inflate every panel scan.
 
 ## Vizhi Desktop [1.1.0] — 2026-10-02 — Windows, and the 1.0.0 QA fixes
 

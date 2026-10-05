@@ -71,8 +71,14 @@ View Changes performs its context validation inside `open-panel`, avoiding a sep
 status preflight. One fresh snapshot establishes the selected conversation, mode, modal state,
 document ownership and whether the panel is already open. An actual press still requires a
 second fresh snapshot with the same target identity, followed by panel confirmation. An already
-open panel needs only one full scan. The first observation and post-press confirmation use
+open panel needs only one snapshot. The first observation and post-press confirmation use
 cached-only references; the second observation obtains live references for the invocation.
+These panel snapshots use a control view: all actionable nodes and button candidates, nested
+document boundaries, project list items, tabs, tabpanels, dialogs and menus remain. Plain
+transcript/diff text and layout wrappers are omitted. The provider promotes retained descendants,
+so document ownership, sidebar ancestry and nested-button ambiguity still apply. Status,
+approval and composer operations keep their raw snapshots. `open-panel --full-scan` retains the
+raw path for diagnosis; `inspect --panel-controls` shows the reduced view.
 A selected review tab and matching app-owned tabpanel (`--panel-tab`) confirm an open panel
 even while its file controls are loading. Unselected tabs, duplicate panels and nested preview
 documents do not count. `--timing` reports `fullScans`, the apartment, and numeric fetch/walk
@@ -80,6 +86,16 @@ timings per scan; `open-panel --dry` validates the route without invoking the op
 The helper still refuses ambiguous or changed context.
 If confirmation times out or its reply is lost, the keypad says "Check app" rather than
 asserting that the panel failed to open. It never repeats the invocation automatically.
+
+`tests/windows/Test-UiaPanelSnapshots.ps1` compares dry-run results in both views, including a
+hash of conversation/document/opener identities (`--dry --audit-panel-view`), and checks a
+wrong-mode refusal. It focuses the app but does not invoke the opener. The 2026-10-05 local
+device pass matched five pairs each with the panel open and closed; the open panel had 415
+retained elements versus 1,613 raw, with median checks of 100 ms versus 206 ms. End-to-end opens
+still depend on app rendering and provider stalls; these are local helper measurements, not
+managed-endpoint QA acceptance. If the first post-press snapshot blocks and returns the pre-open
+tree, the helper takes a second fresh observation even if that read consumed the 3 s confirmation
+window. The client's 7 s overall request deadline still applies; no press is repeated.
 
 Startup and work have separate deadlines. The readiness handshake measures startup, with a 5 s
 ceiling; once ready, each request gets its own existing operation budget. A first action cannot

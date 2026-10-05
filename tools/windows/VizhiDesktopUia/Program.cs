@@ -90,8 +90,7 @@ internal static partial class Program
     private static HashSet<Int32> _appPids = new();
     private static Dictionary<String, List<String>> _options = new();
     private static readonly UiaRootCache<IUIAutomationElement> Roots = new();
-    private static IUIAutomationCacheRequest? _cacheRequest;
-    private static IUIAutomationCacheRequest? _readCacheRequest;
+    private static readonly Dictionary<(Boolean CachedOnly, Boolean PanelControls), IUIAutomationCacheRequest> CacheRequests = new();
     private static Stopwatch _requestTime = new();
     private static Int64 _targetMs, _scanMs, _invokeMs, _focusMs;
     private static Int32 _fullScans;
@@ -402,20 +401,19 @@ internal static partial class Program
 
     // ---- scan --------------------------------------------------------------
 
-    private static IUIAutomationCacheRequest CacheRequest(Boolean cachedOnly = false)
+    private static IUIAutomationCacheRequest CacheRequest(Boolean cachedOnly = false, Boolean panelControls = false)
     {
-        var previous = cachedOnly ? _readCacheRequest : _cacheRequest;
-        if (previous != null) return previous;
+        var key = (cachedOnly, panelControls);
+        if (CacheRequests.TryGetValue(key, out var previous)) return previous;
         var request = Uia.CreateCacheRequest();
         foreach (var id in CachedProperties)
         {
             request.AddProperty(id);
         }
         request.TreeScope = UiaIds.TreeScopeSubtree;
-        request.TreeFilter = Uia.RawViewCondition;
+        request.TreeFilter = panelControls ? PanelTreeFilter() : Uia.RawViewCondition;
         request.AutomationElementMode = cachedOnly ? UiaIds.ElementModeNone : UiaIds.ElementModeFull;
-        if (cachedOnly) _readCacheRequest = request;
-        else _cacheRequest = request;
+        CacheRequests.Add(key, request);
         return request;
     }
 
@@ -424,10 +422,10 @@ internal static partial class Program
     /// (a cache request scoped to the subtree); the walk below is then in-process. Per-node
     /// property reads, the WPF wrapper's way, cost ~2 s for a 365-node tree on the live app.
     /// </summary>
-    private static Scan ScanTarget(Target target, Boolean cachedOnly = false)
+    private static Scan ScanTarget(Target target, Boolean cachedOnly = false, Boolean panelControls = false)
     {
         RequireTarget(target);
-        return ScanWindow(target.Hwnd, cachedOnly);
+        return ScanWindow(target.Hwnd, cachedOnly, panelControls);
     }
 
     private static void RequireTarget(Target target)
@@ -439,16 +437,16 @@ internal static partial class Program
         }
     }
 
-    private static Scan ScanWindow(IntPtr hwnd, Boolean cachedOnly = false)
+    private static Scan ScanWindow(IntPtr hwnd, Boolean cachedOnly = false, Boolean panelControls = false)
     {
         _fullScans++;
         var timer = Stopwatch.StartNew();
         try
         {
             var root = Roots.Read(hwnd.ToInt64(), Win32.PidOf(hwnd), () => Uia.ElementFromHandle(hwnd),
-                element => element.BuildUpdatedCache(CacheRequest(cachedOnly)));
+                element => element.BuildUpdatedCache(CacheRequest(cachedOnly, panelControls)));
             var fetchMs = timer.ElapsedMilliseconds;
-            _scanPath = _scanPath is "query" or "full-fallback" ? "full-fallback" : "full";
+            _scanPath = panelControls ? "panel-controls" : _scanPath is "query" or "full-fallback" ? "full-fallback" : "full";
             var scan = ReadTree(root);
             if (_options.ContainsKey("--timing")) ScanTimings.Add(new Dictionary<String, Object?>
             {
@@ -538,12 +536,12 @@ internal static partial class Program
 
     // Bounded wait for the web content — used by the acting verbs (which must not act on a
     // half tree), NOT by status (a status poll reports surface=false immediately and cheaply).
-    private static Scan? WaitForSurface(Target target, Int32 milliseconds, Boolean cachedOnly = false)
+    private static Scan? WaitForSurface(Target target, Int32 milliseconds, Boolean cachedOnly = false, Boolean panelControls = false)
     {
         var deadline = Stopwatch.StartNew();
         do
         {
-            var scan = ScanTarget(target, cachedOnly);
+            var scan = ScanTarget(target, cachedOnly, panelControls);
             if (scan.Surface)
             {
                 return scan;
@@ -580,7 +578,7 @@ internal static partial class Program
     private static Int32 InspectTarget(Target target, Boolean all)
     {
         var timer = Stopwatch.StartNew();
-        var scan = ScanTarget(target);
+        var scan = ScanTarget(target, panelControls: _options.ContainsKey("--panel-controls"));
         var elapsed = timer.ElapsedMilliseconds;
         var interesting = scan.Nodes.Where(n => all || n.Pressable
                 || n.Role is "Image" or "ProgressBar" or "Edit" or "Document" or "StatusBar" or "Window" or "Menu" or "Hyperlink" or "ComboBox")
@@ -960,7 +958,8 @@ internal static partial class Program
         {
             return Fail("panel-unavailable", ExitNoMatch);
         }
-        var initial = WaitForSurface(target, 1000, cachedOnly: true);
+        var panelControls = !options.ContainsKey("--full-scan");
+        var initial = WaitForSurface(target, 1000, cachedOnly: true, panelControls: panelControls);
         if (initial == null) return Fail("panel-unavailable", ExitNoMatch);
         var marker = Value(options, "--conv-marker") ?? "";
         var conversation = UiaMatching.SelectedConversation(initial.Nodes, marker);
@@ -971,7 +970,7 @@ internal static partial class Program
             RequireTarget(target);
             if (!AppIsFrontmost(target)) return (null, "panel-foreground-changed", ExitChanged);
             if (Win32.WindowTitle(target.Hwnd) != target.Title) return (null, "panel-window-changed", ExitChanged);
-            var scan = observation ?? ScanTarget(target, cachedOnly: !forInvocation);
+            var scan = observation ?? ScanTarget(target, cachedOnly: !forInvocation, panelControls: panelControls);
             if (!scan.Surface) return (null, "panel-surface-missing", ExitChanged);
             if (UiaMatching.SelectedConversation(scan.Nodes, marker) != conversation) return (null, "panel-conversation-changed", ExitChanged);
             var modes = scan.Nodes.Where(n => n.Text.StartsWith(prefix, StringComparison.Ordinal)).ToList();
@@ -987,8 +986,22 @@ internal static partial class Program
         // Only a possible invocation needs a second read to reconfirm the same target.
         var (nodes, error, code) = Checked(initial);
         if (nodes == null) return Fail(error!, code);
+        Dictionary<String, Object?> PanelResult(Boolean alreadyOpen, Boolean dry = false)
+        {
+            var result = new Dictionary<String, Object?> { ["opened"] = !dry };
+            if (dry) { result["dry"] = true; result["wouldOpen"] = true; }
+            else result["alreadyOpen"] = alreadyOpen;
+            // Native parity checks compare context and target identity across tree views.
+            // Only a hash leaves the helper; no conversation labels or element ids do.
+            if (options.ContainsKey("--dry") && options.ContainsKey("--audit-panel-view"))
+                result["contextFingerprint"] = UiaMatching.Fingerprint(String.Join("\n", new[] {
+                    conversation, expectedMode, nodes[0].RuntimeId, Visible(nodes).ToString(),
+                    String.Join("\n", UiaMatching.PanelOpeners(nodes, openers, turnOpeners).Select(n => n.RuntimeId)),
+                }));
+            return result;
+        }
         if (Visible(nodes) > 1) return Fail("panel-ambiguous", ExitNoMatch);
-        if (Visible(nodes) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
+        if (Visible(nodes) == 1) return Emit(PanelResult(alreadyOpen: true));
 
         var candidates = UiaMatching.PanelOpeners(nodes, openers, turnOpeners);
         if (candidates.Count > 1) return Fail("panel-opener-multiple", ExitNoMatch);
@@ -999,22 +1012,25 @@ internal static partial class Program
         var (fresh, freshError, freshCode) = Checked(forInvocation: true);
         if (fresh == null) return Fail(freshError!, freshCode);
         if (Visible(fresh) > 1) return Fail("panel-ambiguous", ExitNoMatch);
-        if (Visible(fresh) == 1) return Emit(new Dictionary<String, Object?> { ["opened"] = true, ["alreadyOpen"] = true });
+        if (Visible(fresh) == 1) return Emit(PanelResult(alreadyOpen: true));
         var confirmed = UiaMatching.PanelOpeners(fresh, openers, turnOpeners);
         if (confirmed.Count != 1 || !SameElement(candidates[0], confirmed[0])) return Fail("panel-target-changed", ExitChanged);
         if (options.ContainsKey("--dry"))
-            return Emit(new Dictionary<String, Object?> { ["opened"] = false, ["dry"] = true, ["wouldOpen"] = true });
+            return Emit(PanelResult(alreadyOpen: false, dry: true));
         var invokeTime = Stopwatch.StartNew();
         if (!Invoke(confirmed[0])) return Fail("panel-press-failed", ExitError);
         _invokeMs = invokeTime.ElapsedMilliseconds;
 
-        // The macOS helper waits 1.2 s. Here one check is a whole UIA scan (~350 ms), and the
-        // first review after a turn loads slower than a reopened one: the device pass recorded
-        // panel-unconfirmed on a tab that did open. A confirmed panel returns at once.
+        // A provider can capture the pre-open tree, then block while the app renders before
+        // returning it. That first stale observation must not consume the whole confirmation
+        // window: allow one fresh read after it returns. The client's overall 7 s deadline
+        // still bounds the request, and the opener is never invoked again.
         var deadline = Stopwatch.StartNew();
-        while (deadline.ElapsedMilliseconds < 3000)
+        var observations = 0;
+        while (deadline.ElapsedMilliseconds < 3000 || observations < 2)
         {
             var (again, againError, againCode) = Checked();
+            observations++;
             if (again == null) return Fail(againError!, againCode);
             if (Visible(again) > 1) return Fail("panel-ambiguous", ExitNoMatch);
             if (Visible(again) == 1)
