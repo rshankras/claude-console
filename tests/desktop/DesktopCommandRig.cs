@@ -355,7 +355,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.False(confirmation.IsArmed(parameter, state, now.AddSeconds(7)));
             Assert.Equal(5, repaints); // four arms and helper guard refusal
             Press(DesktopState.Unavailable, 8); Press(state, 8, "unknown");
-            Assert.Single(fake.Calls);
+            Assert.Equal(new[] { "guarded", "status" }, fake.Calls.Select(c => c.Name));
         }
 
         [Theory]

@@ -81,8 +81,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         private readonly DesktopSlotMap _slotMap = new DesktopSlotMap();
         private Timer _timer;
         private readonly Object _lifecycle = new();
-        private Int64 _generation, _backgroundReadDue;
-        private Boolean _started;
+        private Int64 _generation, _backgroundReadDue, _revision;
+        private Boolean _started, _refreshRequested;
         private Int32 _polling, _slowReads;
         internal Func<Boolean> IsCommandBusy { get; set; } = () => false;
         internal Func<Int64> Clock { get; set; } = () => Environment.TickCount64;
@@ -91,7 +91,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         /// <summary>Fires on every material change (activity, risk, attention, mode, card text).</summary>
         public event Action<DesktopState> OnChanged;
 
-        public DesktopState Current { get; private set; } = DesktopState.Unavailable;
+        private DesktopState _current = DesktopState.Unavailable;
+        public DesktopState Current => Volatile.Read(ref _current);
 
         public DesktopMonitor(IDesktopAutomation automation) => _automation = automation;
 
@@ -102,7 +103,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 if (_started) return;
                 _started = true;
                 var generation = ++_generation;
-                _backgroundReadDue = 0;
+                _backgroundReadDue = 0; _refreshRequested = false;
                 _timer = new Timer(_ => Poll(generation), null, 0, Timeout.Infinite);
             }
         }
@@ -111,13 +112,50 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             lock (_lifecycle)
             {
-                _started = false; _generation++;
+                _started = false; _generation++; _revision++; _refreshRequested = false;
                 _timer?.Dispose(); _timer = null;
             }
         }
 
         public void Dispose() => Stop();
         internal void PollOnce() => Poll(null);
+
+        // Called inside the action runner: Windows routes this read to the key worker, so a
+        // slow passive read cannot hold up the user's check. A passive result that started
+        // before this check must never overwrite the newer state or reset its confirmation.
+        internal DesktopState RefreshForCommand()
+        {
+            Int64 generation, revision;
+            lock (_lifecycle) { generation = _generation; revision = ++_revision; }
+            DesktopSnapshot snapshot;
+            try { snapshot = _automation.Status(); }
+            catch (Exception ex)
+            {
+                PluginLog.Warning(ex, "DesktopMonitor: command refresh failed");
+                snapshot = DesktopSnapshot.Unavailable;
+            }
+            lock (_lifecycle)
+            {
+                if (generation != _generation || revision != _revision) return DesktopState.Unavailable;
+                var next = Map(snapshot, _slotMap);
+                Apply(next);
+                _backgroundReadDue = Clock() + 15000;
+                return next;
+            }
+        }
+
+        // Coalesce requests, bypass the passive background throttle, and still yield to
+        // commands. Never start a second timer scan while the first one is in flight.
+        internal void RequestRefresh()
+        {
+            lock (_lifecycle)
+            {
+                _revision++;
+                _refreshRequested = true;
+                _backgroundReadDue = 0;
+                if (_started && Volatile.Read(ref _polling) == 0) _timer?.Change(0, Timeout.Infinite);
+            }
+        }
 
         private Boolean Valid(Int64? generation)
         {
@@ -128,7 +166,8 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             if (generation == null) return;
             lock (_lifecycle)
-                if (_started && generation == _generation) _timer?.Change(delay, Timeout.Infinite);
+                if (_started && generation == _generation)
+                    _timer?.Change(_refreshRequested ? Math.Min(delay, 250) : delay, Timeout.Infinite);
         }
 
         private void Poll(Int64? generation)
@@ -138,27 +177,38 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             // must not overlap native scans or allow the old callback to re-arm a new timer.
             if (Interlocked.Exchange(ref _polling, 1) != 0) { Arm(generation, 250); return; }
             var delay = 5000;
+            Int64 revision;
+            lock (_lifecycle) revision = _revision;
             try
             {
                 if (!Valid(generation)) return;
                 if (IsCommandBusy()) { delay = 500; return; }
                 var foreground = _automation.IsAppFrontmost() == true;
-                if (!foreground && Clock() < _backgroundReadDue) return;
+                lock (_lifecycle)
+                {
+                    if (!Valid(generation) || revision != _revision) { delay = 250; return; }
+                    if (!foreground && Clock() < _backgroundReadDue && !_refreshRequested) return;
+                    _refreshRequested = false;
+                }
                 var start = Clock();
                 var snapshot = _automation.Status();
                 var elapsed = Math.Max(0, Clock() - start);
-                _slowReads = elapsed >= 1000 ? Math.Min(4, _slowReads + 1) : 0;
-                if (!Valid(generation)) return;
-                var next = Map(snapshot, _slotMap);
-                this.Apply(next);
-                delay = PollDelay(next.Activity, next.VoiceChat == DesktopVoiceState.Active, _slowReads);
-                _backgroundReadDue = Clock() + Math.Max(15000, delay);
-                if (!foreground) delay = 5000; // Cheap foreground probe; full background reads are limited.
+                lock (_lifecycle)
+                {
+                    if (!Valid(generation) || revision != _revision) { delay = 250; return; }
+                    _slowReads = elapsed >= 1000 ? Math.Min(4, _slowReads + 1) : 0;
+                    var next = Map(snapshot, _slotMap);
+                    this.Apply(next);
+                    delay = PollDelay(next.Activity, next.VoiceChat == DesktopVoiceState.Active, _slowReads);
+                    _backgroundReadDue = Clock() + Math.Max(15000, delay);
+                    if (!foreground) delay = 5000; // Cheap foreground probe; full background reads are limited.
+                }
             }
             catch (Exception ex)
             {
                 PluginLog.Warning(ex, "DesktopMonitor: poll failed");
-                if (Valid(generation)) this.Apply(DesktopState.Unavailable);
+                lock (_lifecycle)
+                    if (Valid(generation) && revision == _revision) this.Apply(DesktopState.Unavailable);
                 delay = 10000;
             }
             finally
@@ -169,9 +219,14 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
             }
         }
 
-        internal static Int32 PollDelay(DesktopActivity activity, Boolean voiceActive, Int32 slowReads) =>
-            slowReads > 0 ? Math.Max(NextDelayMs(activity), Math.Min(30000, 3000 << Math.Min(3, slowReads - 1)))
-                : voiceActive ? PollMs : NextDelayMs(activity);
+        internal static Int32 PollDelay(DesktopActivity activity, Boolean voiceActive, Int32 slowReads)
+        {
+            if (slowReads == 0) return voiceActive ? PollMs : NextDelayMs(activity);
+            // An active task is exactly when approval cards appear. Keep slow idle scans
+            // backed off, but do not make a working task wait 6/12/24 seconds for its next read.
+            if (activity is DesktopActivity.Working or DesktopActivity.WaitingApproval) return 2000;
+            return Math.Max(NextDelayMs(activity), Math.Min(30000, 3000 << Math.Min(3, slowReads - 1)));
+        }
 
         private void Apply(DesktopState next)
         {
@@ -180,7 +235,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
                 return;
             }
 
-            this.Current = next;
+            Volatile.Write(ref _current, next);
             try { this.OnChanged?.Invoke(next); }
             catch (Exception ex) { PluginLog.Warning(ex, "DesktopMonitor: OnChanged handler failed"); }
         }

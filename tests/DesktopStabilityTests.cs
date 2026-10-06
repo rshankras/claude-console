@@ -195,12 +195,12 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
         public void Slow_scans_back_off_and_a_fast_scan_restores_normal_updates()
         {
             Int64 now = 100; var slow = true;
-            var app = new Automation { Read = () => { now += slow ? 1500 : 10; return new() { SurfaceAvailable = true, StopPresent = true }; } };
+            var app = new Automation { Read = () => { now += slow ? 1500 : 10; return new() { SurfaceAvailable = true }; } };
             using var monitor = new DesktopMonitor(app) { Clock = () => now };
             monitor.PollOnce(); Assert.Equal(3000, monitor.NextPollDelayMs);
             monitor.PollOnce(); Assert.Equal(6000, monitor.NextPollDelayMs);
             monitor.PollOnce(); Assert.Equal(12000, monitor.NextPollDelayMs);
-            slow = false; monitor.PollOnce(); Assert.Equal(1000, monitor.NextPollDelayMs);
+            slow = false; monitor.PollOnce(); Assert.Equal(3000, monitor.NextPollDelayMs);
         }
 
         [Fact]

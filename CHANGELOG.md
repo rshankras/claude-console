@@ -1,3 +1,18 @@
+## Vizhi Desktop [Unreleased]
+
+### Fixed
+- **Approve/Deny checks a stale key immediately** (#159). If the key has not shown a request,
+  the first tap shows **Checking**, reads the app once, and presents **Press again** when a
+  request is found. A subsequent tap acts only through the existing expected-card guard.
+  The discovery tap also arms a high-risk request, so it does not add a third confirmation tap.
+  An empty or unreadable result shows **No request** or **Check app**. No press is queued or replayed.
+- Slow foreground status reads now wait at most two seconds between reads while a task is
+  working or awaiting approval; idle and background throttles remain. A completed or unconfirmed
+  approval press requests a fresh monitor read. Older passive reads cannot replace the result
+  of an on-press check. Fixed result codes identify checking, arming, confirmation resets and
+  outcomes without logging the card text. Confirmation still resets if the request, conversation
+  or mode changes.
+
 ## Vizhi Desktop [1.1.1] — 2026-10-05 — Windows keys answer without the wait
 
 ### Fixed

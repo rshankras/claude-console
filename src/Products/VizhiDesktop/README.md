@@ -101,8 +101,8 @@ active when an application-specific profile does not override it:
 | Key | What it gives you |
 |---|---|
 | **Activity** | Working / Waiting / Ready at a glance — and *Hidden* when the app's window is locked or gone, because "cannot see" is not the same as "nothing to do" |
-| **Approve** | Answers the pending request. Amber for routine, **red** when the command looks destructive — press **Show ChatGPT** if you want the exact wording before deciding |
-| **Deny** | The other half. Lit only while something is actually pending |
+| **Approve** | Answers the shown request. If the key has not seen it yet, the first tap checks and shows **Press again**. Amber for routine, **red** when the command looks destructive — press **Show ChatGPT** if you want the exact wording before deciding |
+| **Deny** | Denies the shown request, with the same **Checking** / **Press again** behavior when the key is stale. Lit only while something is actually pending |
 | **Show ChatGPT** | The escape hatch: brings the app forward when you want to look before deciding |
 
 In Logi Options+, select your default profile, then drag those four actions from **Vizhi Desktop**

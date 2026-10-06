@@ -12,7 +12,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         private DateTime _until;
 
         private Boolean SameRequest(DesktopState state) => _request != null
-            && state.Activity == DesktopActivity.WaitingApproval
+            && state?.Activity == DesktopActivity.WaitingApproval
             && state.Risk == _request.Risk
             && !String.IsNullOrWhiteSpace(state.CardText)
             && state.CardText == _request.CardText
@@ -23,7 +23,11 @@ namespace Loupedeck.ClaudeConsolePlugin.Desktop
         {
             lock (_gate)
             {
-                if (!SameRequest(state)) Reset();
+                if (!SameRequest(state))
+                {
+                    if (_request != null) PluginLog.Info("DesktopApprovalConfirmation: result=confirmation-reset");
+                    Reset();
+                }
             }
         }
 
