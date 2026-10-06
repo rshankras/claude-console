@@ -1,6 +1,8 @@
 namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 {
     using System;
+    using System.Diagnostics;
+    using System.Threading;
 
     using Loupedeck.ClaudeConsolePlugin.Desktop;
 
@@ -25,12 +27,23 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         // (face flips to "Press again"), the second within the window fires. Amber stays
         // one-press; the risk grade is an extra warning, not the security boundary.
         private readonly DesktopApprovalConfirmation _confirmation = new DesktopApprovalConfirmation();
+        private readonly FailureFace _feedback;
+        private String _feedbackParameter, _checkingParameter;
+        private DesktopState _shownApprove = DesktopState.Unavailable, _shownDeny = DesktopState.Unavailable;
 
         public DesktopApprovalCommand()
             : base()
         {
             // A widget draws its own label (the decision tile), so Options+ adds no caption.
             this.SetWidget(true);
+            _feedback = new FailureFace(() => this.ActionImageChanged(), holdMs: 3000);
+            DesktopServices.Lifetime.OnStop(() =>
+            {
+                _feedback.Dispose(); _confirmation.Reset();
+                Volatile.Write(ref _checkingParameter, null);
+                Volatile.Write(ref _shownApprove, DesktopState.Unavailable);
+                Volatile.Write(ref _shownDeny, DesktopState.Unavailable);
+            });
             this.AddParameter(Approve, "Approve", "Agent")
                 .SetDescription("Approve the pending request (Allow once) — the app stays in the background");
             this.AddParameter(Deny, "Deny", "Agent")
@@ -41,6 +54,7 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
                 DesktopServices.OnMonitorChanged(state =>
                 {
                     _confirmation.Observe(state);
+                    if (HasRequest(state) && _feedback.Text is not (null or "Press again")) _feedback.Clear();
                     this.ActionImageChanged();
                 });
             }
@@ -48,36 +62,71 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
 
         protected override void RunCommand(String actionParameter)
         {
-            var shown = DesktopServices.Monitor?.Current;
-            RunDesktopAction(actionParameter, () => this.RunDesktopCommand(actionParameter, shown));
-        }
-
-        private void RunDesktopCommand(String actionParameter, DesktopState shown)
-        {
-            if (!DesktopServices.Declared)
+            if (actionParameter is not (Approve or Deny) || !DesktopServices.Declared) return;
+            var shown = actionParameter == Approve ? Volatile.Read(ref _shownApprove) : Volatile.Read(ref _shownDeny);
+            var monitor = DesktopServices.Monitor;
+            var app = DesktopServices.App;
+            var automation = DesktopServices.Automation;
+            var current = DesktopServices.Lifetime.CaptureGuard();
+            RunDesktopAction(actionParameter, () =>
             {
-                PluginLog.Warning("DesktopApprovalCommand: no desktop surface declared");
-                return;
-            }
-
-            Execute(actionParameter, shown, DesktopServices.App,
-                DesktopServices.Automation, _confirmation, DateTime.UtcNow, () => this.ActionImageChanged());
+                if (!current()) return;
+                _feedbackParameter = actionParameter;
+                _feedback.Clear();
+                try
+                {
+                    var result = Execute(actionParameter, shown, app, automation, _confirmation,
+                        DateTime.UtcNow, () => { if (current()) this.ActionImageChanged(); }, monitor,
+                        () => { Volatile.Write(ref _checkingParameter, actionParameter); this.ActionImageChanged(); });
+                    if (current() && result != null) _feedback.Show(result);
+                }
+                finally
+                {
+                    Volatile.Write(ref _checkingParameter, null);
+                    if (current()) this.ActionImageChanged();
+                }
+            });
         }
 
-        internal static void Execute(String actionParameter, DesktopState state, IDesktopAppAdapter app,
-            IDesktopAutomation automation, DesktopApprovalConfirmation confirmation, DateTime now, Action invalidate)
+        private static Boolean HasRequest(DesktopState state) => state?.Activity == DesktopActivity.WaitingApproval
+            && !String.IsNullOrWhiteSpace(state.CardText);
+
+        internal static String Execute(String actionParameter, DesktopState state, IDesktopAppAdapter app,
+            IDesktopAutomation automation, DesktopApprovalConfirmation confirmation, DateTime now, Action invalidate,
+            DesktopMonitor monitor = null, Action checking = null)
         {
-            if (actionParameter is not (Approve or Deny)) { return; }
+            if (actionParameter is not (Approve or Deny)) { return null; }
+            state ??= DesktopState.Unavailable;
             confirmation.Observe(state);
-            if (state.Activity != DesktopActivity.WaitingApproval || String.IsNullOrWhiteSpace(state.CardText))
+            if (!HasRequest(state))
             {
-                return;
+                PluginLog.Info($"DesktopApprovalCommand({actionParameter}): result=checking");
+                checking?.Invoke();
+                var elapsed = Stopwatch.StartNew();
+                // Refresh once on the action lane, then SHOW the request. This press must not
+                // also approve a card that the keypad had not presented when the user tapped.
+                var fresh = monitor != null ? monitor.RefreshForCommand() : DesktopMonitor.Map(automation.Status());
+                confirmation.Observe(fresh);
+                if (!HasRequest(fresh))
+                {
+                    var readable = fresh.Available && fresh.Activity != DesktopActivity.WaitingApproval;
+                    PluginLog.Info($"DesktopApprovalCommand({actionParameter}): result={(readable ? "no-request" : "unavailable")}");
+                    invalidate();
+                    return readable ? "No request" : "Check app";
+                }
+                // Start the confirmation window AFTER the possibly slow read. This discovery
+                // tap arms high-risk cards too; it must not turn two deliberate taps into three.
+                confirmation.Confirm(actionParameter, fresh, now.Add(elapsed.Elapsed));
+                PluginLog.Info($"DesktopApprovalCommand({actionParameter}): result=request-refreshed");
+                invalidate();
+                return "Press again";
             }
 
             if (state.Risk == ApprovalRisk.High && !confirmation.Confirm(actionParameter, state, now))
             {
+                PluginLog.Info($"DesktopApprovalCommand({actionParameter}): result=armed-high-risk");
                 invalidate();
-                return;
+                return "Press again";
             }
 
             confirmation.Reset();
@@ -87,12 +136,16 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
             // The expected-card guard: press only the card the keypad RENDERED. If it changed
             // between the glance and the thumb, the helper refuses and the honest outcome is
             // "look at the screen", not a silent approval of something unseen.
-            if (!automation.PressGuarded(labels, state.CardText, out _, out var error))
+            if (!automation.PressGuarded(labels, state.CardText, out _, out _))
             {
-                PluginLog.Warning($"DesktopApprovalCommand({actionParameter}): {error ?? "press failed"}");
+                PluginLog.Warning($"DesktopApprovalCommand({actionParameter}): result=press-unconfirmed");
+                monitor?.RequestRefresh();
                 invalidate();
-                return;
+                return "Check app";
             }
+            PluginLog.Info($"DesktopApprovalCommand({actionParameter}): result={(actionParameter == Approve ? "approved" : "denied")}");
+            monitor?.RequestRefresh();
+            return actionParameter == Approve ? "Approved" : "Denied";
         }
 
         protected override String GetCommandDisplayName(String actionParameter, PluginImageSize imageSize) => "\u200B";
@@ -125,8 +178,16 @@ namespace Loupedeck.ClaudeConsolePlugin.DesktopActions
         protected override BitmapImage GetDesktopCommandImage(String actionParameter, PluginImageSize imageSize)
         {
             var state = DesktopServices.Declared ? DesktopServices.Monitor.Current : DesktopState.Unavailable;
+            // A poll can publish between the last paint and a tap. Bind the tap to the state
+            // actually used to draw this key, not the latest unseen monitor value.
             var face = FaceFor(actionParameter, state, _confirmation, DateTime.UtcNow);
-            return KeyImage.RenderDecisionTile(imageSize, face.Label, face.Color,
+            var feedback = _feedbackParameter == actionParameter ? _feedback.Text : null;
+            var label = Volatile.Read(ref _checkingParameter) == actionParameter ? "Checking"
+                : feedback != null && feedback != "Press again" ? feedback : face.Label;
+            var shown = label is "Approve" or "Deny" or "Press again" ? state : DesktopState.Unavailable;
+            if (actionParameter == Approve) Volatile.Write(ref _shownApprove, shown);
+            else if (actionParameter == Deny) Volatile.Write(ref _shownDeny, shown);
+            return KeyImage.RenderDecisionTile(imageSize, label, face.Color,
                 approve: actionParameter == Approve, risk: face.Risk, targetLabel: TargetFor(actionParameter, state));
         }
 
