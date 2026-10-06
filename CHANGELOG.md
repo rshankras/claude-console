@@ -1,3 +1,12 @@
+## Vizhi for ChatGPT [1.1.3] — 2026-10-06 — Vizhi Desktop is now Vizhi for ChatGPT
+
+### Changed
+- **The plugin's name is now Vizhi for ChatGPT.** It matches its sibling, Vizhi for Codex, and says what
+  it is for. Options+, the Marketplace, the keypad layout's app entry, the microphone prompt and the
+  Windows file descriptions all use the new name. Nothing else changes: the internal name stays
+  `VizhiDesktop`, so an update keeps your layouts, settings, pending dictation and key bindings. A
+  layout imported before keeps working; its app entry keeps the old name until it is imported again.
+
 ## Vizhi Desktop [1.1.2] — 2026-10-06 — Approve and Deny never ignore a press
 
 ### Fixed

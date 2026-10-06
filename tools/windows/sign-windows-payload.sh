@@ -47,7 +47,7 @@ TSA="${CODESIGN_TSA:-http://time.certum.pl}"
 case "$PRODUCT" in
   ClaudeConsole) NAME="Claude Console";  URL="https://vizhi.dev/claude-console/" ;;
   VizhiCodex)    NAME="Vizhi for Codex"; URL="https://vizhi.dev/vizhi-codex/" ;;
-  VizhiDesktop)  NAME="Vizhi Desktop";   URL="https://vizhi.dev/vizhi-desktop/" ;;
+  VizhiDesktop)  NAME="Vizhi for ChatGPT";   URL="https://vizhi.dev/vizhi-desktop/" ;;
   *) echo "error: unsupported product '$PRODUCT' (expected ClaudeConsole, VizhiCodex or VizhiDesktop)." >&2; exit 2 ;;
 esac
 

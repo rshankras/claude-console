@@ -47,7 +47,7 @@ namespace Loupedeck.ClaudeConsolePlugin
 
         public VizhiDesktopPlugin()
         {
-            PluginLog.Init(this.Log, "Vizhi Desktop");
+            PluginLog.Init(this.Log, "Vizhi for ChatGPT");
             PluginResources.Init(this.Assembly);
             // Identity through the engine's seams, like the other two products: every action icon
             // resolves under desktop_icons, state-semantic art stays shared, and the bracket and

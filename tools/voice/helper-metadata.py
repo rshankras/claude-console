@@ -7,7 +7,7 @@ from pathlib import Path
 PRODUCTS = {
     "ClaudeConsole": ("Claude Console", "com.rshankar.claudeconsole.voicehelper"),
     "VizhiCodex": ("Vizhi for Codex", "com.rshankar.vizhicodex.voicehelper"),
-    "VizhiDesktop": ("Vizhi Desktop", "com.rshankar.vizhidesktop.voicehelper"),
+    "VizhiDesktop": ("Vizhi for ChatGPT", "com.rshankar.vizhidesktop.voicehelper"),
 }
 
 def metadata(product, version):

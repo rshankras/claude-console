@@ -30,7 +30,7 @@ GUID = "A8B982E4103C4F99A4C75070AF60A6E4"
 # imported copy keeps receiving the Home migrations.
 ADAPTIVE3_GUID = "390FE86F17D84EC6B4920C7A5C3F37FA"
 APP = "@_vizhidesktop"
-DISPLAY = "Vizhi Desktop"
+DISPLAY = "Vizhi for ChatGPT"
 PROFILE_DISPLAY = "Vizhi Home"
 PLUGIN = "VizhiDesktop"
 BUNDLE = "com.openai.codex"

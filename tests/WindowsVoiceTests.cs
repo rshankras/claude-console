@@ -111,7 +111,7 @@ namespace Loupedeck.ClaudeConsolePlugin.Tests
             Assert.Contains("VizhiDesktop)             PROJECTS=\"ClaudeConsoleTools VizhiDesktopUia\"", builder);
             Assert.Contains("ClaudeConsoleTools|VizhiDesktopUia)", builder);
             Assert.Contains("SelfContained", builder);
-            Assert.Contains("VizhiDesktop)  NAME=\"Vizhi Desktop\"", signer);
+            Assert.Contains("VizhiDesktop)  NAME=\"Vizhi for ChatGPT\"", signer);
 
             Assert.Contains("WINDOWS_WHISPER_DIR", packer);
             Assert.Contains("$PKG_VOICE/whisper-bin-win", packer);
