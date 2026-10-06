@@ -1,4 +1,4 @@
-## Vizhi Desktop [Unreleased]
+## Vizhi Desktop [1.1.2] — 2026-10-06 — Approve answers the first time
 
 ### Fixed
 - **Approve/Deny checks a stale key immediately** (#159). If the key has not shown a request,
