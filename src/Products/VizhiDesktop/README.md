@@ -1,10 +1,12 @@
-# Vizhi Desktop
+# Vizhi for ChatGPT
+
+*Formerly **Vizhi Desktop** (renamed in 1.1.3). The internal name stays `VizhiDesktop` — package, folders, logs and keypad bindings — so updates keep users' layouts and settings.*
 
 **Physical hardware controls for the ChatGPT / Codex desktop app on the Logitech MX Creative Keypad.**
 
 > Answer your agent without going to it.
 
-Vizhi Desktop watches the desktop app through the macOS Accessibility API and puts its approval
+Vizhi for ChatGPT watches the desktop app through the macOS Accessibility API and puts its approval
 prompt on a physical key. When Codex needs permission to run something, the key lights — amber for
 routine work, red when the command it is asking about looks destructive — and one press answers it
 **without the app ever coming to the front**. Your editor keeps focus. Nothing is typed into the
@@ -15,7 +17,7 @@ Built on the same engine as [Claude Console](../../../README.md) and
 product. *(Not an OpenAI product; ChatGPT and Codex are trademarks of OpenAI.)*
 
 > **This one coexists.** Unlike the two terminal consoles — which both bind to Terminal.app and
-> therefore cannot both be active — Vizhi Desktop binds to the ChatGPT app's own bundle, which
+> therefore cannot both be active — Vizhi for ChatGPT binds to the ChatGPT app's own bundle, which
 > nothing else claims. You can run it alongside Claude Console or Vizhi for Codex.
 
 ## Status
@@ -105,7 +107,7 @@ active when an application-specific profile does not override it:
 | **Deny** | Denies the shown request, with the same **Checking** / **Press again** behavior when the key is stale. Lit only while something is actually pending |
 | **Show ChatGPT** | The escape hatch: brings the app forward when you want to look before deciding |
 
-In Logi Options+, select your default profile, then drag those four actions from **Vizhi Desktop**
+In Logi Options+, select your default profile, then drag those four actions from **Vizhi for ChatGPT**
 onto whichever keys you like.
 
 **Why you have to do this by hand:** your default profile is your configuration. A plugin that
@@ -256,7 +258,7 @@ Clear Sources clears staging only, not files, clipboard contents or text already
 **System access:** this installation adds an Ask ChatGPT page without replacing existing System
 keys. The reusable `tools/install-desktop-context-page.py` installer accepts the explicit selected
 System `ProfileInfo.json`; the plugin never changes System at startup. App-specific keypad profiles
-can take priority over System. Assign **Vizhi Desktop → Context → Ask ChatGPT** to those profiles
+can take priority over System. Assign **Vizhi for ChatGPT → Context → Ask ChatGPT** to those profiles
 if needed. Returning uses the originally captured source window; a closed/replaced window reports
 Source Closed. Paste Reply requires the original app and the empty field you explicitly selected.
 
@@ -344,7 +346,7 @@ starts ChatGPT dictation, but this update retains the existing offline Voice Dra
 
 ## Short chat labels and workflow favorites
 
-Configuration lives in `~/Library/Application Support/Logi/LogiPluginService/PluginData/VizhiDesktop/`. Reload Vizhi Desktop or restart Logi Plugin
+Configuration lives in `~/Library/Application Support/Logi/LogiPluginService/PluginData/VizhiDesktop/`. Reload Vizhi for ChatGPT or restart Logi Plugin
 Service after editing these files. Examples are in [package/examples](package/examples).
 
 **Conversation labels:** create `desktop-conversation-labels.json` with exact app titles:
@@ -425,7 +427,7 @@ Codex files are left untouched.
 
 Deleting the current packaged profile is respected — by restarts, by disable/enable and by an
 upgrade. To get *Vizhi Home* back, download `VizhiDesktop-Home.lp5` from
-[vizhi.dev/layouts](https://vizhi.dev/layouts/) and import it in Options+ with Vizhi Desktop
+[vizhi.dev/layouts](https://vizhi.dev/layouts/) and import it in Options+ with Vizhi for ChatGPT
 selected (⋯ → Import Profile); Options+ gives the import its own identity, so it sits beside your
 other profiles. Profile registration and upgrades take effect on the next normal service restart;
 Desktop does not restart Options+ or LPS itself.

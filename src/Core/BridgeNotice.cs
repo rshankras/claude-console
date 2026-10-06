@@ -131,7 +131,7 @@ namespace Loupedeck.ClaudeConsolePlugin
         /// invisible until then, and the plugin no longer restarts Logi's processes itself (#138).
         /// </summary>
         internal static String LayoutAwaitsServiceRestart() =>
-            "Vizhi Desktop installed its keypad layout. It appears in Logi Options+ after the Logi Plugin Service " +
+            "Vizhi for ChatGPT installed its keypad layout. It appears in Logi Options+ after the Logi Plugin Service " +
             "next starts — sign out and back in, or restart the computer.";
 
         /// <summary>Where the voice notices point — the FAQ's voice section.</summary>
